@@ -1,0 +1,642 @@
+{
+  "certId": "foundations",
+  "domainId": "d2-tools-mcp",
+  "questions": [
+    {
+      "id": "f-d2-b2-001",
+      "taskStatementId": "2.2",
+      "scenario": "Customer Support Resolution Agent: You are building a customer support resolution agent with the Claude Agent SDK. It handles high-ambiguity requests such as returns, billing disputes and account issues, and reaches your backend through custom MCP tools (get_customer, lookup_order, process_refund, escalate_to_human). The target is 80%+ first-contact resolution while still knowing when to escalate.",
+      "stem": "Customers often ask for refunds on orders that are outside the 30-day return window. When that happens, process_refund currently returns the text \"Operation failed\". Transcripts show the agent retrying the call three or four times and then telling the customer there is \"a temporary technical problem\". You want the agent to stop retrying and give the customer an accurate explanation, with minimal changes to the rest of the system. What should the architect do?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add a system prompt rule telling the agent never to call process_refund more than twice in a row, and to apologize for a technical issue after the second failure."
+        },
+        {
+          "id": "B",
+          "text": "Change process_refund to return isError: true with errorCategory \"business\", isRetryable: false and a customer-friendly reason (the order is 41 days past the 30-day window)."
+        },
+        {
+          "id": "C",
+          "text": "Add few-shot examples to the system prompt that show the agent turning down refunds politely whenever process_refund fails, whatever caused the failure."
+        },
+        {
+          "id": "D",
+          "text": "Put an automatic retry with exponential backoff inside the MCP server so that process_refund failures are retried server-side before anything goes back to the agent."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "The agent behaves badly because the tool tells it nothing. A generic \"Operation failed\" looks like it could be transient, so retrying is a reasonable guess. A **structured error** that marks the failure as a business-rule violation (`errorCategory`), says it is **not retryable**, and gives a human-readable reason lets the agent stop retrying and explain the real policy to the customer. The MCP spec puts business-logic failures in the tool result with `isError: true`, where the model can see and react to them, and the exam guide calls for a `retriable: false` flag plus a customer-friendly explanation for policy violations. The change stays inside one tool's response, which satisfies the \"minimal changes\" constraint.",
+      "whyWrong": {
+        "A": "A retry cap stops the loop, but the agent still doesn't know *why* the call failed, so it keeps blaming a \"technical problem\". The prompt rule treats the symptom, and a real transient failure would get cut off too.",
+        "C": "Few-shot examples teach the agent to refuse on *any* failure, so real outages and validation errors would also turn into policy refusals. The agent needs the error category, and examples can't supply it.",
+        "D": "Retrying a policy violation server-side only wastes time and load. The request fails the same way every time. Backoff is meant for transient errors, not business-rule errors."
+      },
+      "difficulty": 2,
+      "mindset": "Give the agent structured error metadata (category, retryable flag, reason) instead of trying to fix its recovery behavior with prompt rules.",
+      "tags": [
+        "mcp",
+        "isError",
+        "error-categories",
+        "business-errors",
+        "retryable"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-06-18/server/tools",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls"
+      ]
+    },
+    {
+      "id": "f-d2-b2-002",
+      "taskStatementId": "2.5",
+      "scenario": "Developer Productivity with Claude: You are building developer productivity tools with the Claude Agent SDK. The agent helps engineers explore unfamiliar codebases, understand legacy systems, generate boilerplate and automate repetitive tasks, using the built-in tools (Read, Write, Edit, Bash, Grep, Glob) plus MCP servers.",
+      "stem": "An engineer asks the agent to list every React component test file in a large monorepo so they can be migrated to a new test runner. All of these files follow the naming convention *.test.tsx and are spread across dozens of package directories. Which built-in tool should the agent use FIRST?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Grep, searching all files for the text \"describe(\" to find every file that contains a test suite definition."
+        },
+        {
+          "id": "B",
+          "text": "Read, opening each package's package.json to find its configured test directory before listing files there."
+        },
+        {
+          "id": "C",
+          "text": "Glob, with the pattern **/*.test.tsx to match every file path that follows the test naming convention."
+        },
+        {
+          "id": "D",
+          "text": "Bash, running the existing test suite in verbose mode and collecting the file names that appear in the output."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "The task is to find files **by name pattern**, which is exactly what **Glob** is for. `**/*.test.tsx` matches every path that follows the convention in any directory, in one fast call. Grep searches file *contents*, which isn't the question here.",
+      "whyWrong": {
+        "A": "Grep searches contents. \"describe(\" also appears in non-TSX tests and helpers, and it isn't the naming criterion the engineer gave.",
+        "B": "Reading every package.json is slow and indirect, and test files sit next to their source, not only in configured folders.",
+        "D": "Running the whole suite is slow, has side effects, and lists only tests that run, not every file that matches the pattern."
+      },
+      "difficulty": 1,
+      "mindset": "Use Glob to find files by path or name and Grep to find text inside files.",
+      "tags": [
+        "built-in-tools",
+        "glob",
+        "file-search"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/tools-reference"
+      ]
+    },
+    {
+      "id": "f-d2-b2-003",
+      "taskStatementId": "2.2",
+      "scenario": "Multi-Agent Research System: You are building a multi-agent research system with the Claude Agent SDK. A coordinator delegates to specialized subagents (web search, document analysis, synthesis, report generation) and the system produces comprehensive, cited reports.",
+      "stem": "During a test run, the web-search subagent's call to the search API timed out. The subagent returned an empty result list marked as successful. The coordinator then told the synthesis agent that \"no published research exists\" on the subtopic, and that claim appeared in the final report. Which change MOST reliably prevents this kind of error without adding unnecessary work?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Have the coordinator re-dispatch every search task that returns zero results to a second web-search subagent before it accepts the empty result as final."
+        },
+        {
+          "id": "B",
+          "text": "Instruct the synthesis agent to label any subtopic with zero sources as \"low confidence\" in the report instead of saying no research exists."
+        },
+        {
+          "id": "C",
+          "text": "Make the coordinator stop the whole research run and report a failure whenever any subagent hits an error, so that partial reports are never produced."
+        },
+        {
+          "id": "D",
+          "text": "Have the subagent report the timeout as a retryable error instead of a successful empty result, retry it locally, and escalate unresolved failures with the attempted queries and partial results."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "The root cause is that an **access failure was disguised as a valid empty result**. These are different situations. A timeout means the agent doesn't know the answer and has to decide whether to retry. An empty result from a successful query means \"no matches\". Fix it at the source: return a structured, retryable transient error, recover locally inside the subagent, and send the coordinator only what can't be resolved, together with what was attempted and any partial results. The coordinator can then annotate the gap honestly.",
+      "whyWrong": {
+        "A": "Re-running every empty search doubles the cost of the many searches that really have no results, and it still can't tell a timeout from a genuine empty result. It hides the root cause with extra work.",
+        "B": "The synthesis agent still can't tell \"we couldn't search\" from \"we searched and found nothing\", because that information was lost upstream. Changing the label wording doesn't recover it.",
+        "C": "Ending the whole workflow because of one recoverable timeout is too drastic. It throws away all the good work from other subagents when a local retry or an annotated coverage gap would do."
+      },
+      "difficulty": 3,
+      "mindset": "An access failure is not an empty result. Surface it in structured form at the source, retry locally, and escalate only what can't be resolved.",
+      "tags": [
+        "error-propagation",
+        "empty-vs-failure",
+        "transient",
+        "subagents",
+        "multi-agent"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-06-18/server/tools",
+        "https://www.anthropic.com/engineering/multi-agent-research-system"
+      ]
+    },
+    {
+      "id": "f-d2-b2-004",
+      "taskStatementId": "2.5",
+      "stem": "An engineer asks Claude to find every place in a 4,000-file codebase that calls the function applyLoyaltyDiscount, so they can assess the impact of a signature change. Claude has the Read, Write, Edit, Bash, Grep and Glob tools available. The engineer wants the answer with the fewest tool calls and the least context used. Which approach is BEST?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Use Grep to search file contents for applyLoyaltyDiscount across the codebase, then Read only the files that match to inspect each call site."
+        },
+        {
+          "id": "B",
+          "text": "Use Glob with **/*loyalty* to find files whose names mention loyalty, then Read each of them to look for calls to the function."
+        },
+        {
+          "id": "C",
+          "text": "Read every source file in the services directory, since that is where most business logic lives, and note each call that appears."
+        },
+        {
+          "id": "D",
+          "text": "Use Bash to run the full test suite with coverage enabled and inspect which files executed applyLoyaltyDiscount during the run."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Finding callers means searching file **contents** for an identifier, which is Grep's core use. Grep returns the exact matching files or lines in one call, and Read then loads only the relevant ones. This is the incremental pattern: a targeted search first, then focused reading.",
+      "whyWrong": {
+        "B": "File names don't predict call sites. Callers in checkout.ts or cart.ts would be missed, and unrelated loyalty files get read.",
+        "C": "Reading a whole directory up front wastes context, misses callers outside that directory, and is the opposite of incremental exploration.",
+        "D": "Coverage shows only code paths the tests exercise. Untested callers are missed, and running the suite is slow."
+      },
+      "difficulty": 2,
+      "mindset": "Search before you read: Grep narrows the candidate files, then Read focuses on what matters.",
+      "tags": [
+        "built-in-tools",
+        "grep",
+        "code-search",
+        "context-efficiency"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/tools-reference"
+      ]
+    },
+    {
+      "id": "f-d2-b2-005",
+      "taskStatementId": "2.2",
+      "stem": "An MCP server exposes a get_shipment_status tool. Sometimes the carrier API behind it returns HTTP 503. The team wants Claude to see that the call failed and decide for itself whether to try again or tell the user. According to the MCP specification, how should the server report this failure?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Return a normal tool result whose content describes the carrier outage, with isError set to true, so the failure reaches the model as part of the result."
+        },
+        {
+          "id": "B",
+          "text": "Return a JSON-RPC protocol error response (for example, an error object with an error code) in place of a tool result, because the call couldn't be completed."
+        },
+        {
+          "id": "C",
+          "text": "Return a normal tool result with isError left false and a content string starting with \"ERROR:\", so the model can detect the problem by reading the text."
+        },
+        {
+          "id": "D",
+          "text": "Raise an exception inside the server so that the host application logs the failure and quietly drops the tool call from the conversation."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "MCP has **two error channels**. **Protocol errors** are standard JSON-RPC error responses for problems with the request itself, such as an unknown tool name or a malformed request, or for the server being unable to process it at all. **Tool execution errors** (an upstream API failure, bad input data, a business-logic failure) are returned *inside the tool result* with **`isError: true`**. The spec says clients should pass tool execution errors to the model so it can see what went wrong and choose how to recover. A carrier API returning 503 is an upstream API failure, which the spec lists explicitly as a tool execution error.",
+      "whyWrong": {
+        "B": "Protocol errors are for problems with the request itself (an unknown tool, a malformed request) or the server failing to process it. The spec lists API failures under tool execution errors. A JSON-RPC error is also not guaranteed to reach the model: the spec says clients *may* pass protocol errors on, but *should* pass tool execution errors so the model can recover.",
+        "C": "With isError false, the client and model treat the call as a success. The model would have to parse free text to notice the failure, which is unreliable and easy to miss.",
+        "D": "An unhandled exception that drops the call leaves the model with no information. It can't retry sensibly or explain anything to the user."
+      },
+      "difficulty": 1,
+      "mindset": "Execution failures belong in the tool result with isError: true so the model can reason about recovery.",
+      "tags": [
+        "mcp",
+        "isError",
+        "protocol-vs-execution-errors"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-06-18/server/tools"
+      ]
+    },
+    {
+      "id": "f-d2-b2-006",
+      "taskStatementId": "2.5",
+      "scenario": "Code Generation with Claude Code: Your team uses Claude Code for code generation, refactoring, debugging and documentation, and is integrating it into the everyday development workflow.",
+      "stem": "Claude is updating a Kubernetes manifest with six container stanzas. The stanzas are byte-for-byte identical, and so are the lines around them. Each stanza needs a *different* memory limit. Claude's Edit calls keep failing because the old_string it supplies matches more than one location. What should Claude do to make the change reliably?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Retry Edit with replace_all set to true so every matching stanza is updated in one call, then adjust the values afterwards if needed."
+        },
+        {
+          "id": "B",
+          "text": "Stop and ask the engineer to make the six edits by hand, since the Edit tool can't handle files that contain repeated text."
+        },
+        {
+          "id": "C",
+          "text": "Use Bash to run a sed command that replaces the memory line by regex, so the file is changed without needing a unique anchor."
+        },
+        {
+          "id": "D",
+          "text": "Read the full file, build the complete updated content with each stanza's own limit, and Write the whole file back in one operation."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "Edit needs `old_string` to match **exactly once**. When the target text is genuinely not unique, and here even the surrounding context is identical, the dependable fallback is **Read + Write**: load the whole file, produce the full correct content, and write it back. That way each stanza gets its own value, and the result can be reviewed as one change.",
+      "whyWrong": {
+        "A": "replace_all applies the *same* replacement everywhere. The task needs a different value per stanza, so this produces wrong content that then needs more repair.",
+        "B": "Handing the work back is unnecessary. The built-in tools already cover this case through Read + Write.",
+        "C": "A regex over identical lines can't give each stanza a different value either, so the result is still wrong. Going around the file-editing tools also has a cost: Claude Code checkpoints don't track files changed through Bash commands, so /rewind can't undo the change."
+      },
+      "difficulty": 3,
+      "mindset": "Edit is for unique anchors. When uniqueness can't be achieved, fall back to Read + Write.",
+      "tags": [
+        "built-in-tools",
+        "edit",
+        "read-write-fallback"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/tools-reference",
+        "https://code.claude.com/docs/en/checkpointing"
+      ]
+    },
+    {
+      "id": "f-d2-b2-007",
+      "taskStatementId": "2.2",
+      "scenario": "Customer Support Resolution Agent: You are building a customer support resolution agent with the Claude Agent SDK. It handles high-ambiguity requests such as returns, billing disputes and account issues, and reaches your backend through custom MCP tools (get_customer, lookup_order, process_refund, escalate_to_human). The target is 80%+ first-contact resolution while still knowing when to escalate.",
+      "stem": "lookup_order fails for several reasons: the order database sometimes times out, agents sometimes pass a malformed order ID, and some orders belong to a business account the support agent isn't allowed to see. At the moment every failure returns the same message, \"Lookup error\". Which TWO changes will MOST improve the agent's ability to pick the right recovery action? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Include an errorCategory field that tells transient, validation and permission failures apart, so the agent knows which kind of problem it hit."
+        },
+        {
+          "id": "B",
+          "text": "Include the raw database stack trace and internal hostname in the error content, so the agent has the full technical detail behind the failure."
+        },
+        {
+          "id": "C",
+          "text": "Map every failure to one standard code, TOOL_ERROR, so the agent only has to handle a single, predictable error shape across all tools."
+        },
+        {
+          "id": "D",
+          "text": "Include an isRetryable flag and a short human-readable description, such as \"Order ID must match ORD-######; received 88123\"."
+        },
+        {
+          "id": "E",
+          "text": "Have the server retry every failed lookup five times before it responds, so the agent sees an error only after all retries are used up."
+        }
+      ],
+      "correct": [
+        "A",
+        "D"
+      ],
+      "explanation": "Structured error metadata is what lets an agent recover sensibly. **`errorCategory`** tells it whether to wait and retry (transient), fix its input (validation), or escalate (permission). **`isRetryable`** plus a **human-readable description** prevents wasted retries and shows exactly what to correct. Together they replace the uniform message that currently leaves the agent guessing.",
+      "whyWrong": {
+        "B": "Stack traces and hostnames are noisy, low-signal context for the model and may leak internal details. They don't say what to do next.",
+        "C": "A single uniform code is the same as \"Lookup error\" in a new format. The agent still can't tell a timeout from a bad ID from a permission block.",
+        "E": "Blind server-side retries help only transient failures. They waste time on malformed IDs and permission blocks, which fail the same way every time."
+      },
+      "difficulty": 2,
+      "mindset": "An error is useful to an agent only when it says what kind of failure happened and whether retrying can help.",
+      "tags": [
+        "mcp",
+        "error-categories",
+        "retryable",
+        "validation-errors",
+        "permission-errors"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-06-18/server/tools",
+        "https://www.anthropic.com/engineering/writing-tools-for-agents"
+      ]
+    },
+    {
+      "id": "f-d2-b2-008",
+      "taskStatementId": "2.5",
+      "scenario": "Developer Productivity with Claude: You are building developer productivity tools with the Claude Agent SDK. The agent helps engineers explore unfamiliar codebases, understand legacy systems, generate boilerplate and automate repetitive tasks, using the built-in tools (Read, Write, Edit, Bash, Grep, Glob) plus MCP servers.",
+      "stem": "A new hire asks the agent to explain how a request moves through a legacy Python payments service with about 1,200 modules, starting from the HTTP layer. The agent has a limited context window and must give an accurate trace. Which exploration strategy is MOST effective?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Use Glob to list all .py files, then Read them in alphabetical order until the context window is nearly full, and summarize what was loaded."
+        },
+        {
+          "id": "B",
+          "text": "Use Grep to find the route registrations or entry-point handlers, Read those files, then follow their imports with further Reads along the request path."
+        },
+        {
+          "id": "C",
+          "text": "Read every file in the repository up front so the agent has a complete picture before it answers anything about the request flow."
+        },
+        {
+          "id": "D",
+          "text": "Use Bash to print the directory tree, then infer the request flow from folder and file names without opening any of the source files."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Large codebases call for **incremental** exploration. Grep finds the entry points (route decorators, handler registrations), and Read then follows imports step by step along the actual path. Context goes only to relevant code, and the trace is grounded in real source rather than guesses.",
+      "whyWrong": {
+        "A": "Alphabetical reading fills context with whatever comes first, not with what is on the request path. The trace would likely be incomplete.",
+        "C": "Reading 1,200 modules up front can't fit and buries the relevant code. This is the anti-pattern the incremental approach exists to avoid.",
+        "D": "Folder names hint at structure but can't show the real call flow. An answer based only on them is speculation."
+      },
+      "difficulty": 2,
+      "mindset": "Explore incrementally: Grep for entry points, then Read along the imports. Don't load everything.",
+      "tags": [
+        "built-in-tools",
+        "grep",
+        "read",
+        "incremental-exploration",
+        "context-management"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/tools-reference",
+        "https://code.claude.com/docs/en/best-practices"
+      ]
+    },
+    {
+      "id": "f-d2-b2-009",
+      "taskStatementId": "2.2",
+      "scenario": "Multi-Agent Research System: You are building a multi-agent research system with the Claude Agent SDK. A coordinator delegates to specialized subagents (web search, document analysis, synthesis, report generation) and the system produces comprehensive, cited reports.",
+      "stem": "The document-analysis subagent calls an MCP tool that sometimes fails with brief rate-limit or timeout errors that clear within seconds. Right now every such failure goes straight back to the coordinator, which re-plans and re-dispatches the whole analysis task. This bloats the coordinator's context and adds minutes of latency. What is the MOST effective design?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Give the coordinator a dedicated retry_subagent tool and instructions to call it whenever a subagent reports any error, so all recovery decisions stay in one central place."
+        },
+        {
+          "id": "B",
+          "text": "Have the subagent keep retrying silently until the call eventually succeeds, and never report failures upward, so the coordinator's context stays clean."
+        },
+        {
+          "id": "C",
+          "text": "Have the subagent retry retryable transient errors itself with bounded attempts, and escalate only failures it can't resolve, together with partial results and a note of what it tried."
+        },
+        {
+          "id": "D",
+          "text": "Replace the MCP tool with a larger general-purpose fetch tool on the coordinator, so the coordinator can run the analysis itself whenever the subagent fails."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Errors should be **recovered locally where they can be**. The subagent has the context to retry a transient, retryable error cheaply. Only failures it **can't resolve** should go to the coordinator, together with **partial results and what was attempted**, so the coordinator can decide sensibly without re-running everything. The retry bound prevents endless loops.",
+      "whyWrong": {
+        "A": "Routing every transient blip through the coordinator is the current design with a new tool name. It keeps the context bloat and re-planning latency the team wants to remove.",
+        "B": "Unbounded silent retries can hang forever and hide persistent failures from the coordinator. Retries need a limit and failures need reporting.",
+        "D": "Giving the coordinator broad tools breaks role scoping and doesn't fix error handling. It adds complexity when local retry already solves the problem."
+      },
+      "difficulty": 3,
+      "mindset": "Recover transient failures locally, then propagate only what can't be resolved, with partial results and context.",
+      "tags": [
+        "error-propagation",
+        "local-recovery",
+        "subagents",
+        "transient"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/multi-agent-research-system",
+        "https://modelcontextprotocol.io/specification/2025-06-18/server/tools"
+      ]
+    },
+    {
+      "id": "f-d2-b2-010",
+      "taskStatementId": "2.5",
+      "scenario": "Developer Productivity with Claude: You are building developer productivity tools with the Claude Agent SDK. The agent helps engineers explore unfamiliar codebases, understand legacy systems, generate boilerplate and automate repetitive tasks, using the built-in tools (Read, Write, Edit, Bash, Grep, Glob) plus MCP servers.",
+      "stem": "Engineers want to know everywhere a legacy helper, formatCurrency, is used before they deprecate it. The helper is re-exported through two wrapper modules: one exports it as fmtMoney and the other bundles it into a utilities object as money.format. A first Grep for \"formatCurrency\" found only four call sites, which seems too few. Which TWO steps should the agent take to get a complete list? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Repeat the Grep for formatCurrency with case-insensitive matching enabled, since the missing usages are most likely just capitalized differently."
+        },
+        {
+          "id": "B",
+          "text": "Use Glob to find files whose names contain \"currency\" or \"money\", and treat those files as the remaining places where the helper is used."
+        },
+        {
+          "id": "C",
+          "text": "Read the wrapper modules to list every name and alias under which the helper is exported, including fmtMoney and money.format."
+        },
+        {
+          "id": "D",
+          "text": "Read every file under the src directory, because aliased usages can only be found by inspecting each file's full source manually."
+        },
+        {
+          "id": "E",
+          "text": "Grep the codebase for each exported name and alias found in the wrappers, then combine the matches with the original four call sites."
+        }
+      ],
+      "correct": [
+        "C",
+        "E"
+      ],
+      "explanation": "Searching for one name misses usages that go through wrappers and aliases. The reliable method is to **first identify all exported names** (Read the wrapper modules), **then Grep for each one** across the codebase. That keeps the search precise and complete without reading everything.",
+      "whyWrong": {
+        "A": "Case-insensitive matching still searches only for \"formatCurrency\". The aliases fmtMoney and money.format won't match.",
+        "B": "File names say nothing about where a helper is called. This misses callers and adds unrelated files.",
+        "D": "Reading all of src is expensive and unnecessary. Once the aliases are known, targeted Greps find every usage."
+      },
+      "difficulty": 3,
+      "mindset": "To trace usage through wrappers, list every exported alias first, then search for each one.",
+      "tags": [
+        "built-in-tools",
+        "grep",
+        "read",
+        "wrapper-modules",
+        "code-search"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/tools-reference"
+      ]
+    },
+    {
+      "id": "f-d2-b2-011",
+      "taskStatementId": "2.2",
+      "scenario": "Customer Support Resolution Agent: You are building a customer support resolution agent with the Claude Agent SDK. It handles high-ambiguity requests such as returns, billing disputes and account issues, and reaches your backend through custom MCP tools (get_customer, lookup_order, process_refund, escalate_to_human). The target is 80%+ first-contact resolution while still knowing when to escalate.",
+      "stem": "The agent often calls process_refund with an amount like \"$45.00\" (a string), but the tool expects an integer number of cents. The tool currently returns isError: true with the text \"Invalid request\". The agent usually gives up and escalates to a human, which hurts first-contact resolution. Which error response is MOST likely to let the agent correct the call on its very next turn?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Keep isError: true and \"Invalid request\" unchanged, but expand the process_refund description to explain the amount format in detail so the mistake is avoided in future."
+        },
+        {
+          "id": "B",
+          "text": "Return isError: true with errorCategory \"validation\", the field name, the expected format, the value received, and a corrected example such as amount_cents: 4500."
+        },
+        {
+          "id": "C",
+          "text": "Return isError: true with errorCategory \"transient\" and isRetryable: true, so the agent is encouraged to try the same call again rather than escalate."
+        },
+        {
+          "id": "D",
+          "text": "Return isError: true with the text \"Invalid request (code 400)\" and add a system prompt rule telling the agent to re-read the tool's input schema whenever it sees code 400."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "A validation error is fixable by the caller, *if the caller knows what to fix*. An actionable error that names the field, the expected format, the value received and a corrected example lets the model rebuild the call right away. Anthropic's tool guidance says error responses should communicate specific, actionable improvements rather than opaque codes, and the API docs give the same advice: say what went wrong and what Claude should try next. The fix lives in the tool response, so it works on the very next turn without any prompt change.",
+      "whyWrong": {
+        "A": "A better description may reduce future mistakes, but when the error happens the agent still gets the opaque \"Invalid request\" and can't recover in this conversation.",
+        "C": "Calling it transient and retryable is false. The same malformed call fails again, so the agent wastes turns and then escalates anyway.",
+        "D": "A numeric code plus a prompt rule still leaves the agent to work out what was wrong by itself. The error response should carry the correction; a general instruction to re-read the schema is slower and less reliable than being told the field, the format and a valid example."
+      },
+      "difficulty": 2,
+      "mindset": "Validation errors should tell the agent exactly what to change. An actionable message beats a generic error code.",
+      "tags": [
+        "mcp",
+        "validation-errors",
+        "actionable-errors",
+        "isError"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/writing-tools-for-agents",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls"
+      ]
+    },
+    {
+      "id": "f-d2-b2-012",
+      "taskStatementId": "2.5",
+      "stem": "Claude needs to change one return statement inside a function in a 3,000-line TypeScript file. The return statement and its surrounding lines appear only once in the file. Which approach is BEST, with minimal risk of unintended changes?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Read the full file, rewrite all 3,000 lines with the corrected return statement, and Write the complete file back to disk."
+        },
+        {
+          "id": "B",
+          "text": "Use Bash to run a sed substitution on the line number of the return statement that was shown in an earlier Read result."
+        },
+        {
+          "id": "C",
+          "text": "Use Write to create the file again from Claude's memory of its contents, with the return statement corrected along the way."
+        },
+        {
+          "id": "D",
+          "text": "Use Edit with an old_string that contains the unique return statement and enough nearby context, replacing it with the corrected line."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "**Edit** is the tool for targeted changes anchored on unique text. Only the matched span changes, which keeps the change small, reviewable and safe. Read + Write is the *fallback* when a unique anchor isn't available, and here one is.",
+      "whyWrong": {
+        "A": "Rewriting 3,000 lines to change one costs a lot of output and creates many chances to alter code by accident.",
+        "B": "Line numbers from an earlier Read can go stale, and a sed call outside the editing tools is harder to review than a matched Edit.",
+        "C": "Writing from memory risks dropping or changing code Claude doesn't reproduce exactly. It is the riskiest option here."
+      },
+      "difficulty": 2,
+      "mindset": "Make the smallest exact change possible. Use Edit when the anchor text is unique.",
+      "tags": [
+        "built-in-tools",
+        "edit",
+        "targeted-changes"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/tools-reference"
+      ]
+    },
+    {
+      "id": "f-d2-b2-013",
+      "taskStatementId": "2.2",
+      "stem": "You are classifying the failures an order-management MCP tool can return so you can set the isRetryable flag correctly. Which TWO failures should be marked as NOT retryable? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "The upstream inventory service didn't respond within the 10-second timeout while the order was being checked."
+        },
+        {
+          "id": "B",
+          "text": "The requested refund of $900 is above the $500 limit that company policy allows agents to approve."
+        },
+        {
+          "id": "C",
+          "text": "The service account behind the tool isn't authorized to change orders that belong to enterprise customers."
+        },
+        {
+          "id": "D",
+          "text": "The payment gateway answered with a temporary \"too many requests\" response and asked the caller to slow down."
+        },
+        {
+          "id": "E",
+          "text": "The network connection to the order database was reset partway through the query and the read didn't complete."
+        }
+      ],
+      "correct": [
+        "B",
+        "C"
+      ],
+      "explanation": "Retrying makes sense only when the same call might succeed later. A **business-rule violation** (the refund is above policy) and a **permission error** (the account isn't authorized) fail the same way every time, so they should be `isRetryable: false`, and the agent should explain or escalate instead. Timeouts, rate limits and dropped connections are **transient** and may well succeed on a later attempt.",
+      "whyWrong": {
+        "A": "A timeout is a classic transient error. The service may answer on a later attempt, so it is retryable (ideally with backoff).",
+        "D": "A rate-limit response is temporary by definition. Waiting and retrying is the intended recovery.",
+        "E": "A connection reset is a transient network failure. Repeating the same read is likely to work."
+      },
+      "difficulty": 2,
+      "mindset": "Retryable means the identical call could succeed later. Policy and permission failures never do.",
+      "tags": [
+        "error-categories",
+        "retryable",
+        "business-errors",
+        "permission-errors",
+        "transient"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-06-18/server/tools",
+        "https://www.anthropic.com/engineering/writing-tools-for-agents"
+      ]
+    },
+    {
+      "id": "f-d2-b2-014",
+      "taskStatementId": "2.5",
+      "scenario": "Developer Productivity with Claude: You are building developer productivity tools with the Claude Agent SDK. The agent helps engineers explore unfamiliar codebases, understand legacy systems, generate boilerplate and automate repetitive tasks, using the built-in tools (Read, Write, Edit, Bash, Grep, Glob) plus MCP servers.",
+      "stem": "A customer's error log contains the message \"Webhook signature mismatch for tenant\". An engineer asks the agent to find where this message is produced so the bug can be investigated. The codebase is unfamiliar and its directory layout follows no clear convention. Which first step is MOST efficient?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Grep the codebase for a distinctive fragment of the message, such as \"signature mismatch for tenant\", to find the file and line that produce it."
+        },
+        {
+          "id": "B",
+          "text": "Glob for **/*webhook* and open each matching file in turn, since the error most likely comes from a file with \"webhook\" in its name."
+        },
+        {
+          "id": "C",
+          "text": "Use Bash to start the service locally and send test webhooks to it until the same message appears in the console output."
+        },
+        {
+          "id": "D",
+          "text": "Read the main application entry file and follow every import from there until the code that emits the error message turns up."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Finding where an error message comes from is a **content search**. Grep for a distinctive part of the message points straight to the file and line in one call. You can then Read around that location to understand the logic.",
+      "whyWrong": {
+        "B": "File names are only a guess. The message might come from a shared validation or crypto module that doesn't have \"webhook\" in its name.",
+        "C": "Reproducing the error at runtime is slow and may not even work locally. Searching the code finds the source directly.",
+        "D": "Tracing every import from the entry point is slow when an exact string is available to search for. Use import-following after Grep has found an anchor."
+      },
+      "difficulty": 1,
+      "mindset": "When you have an exact string, search contents directly. Grep finds error messages, callers and imports.",
+      "tags": [
+        "built-in-tools",
+        "grep",
+        "debugging"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/tools-reference"
+      ]
+    }
+  ]
+}

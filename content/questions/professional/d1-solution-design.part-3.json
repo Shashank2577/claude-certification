@@ -1,0 +1,543 @@
+{
+  "certId": "professional",
+  "domainId": "d1-solution-design",
+  "questions": [
+    {
+      "id": "p-d1-b3-001",
+      "taskStatementId": "1.3",
+      "stem": "An IT operations group wants Claude to turn change requests, such as \"move the payroll service to the new identity provider\", into one consolidated change plan for human review. Which systems are affected, and how many, differs for every request and only becomes clear once the request is read against the configuration inventory. After a system has been identified, drafting its change steps is largely self-contained work. People review and carry out the final plan; Claude makes no changes itself. Which pattern is the BEST fit?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Parallelization by sectioning: always run five workers, one for each standard system category (network, identity, database, application, monitoring), and join their outputs in code."
+        },
+        {
+          "id": "B",
+          "text": "Orchestrator-workers: a central model reads the request and the inventory, decides which systems need work, hands each one to a worker call, and combines the results into one plan."
+        },
+        {
+          "id": "C",
+          "text": "A fixed prompt chain that drafts change steps for the identity system, then the database, then the application layer, in that same order for every request."
+        },
+        {
+          "id": "D",
+          "text": "An autonomous agent with administrator credentials that inspects the live systems, applies the required changes itself, and then reports back on what it changed."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "The deciding detail is that the subtasks **can't be listed in advance**: which systems need work depends on each request. Anthropic describes **orchestrator-workers** for exactly this case. A central LLM breaks the task down dynamically, delegates the pieces to workers and synthesizes their results. It looks similar to parallelization, but the key difference is that the subtasks are decided by the orchestrator for each input instead of being fixed in code. Because each system's steps are self-contained once identified, they suit separate worker calls, and the orchestrator's synthesis step produces the single plan people review.",
+      "whyWrong": {
+        "A": "Sectioning only works when the subtasks are the same every time. A fixed set of five workers would waste calls on systems a request doesn't touch and has no slot for systems outside the five categories.",
+        "C": "A hard-coded chain assumes the same systems, in the same order, for every request. The stem says the affected systems change from request to request.",
+        "D": "The requirement is a plan for people to review and carry out. An agent that changes live systems with administrator rights goes beyond what was asked and breaks least privilege, and planning doesn't need that autonomy."
+      },
+      "difficulty": 3,
+      "mindset": "When the subtasks depend on the input and can't be fixed in code, let an orchestrator decide them; when they are fixed, keep them in code.",
+      "tags": [
+        "pattern-selection",
+        "orchestrator-workers",
+        "parallelization",
+        "workflow"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "p-d1-b3-002",
+      "taskStatementId": "1.3",
+      "stem": "An HR department wants employees to ask questions about leave, benefits and expense policy and get answers grounded in the current employee handbook, with a citation to the relevant section. Each question is answered on its own; nothing needs to be booked, changed or looked up in other systems. Which architecture is the BEST fit?",
+      "options": [
+        {
+          "id": "A",
+          "text": "A multi-agent research system in which a lead agent sends parallel subagents to search different handbook chapters and then combines what they find."
+        },
+        {
+          "id": "B",
+          "text": "An autonomous agent with file-system and web-search tools that keeps working in a loop until it decides it has found a complete answer."
+        },
+        {
+          "id": "C",
+          "text": "An augmented LLM: one Claude call that receives the handbook passages retrieved for the question and answers from them with section citations."
+        },
+        {
+          "id": "D",
+          "text": "A fine-tuned model trained on the handbook so that it can answer policy questions from memory without any retrieval step."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "This is single-turn, grounded question answering over one known source. The **augmented LLM**, a model call enhanced with retrieval, is the basic building block Anthropic describes and is enough here. Retrieval keeps answers tied to the current handbook and makes citations possible. Anything more autonomous adds tokens, latency and failure modes with no benefit.",
+      "whyWrong": {
+        "A": "Multi-agent systems use many times the tokens of a single chat call and pay off only for broad, high-value, parallelizable research. One handbook lookup doesn't need it.",
+        "B": "An open-ended agent loop fits problems whose steps can't be predicted. Here the steps are always retrieve and then answer, so the loop only adds cost and unpredictability, and web search brings in sources nobody asked for.",
+        "D": "Answers from memory can't easily cite the current section and go stale whenever the handbook changes. Retrieval keeps answers grounded and easy to update."
+      },
+      "difficulty": 1,
+      "mindset": "If one retrieval-augmented call meets the requirement, stop there.",
+      "tags": [
+        "pattern-selection",
+        "augmented-llm",
+        "rag",
+        "simplicity"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "p-d1-b3-003",
+      "taskStatementId": "1.3",
+      "stem": "A support assistant handles three clearly different request types: billing disputes, technical troubleshooting and account access. Each type needs its own instructions and its own small set of tools. Today one large prompt covers all three, and quality on technical troubleshooting has dropped as billing rules were added. A test on labelled history shows that a small, fast model sorts requests into the three types very accurately. The team needs the fix that improves quality with the least added cost and latency. What should the architect do?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Replace the single prompt with an orchestrator agent that breaks each request into subtasks and decides which specialist workers to spawn as the conversation goes on."
+        },
+        {
+          "id": "B",
+          "text": "Keep the single prompt, move to the largest available model, and add several few-shot examples for each request type so the model separates them better."
+        },
+        {
+          "id": "C",
+          "text": "Add an evaluator-optimizer loop in which a second call critiques each response against all three policies and asks for a revision until it passes."
+        },
+        {
+          "id": "D",
+          "text": "Use a routing workflow: a small-model classifier picks the request type, then the request goes to a specialised prompt and tool set for that type."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "**Routing** fits when inputs fall into distinct categories that are better handled separately and the categories can be classified accurately. Here both conditions are met: there are three distinct types, and the classifier has been shown to work. Separate prompts stop optimising for one category from hurting another, and using a small model for the classifier keeps the extra cost and latency low. That matches the qualifier \"least added cost and latency\".",
+      "whyWrong": {
+        "A": "Orchestrator-workers is for subtasks that can't be predicted in advance. The categories here are fixed and known, so dynamic decomposition is over-engineering that adds tokens and latency.",
+        "B": "A bigger model plus more examples treats the symptom and makes the shared prompt longer. It doesn't fix the underlying problem, which is that three unrelated instruction sets interfere with each other in one prompt.",
+        "C": "A critique-and-revise loop at least doubles the calls per request and checks against all three policies at once. It adds the most latency of any option and still leaves the instructions mixed together."
+      },
+      "difficulty": 2,
+      "mindset": "Distinct, reliably classifiable input types point to routing, not one larger prompt or more autonomy.",
+      "tags": [
+        "pattern-selection",
+        "routing",
+        "workflow",
+        "cost-latency"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "p-d1-b3-004",
+      "taskStatementId": "1.3",
+      "stem": "An engineering director is deciding whether a new internal capability should be built as a fixed workflow or as an autonomous agent that chooses its own tool calls. Which TWO characteristics of the task MOST strongly support building it as an agent? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Regulators require that every request goes through the same documented sequence of steps, in the same order, every time."
+        },
+        {
+          "id": "B",
+          "text": "The number and kind of steps needed depend on what is discovered along the way and can't be listed in advance."
+        },
+        {
+          "id": "C",
+          "text": "Each request has to return a complete answer within two seconds, at the lowest cost per request the team can achieve."
+        },
+        {
+          "id": "D",
+          "text": "Every request passes through the same four stages, but each stage needs its own specialised prompt and its own tool set."
+        },
+        {
+          "id": "E",
+          "text": "The environment gives reliable feedback at each step, such as test results, and the agent can be tried out safely in a sandbox."
+        }
+      ],
+      "correct": [
+        "B",
+        "E"
+      ],
+      "explanation": "Anthropic describes agents as suited to **open-ended problems where the required number of steps is hard or impossible to predict**. An agent also needs to get **ground truth from the environment at each step** (tool results, test runs) to judge its progress. Because agents cost more and errors can compound, they need extensive testing in sandboxed environments. B and E are the conditions under which autonomy pays off.",
+      "whyWrong": {
+        "A": "A mandated, fixed sequence is exactly when a workflow with predefined code paths fits best. Autonomy works against this requirement.",
+        "C": "Agents trade latency and cost for better performance on open-ended tasks. A tight latency and cost target points to a simple workflow or a single augmented call.",
+        "D": "Needing different prompts and tools per stage doesn't call for autonomy. When the stages are always the same, that is a prompt-chaining workflow in which each step gets its own prompt and tools; the model never has to decide what to do next."
+      },
+      "difficulty": 3,
+      "mindset": "Choose autonomy only when the path can't be predicted and the environment can steer the agent safely.",
+      "tags": [
+        "pattern-selection",
+        "agents",
+        "workflow",
+        "multi-select"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "p-d1-b3-005",
+      "taskStatementId": "1.3",
+      "stem": "A marketing team uses Claude to localise product launch copy into German. Native-speaker reviewers keep returning first drafts with the same kinds of notes: tone too casual for the brand, wrong product terminology, and idioms translated literally. The brand team has a written style rubric that clearly covers each of these points, and reviewers confirm that a second pass guided by their notes nearly always fixes the issues. Turnaround is measured in hours, not seconds. Which design change is MOST likely to raise first-pass acceptance?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add an evaluator-optimizer loop: one call translates, a second grades the draft against the brand rubric with feedback, and the translator revises until it passes or a round limit is hit."
+        },
+        {
+          "id": "B",
+          "text": "Use parallelization with voting: generate five independent translations in one pass, compare them against each other, and send reviewers the one that agrees most closely with the other four."
+        },
+        {
+          "id": "C",
+          "text": "Move translation to the largest available model and add a system prompt instruction telling it to be especially careful about brand tone, product terminology and idioms."
+        },
+        {
+          "id": "D",
+          "text": "Turn the translator into an autonomous agent with web search so it can look up product terminology and German idioms on its own whenever it judges that would help."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "**Evaluator-optimizer** fits when there are clear evaluation criteria and iterative refinement measurably improves the output. Both are true here: there is a written rubric, and feedback-driven revision has been shown to fix the issues, much as a human translator revises after notes. The relaxed turnaround makes the extra calls acceptable. A round limit keeps cost bounded.",
+      "whyWrong": {
+        "B": "Voting helps when you need confidence from several independent attempts at a decision. The drafts would share the same systematic tone and terminology problems, so the most typical draft is not necessarily one that follows the rubric.",
+        "C": "A bigger model and a stronger instruction is the usual disguise. It ignores the rubric and the evidence that feedback-driven revision works, and gives no structured check that the criteria were met.",
+        "D": "The problems are about matching an existing rubric, not missing information. Open-ended autonomy and web search add cost and unpredictability without targeting the actual failures."
+      },
+      "difficulty": 2,
+      "mindset": "Clear criteria plus proof that feedback improves output point to an evaluator-optimizer loop.",
+      "tags": [
+        "pattern-selection",
+        "evaluator-optimizer",
+        "workflow"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "p-d1-b3-006",
+      "taskStatementId": "1.3",
+      "stem": "A platform team is reviewing several proposed Claude features and wants to use parallelization (running LLM calls at the same time and combining the results in code) only where it fits. Which TWO proposals are the BEST fit for parallelization? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "A security review in which several differently worded prompts each check the same code change, and the change is flagged if any one of them finds a vulnerability."
+        },
+        {
+          "id": "B",
+          "text": "A data-cleaning job in which step two depends on the cleaned output of step one, and step three needs both of the earlier outputs before it can run."
+        },
+        {
+          "id": "C",
+          "text": "A chat assistant in which one call writes the reply to the user while a separate call at the same time screens the request for policy violations."
+        },
+        {
+          "id": "D",
+          "text": "A bug-fixing assistant that must decide on the fly which files to open next, based on what each previously opened file has just shown it."
+        },
+        {
+          "id": "E",
+          "text": "A one-sentence classification of each incoming email that must be returned as fast as possible and at the lowest possible cost per email."
+        }
+      ],
+      "correct": [
+        "A",
+        "C"
+      ],
+      "explanation": "Anthropic describes two forms of parallelization. **Voting** runs the same task several times to get diverse outputs or more confidence; A follows the example of several prompts reviewing code for vulnerabilities. **Sectioning** splits independent subtasks so they run side by side; C follows the guardrail example, where one instance answers while another screens. Both cases involve independent work that gains from running at the same time.",
+      "whyWrong": {
+        "B": "Each step depends on the output of the step before it. That is prompt chaining, and the steps can't run in parallel.",
+        "D": "The next action depends on what was just found, and the path can't be predicted in advance. That calls for an agent loop, not a fixed parallel fan-out.",
+        "E": "One short classification has nothing to split up, and running it several times would multiply cost against a minimum-cost requirement. A single call to a small model fits."
+      },
+      "difficulty": 2,
+      "mindset": "Parallelize independent work (sectioning) or repeated judgements (voting), never steps that depend on each other.",
+      "tags": [
+        "pattern-selection",
+        "parallelization",
+        "voting",
+        "sectioning",
+        "multi-select"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "p-d1-b3-007",
+      "taskStatementId": "1.6",
+      "stem": "A bank's phone assistant turns Claude's text reply into speech. The performance SLA says the caller must start hearing the reply within 1.5 seconds of finishing speaking. Measurements show that the first output token arrives after about 0.6 seconds, but a complete reply takes about 4 seconds, and the speech engine waits for the whole reply before it starts speaking. The team's evaluations show that only the current model meets the bank's quality bar. Which change BEST meets the SLA?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Turn on extended thinking with a larger budget, so that answers are right the first time and callers need to ask fewer follow-up questions."
+        },
+        {
+          "id": "B",
+          "text": "Send the replies through the Message Batches API, which raises throughput and charges half the standard price for each reply."
+        },
+        {
+          "id": "C",
+          "text": "Stream the response and pass text to the speech engine as each sentence completes, so speaking starts soon after the first tokens arrive."
+        },
+        {
+          "id": "D",
+          "text": "Switch to the smallest and fastest model available, because it finishes generating complete replies sooner than the current model does."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Read what the SLA measures: when the caller **starts hearing** the reply, not when the whole reply is finished. The first token already arrives well inside the target. The delay comes from the design choice to wait for the complete reply. **Streaming** lets the application handle output as it arrives, which Anthropic's latency guidance lists alongside choosing the right model and trimming prompt and output length. Feeding complete sentences to the speech engine as they stream in moves the start of speech close to the time of the first token, with no change to the model or to answer quality.",
+      "whyWrong": {
+        "A": "Extended thinking makes the model reason before it writes the answer, which pushes the first spoken words later. It works against a latency SLA.",
+        "B": "Batch processing is asynchronous: most batches finish within an hour, and the processing window is 24 hours. That can't serve a live phone call, whatever the price.",
+        "D": "The evaluations show that only the current model meets the quality bar, so this trades away quality. It is also unnecessary, because the first token already arrives in time."
+      },
+      "difficulty": 2,
+      "mindset": "Find out exactly what the SLA measures; perceived-latency targets are often met by streaming rather than by changing the model.",
+      "tags": [
+        "value-pillars",
+        "performance-sla",
+        "latency",
+        "streaming"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-latency",
+        "https://platform.claude.com/docs/en/build-with-claude/streaming"
+      ]
+    },
+    {
+      "id": "p-d1-b3-008",
+      "taskStatementId": "1.6",
+      "stem": "A contact centre's agent-assist tool sends Claude a 25,000-token block of unchanging compliance policy and product rules, followed by the live customer utterance and a short conversation history. The block currently comes after the history. The business has set a performance SLA that suggestions must start appearing for the human agent quickly, and finance has flagged input-token spend as the largest cost line. Which single change BEST serves both the latency SLA and the cost goal?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Move the unchanging policy block to the start of the prompt, before the conversation-specific content, and enable prompt caching on that stable prefix."
+        },
+        {
+          "id": "B",
+          "text": "Send the requests through the Message Batches API so they are processed at a lower price per token than synchronous requests to the same model."
+        },
+        {
+          "id": "C",
+          "text": "Add an instruction asking Claude to keep its suggestions short, so that fewer output tokens are produced and billed on every single request."
+        },
+        {
+          "id": "D",
+          "text": "Move the assistant to the largest available model, so it can work through the long policy block more quickly and more accurately on each turn."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Prompt caching reuses an **identical prefix** (tools, then system, then messages), which cuts processing time and lowers the cost of the cached input. Cache reads are billed at a fraction of the base input price (10% for most models, lower for the newest). Because the cache matches the prompt from the beginning, the stable policy block has to come **before** the per-conversation content, with the breakpoint at the end of that static prefix. As long as the block sits after the history, which differs for every conversation and grows every turn, the prefix never matches and it is re-processed at full price each time. One change improves both time to first token and input cost.",
+      "whyWrong": {
+        "B": "Batch processing is asynchronous and can take up to 24 hours, so it breaks an interactive latency SLA even though it is cheaper.",
+        "C": "Shorter output helps total generation time somewhat, but the main costs here are input tokens and the time to process a 25,000-token prompt. Neither changes.",
+        "D": "A larger model usually costs more and is not faster. It works against both the cost and the latency goals."
+      },
+      "difficulty": 3,
+      "mindset": "Put static content first and cache it to cut both latency and cost.",
+      "tags": [
+        "value-pillars",
+        "performance-sla",
+        "prompt-caching",
+        "cost"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-latency"
+      ]
+    },
+    {
+      "id": "p-d1-b3-009",
+      "taskStatementId": "1.6",
+      "stem": "A legal operations leader sponsored a Claude-based contract-review assistant and now has to show the board that it delivers on the productivity pillar. The architect is asked to define how productivity value will be measured. Which TWO measures BEST show that value in a way the board can trust? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Total tokens processed by the assistant each month, shown as a rising trend that proves people are using it more and more."
+        },
+        {
+          "id": "B",
+          "text": "Contracts completed per reviewer per week, compared with a baseline measured before rollout, for the same mix of contract types."
+        },
+        {
+          "id": "C",
+          "text": "The assistant's own average confidence rating for its clause analyses, reported each month on a dashboard for the board."
+        },
+        {
+          "id": "D",
+          "text": "Error rate on a fixed, human-graded evaluation set of contracts, tracked alongside throughput so that speed gains don't hide drops in quality."
+        },
+        {
+          "id": "E",
+          "text": "The number of prompts each lawyer sends per day, used as evidence that the assistant has become part of their daily working routine."
+        }
+      ],
+      "correct": [
+        "B",
+        "D"
+      ],
+      "explanation": "Productivity value means more useful output per person, measured against a **baseline**, so B ties directly to the pillar. A productivity claim also needs a **quality guardrail**: throughput can rise because reviewers are rubber-stamping. A fixed, human-graded eval set (D) shows that quality held up. Together they turn a design choice into a measurable business result.",
+      "whyWrong": {
+        "A": "Token volume measures consumption, which is a cost input, not a value output. Rising tokens can even mean the system is less efficient.",
+        "C": "Self-reported model confidence is not calibrated to actual correctness, so it can't serve as evidence of value or quality.",
+        "E": "Activity counts are vanity metrics. A lawyer might send many prompts because the assistant keeps getting things wrong."
+      },
+      "difficulty": 2,
+      "mindset": "Measure value against a baseline outcome, with a quality guardrail, not by activity or self-reported confidence.",
+      "tags": [
+        "value-pillars",
+        "productivity",
+        "metrics",
+        "evaluation",
+        "multi-select"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests"
+      ]
+    },
+    {
+      "id": "p-d1-b3-010",
+      "taskStatementId": "1.6",
+      "stem": "An insurer uses its most capable Claude model to sort about two million inbound emails a month into eight queues. The business SLA says each email must be in a queue within two minutes of arriving. The CFO has asked to cut this workload's cost sharply \"with minimal risk to routing accuracy\". The team has a labelled set of 2,000 historical emails. What should the architect do FIRST?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Move the classification to the Message Batches API for its lower per-request price, submitting new emails in hourly batches."
+        },
+        {
+          "id": "B",
+          "text": "Have three model instances classify each email at the same time and take the majority vote, so that a cheaper model can be used safely."
+        },
+        {
+          "id": "C",
+          "text": "Switch all classification to the smallest model straight away, and monitor complaints from customers about misrouted emails afterwards."
+        },
+        {
+          "id": "D",
+          "text": "Run a smaller, faster model on the labelled set and compare its routing accuracy with the current model before deciding whether to switch."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "High-volume, short-output classification is usually a good fit for a smaller, faster and cheaper model, but \"with minimal risk to routing accuracy\" means the switch has to be **validated against an eval** first. The labelled set is already there, so measuring is the defensible first step. If the smaller model meets the accuracy bar, cost falls sharply and the two-minute SLA is easier to meet.",
+      "whyWrong": {
+        "A": "Batch results can take up to 24 hours. Hourly batches can't guarantee the two-minute routing SLA.",
+        "B": "Majority voting triples the calls for every email. This over-engineered setup works against the cost goal, and it still hasn't measured whether the cheaper model is accurate enough.",
+        "C": "Switching first and finding out from customers later accepts exactly the accuracy risk the CFO ruled out. It also skips the evidence that is already available."
+      },
+      "difficulty": 3,
+      "mindset": "Right-size the model, but prove it on an eval before you switch.",
+      "tags": [
+        "value-pillars",
+        "cost",
+        "model-selection",
+        "evaluation",
+        "sla"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/about-claude/models/choosing-a-model",
+        "https://platform.claude.com/docs/en/build-with-claude/batch-processing"
+      ]
+    },
+    {
+      "id": "p-d1-b3-011",
+      "taskStatementId": "1.6",
+      "stem": "A retailer's customer chat assistant has a performance SLA agreed with the head of customer experience: 95% of replies must be complete within 5 seconds. An engineer proposes adding a multi-agent research step to every conversation. In testing, it made answers to complex product-comparison questions noticeably more complete, but pushed reply times for those conversations past 30 seconds. Complex comparisons make up about 10% of chats. What should the architect recommend?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add the multi-agent step to every conversation, because better answers matter more than speed, and tell customer experience that the SLA will be revised."
+        },
+        {
+          "id": "B",
+          "text": "Keep the fast single-agent path for live chat, and offer complex comparisons an opt-in research mode that sends results later, with its own SLA agreed with customer experience."
+        },
+        {
+          "id": "C",
+          "text": "Add the multi-agent step to every conversation, and show a \"researching your question\" message so that customers can see something happening while the reply is generated."
+        },
+        {
+          "id": "D",
+          "text": "Reject the multi-agent research completely, since a design that can't meet the 5-second SLA should never be offered to customers in any form, on any channel."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Two value pillars pull against each other: answer quality and an agreed **performance SLA**. Complex comparisons are about 10% of chats, which is more than the 5% the SLA allows to run slow, so running the research step inline, even only for those chats, would break the SLA. The defensible design keeps the live path inside its SLA and offers the slower, higher-quality path as a separate, opt-in service with its own target, agreed with the stakeholder who owns the SLA. Multi-agent systems use far more tokens and time than single-agent ones, so they belong where the extra value is worth it, not on every request.",
+      "whyWrong": {
+        "A": "An SLA agreed with a business owner can't be changed one-sidedly by the delivery team. Adding a slow step to every chat also spends multi-agent cost on the 90% of chats that gain nothing from it.",
+        "C": "A progress message changes how the wait feels, but the SLA measures when replies are complete. Replies would still take more than 30 seconds, so the SLA is still broken.",
+        "D": "This throws away a measured quality gain instead of presenting the trade-off. A separate, opt-in path with its own agreed SLA keeps both the commitment and the value."
+      },
+      "difficulty": 3,
+      "mindset": "Protect the agreed SLA on the main path and give slower, higher-value capabilities their own path and their own agreed target.",
+      "tags": [
+        "value-pillars",
+        "performance-sla",
+        "multi-agent",
+        "stakeholders"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/multi-agent-research-system",
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "p-d1-b3-012",
+      "taskStatementId": "1.6",
+      "stem": "Six months after launch, a customer-service AI pilot reports its success as \"78% of tickets touched by AI\". The executive sponsor approved the project to lower cost per resolved ticket without hurting customer satisfaction, and is now asking whether to expand it. Nobody recorded a cost-per-resolution figure before launch, but finance can rebuild it from last year's data. What should the architect do before recommending expansion?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Set up cost per resolved ticket and CSAT as the success metrics, rebuild the pre-launch baseline, and compare AI-assisted tickets with that baseline."
+        },
+        {
+          "id": "B",
+          "text": "Recommend expansion now, since a 78% touch rate shows strong adoption, and add cost-per-resolution reporting as part of the wider rollout."
+        },
+        {
+          "id": "C",
+          "text": "Raise the touch rate further by sending more ticket types to the AI, then present the higher rate to the sponsor as proof that the pilot delivered value."
+        },
+        {
+          "id": "D",
+          "text": "Survey support agents about whether the AI saves them time on each ticket, and use their average rating as the main evidence for expansion."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The solution must be tied to the **value pillar the sponsor actually chose**, here cost, with a customer-satisfaction guardrail, and measured against a **baseline**. \"Tickets touched\" is an activity metric: it can rise while cost per resolution stays flat or gets worse, for example if AI drafts are rewritten or tickets reopen. Rebuilding the baseline and measuring the agreed outcome produces a decision the sponsor can defend.",
+      "whyWrong": {
+        "B": "Expanding on an activity metric risks scaling something that doesn't deliver the cost outcome it was approved for. Adding measurement later reverses the order of the decision.",
+        "C": "This optimises the vanity metric directly and could make cost or CSAT worse. It confuses adoption with value.",
+        "D": "Perceived time savings are useful input, but subjective ratings don't measure cost per resolution or CSAT, the outcomes the project was approved for."
+      },
+      "difficulty": 3,
+      "mindset": "Tie success to the sponsor's value pillar and a baseline, not to an adoption number.",
+      "tags": [
+        "value-pillars",
+        "cost",
+        "metrics",
+        "stakeholders"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests"
+      ]
+    }
+  ]
+}

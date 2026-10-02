@@ -1,0 +1,321 @@
+{
+  "certId": "professional",
+  "domainId": "d7-dev-productivity",
+  "lessons": [
+    {
+      "id": "p-team-config",
+      "title": "Configuring Claude Code for teams",
+      "estMinutes": 12,
+      "level": "core",
+      "taskStatementIds": [
+        "7.1"
+      ],
+      "eli5": "Think of a company kitchen. Head office posts rules on the wall that nobody can take down (managed settings). Each kitchen keeps a shared recipe binder (the project files in the repo). Each cook can keep a personal notebook (user settings), but it only helps that cook. If you want every new cook to follow a recipe, it has to go in the shared binder, not in someone's personal notebook.",
+      "body": "## Why team configuration is its own skill\n\nOne developer can set up Claude Code any way they like. A team of fifty needs three things that a personal setup doesn't give them:\n\n1. **Consistency**: every developer, and every CI job, gets the same conventions, commands and tools.\n2. **Guardrails**: some rules (no secrets read, no bypass mode) must hold even if a developer edits their own files.\n3. **Distribution**: a new hire should get the whole setup from `git clone` plus one install step, not from a wiki page.\n\nThe exam tests whether you put each piece of configuration in the **scope that reaches the right people with the right strength**.\n\n## The settings scopes and precedence\n\n| Scope | File | Who it affects | Typical use |\n|---|---|---|---|\n| Managed | `managed-settings.json` (+ optional `managed-settings.d/`), MDM/OS policy, or server-managed settings from the claude.ai admin console | Everyone the org deploys it to | Security policy that must not be overridden |\n| Command line | `--settings`, other flags | One session | Experiments, CI runs |\n| Project local | `.claude/settings.local.json` (gitignored) | You, in this repo | Personal tweaks |\n| Shared project | `.claude/settings.json` (committed) | Everyone who clones | Team hooks, team permission rules |\n| User | `~/.claude/settings.json` | You, every repo | Personal defaults |\n\n**Precedence, highest first: managed > command line > local > project > user.** A scalar key set higher wins. Two details are tested often:\n\n- **List-valued keys merge.** `permissions.allow` from user, project and local are combined, not replaced. (A few keys are exceptions and don't merge: `allowedMcpServers` and `fallbackModel`, for example, are taken whole from the highest-precedence source that sets them.)\n- **Managed is not overridable**, apart from a few security keys where a *stricter* value from a lower scope still counts. Don't over-generalize.\n\nFile-based managed settings live in a system directory: `/Library/Application Support/ClaudeCode/` on macOS, `/etc/claude-code/` on Linux and WSL, `C:\\Program Files\\ClaudeCode\\` on Windows.\n\n## Instructions: the CLAUDE.md layers\n\n| Layer | Location | Reaches |\n|---|---|---|\n| Managed policy | Same system directory, `CLAUDE.md` (or a `claudeMd` string inside `managed-settings.json`) | Whole org; individuals can't exclude it |\n| Project | `./CLAUDE.md` or `./.claude/CLAUDE.md` | Team, via git |\n| Path rules | `.claude/rules/*.md` with `paths:` globs | Team, loaded when matching files are read |\n| User | `~/.claude/CLAUDE.md` | Only you |\n| Local | `./CLAUDE.local.md` | Only you, this repo |\n\nThe layers **concatenate**; they don't replace each other. Keep each file short and specific: CLAUDE.md is context, not enforcement.\n\n## What a team commits to the repo\n\n```text\nrepo/\n  CLAUDE.md                 # build/test commands, conventions\n  .mcp.json                 # shared MCP servers (repo root, \"mcpServers\" key)\n  .claude/\n    settings.json           # shared hooks + permission rules\n    rules/testing.md        # paths: [\"**/*.test.ts\"]\n    skills/release/SKILL.md # /release procedure\n    commands/review.md      # /review (classic command form)\n    agents/reviewer.md      # shared subagent\n```\n\nSecrets never go in `.mcp.json`. Use environment variable expansion: `${GITHUB_TOKEN}` or `${API_URL:-https://default}`. Each developer (or the CI secret store) supplies the value.\n\n```json\n{\n  \"mcpServers\": {\n    \"issues\": {\n      \"type\": \"http\",\n      \"url\": \"https://mcp.example.com/mcp\",\n      \"headers\": { \"Authorization\": \"Bearer ${ISSUES_TOKEN}\" }\n    }\n  }\n}\n```\n\nNote that in interactive sessions project MCP servers need a one-time approval per developer (`claude -p` runs load them without prompting), and some project keys (`permissions.allow`, `extraKnownMarketplaces`, most `env` values) apply only after a teammate trusts the folder.\n\n## Plugins and marketplaces: distributing bundles\n\nWhen several repos need the same skills, agents, hooks and MCP servers, copying `.claude/` folders around drifts quickly. A **plugin** bundles those components behind a manifest (`.claude-plugin/plugin.json`). A **marketplace** is a repository with `.claude-plugin/marketplace.json` that lists plugins. Plugin skills are namespaced (`/plugin-name:skill`).\n\n| Need | Mechanism |\n|---|---|\n| Suggest the company marketplace to a repo's users | `extraKnownMarketplaces` in `.claude/settings.json` |\n| Turn on specific plugins for a project | `enabledPlugins` |\n| Only allow approved marketplace sources | `strictKnownMarketplaces` (managed) |\n| Block specific marketplace sources | `blockedMarketplaces` (managed) |\n\nPlugins run code with the developer's permissions, and every enabled plugin's skill descriptions cost context on each turn. Install what the team uses, not everything available.\n\n## Other org-level levers\n\n- `requiredMinimumVersion` to keep everyone on a supported build.\n- `forceLoginMethod` / `forceLoginOrgUUID` so people sign in to the company org, not a personal account.\n- Managed MCP: `managed-mcp.json`, plus `allowedMcpServers`, `deniedMcpServers`, `allowManagedMcpServersOnly`.\n- `allowManagedHooksOnly` so only org-approved hooks run.\n\n## Worked example\n\nA platform team rolls Claude Code out to 40 engineers across 12 repos.\n\n1. **Managed settings** (pushed by MDM): deny reading `.env` files, disable bypass mode, allow only the internal marketplace, require a minimum version.\n2. **Internal marketplace** with a `platform-standards` plugin: the `/release` skill, a `security-reviewer` subagent, a formatter hook.\n3. **Each repo** commits `CLAUDE.md` (its own build commands), `.claude/rules/` for scattered test files, `.mcp.json` with `${VAR}` placeholders, and `enabledPlugins` for the standards plugin.\n4. **Personal preferences** (theme, a favourite model) stay in each developer's user settings.\n\nEach decision answers one question: *who must receive this, and must it be enforceable?*\n",
+      "visualId": "claude-code-config",
+      "keyTakeaways": [
+        "Precedence is managed > command line > local > project > user; list-valued keys such as permissions.allow merge across scopes.",
+        "Anything the whole team must receive goes in files committed to the repo (CLAUDE.md, .claude/settings.json, .claude/rules, .claude/skills or commands, .mcp.json), never in ~/.claude or ~/.claude.json.",
+        "Anything that must hold even if a developer edits their own files goes in managed settings (or a managed CLAUDE.md for org-wide instructions).",
+        "Keep secrets out of .mcp.json with ${VAR} or ${VAR:-default} expansion.",
+        "Plugins bundle skills, agents, hooks and MCP servers; marketplaces distribute them; managed strictKnownMarketplaces / blockedMarketplaces control which sources are allowed."
+      ],
+      "examTips": [
+        "Ask two questions of every option: does this location reach everyone who needs it, and can a developer override it? Shared = repo; unoverridable = managed.",
+        "If a stem says 'org-wide' or 'must not be overridden', the answer is managed settings, not a stronger line in the project CLAUDE.md.",
+        "When a stem mentions many repos needing the same skills and hooks, look for plugins plus a marketplace rather than copying .claude folders.",
+        "Expect version-drift wording: the guide-era answer for a shared slash command is .claude/commands/ in the repo; current docs also accept .claude/skills/."
+      ],
+      "commonTraps": [
+        "Putting team instructions in ~/.claude/CLAUDE.md or a team MCP server in ~/.claude.json: both are personal and never reach teammates.",
+        "Assuming project settings beat local settings: local (.claude/settings.local.json) is higher.",
+        "Thinking a user-level allow list replaces the project's list: allow lists merge.",
+        "Committing API keys inside .mcp.json instead of ${VAR} placeholders.",
+        "Inventing config files such as .claude/config.json or a standalone hooks file for project config; hooks live under the hooks key in settings.json (only plugins use hooks/hooks.json)."
+      ],
+      "resources": [
+        {
+          "title": "Claude Code settings and precedence",
+          "url": "https://code.claude.com/docs/en/settings",
+          "type": "docs"
+        },
+        {
+          "title": "Deploy managed settings",
+          "url": "https://code.claude.com/docs/en/managed-settings",
+          "type": "docs"
+        },
+        {
+          "title": "How Claude remembers your project (CLAUDE.md)",
+          "url": "https://code.claude.com/docs/en/memory",
+          "type": "docs"
+        },
+        {
+          "title": "Plugins",
+          "url": "https://code.claude.com/docs/en/plugins",
+          "type": "docs"
+        },
+        {
+          "title": "MCP in Claude Code (scopes, .mcp.json)",
+          "url": "https://code.claude.com/docs/en/mcp",
+          "type": "docs"
+        },
+        {
+          "title": "Claude Code in Action (Anthropic Academy)",
+          "url": "https://anthropic.skilljar.com/claude-code-in-action",
+          "type": "course"
+        }
+      ]
+    },
+    {
+      "id": "p-permissions-at-scale",
+      "title": "Permissions and safety for teams",
+      "estMinutes": 11,
+      "level": "core",
+      "taskStatementIds": [
+        "7.1"
+      ],
+      "eli5": "Giving Claude Code to a whole team is like handing out building keycards. A sign on the door saying 'please don't enter the server room' is a request. A keycard that simply doesn't open that door is a guarantee. Permissions, hooks and the sandbox are the keycards; CLAUDE.md is the sign.",
+      "body": "## Guidance vs enforcement\n\nThe single most important idea in this lesson: **CLAUDE.md and prompts guide the model; permissions, hooks and the sandbox are enforced by Claude Code itself.** The model can't talk its way past a deny rule. If a requirement uses words like *must never*, *guarantee* or *compliance*, the answer is an enforced control.\n\n| Control | Strength | Good for |\n|---|---|---|\n| CLAUDE.md line | Guidance (probabilistic) | Conventions, \"how we do things here\" |\n| Permission rule (`allow` / `ask` / `deny`) | Enforced by the harness | Which tools and paths are usable |\n| PreToolUse hook | Enforced; can inspect arguments | Rules too subtle for pattern matching |\n| Sandbox | Enforced at OS level for Bash | Filesystem and network limits for commands |\n| Managed settings | Enforced and not overridable | Making the above apply to everyone |\n\n## How permission rules are evaluated\n\nRules look like `Tool` or `Tool(specifier)` in `permissions.allow`, `ask` or `deny`.\n\n- **Order: deny, then ask, then allow. The first match wins, and specificity doesn't matter.** A broad deny `Bash(aws *)` beats a narrow allow `Bash(aws s3 ls)`.\n- **Deny rules apply in every mode**, including `bypassPermissions`.\n- A bare tool name in deny (`WebFetch`, `mcp__payments__*`) removes the tool from Claude's context entirely, which is least privilege at its cleanest.\n- File rules use gitignore-style paths: `Read(./.env)`, `Edit(./src/**)`. A single leading slash (`/src/**`) anchors at the settings file's directory, not the filesystem root; `//` is absolute. A `Read` deny also blocks edits to that path. `.claudeignore` has no effect.\n\n```json\n{\n  \"permissions\": {\n    \"deny\": [\"Read(./.env)\", \"Read(./secrets/**)\", \"Bash(curl *)\", \"WebFetch\"],\n    \"ask\":  [\"Bash(git push *)\"],\n    \"allow\": [\"Bash(npm run test *)\", \"WebFetch(domain:docs.internal.example.com)\"],\n    \"disableBypassPermissionsMode\": \"disable\"\n  }\n}\n```\n\n## Permission modes\n\n| Mode | Behaviour | Where it fits |\n|---|---|---|\n| `default` (Manual) | Reads run freely; asks before edits, shell commands and network access | Reviewing every action yourself |\n| `acceptEdits` | Auto-accepts file edits and common file commands in the working dir | Trusted iterative work |\n| `plan` | Read-only exploration, then a plan for approval | Large or risky changes |\n| `auto` | A background classifier reviews actions instead of you | Long sessions with fewer prompts (newer mode) |\n| `dontAsk` | Auto-denies anything that would prompt; pre-approved tools still run | **Locked-down CI** |\n| `bypassPermissions` | Skips prompts and protected-path checks | Isolated containers/VMs only |\n\nThe exam guide's older list is default, acceptEdits, plan and bypassPermissions. `auto` and `dontAsk` are newer additions you should still recognise; on recent builds `auto` is even the built-in starting mode for interactive terminal sessions, which is why `disableAutoMode` exists.\n\nProtected paths (`.git`, `.claude`, `.mcp.json`, shell rc files and similar) are never auto-approved outside bypass mode, and allow rules don't pre-approve writes to them.\n\n## Org-wide locks (managed settings)\n\n| Key | Effect |\n|---|---|\n| `permissions.disableBypassPermissionsMode` | Nobody can switch to bypass mode |\n| `disableAutoMode` | Turns off the auto mode |\n| `allowManagedPermissionRulesOnly` | Only managed allow/ask/deny rules apply; user and project rules are ignored |\n| `allowManagedHooksOnly` | Only managed hooks run |\n| `allowedMcpServers` / `deniedMcpServers` / `allowManagedMcpServersOnly` | Control which MCP servers can load |\n| `sandbox.network.allowedDomains`, `sandbox.network.allowManagedDomainsOnly` | Network egress for sandboxed Bash |\n\n## Why Bash argument rules are fragile\n\n`Bash(curl https://api.github.com *)` looks like a precise allow, but it matches the literal command string. Options placed before the URL, `http` vs `https`, redirects, shell variables and other tools (`wget`, `python -c`) all slip around it. Likewise `Bash(rm *)` doesn't block `/bin/rm` or `find -delete`. Bash rules are convenience, not a security boundary.\n\nFor a real boundary, layer controls:\n\n1. **Deny the raw network tools** (`Bash(curl *)`, `Bash(wget *)`) and allow `WebFetch(domain:...)` for the hosts you trust.\n2. **Add a PreToolUse hook** that parses the command and exits 2 (or returns `permissionDecision: \"deny\"`) for anything off-policy.\n3. **Turn on the sandbox** with a network allowlist so even a cleverly written command can't reach other hosts.\n\n## CI and unattended runs\n\nA pipeline has nobody to click \"approve\". Choose controls that never wait for a human:\n\n```bash\nclaude -p \"Run the unit tests and summarise failures\" \\\n  --permission-mode dontAsk \\\n  --allowedTools \"Bash(npm run test *),Read\"\n```\n\n`dontAsk` denies anything not pre-approved, so the job neither hangs nor quietly gains new powers. Keep credentials in the CI secret store, and give the job only the tools that job needs.\n\n## Worked example\n\nSecurity asks for three guarantees across 200 developers: Claude never reads `.env` files, never pushes to `main` without a human, and can't call arbitrary internet hosts.\n\n- `.env`: managed `deny: [\"Read(./.env)\", \"Read(./**/.env)\"]`. A line in CLAUDE.md would not be a guarantee.\n- Push: managed `ask: [\"Bash(git push *)\"]` plus branch protection on the Git server. Defence in depth means the Git server still enforces it if a command escapes the pattern.\n- Network: managed sandbox with `allowedDomains`, deny `curl`/`wget`, allow `WebFetch(domain:...)` for approved docs hosts.\n- Lock it: `allowManagedPermissionRulesOnly` and `disableBypassPermissionsMode`, so a project file can't quietly reopen the gap.\n",
+      "visualId": "security-guardrails",
+      "keyTakeaways": [
+        "Permission rules are evaluated deny, then ask, then allow; the first match wins regardless of specificity, and deny applies in every mode including bypassPermissions.",
+        "A bare tool name in deny removes the tool from Claude's context: the cleanest least-privilege move.",
+        "Managed keys such as disableBypassPermissionsMode, allowManagedPermissionRulesOnly and allowManagedHooksOnly make policy unoverridable.",
+        "Bash argument rules are fragile; combine them with WebFetch domain rules, PreToolUse hooks and the sandbox for a real boundary.",
+        "Use dontAsk (plus a narrow --allowedTools list) for locked-down CI; reserve bypassPermissions for isolated containers."
+      ],
+      "examTips": [
+        "Words like 'must never', 'guarantee' or 'auditors require' point to an enforced control (permission rule, hook, sandbox, managed setting), never to a CLAUDE.md instruction.",
+        "Between removing a capability and logging or confirming it, least privilege favours removal when the role never needs it.",
+        "If an option relies on a carefully crafted Bash argument pattern as the security boundary, look for an option that adds a hook, sandbox or domain rule.",
+        "For CI questions, eliminate any answer that would leave the job waiting for an approval prompt."
+      ],
+      "commonTraps": [
+        "Believing a narrower allow rule beats a broader deny rule: specificity doesn't matter; deny wins.",
+        "Believing bypassPermissions skips deny rules: it doesn't.",
+        "Using .claudeignore to hide secrets: it has no effect; use Read deny rules.",
+        "Giving CI bypassPermissions on a shared runner because 'nobody is there to approve': prefer dontAsk with pre-approved tools.",
+        "Treating a hook that exits 1 as a blocker: only exit code 2 (or a deny decision in JSON) blocks."
+      ],
+      "resources": [
+        {
+          "title": "Configure permissions",
+          "url": "https://code.claude.com/docs/en/permissions",
+          "type": "docs"
+        },
+        {
+          "title": "Permission modes",
+          "url": "https://code.claude.com/docs/en/permission-modes",
+          "type": "docs"
+        },
+        {
+          "title": "Deploy managed settings",
+          "url": "https://code.claude.com/docs/en/managed-settings",
+          "type": "docs"
+        },
+        {
+          "title": "Hooks reference",
+          "url": "https://code.claude.com/docs/en/hooks",
+          "type": "docs"
+        },
+        {
+          "title": "Sandboxing",
+          "url": "https://code.claude.com/docs/en/sandboxing",
+          "type": "docs"
+        }
+      ]
+    },
+    {
+      "id": "p-ai-workflows",
+      "title": "AI-assisted developer workflows",
+      "estMinutes": 12,
+      "level": "core",
+      "taskStatementIds": [
+        "7.2"
+      ],
+      "eli5": "Claude Code comes with a toolbox. Hooks are like an automatic dishwasher: they always run at a set moment. Skills are recipe cards you pull out when needed. Subagents are helpers you send off to do a messy search and report back. Worktrees are separate desks so two jobs don't knock each other's papers over. Choosing the right tool for the job is what this lesson is about.",
+      "body": "## Match the tool to the job\n\nMost workflow questions describe a pain point and ask which feature removes it. Learn the mapping below and you'll get most of them right.\n\n| Pain point | Feature | Why it fits |\n|---|---|---|\n| \"Claude sometimes forgets to run the formatter\" | **PostToolUse hook** on `Edit\\|Write` | Runs every time, deterministically |\n| \"Block edits to generated files\" | **PreToolUse hook** (exit 2) or `Edit` deny rule | Enforced before the tool runs |\n| \"Our release has 9 steps people get wrong\" | **Skill** (`.claude/skills/release/SKILL.md`) | Repeatable procedure, loaded only when used |\n| \"Searching the codebase floods the conversation\" | **Subagent** (e.g. built-in Explore) | Separate context; only a summary comes back |\n| \"Two features in parallel keep clobbering each other\" | **Worktrees** (`claude --worktree feat-a`) | Separate checkout and branch per session |\n| \"A 40-file migration with several possible designs\" | **Plan mode** | Explore and agree a plan before any edit |\n| \"Review every PR automatically\" | **`claude -p`** in CI or the **GitHub Action** | Non-interactive, scriptable |\n\n## Hooks: deterministic automation\n\nHooks are shell commands (or HTTP, prompt or agent hooks) that run at lifecycle events. They're configured under the `hooks` key in settings.\n\n```json\n{\n  \"hooks\": {\n    \"PostToolUse\": [{\n      \"matcher\": \"Edit|Write\",\n      \"hooks\": [{ \"type\": \"command\", \"command\": \"npx prettier --write \\\"$(jq -r .tool_input.file_path)\\\"\" }]\n    }]\n  }\n}\n```\n\n- **PreToolUse** can block (exit 2, or JSON `permissionDecision: \"deny\"`) and can even rewrite input.\n- **PostToolUse** runs after the tool. It can't undo the call, but it can format, lint or feed messages back.\n- **Stop** with exit 2 keeps Claude working, which is useful for \"don't finish until tests pass\".\n- **SessionStart** stdout is added as context, for example the current sprint's ticket list.\n\nMatchers are case-sensitive tool names (`Bash`, not `bash`).\n\n## Skills vs CLAUDE.md\n\n| | CLAUDE.md | Skill |\n|---|---|---|\n| Loaded | Every session | Name and description always (unless `disable-model-invocation: true`); body only when invoked |\n| Best for | Universal conventions, build commands | Task procedures, checklists, scripts |\n| Context cost | Always paid | Paid when used (progressive disclosure) |\n\nUseful skill frontmatter: `description` (how Claude decides to use it), `disable-model-invocation: true` (only a human can trigger it, e.g. `/deploy`), `allowed-tools`, and `context: fork` (run in an isolated subagent so verbose output stays out of the main thread).\n\n## Subagents and context hygiene\n\nA subagent gets its own context window and returns a summary. Use one when a task produces lots of intermediate output (searching, reading logs) that the main conversation doesn't need to keep. It doesn't inherit the conversation history, so pass the facts it needs in the delegation prompt. The built-in **Explore** agent is read-only. Custom agents live in `.claude/agents/` with their own `tools` allowlist and `model`. The exam guide calls the spawning tool `Task`; current docs call it `Agent`.\n\n## Plan mode and worktrees\n\n- **Plan mode** (Shift+Tab, `/plan`, or `--permission-mode plan`): read-only exploration that ends in a plan you approve. Use it for architectural, multi-file or ambiguous work. A one-line bug fix doesn't need it.\n- **Worktrees** (`claude --worktree <name>`): each session gets its own checkout under `.claude/worktrees/` on its own branch. Use `.worktreeinclude` to copy gitignored files like `.env`. Subagents can use `isolation: worktree`.\n\n## CI/CD: Claude Code without a human\n\n```bash\nclaude -p \"Review this diff for security issues\" \\\n  --output-format json \\\n  --json-schema \"$(cat findings.schema.json)\" \\\n  --allowedTools \"Read,Bash(git diff *)\"\n```\n\n- `-p` / `--print` runs non-interactively, so the job doesn't hang waiting for input.\n- `--output-format json` plus `--json-schema` returns validated data in the `structured_output` field, ready to post as inline comments.\n- `--bare` skips hooks, skills, custom commands, subagents, plugins, MCP, auto memory and CLAUDE.md, for reproducible runs (it needs `ANTHROPIC_API_KEY`).\n- **GitHub Action** (`anthropics/claude-code-action@v1`): responds to `@claude` mentions when no `prompt` is given; with a `prompt` it runs as automation on any event. CLI flags go in `claude_args`. Keys go in GitHub Secrets.\n\nDesign principles the exam rewards:\n\n- **An independent review instance** beats asking the session that wrote the code to review itself.\n- On re-runs, **pass prior findings** and ask only for new or unresolved issues, so comments aren't duplicated.\n- Blocking pre-merge checks need a synchronous call. Overnight reports can use the **Message Batches API** (50% cheaper; most batches finish within an hour, but there is no latency guarantee and requests still unprocessed after 24 hours expire).\n\n## Worked example\n\nA team's pain points: inconsistent formatting, a fragile release checklist, slow PR reviews, and engineers blocked while one long refactor runs.\n\n1. PostToolUse hook on `Edit|Write` runs the formatter. Committed in `.claude/settings.json`.\n2. A `/release` skill with `disable-model-invocation: true`, so it only runs when a human asks.\n3. A GitHub Action that runs a separate reviewer instance on each PR, outputs JSON findings and is given the previous run's findings.\n4. The refactor runs in plan mode first, then in its own worktree, so other work continues on the main checkout.\n",
+      "visualId": "hooks-lifecycle",
+      "keyTakeaways": [
+        "Hooks give deterministic automation: PostToolUse on Edit|Write for formatting, PreToolUse with exit 2 for guards, Stop with exit 2 to keep Claude working.",
+        "Skills hold repeatable procedures loaded on demand; CLAUDE.md holds universal conventions loaded every session.",
+        "Subagents keep verbose exploration out of the main context, but they must be given the facts they need explicitly.",
+        "Plan mode suits large or ambiguous changes; worktrees isolate parallel sessions on separate branches.",
+        "CI uses claude -p (with --output-format json and --json-schema for machine-readable output), an independent reviewer instance, and prior findings to avoid duplicate comments."
+      ],
+      "examTips": [
+        "When the stem says something 'sometimes' fails to happen and it must always happen, pick a hook over a stronger instruction.",
+        "Pick the lightest feature that solves the stated problem: a one-file fix doesn't need plan mode, worktrees or a new subagent.",
+        "For review quality questions, prefer a separate reviewer instance over self-review in the same session.",
+        "Distinguish blocking checks (synchronous) from overnight or bulk jobs (Batches API) using the latency requirement in the stem."
+      ],
+      "commonTraps": [
+        "Using a PostToolUse hook to prevent an action: the tool has already run; prevention needs PreToolUse.",
+        "Putting a long release procedure in CLAUDE.md, where it costs context every session, instead of a skill.",
+        "Assuming a subagent sees the main conversation history: it doesn't.",
+        "Inventing flags such as --batch or CLAUDE_HEADLESS for CI: the real answer is -p / --print.",
+        "Passing the default GITHUB_TOKEN to the Action and wondering why CI doesn't run on Claude's commits."
+      ],
+      "resources": [
+        {
+          "title": "Hooks guide",
+          "url": "https://code.claude.com/docs/en/hooks-guide",
+          "type": "docs"
+        },
+        {
+          "title": "Skills",
+          "url": "https://code.claude.com/docs/en/skills",
+          "type": "docs"
+        },
+        {
+          "title": "Subagents",
+          "url": "https://code.claude.com/docs/en/sub-agents",
+          "type": "docs"
+        },
+        {
+          "title": "Run Claude Code programmatically (headless)",
+          "url": "https://code.claude.com/docs/en/headless",
+          "type": "docs"
+        },
+        {
+          "title": "Claude Code GitHub Actions",
+          "url": "https://code.claude.com/docs/en/github-actions",
+          "type": "docs"
+        },
+        {
+          "title": "Worktrees",
+          "url": "https://code.claude.com/docs/en/worktrees",
+          "type": "docs"
+        },
+        {
+          "title": "Claude Code best practices",
+          "url": "https://code.claude.com/docs/en/best-practices",
+          "type": "docs"
+        }
+      ]
+    },
+    {
+      "id": "p-debugging-ops",
+      "title": "Debugging and resolving operational issues",
+      "estMinutes": 12,
+      "level": "core",
+      "taskStatementIds": [
+        "7.3"
+      ],
+      "eli5": "When the car won't start, a good mechanic doesn't guess. They check the dashboard lights first: is there fuel, is the battery on, did the key turn? Claude Code has its own dashboard lights (/context, /status, /hooks, /mcp, /doctor). Look before you change anything.",
+      "body": "## The core habit: observe what actually loaded\n\nMost \"Claude Code is ignoring my setup\" tickets have one of three causes: the file **didn't load**, it **loaded from somewhere unexpected**, or **another scope overrode it**. So diagnose by observation, not by rewriting config.\n\n| Question | Command |\n|---|---|\n| Is my CLAUDE.md, rule or skill in context at all? | `/context` (breakdown by category, incl. memory files) |\n| Which memory files exist and where? | `/memory` |\n| Which settings files loaded? Is managed policy in force? | `/status` (\"Setting sources\") |\n| Which allow/deny rules are in effect, and from which file? | `/permissions` |\n| Which hooks are registered? | `/hooks` |\n| Are MCP servers connected or failed? | `/mcp` |\n| Health check, invalid settings, proposed fixes | `/doctor` in a session; `claude doctor` from the shell |\n| Watch evaluation live | `/debug`, `claude --debug`, `claude --debug=mcp` |\n| Is a customisation the culprit? | `claude --safe-mode` (disables CLAUDE.md, skills, plugins, hooks, MCP) |\n\n## Symptom → cause → fix\n\n| Symptom | Likely cause | Fix |\n|---|---|---|\n| New hire doesn't get team conventions | Instructions are in someone's `~/.claude/CLAUDE.md` | Move them to project `CLAUDE.md` or `.claude/rules/` |\n| Subdirectory CLAUDE.md \"ignored\" | Subdirectory files load only when Claude reads a file there | Expected; use `.claude/rules/` with `paths` if needed earlier |\n| Guard hook runs but the action still happens | Script exits **1** (non-blocking) | Exit **2**, or return a JSON deny decision; use PreToolUse, not PostToolUse |\n| Hook never fires | Matcher typo or lowercase (`bash`), matcher written as an array, or hooks put in a standalone file | `\"Bash\"`, `\"Edit\\|Write\"`, under `hooks` in settings.json |\n| Global permissions ignored | Put in `~/.claude.json` (app state) | Use `~/.claude/settings.json` |\n| Project MCP server missing | `.mcp.json` not at repo root, wrong key (`servers`), or approval dismissed | Repo root, `mcpServers`, approve in `/mcp` |\n| MCP server `failed` | Relative path in `command`/`args`, missing env var, bad credentials | Absolute paths, per-server `env`, check auth |\n| MCP connected but zero tools | Server didn't return a tool list | Reconnect in `/mcp`; then `claude --debug=mcp` |\n| CI job hangs | Interactive mode waiting for input | `claude -p`, plus `dontAsk` or `--allowedTools` |\n| Instruction loaded but not followed | Vague, conflicting or buried in a long file | Tighten wording; if it must always happen, use a hook |\n\nIn the Agent SDK, the init message reports each MCP server's status (`connected`, `pending`, `failed`, `needs-auth`, `disabled`). A failed server doesn't throw, and the agent may quietly fall back to built-in tools. Check the status rather than assuming the server is up.\n\n## API errors in operations: 429 vs 529\n\n| | 429 `rate_limit_error` | 529 `overloaded_error` |\n|---|---|---|\n| Meaning | **Your** org, key or project hit its limit | The API is at capacity **across all users** |\n| Claude Code behaviour | Retries temporary throttles with backoff; fails at once on a spend-limit or exhausted-credits 429 | Retries with backoff |\n| What to do | `/status` to confirm the credential; check limits in the console; reduce concurrency (fewer parallel subagents, smaller model) | Check status.claude.com, wait, or switch model with `/model` |\n\nCustom API clients should honour the `retry-after` header and add backoff. Client errors (400, 401, 403, 404, 413) need a fix, not a retry.\n\n## Recovery: checkpoints are not version control\n\n- Every prompt that starts a turn creates a checkpoint (the 100 most recent are kept per session). `/rewind` (or Esc Esc with an empty prompt) restores code, conversation or both.\n- **Checkpoints don't track changes made through Bash** (`rm`, `mv`, `sed -i`, scripts), external editors or other sessions. Git is still the safety net, so commit before risky work.\n- Long sessions that fill up context: `/compact [focus]` summarises and continues; `/clear` starts fresh. A thrashing auto-compaction usually means one huge file or tool output keeps refilling the window. Read it in chunks or hand it to a subagent.\n\n## Reproducibility\n\n\"It works on my machine but not in CI\" is often configuration drift: the developer has personal hooks, plugins or MCP servers the pipeline lacks. Two tools help:\n\n- `--bare` in CI skips hooks, skills, plugins, MCP, auto memory and CLAUDE.md, so every run starts from the same baseline (requires `ANTHROPIC_API_KEY`). Add back only what the job needs with explicit flags.\n- A clean-config test locally: `CLAUDE_CONFIG_DIR` pointed at an empty directory, launched outside the repo. Managed settings still apply.\n\n## Using Claude to debug your systems\n\nClaude Code also helps with incidents in your own systems:\n\n- Pipe logs in: `kubectl logs api-7f9 | claude -p \"Find the first error and its likely cause\"` (piped stdin is capped at 10 MB, so filter first).\n- Connect observability or ticketing tools through MCP so Claude reads real data instead of pasted fragments.\n- Use a read-only subagent or plan mode during an incident so investigation can't change production state, and keep destructive commands behind `ask` or `deny` rules.\n- Ask for a hypothesis, the evidence for it, and a minimal reproduction before accepting a fix.\n",
+      "visualId": "error-recovery",
+      "keyTakeaways": [
+        "Diagnose by observing what loaded: /context, /memory, /status, /permissions, /hooks, /mcp, /doctor (claude doctor from the shell), --debug, --safe-mode.",
+        "A hook that exits 1 doesn't block; only exit 2 (or a JSON deny) blocks, and PostToolUse can never prevent the action.",
+        "429 means your own limit (check credential, limits and concurrency); 529 means platform-wide overload (wait or switch model).",
+        "Checkpoints don't capture Bash or external changes; git remains the recovery mechanism.",
+        "--bare and clean-config tests remove configuration drift when reproducing CI or teammate problems."
+      ],
+      "examTips": [
+        "The best first step in a debugging question is usually the cheapest observation that confirms the cause (/context, /status, /mcp), not a rewrite or a bigger model.",
+        "If a stem says the file loaded but the instruction isn't followed, the fix is wording or enforcement, not location.",
+        "Read error codes carefully: options that treat 429 and 529 the same, or retry a 400, are distractors.",
+        "For 'worked locally, fails in CI' look for configuration drift and reproducibility answers (--bare, explicit flags, committed config)."
+      ],
+      "commonTraps": [
+        "Assuming every subdirectory CLAUDE.md loads at launch.",
+        "Relying on /rewind to undo a script that deleted files through Bash.",
+        "Retrying a spend-limit 429 in a loop; it fails until the limit resets or is raised.",
+        "Treating an MCP 'pending' status as a failure, or assuming a failed server raises an exception.",
+        "Configuring permissions or hooks in ~/.claude.json instead of ~/.claude/settings.json."
+      ],
+      "resources": [
+        {
+          "title": "Debug your configuration",
+          "url": "https://code.claude.com/docs/en/debug-your-config",
+          "type": "docs"
+        },
+        {
+          "title": "Troubleshooting",
+          "url": "https://code.claude.com/docs/en/troubleshooting",
+          "type": "docs"
+        },
+        {
+          "title": "Claude Code error reference",
+          "url": "https://code.claude.com/docs/en/errors",
+          "type": "docs"
+        },
+        {
+          "title": "Checkpointing",
+          "url": "https://code.claude.com/docs/en/checkpointing",
+          "type": "docs"
+        },
+        {
+          "title": "API errors",
+          "url": "https://platform.claude.com/docs/en/api/errors",
+          "type": "docs"
+        },
+        {
+          "title": "Rate limits",
+          "url": "https://platform.claude.com/docs/en/api/rate-limits",
+          "type": "docs"
+        }
+      ]
+    },
+    {
+      "id": "p-d7-drill",
+      "title": "Enablement drill: rolling Claude Code out to a team",
+      "estMinutes": 10,
+      "level": "core",
+      "taskStatementIds": [
+        "7.1",
+        "7.2",
+        "7.3"
+      ],
+      "eli5": "This is a practice round. Each short story describes something going wrong during a team rollout. For each one, find the real cause, then choose the smallest fix that removes it for good.",
+      "body": "## How Domain 7 questions are built\n\nProfessional exam items in this domain are short scenarios: a team rolls out Claude Code and something is off. Four options follow, usually one of each type:\n\n1. **The root-cause fix.** It moves the config to the right scope, uses the right enforcement mechanism, or uses the right flag.\n2. **A prompt fix.** \"Add a sentence to CLAUDE.md telling Claude to...\" It sounds reasonable but can't guarantee anything.\n3. **An over-build.** A new agent, a custom wrapper service or a bigger model: valid engineering, wrong size for the problem.\n4. **A non-existent mechanism.** An invented flag, file or setting (`--batch`, `CLAUDE_HEADLESS`, `.claude/config.json`).\n\nEliminate 4 first (it doesn't exist), then 2 if the stem needs a guarantee, then 3 if a simpler correct option exists.\n\n## Case 1: Conventions that never reach new hires\n\n*A tech lead wrote the team's testing conventions months ago. Veterans see Claude follow them; two new hires don't.*\n\n- **Cause:** the conventions are in the tech lead's `~/.claude/CLAUDE.md` (user scope) and were copied by hand to the veterans. User scope never travels with the repo.\n- **Fix:** move them to the project `CLAUDE.md`, or `.claude/rules/testing.md` with `paths: [\"**/*.test.ts\"]`, and commit.\n- **Check:** a new hire runs `/context` or `/memory` and sees the file listed.\n\n## Case 2: A guard hook that doesn't guard\n\n*A PreToolUse hook should stop Claude editing `migrations/`. The script prints \"blocked\" and exits with code 1, yet edits still go through.*\n\n- **Cause:** exit 1 is a non-blocking error. Only exit 2 (or JSON `permissionDecision: \"deny\"`) blocks.\n- **Fix:** `exit 2` with the reason on stderr. Simpler still: an `Edit(./migrations/**)` deny rule.\n- **Distractor:** \"move the hook to PostToolUse\". By then the edit has already happened.\n\n## Case 3: The CI job that hangs\n\n*A nightly pipeline runs `claude \"summarise yesterday's failed tests\"` and times out after an hour.*\n\n- **Cause:** without `-p`, Claude Code starts an interactive session and waits for input.\n- **Fix:** `claude -p \"...\" --output-format json`, with `--permission-mode dontAsk` and an `--allowedTools` list so it never waits for approval.\n- **Distractors:** `CLAUDE_HEADLESS=true`, `--batch`, or redirecting from `/dev/null`.\n\n## Case 4: The MCP server only one person has\n\n*The team's ticketing MCP server works for the engineer who set it up and nobody else.*\n\n- **Cause:** it was added with the default local scope (or user scope), which lives in that engineer's `~/.claude.json`.\n- **Fix:** `claude mcp add --scope project ...`, which writes `.mcp.json` at the repo root. Commit it; each teammate approves it once in `/mcp`.\n\n## Case 5: Secrets in `.mcp.json`\n\n*A security scan flags an API token committed in `.mcp.json`.*\n\n- **Fix:** rotate the token first (it's in git history), then replace it with `${TICKETS_TOKEN}` and let each developer's environment or the CI secret store supply it.\n- **Distractor:** \"add `.mcp.json` to .gitignore\". That breaks sharing, which was the point of the file.\n\n## Case 6: A rule that must hold for everyone\n\n*Compliance requires that no developer can let Claude read files under `secrets/`, even in their own personal settings.*\n\n- **Fix:** a managed `Read(./secrets/**)` deny rule, plus `allowManagedPermissionRulesOnly` if user or project rules must not apply at all.\n- **Distractors:** a CLAUDE.md instruction (guidance only), or a deny rule in project `.claude/settings.json`, which covers only that repo and can be changed by anyone with commit access.\n\n## Case 7: Skills sprawl across repos\n\n*Twelve repos each carry slightly different copies of the same `/release` skill and reviewer agent.*\n\n- **Fix:** package them as a plugin in an internal marketplace; repos enable it; managed `strictKnownMarketplaces` keeps sources approved.\n\n## Case 8: Claude suddenly erroring for the whole team\n\n*Many developers see 529 errors at once; a single CI job elsewhere sees 429s.*\n\n- **529:** platform overload. Check the status page, wait, or switch model. Raising your org's rate limit won't help.\n- **429 in CI:** your org's limit. Reduce concurrency (fewer parallel jobs or subagents), check which credential is in use, and request a higher tier if the load is real.\n\n## Elimination checklist\n\n| Ask | If yes |\n|---|---|\n| Does the option name a real flag, file or key? | Keep it, otherwise drop it |\n| Does the stem need a guarantee? | Drop prompt-only options |\n| Does the config reach everyone it must? | Repo for the team, managed for the org |\n| Is there a smaller correct fix? | Drop the over-build |\n| Does it fix the cause, not the symptom? | Prefer it over logging, retries or workarounds |\n",
+      "visualId": "exam-strategy",
+      "keyTakeaways": [
+        "User-scope config (~/.claude/CLAUDE.md, ~/.claude.json) never reaches teammates; shared config belongs in committed repo files.",
+        "Guards must exit 2 in PreToolUse (or use a deny rule); exit 1 and PostToolUse don't prevent actions.",
+        "CI hangs are fixed with claude -p plus non-interactive permission settings, not invented flags.",
+        "Secrets in .mcp.json: rotate, then use ${VAR} expansion; don't gitignore the shared file.",
+        "Eliminate non-existent mechanisms first, then prompt-only fixes when a guarantee is needed, then over-builds."
+      ],
+      "examTips": [
+        "Spot the scope in the stem: 'only works for the person who set it up' is almost always a user/local scope problem.",
+        "When two options are both technically valid, the exam favours the one that removes the root cause with the least new machinery.",
+        "Watch for buried qualifiers such as 'even in personal settings', 'every developer' or 'nightly unattended': they decide between project and managed scope, or interactive and -p."
+      ],
+      "commonTraps": [
+        "Fixing a missing-instructions problem by making the CLAUDE.md wording stronger instead of moving the file to the shared scope.",
+        "Gitignoring .mcp.json to hide a secret instead of using ${VAR} and rotating the key.",
+        "Raising rate limits in response to 529 overload errors.",
+        "Choosing a new orchestration agent or wrapper service when a config move solves the problem."
+      ],
+      "resources": [
+        {
+          "title": "Debug your configuration",
+          "url": "https://code.claude.com/docs/en/debug-your-config",
+          "type": "docs"
+        },
+        {
+          "title": "Settings and precedence",
+          "url": "https://code.claude.com/docs/en/settings",
+          "type": "docs"
+        },
+        {
+          "title": "MCP in Claude Code",
+          "url": "https://code.claude.com/docs/en/mcp",
+          "type": "docs"
+        },
+        {
+          "title": "Run Claude Code programmatically (headless)",
+          "url": "https://code.claude.com/docs/en/headless",
+          "type": "docs"
+        },
+        {
+          "title": "Hooks reference (exit codes)",
+          "url": "https://code.claude.com/docs/en/hooks",
+          "type": "docs"
+        }
+      ]
+    }
+  ]
+}

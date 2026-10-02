@@ -1,0 +1,831 @@
+{
+  "certId": "foundations",
+  "domainId": "d5-context",
+  "questions": [
+    {
+      "id": "f-d5-b1-001",
+      "taskStatementId": "5.1",
+      "scenario": "You are building a customer support resolution agent using the Claude Agent SDK. The agent handles high-ambiguity requests like returns, billing disputes, and account issues. It has access to your backend systems through custom Model Context Protocol (MCP) tools (get_customer, lookup_order, process_refund, escalate_to_human). Your target is 80%+ first-contact resolution while knowing when to escalate.",
+      "stem": "A billing-dispute conversation has run for 40 turns. To stay within budget, the agent's harness replaces older turns with a running summary every 10 turns. Reviewers notice that by the end of long chats the agent says things like \"your recent charge\" instead of \"the $184.50 charge on 14 March\", and twice it offered a refund for the wrong amount. With minimal changes to the rest of the system, what is the MOST reliable fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Rewrite the summarization prompt to tell the model to keep every number, date and order ID exactly as written when it condenses older turns."
+        },
+        {
+          "id": "B",
+          "text": "Extract amounts, dates, order numbers and statuses into a structured case-facts block that is re-sent in every request, outside the summarized history."
+        },
+        {
+          "id": "C",
+          "text": "Stop summarizing entirely and send the full raw transcript on every turn, since current models have context windows large enough to hold it."
+        },
+        {
+          "id": "D",
+          "text": "Before issuing any refund, ask the agent to re-read the conversation summary and confirm that the amount it is about to refund matches the summary."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Progressive summarization is lossy by nature: exact values (amounts, dates, IDs, what the customer said they expect) are the first details to blur into vague phrases. The durable fix is to take those transactional facts **out of the summarized stream** and keep them in a persistent case-facts block that is included in every prompt. The summary can then stay short while the facts the agent acts on stay exact. This is a structural change to what the context contains, not a request for the model to try harder.",
+      "whyWrong": {
+        "A": "A better summarization prompt may help a little, but summarizing is still compression, so exact values can still drift. It asks the model to be careful instead of removing the risk.",
+        "C": "A bigger window does not stop accuracy from dropping as the context grows (context rot), and it removes the budget control the team added on purpose. It also costs more on every turn.",
+        "D": "A self-check against the summary compares the refund with the same lossy source that caused the error. If the summary already says the wrong amount, the check passes."
+      },
+      "difficulty": 2,
+      "mindset": "Facts the agent acts on must live outside anything that gets summarized.",
+      "tags": [
+        "case-facts-block",
+        "progressive-summarization",
+        "context-preservation",
+        "customer-support"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents",
+        "https://platform.claude.com/docs/en/build-with-claude/context-windows"
+      ]
+    },
+    {
+      "id": "f-d5-b1-002",
+      "taskStatementId": "5.1",
+      "scenario": "You are building a customer support resolution agent using the Claude Agent SDK. The agent handles high-ambiguity requests like returns, billing disputes, and account issues. It has access to your backend systems through custom Model Context Protocol (MCP) tools (get_customer, lookup_order, process_refund, escalate_to_human). Your target is 80%+ first-contact resolution while knowing when to escalate.",
+      "stem": "Each call to the lookup_order MCP tool returns about 45 fields (warehouse codes, carrier events, tax lines, internal audit flags). For return requests the agent only needs order ID, purchase date, item SKUs, amount paid and delivery status. Customers with several orders now push the conversation toward the context limit within a few turns, and the agent's answers get less precise as the session goes on. Which change addresses the root cause MOST directly?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Move to a model tier with a larger context window so that sessions with many order lookups no longer get close to the limit."
+        },
+        {
+          "id": "B",
+          "text": "Add a system-prompt instruction telling the agent to ignore irrelevant fields in order lookups and to focus only on return-related data."
+        },
+        {
+          "id": "C",
+          "text": "Have the agent call lookup_order only once per session and then reuse that first result for every later question about any order."
+        },
+        {
+          "id": "D",
+          "text": "Trim each lookup_order result in code to the return-relevant fields before it is added to the conversation, so unused fields never enter context."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "Tool results pile up in context and use tokens out of proportion to how useful they are. When 40+ fields come back and only about 5 matter, the fix is to **filter the result deterministically before it reaches the model** (in the tool wrapper, the MCP server response, or a post-tool step in the harness). This keeps the context small and high-signal. Anthropic's context-engineering guidance calls this finding the smallest set of high-signal tokens.",
+      "whyWrong": {
+        "A": "A larger window postpones the limit but keeps the noise. Recall still drops as context grows, and every turn costs more.",
+        "B": "Telling the model to ignore fields does not remove them. They still use tokens and still dilute attention. This is the prompt-instead-of-control trap.",
+        "C": "Reusing one stale lookup gives wrong answers for other orders and for status changes. It saves tokens by giving up correctness."
+      },
+      "difficulty": 2,
+      "mindset": "Curate what enters context in code; don't ask the model to ignore what you could have removed.",
+      "tags": [
+        "tool-output-trimming",
+        "context-budget",
+        "context-rot",
+        "customer-support"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents",
+        "https://platform.claude.com/docs/en/build-with-claude/context-windows"
+      ]
+    },
+    {
+      "id": "f-d5-b1-003",
+      "taskStatementId": "5.1",
+      "scenario": "You are building a multi-agent research system using the Claude Agent SDK. A coordinator agent delegates to specialized subagents: one searches the web, one analyzes documents, one synthesizes findings, and one generates reports. The system researches topics and produces comprehensive, cited reports.",
+      "stem": "The coordinator concatenates the outputs of six search and analysis subagents into one long input (about 60k tokens) and passes it to the synthesis subagent. Audits show that findings from the first and last subagents almost always reach the final report, while important findings from subagents three and four are often missing, even though they are in the input. What is the BEST change to the way the synthesis input is assembled?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Open the input with a short summary of the key findings from every subagent, then put each subagent's detailed results under its own clearly labeled section header."
+        },
+        {
+          "id": "B",
+          "text": "Shuffle the order of subagent outputs randomly on each run, so that no single subagent's findings are always placed in the middle of the combined input."
+        },
+        {
+          "id": "C",
+          "text": "Add a line to the synthesis prompt that says every section of the input is equally important and that none of the findings may be left out."
+        },
+        {
+          "id": "D",
+          "text": "Split the synthesis into six separate calls, one per subagent output, and concatenate the six partial reports to form the final report."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "This is the **lost-in-the-middle** effect: models handle the beginning and end of long inputs reliably but can skip material in the middle. The fix is structural. Put a summary of the key findings first, where attention is strongest, and organize the details under explicit section headers so each part is easy to locate. Anthropic's long-context guidance likewise recommends structuring multi-document inputs with clear tags and metadata (for example `<document>` with `<source>`) rather than one undifferentiated block.",
+      "whyWrong": {
+        "B": "Shuffling only changes which findings get lost on each run. It makes the omissions random instead of fixing them, and it makes the system harder to debug.",
+        "C": "Saying everything is important does not change how attention spreads over a long input. It is an instruction where a structural fix is needed.",
+        "D": "Six partial reports joined together lose cross-source synthesis (comparing, reconciling, removing duplicates). It is more machinery and a worse report."
+      },
+      "difficulty": 2,
+      "mindset": "Position and structure are levers: key findings first, details under explicit headers.",
+      "tags": [
+        "lost-in-the-middle",
+        "synthesis",
+        "input-structure",
+        "multi-agent"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices#long-context-prompting",
+        "https://platform.claude.com/docs/en/build-with-claude/context-windows"
+      ]
+    },
+    {
+      "id": "f-d5-b1-004",
+      "taskStatementId": "5.1",
+      "stem": "A developer builds a simple chat feature on the Claude Messages API. On each user turn the backend sends the system prompt plus only the user's newest message. Users complain that the assistant \"forgets\" what they said two messages earlier, for example their name or the product they asked about. What is the cause, and what is the correct fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The model's context window is too small for the chat, so the developer should move to a model with a larger context window."
+        },
+        {
+          "id": "B",
+          "text": "The system prompt should tell the assistant to remember earlier details of the conversation and to refer back to them when it answers."
+        },
+        {
+          "id": "C",
+          "text": "The Messages API is stateless, so the backend must send the full conversation history (prior user and assistant turns) in every request."
+        },
+        {
+          "id": "D",
+          "text": "The API is caching responses between turns, so the developer should turn off prompt caching for this endpoint so that each request starts fresh."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "The Messages API keeps no conversation state between calls. The docs say you **always send the full conversational history**. If earlier turns are not in the `messages` array, the model has never seen them. To keep the conversation coherent, the backend has to pass the prior user and assistant turns on every request.",
+      "whyWrong": {
+        "A": "Two short messages are nowhere near any context limit. The earlier turns were never sent, so a bigger window changes nothing.",
+        "B": "The model cannot remember content it was never given. An instruction to remember has nothing to work with.",
+        "D": "Prompt caching only reuses identical prefixes to save cost and latency. It does not drop or replace conversation content, so it is not the cause."
+      },
+      "difficulty": 1,
+      "mindset": "The API is stateless: continuity is the caller's job.",
+      "tags": [
+        "messages-api",
+        "conversation-history",
+        "stateless"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/working-with-messages"
+      ]
+    },
+    {
+      "id": "f-d5-b1-005",
+      "taskStatementId": "5.1",
+      "scenario": "You are building a customer support resolution agent using the Claude Agent SDK. The agent handles high-ambiguity requests like returns, billing disputes, and account issues. It has access to your backend systems through custom Model Context Protocol (MCP) tools (get_customer, lookup_order, process_refund, escalate_to_human). Your target is 80%+ first-contact resolution while knowing when to escalate.",
+      "stem": "In one session a customer raises three separate issues: a damaged item on order #A1 (wants a replacement), a duplicate charge on order #B7 (wants a refund of the second charge) and a delivery address change for order #C3. The harness condenses older turns into a rolling summary every 10 turns to stay within budget. Partway through, the agent confuses the issues and offers to refund order #A1. The team wants the agent to keep each issue's details straight across the whole session. Which TWO changes are MOST effective? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Tell the agent in the system prompt to handle only one issue per session and to ask the customer to open a new chat for each additional issue."
+        },
+        {
+          "id": "B",
+          "text": "Keep a structured record per order (order ID, issue type, requested outcome, amount, status) in a separate context layer, updated as each issue progresses."
+        },
+        {
+          "id": "C",
+          "text": "Add several few-shot examples of multi-issue conversations to the system prompt that show the agent keeping each order's details clearly separate."
+        },
+        {
+          "id": "D",
+          "text": "Summarize the conversation more often so that the context stays short and the agent has much less text in which it can mix up the three issues."
+        },
+        {
+          "id": "E",
+          "text": "Re-send the exact case facts (amounts, dates, order numbers) in every request as a block that sits outside the rolling summary, so they are never condensed."
+        }
+      ],
+      "correct": [
+        "B",
+        "E"
+      ],
+      "explanation": "For multi-issue sessions the exam guide's pattern is to **extract structured issue data into a separate context layer** keyed by order ID, together with a **persistent case-facts block** that sits outside summarized history. Both are structural: the details stay attached to the right order however long the conversation gets, and nothing the agent acts on depends on a lossy summary.",
+      "whyWrong": {
+        "A": "Forcing one issue per chat hurts first-contact resolution, which is the scenario's main target. It avoids the problem instead of solving it.",
+        "C": "Few-shot examples show the desired behavior but give no reliable state. The details still sit only in the transcript, where they can be confused or summarized away.",
+        "D": "More frequent summarization is exactly how exact values and which-order-is-which get lost. It shrinks the text but makes the mix-ups more likely, not less."
+      },
+      "difficulty": 3,
+      "mindset": "Multiple issues mean multiple structured records, not one longer transcript.",
+      "tags": [
+        "case-facts-block",
+        "multi-issue",
+        "structured-state",
+        "customer-support"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents",
+        "https://platform.claude.com/docs/en/build-with-claude/context-windows"
+      ]
+    },
+    {
+      "id": "f-d5-b1-006",
+      "taskStatementId": "5.1",
+      "scenario": "You are building a multi-agent research system using the Claude Agent SDK. A coordinator agent delegates to specialized subagents: one searches the web, one analyzes documents, one synthesizes findings, and one generates reports. The system researches topics and produces comprehensive, cited reports.",
+      "stem": "The web-search and document-analysis subagents currently return long narrative write-ups: their full reasoning, every page they read and quotes of up to several pages. The synthesis subagent works with a deliberately small context budget and has started dropping citations and mixing up which statistic came from which year. What is the MOST effective change?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Give the synthesis subagent the same large context budget as the coordinator, so it can take in the complete narrative outputs without truncating them."
+        },
+        {
+          "id": "B",
+          "text": "Have the coordinator summarize each upstream output into a short paragraph before passing it on, so the synthesis input fits within its budget."
+        },
+        {
+          "id": "C",
+          "text": "Change the upstream subagents to return structured findings (claim, source URL, publication date, excerpt, relevance score) instead of narrative reasoning."
+        },
+        {
+          "id": "D",
+          "text": "Add a verification subagent after synthesis that re-checks every citation and statistic in the draft report against the original long upstream outputs."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "When the downstream agent has a small context budget, fix the upstream contract. Have each upstream agent return **structured data**: key facts, citations, relevance scores and metadata such as dates and source locations, not verbose reasoning chains. This shrinks the input and keeps the claim-to-source and claim-to-date links that synthesis needs. Anthropic's multi-agent research write-up describes the same idea: subagents return compact, high-signal results to the lead agent.",
+      "whyWrong": {
+        "A": "A bigger budget brings back the cost and context-rot problems the small budget was meant to prevent. The noise and lost metadata would still be in the input.",
+        "B": "Free-text summarization is where attribution and dates get lost. Another compression step adds a second chance to drop the very metadata that is going missing.",
+        "D": "A citation-check pass can be a useful final safeguard (Anthropic's research system runs one), but it adds a whole agent to catch errors that the input contract caused. It cannot restore dates and attribution that reached synthesis buried in prose, and it leaves the budget problem untouched."
+      },
+      "difficulty": 3,
+      "mindset": "Fix the producer's output contract instead of compensating downstream.",
+      "tags": [
+        "structured-handoff",
+        "metadata",
+        "context-budget",
+        "multi-agent",
+        "provenance"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/multi-agent-research-system",
+        "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents"
+      ]
+    },
+    {
+      "id": "f-d5-b1-007",
+      "taskStatementId": "5.3",
+      "scenario": "You are building a multi-agent research system using the Claude Agent SDK. A coordinator agent delegates to specialized subagents: one searches the web, one analyzes documents, one synthesizes findings, and one generates reports. The system researches topics and produces comprehensive, cited reports.",
+      "stem": "During a run on \"municipal heat-pump subsidies in Nordic countries\", the web-search subagent's search backend timed out on every query. The subagent caught the exception and returned `{\"status\": \"ok\", \"results\": []}`. The coordinator then wrote a report stating that \"no published research exists on this topic.\" What change would MOST directly prevent this kind of wrong conclusion?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add an instruction to the coordinator's prompt to be skeptical of empty search results and to say that research may exist even when nothing is returned."
+        },
+        {
+          "id": "B",
+          "text": "Report the timeout as a structured failure (failure type, queries attempted, partial results) that is clearly distinct from a successful search with no matches."
+        },
+        {
+          "id": "C",
+          "text": "Have the subagent keep retrying failed searches with backoff until the backend responds, so it does not have to hand the coordinator an empty result."
+        },
+        {
+          "id": "D",
+          "text": "Have the coordinator run the searches itself instead of delegating, so that it sees the raw timeout errors directly when they happen."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "The root cause is **silent error suppression**: an access failure was reported as a valid empty result. An access failure (timeout, needs a retry decision) and an empty result (the query worked, nothing matched) mean very different things. Returning a structured error (failure type, what was attempted, partial results, possible alternatives) lets the coordinator retry, try another source, or mark the gap, instead of reaching a false conclusion.",
+      "whyWrong": {
+        "A": "A coordinator told to be skeptical still cannot tell a real empty result from a hidden failure. It just becomes vague in both cases. The information it needs was thrown away upstream.",
+        "C": "Open-ended retries can hang the workflow on a backend that is down. Local retries should be bounded, and anything still unresolved should be reported upward with context.",
+        "D": "Pulling the work back into the coordinator gives up the isolation and parallelism of delegation. The fix belongs in the subagent's error contract."
+      },
+      "difficulty": 2,
+      "mindset": "An empty result and a failed lookup are different facts; never let one masquerade as the other.",
+      "tags": [
+        "error-propagation",
+        "empty-vs-failure",
+        "silent-suppression",
+        "multi-agent"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/multi-agent-research-system",
+        "https://modelcontextprotocol.io/specification/2025-06-18/server/tools"
+      ]
+    },
+    {
+      "id": "f-d5-b1-008",
+      "taskStatementId": "5.3",
+      "stem": "An architect is setting the error-handling policy for subagents in a coordinator-subagent system. Subagents call external APIs that sometimes return brief rate-limit or timeout errors, and occasionally fail for good (for example, a revoked credential). Which TWO policies BEST support reliable recovery across the system? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Subagents retry transient failures locally with a bounded number of attempts before they report anything back to the coordinator."
+        },
+        {
+          "id": "B",
+          "text": "A subagent failure stops the workflow and returns an error to the user, so the coordinator does not build results on top of an incomplete run."
+        },
+        {
+          "id": "C",
+          "text": "Subagents map each error to a short standard status such as \"tool unavailable\", so the coordinator receives one consistent format it can handle uniformly."
+        },
+        {
+          "id": "D",
+          "text": "Errors a subagent cannot resolve go to the coordinator with the failure type, what was attempted, partial results and possible alternatives."
+        },
+        {
+          "id": "E",
+          "text": "Subagents return an empty successful result when an error persists, so that the coordinator's synthesis step can keep going without interruption."
+        }
+      ],
+      "correct": [
+        "A",
+        "D"
+      ],
+      "explanation": "The exam guide's pattern is to **recover locally from transient failures** (bounded retries inside the subagent) and **propagate only what cannot be resolved**, with structured context: failure type, attempted query, partial results and alternatives. The coordinator then has what it needs to retry elsewhere, reroute, or continue with an annotated gap. Anthropic's research system combines the model's adaptability with deterministic safeguards such as retry logic.",
+      "whyWrong": {
+        "B": "Ending the whole workflow on one failure is a named anti-pattern. A single bad source should lower coverage, not throw away all the other results.",
+        "C": "Generic error statuses hide the context the coordinator needs. It cannot tell a rate limit (retry later) from a revoked credential (give up or escalate).",
+        "E": "Reporting a failure as an empty success is silent suppression. Downstream agents will treat missing data as a real finding of nothing."
+      },
+      "difficulty": 2,
+      "mindset": "Recover locally when you can; when you can't, escalate with enough context for someone else to decide.",
+      "tags": [
+        "error-propagation",
+        "local-recovery",
+        "structured-errors",
+        "multi-agent"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/multi-agent-research-system",
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "f-d5-b1-009",
+      "taskStatementId": "5.3",
+      "scenario": "You are building a multi-agent research system using the Claude Agent SDK. A coordinator agent delegates to specialized subagents: one searches the web, one analyzes documents, one synthesizes findings, and one generates reports. The system researches topics and produces comprehensive, cited reports.",
+      "stem": "A report on \"battery recycling regulation\" needs input from four sources: EU legislation, US federal guidance, industry association data and academic papers. After bounded retries, the industry-association source is still unreachable. The other three subagents returned solid, well-cited findings. What should the system do to produce the MOST trustworthy output?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Stop the run and return an error to the user, since a report built without one of the four planned sources cannot be considered complete."
+        },
+        {
+          "id": "B",
+          "text": "Have the synthesis subagent fill in the missing industry view from its general training knowledge, so the report still covers all four planned areas."
+        },
+        {
+          "id": "C",
+          "text": "Produce the report from the three available sources and leave the industry section out without comment, so that readers are not distracted by gaps."
+        },
+        {
+          "id": "D",
+          "text": "Produce the report from the three sources, with coverage annotations marking well-supported findings and the area left uncovered by the unavailable source."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "The guide asks for synthesis output that carries **coverage annotations**: which findings are well supported and which topic areas have gaps because sources were unavailable. This is graceful degradation that stays honest. The user gets the value of the three good sources and knows exactly where the evidence is thin.",
+      "whyWrong": {
+        "A": "Ending everything because of one failure throws away three good sources. It is the terminate-on-single-failure anti-pattern.",
+        "B": "Filling the gap from model knowledge produces uncited claims next to cited ones. That breaks provenance and invites hallucination in a report that promises citations.",
+        "C": "Leaving the gap out without comment is silent suppression at the report level. Readers will assume the industry view was checked and had nothing to add."
+      },
+      "difficulty": 2,
+      "mindset": "Degrade gracefully and say so: partial results with explicit gaps beat silence or fabrication.",
+      "tags": [
+        "coverage-annotations",
+        "graceful-degradation",
+        "error-propagation",
+        "synthesis"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/multi-agent-research-system",
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-hallucinations"
+      ]
+    },
+    {
+      "id": "f-d5-b1-010",
+      "taskStatementId": "5.3",
+      "scenario": "You are building developer productivity tools using the Claude Agent SDK. The agent helps engineers explore unfamiliar codebases, understand legacy systems, generate boilerplate code, and automate repetitive tasks. It uses the built-in tools (Read, Write, Bash, Grep, Glob) and integrates with Model Context Protocol (MCP) servers.",
+      "stem": "A team's custom MCP server exposes a `search_runbooks` tool to their developer-productivity agent. When the upstream wiki API rejects a request (expired token, bad query syntax or a timeout), the server lets the exception escape, so the client receives a generic JSON-RPC protocol error (`-32603 Internal error`) and the model sees only that the call failed. The agent then usually gives up or repeats the same failing call. Which redesign follows the MCP specification and BEST helps the agent recover?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Return upstream failures as a normal tool result with `isError: true`, whose content gives a clear message, an error category and whether a retry is likely to help."
+        },
+        {
+          "id": "B",
+          "text": "Keep returning the JSON-RPC protocol error, and add a line to the agent's system prompt telling it to try a different query whenever any tool call fails."
+        },
+        {
+          "id": "C",
+          "text": "Catch every upstream failure inside the server and return an empty list of runbooks marked as success, so the agent always gets a well-formed response."
+        },
+        {
+          "id": "D",
+          "text": "Wrap every upstream call in the server with an automatic retry loop using exponential backoff, and raise the protocol error only once all retries are used up."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The MCP spec separates **protocol errors** (JSON-RPC `error` objects for unknown tools, invalid arguments, server faults) from **tool execution errors** (API failures, bad input data, business-logic errors), which are returned *inside the tool result* with `isError: true` so the model can read them and adapt. Adding structure to that content (category, whether a retry is likely to help, a readable explanation) lets the agent tell an expired token (stop and escalate) from bad syntax (fix the query) from a timeout (retry).",
+      "whyWrong": {
+        "B": "A prompt rule cannot make up for an error the model never sees. A protocol error gives the agent nothing to reason about, and a different query will not fix an expired token.",
+        "C": "Returning an empty success hides the failure. The agent will conclude that no runbook exists, which is worse than failing visibly.",
+        "D": "Blind retries do nothing for auth or syntax errors, and the final failure still reaches the agent as a protocol error with no usable context. Retries belong behind a structured error, not instead of one."
+      },
+      "difficulty": 3,
+      "mindset": "Errors are information for the model: return them in-band, structured, and actionable.",
+      "tags": [
+        "mcp",
+        "isError",
+        "structured-errors",
+        "tool-design"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-06-18/server/tools",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls"
+      ]
+    },
+    {
+      "id": "f-d5-b1-011",
+      "taskStatementId": "5.3",
+      "stem": "A document-analysis subagent queries an internal contracts database for agreements with a supplier that the company has never worked with. The query runs successfully and matches zero rows. How should the subagent report this to the coordinator?",
+      "options": [
+        {
+          "id": "A",
+          "text": "As an error with a \"not found\" failure type, so the coordinator knows to retry the query against a backup database before it continues."
+        },
+        {
+          "id": "B",
+          "text": "As an error with a generic \"lookup failed\" status, so the coordinator treats every non-positive result the same way and stays consistent."
+        },
+        {
+          "id": "C",
+          "text": "As a successful result with an empty match list, together with the query that was run, so the coordinator can treat \"no contracts\" as a real finding."
+        },
+        {
+          "id": "D",
+          "text": "Omit the supplier from its findings and let the coordinator infer from the absence that nothing was found, which keeps the handoff shorter."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "This is a **valid empty result**: the system was reached and correctly found nothing. It should be reported as a success with no matches (ideally with the query attempted), so the coordinator can rely on \"no existing contracts\" as a finding. Errors are for access failures, such as timeouts or permission problems, where a retry or reroute decision is needed.",
+      "whyWrong": {
+        "A": "Calling a successful empty query an error triggers pointless retries and failovers. It also blurs the difference the coordinator depends on.",
+        "B": "A generic failure status is wrong here and hides useful information. The coordinator cannot tell this from a real outage.",
+        "D": "Absence is not a finding. The coordinator cannot tell a supplier that was checked and had no contracts from one that was never checked, so the gap looks like an omission in the research."
+      },
+      "difficulty": 1,
+      "mindset": "Zero matches from a successful query is an answer, not an error.",
+      "tags": [
+        "empty-vs-failure",
+        "error-propagation",
+        "multi-agent"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-06-18/server/tools",
+        "https://www.anthropic.com/engineering/multi-agent-research-system"
+      ]
+    },
+    {
+      "id": "f-d5-b1-012",
+      "taskStatementId": "5.3",
+      "scenario": "You are building a customer support resolution agent using the Claude Agent SDK. The agent handles high-ambiguity requests like returns, billing disputes, and account issues. It has access to your backend systems through custom Model Context Protocol (MCP) tools (get_customer, lookup_order, process_refund, escalate_to_human). Your target is 80%+ first-contact resolution while knowing when to escalate.",
+      "stem": "Logs show that when get_customer fails, the agent behaves the same way whatever the cause. For a 2-second database timeout it immediately tells the customer it cannot help. For a permission-denied error on a restricted VIP account it retries the same call five times before giving up. The MCP tool currently returns `{\"isError\": true, \"content\": [{\"type\": \"text\", \"text\": \"Operation failed\"}]}` for every failure. What is the MOST effective fix with the fewest moving parts?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add guidance to the system prompt describing how the agent should react to timeouts and to permission problems, with two few-shot examples of each."
+        },
+        {
+          "id": "B",
+          "text": "Raise the database timeout in get_customer from 2 seconds to 10 seconds so that transient timeouts happen far less often in production traffic."
+        },
+        {
+          "id": "C",
+          "text": "Add a separate error-triage subagent that reads each failure message and decides whether the main agent should retry, escalate or apologize."
+        },
+        {
+          "id": "D",
+          "text": "Return a structured error from get_customer with an error category (such as transient or permission), a retryable flag and a short explanation."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "The agent cannot behave differently for different failures because the tool gives it identical, contentless errors. Make the tool's error contract carry the **category** and **whether a retry helps**. The agent (or harness code) can then retry the timeout and escalate the permission case through escalate_to_human without wasted retries. This fixes the root cause at the source with no new components.",
+      "whyWrong": {
+        "A": "Prompt guidance and examples cannot help when the error text is the same for both cases. The model has nothing to tell them apart.",
+        "B": "A longer timeout may reduce one failure type but does nothing for permission errors. Timeouts will still happen and still look like every other failure.",
+        "C": "A triage subagent is over-engineering, and it would be fed the same \"Operation failed\" text, so it could not decide any better than the main agent."
+      },
+      "difficulty": 3,
+      "mindset": "If the caller must react differently, the error must say what's different.",
+      "tags": [
+        "structured-errors",
+        "isError",
+        "retryable",
+        "customer-support",
+        "escalation"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-06-18/server/tools",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls"
+      ]
+    },
+    {
+      "id": "f-d5-b1-013",
+      "taskStatementId": "5.5",
+      "scenario": "You are building a structured data extraction system using Claude. The system extracts information from unstructured documents, validates the output using JavaScript Object Notation (JSON) schemas, and maintains high accuracy. It must handle edge cases gracefully and integrate with downstream systems.",
+      "stem": "After three months, the extraction pipeline (invoices, purchase orders, customs declarations and credit notes) scores 97% field-level accuracy overall against human-verified samples. Finance proposes removing human review for every extraction the model marks as high confidence. Before agreeing, what should the architect do FIRST?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Break accuracy down by document type and by field, and confirm each segment (including low-volume customs declarations) meets the bar before review is reduced."
+        },
+        {
+          "id": "B",
+          "text": "Approve the change, since 97% overall accuracy is well above the team's original target, and plan to revisit it only if downstream teams start reporting errors."
+        },
+        {
+          "id": "C",
+          "text": "Switch the pipeline to a larger model first, so that the accuracy margin is higher before human review for high-confidence extractions is reduced."
+        },
+        {
+          "id": "D",
+          "text": "Add a self-verification step in which the model re-reads each document and confirms its own high-confidence extractions before they skip review."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "An aggregate figure such as 97% can hide **poor performance in particular segments**. If invoices make up most of the volume, a customs-declaration field could be wrong much more often and barely move the overall number. The guide's skill is to **analyze accuracy by document type and field** and confirm consistent performance across all segments before reducing human review.",
+      "whyWrong": {
+        "B": "Approving on the aggregate alone means waiting for downstream damage to show the weak segments. The error report then becomes the monitoring system.",
+        "C": "A bigger model is a guess that does not answer the question that matters: where is the system weak? You still have to measure per segment.",
+        "D": "Self-verification uses the same model's judgment. It is not calibrated evidence and cannot show which segments fall short."
+      },
+      "difficulty": 2,
+      "mindset": "Averages hide failures: segment before you automate.",
+      "tags": [
+        "human-review",
+        "segmented-accuracy",
+        "aggregate-metrics",
+        "data-extraction"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests",
+        "https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents"
+      ]
+    },
+    {
+      "id": "f-d5-b1-014",
+      "taskStatementId": "5.5",
+      "stem": "A team has automated its high-confidence document extractions after confirming per-segment accuracy, and only low-confidence items now go to human reviewers. Six months later, a supplier quietly changes its invoice layout, and a field starts being extracted wrongly with high confidence. Which ongoing practice would MOST reliably have caught this early?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Re-running the original validation set every month to confirm that the overall accuracy figure has not dropped below the threshold set at launch."
+        },
+        {
+          "id": "B",
+          "text": "Sending a stratified random sample of high-confidence extractions to human reviewers on an ongoing basis, to measure error rates and catch new error patterns."
+        },
+        {
+          "id": "C",
+          "text": "Lowering the confidence threshold over time so that more extractions are routed to human review as the system gets older and more drift builds up."
+        },
+        {
+          "id": "D",
+          "text": "Asking the model to flag any document whose layout looks unusual, and sending only those flagged documents to human reviewers for checking."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Once high-confidence output skips review, nobody sees its errors unless you sample it. **Ongoing stratified random sampling of high-confidence extractions** gives a continuing error-rate measurement and is how **new error patterns** (such as a changed layout producing confident mistakes) come to light. Stratifying (for example by document type or supplier) means no segment goes unsampled.",
+      "whyWrong": {
+        "A": "The fixed launch validation set has no new-layout documents in it, so it cannot detect this drift. It measures the past, not current traffic.",
+        "C": "Lowering the threshold over time is arbitrary. It raises reviewer load without aiming at the problem, and confident errors can still sit above any threshold.",
+        "D": "The failure is that the model is confidently wrong. Depending on its own sense of what looks unusual is exactly the self-assessment that missed it."
+      },
+      "difficulty": 1,
+      "mindset": "If nobody ever looks at high-confidence output, you won't see when it starts going wrong.",
+      "tags": [
+        "stratified-sampling",
+        "drift",
+        "human-review",
+        "monitoring"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests",
+        "https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents"
+      ]
+    },
+    {
+      "id": "f-d5-b1-015",
+      "taskStatementId": "5.5",
+      "scenario": "You are building a structured data extraction system using Claude. The system extracts information from unstructured documents, validates the output using JavaScript Object Notation (JSON) schemas, and maintains high accuracy. It must handle edge cases gracefully and integrate with downstream systems.",
+      "stem": "The extraction prompt now asks the model to output a confidence score from 0 to 1 for each field. The team sends any field below 0.8 to review, because \"80% felt reasonable.\" In practice, reviewers find that many fields scored 0.9 or higher are wrong, while many fields between 0.6 and 0.8 are correct. What is the BEST next step?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Raise the routing threshold to 0.95 for every field, so that only the extractions the model is most sure about can skip human review."
+        },
+        {
+          "id": "B",
+          "text": "Add instructions and examples to the prompt that teach the model to be more conservative and to give lower confidence scores whenever it is unsure."
+        },
+        {
+          "id": "C",
+          "text": "Calibrate thresholds against a labeled validation set by measuring the actual error rate at each score range, and set per-field thresholds from that data."
+        },
+        {
+          "id": "D",
+          "text": "Replace the model's confidence scores with a second model that independently rates each extraction, and route on whichever of the two scores is lower."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Raw model confidence is a signal, not a probability you can trust as is. The exam guide's pattern is to have the model output **field-level confidence**, then **calibrate review thresholds using labeled validation sets**: measure how often each score range is actually wrong, field by field, and set thresholds that meet the required error rate. The routing decision then rests on data instead of on the number \"feeling reasonable.\"",
+      "whyWrong": {
+        "A": "A higher uncalibrated cutoff is still a guess. It sends many correct fields to review and can still let confident errors through.",
+        "B": "Prompting for conservatism changes the score distribution without checking it against ground truth. It is still uncalibrated self-assessment.",
+        "D": "A second model's ratings are just as uncalibrated, and this adds cost and complexity. Calibration needs labeled data, not more opinions."
+      },
+      "difficulty": 2,
+      "mindset": "Confidence scores become useful only after you calibrate them against ground truth.",
+      "tags": [
+        "confidence-calibration",
+        "labeled-validation-set",
+        "thresholds",
+        "data-extraction"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests",
+        "https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents"
+      ]
+    },
+    {
+      "id": "f-d5-b1-016",
+      "taskStatementId": "5.5",
+      "stem": "A finance-operations team has two reviewers who can check about 200 extracted fields per day, but the pipeline produces several thousand. Thresholds were calibrated last quarter on a labeled set. Which TWO categories of extraction should be prioritized for human review? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Fields from the longest documents in the batch, because longer documents take more effort to process and are therefore assumed to be riskier."
+        },
+        {
+          "id": "B",
+          "text": "Fields the model itself flagged in a free-text note as \"worth a second look\", since the model's own self-assessment identifies the hardest cases."
+        },
+        {
+          "id": "C",
+          "text": "Fields whose calibrated confidence falls below the per-field threshold that was set from the labeled validation data last quarter."
+        },
+        {
+          "id": "D",
+          "text": "A fixed share of every vendor's documents, assigned in rotation, so that each vendor gets the same number of reviewer hours each week."
+        },
+        {
+          "id": "E",
+          "text": "Fields where the source document is ambiguous or contradicts itself, such as a line-item total that does not match the stated invoice total."
+        }
+      ],
+      "correct": [
+        "C",
+        "E"
+      ],
+      "explanation": "With limited reviewer capacity, focus where errors are most likely: **low calibrated confidence** and **ambiguous or contradictory source documents**. Both are named in the exam guide as routing criteria. Calibrated thresholds come from labeled data, and contradictions in the source are a sign that no extraction can be confidently right.",
+      "whyWrong": {
+        "A": "Document length is a proxy nobody has checked. Nothing shows longer documents produce more errors, and it ignores the calibrated signal already available.",
+        "B": "A free-text self-flag is uncalibrated self-reported confidence, which the exam guide treats as an unreliable proxy. The calibrated per-field threshold in C is the measured version of the same signal, so routing on the unmeasured one wastes capacity.",
+        "D": "Equal time per vendor ignores risk. It spends reviewer time evenly instead of where errors are likely."
+      },
+      "difficulty": 1,
+      "mindset": "Spend scarce human attention where the calibrated risk is highest.",
+      "tags": [
+        "review-routing",
+        "reviewer-capacity",
+        "confidence-calibration",
+        "contradictory-sources"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests",
+        "https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents"
+      ]
+    },
+    {
+      "id": "f-d5-b1-017",
+      "taskStatementId": "5.5",
+      "scenario": "You are building a structured data extraction system using Claude. The system extracts information from unstructured documents, validates the output using JavaScript Object Notation (JSON) schemas, and maintains high accuracy. It must handle edge cases gracefully and integrate with downstream systems.",
+      "stem": "To monitor automated extractions, the team sends a 2% simple random sample of all high-confidence outputs to reviewers. Invoices make up 88% of volume; customs declarations make up 3% but carry the largest compliance penalties. A quarterly audit finds a recurring error in a customs-declaration field that the sampling process never surfaced. What is the MOST effective change to the monitoring design?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Increase the simple random sample from 2% to 10% of all high-confidence outputs, so that every document type is more likely to appear in the review queue."
+        },
+        {
+          "id": "B",
+          "text": "Stratify the sample by document type (and key fields), setting a minimum sample size per stratum so low-volume, high-impact types are measured reliably."
+        },
+        {
+          "id": "C",
+          "text": "Stop sampling high-confidence outputs and instead send every customs declaration to full human review, whatever its confidence score."
+        },
+        {
+          "id": "D",
+          "text": "Have the model add a compliance-risk flag to each extraction, and sample only the flagged outputs for review instead of sampling at random."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "A simple random sample mirrors traffic volume, so a 3% document type yields only a handful of reviewed items, too few to estimate its error rate or spot a pattern. **Stratified random sampling** guarantees enough reviewed items in each segment (document type, critical fields). That is how per-segment error rates and **new error patterns** are measured in high-confidence output. It fixes the blind spot without inflating overall reviewer load.",
+      "whyWrong": {
+        "A": "Five times the reviewer effort still allocates samples in proportion to volume. Invoices still dominate, and the rare segment stays thinly measured.",
+        "C": "Full review of one segment may suit very high stakes, but it is a costly point fix that gives up automation for customs declarations and leaves the sampling design unchanged, so the next low-volume, high-impact type is just as unmeasured. The flaw is in how the sample is drawn.",
+        "D": "Sampling only flagged items depends on the model's own risk judgment, which is the uncalibrated self-assessment that missed this error. It is no longer a random sample."
+      },
+      "difficulty": 3,
+      "mindset": "Sample by segment, not by volume, or rare-but-critical segments go unmeasured.",
+      "tags": [
+        "stratified-sampling",
+        "segmented-accuracy",
+        "human-review",
+        "data-extraction"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests",
+        "https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents"
+      ]
+    },
+    {
+      "id": "f-d5-b1-018",
+      "taskStatementId": "5.5",
+      "scenario": "You are integrating Claude Code into your Continuous Integration/Continuous Deployment (CI/CD) pipeline. The system runs automated code reviews, generates test cases, and provides feedback on pull requests. You need to design prompts that provide actionable feedback and minimize false positives.",
+      "stem": "The CI review job asks Claude to attach a self-rated confidence (low, medium, high) to each finding on a pull request. To reduce noise, the team wants to auto-post only \"high\" findings and hold the rest for a tech lead to triage. Developers already complain that some \"high\" findings are false positives, especially for the concurrency and security categories. Which TWO steps BEST make this routing trustworthy? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add a prompt instruction telling the reviewer to rate a finding \"high\" only when it is at least 90% sure the issue is real and would block the merge."
+        },
+        {
+          "id": "B",
+          "text": "Build a labeled set of past findings that developers judged real or false positive, and use it to measure precision per confidence level and per category."
+        },
+        {
+          "id": "C",
+          "text": "Run the review on a larger model, since a stronger reviewer gives better-calibrated confidence ratings without any extra measurement work."
+        },
+        {
+          "id": "D",
+          "text": "Set auto-post rules per category from the measured precision (for example, hold all concurrency findings for triage), and keep sampling posted findings for review."
+        },
+        {
+          "id": "E",
+          "text": "Have a second Claude instance rate each finding's confidence on its own, and auto-post only findings that both instances rate as \"high.\""
+        }
+      ],
+      "correct": [
+        "B",
+        "D"
+      ],
+      "explanation": "Self-rated confidence needs **calibration against labeled outcomes** before it can gate anything. A labeled set of adjudicated findings shows the real precision of \"high\" in each category. Routing rules are then set **per segment** (categories behave differently) and checked continuously by **sampling** what gets auto-posted. Together these turn an uncalibrated label into a measured, monitored control.",
+      "whyWrong": {
+        "A": "A numeric instruction like \"90% sure\" is still self-assessment. LLM self-reported confidence is poorly calibrated, and the prompt cannot change that by asking.",
+        "C": "A bigger model may shift the numbers but proves nothing. You still need labeled data to know whether \"high\" can be trusted.",
+        "E": "Two uncalibrated raters agreeing is not calibration. It adds cost and may only filter some noise, with no measured precision behind it."
+      },
+      "difficulty": 2,
+      "mindset": "Trust confidence labels only as far as labeled data says you can, segment by segment.",
+      "tags": [
+        "confidence-calibration",
+        "ci-cd",
+        "false-positives",
+        "human-review"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests",
+        "https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents",
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-hallucinations"
+      ]
+    }
+  ]
+}

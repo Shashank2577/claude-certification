@@ -1,0 +1,68 @@
+{
+  "certId": "foundations",
+  "domainId": "d1-agentic",
+  "lessons": [
+    {
+      "id": "agentic-loop-basics",
+      "title": "The agentic loop, step by step",
+      "estMinutes": 8,
+      "level": "core",
+      "taskStatementIds": ["1.1"],
+      "eli5": "An agent is Claude working in a loop: it reads the task, decides whether it needs a tool, gets the tool's answer back, and repeats until it can give you a final reply.",
+      "body": "## What actually happens in a loop\n\nEvery agent built on the Messages API follows the same rhythm:\n\n1. Your code sends the conversation plus a list of **tools**.\n2. Claude replies. If it wants a tool, the reply ends with `stop_reason: \"tool_use\"` and contains one or more `tool_use` blocks.\n3. Your code runs the tool and sends the output back as a `tool_result` block in the next user message.\n4. Repeat until Claude replies with `stop_reason: \"end_turn\"`.\n\n```python\nwhile True:\n    response = client.messages.create(model=MODEL, tools=tools, messages=messages)\n    messages.append({\"role\": \"assistant\", \"content\": response.content})\n    if response.stop_reason != \"tool_use\":\n        break\n    results = [run_tool(block) for block in response.content if block.type == \"tool_use\"]\n    messages.append({\"role\": \"user\", \"content\": results})\n```\n\n## Stop conditions you own\n\nThe model decides when it is *done*, but you decide when it must *stop*. Production loops add:\n\n| Guard | Why |\n| --- | --- |\n| Max iterations | Prevents runaway loops and cost spikes |\n| Token or cost budget | Keeps long tasks bounded |\n| Human checkpoint | Required for irreversible actions |\n\n## Where loops go wrong\n\n- Dropping the assistant turn before appending tool results breaks the pairing between `tool_use` ids and `tool_result` ids.\n- Treating `max_tokens` as success: the answer was cut off, not finished.\n- Swallowing tool errors. Return them as `tool_result` with `is_error: true` so Claude can adapt.",
+      "visualId": "agentic-loop",
+      "keyTakeaways": [
+        "The loop continues while stop_reason is tool_use and ends on end_turn.",
+        "Every tool_use block needs a matching tool_result with the same id.",
+        "Your code, not the model, enforces iteration and budget limits."
+      ],
+      "examTips": [
+        "When a question describes a cut-off answer, look for max_tokens rather than a tool problem.",
+        "Prefer answers that return tool errors to the model over answers that hide them."
+      ],
+      "commonTraps": [
+        "Assuming the model executes tools itself. Your application always runs the tool.",
+        "Choosing 'retry the whole conversation' when a single failed tool call can be reported back."
+      ],
+      "resources": [
+        { "title": "Tool use overview", "url": "https://docs.claude.com/en/docs/agents-and-tools/tool-use/overview", "type": "docs" }
+      ]
+    },
+    {
+      "id": "choosing-orchestration",
+      "title": "Workflow, agent or orchestrator?",
+      "estMinutes": 10,
+      "level": "core",
+      "taskStatementIds": ["1.2"],
+      "eli5": "If you know the steps ahead of time, write them down as a recipe. Only let Claude plan its own steps when the path really can't be predicted.",
+      "body": "## Start with the simplest thing\n\nA fixed **workflow** (prompt chaining, routing, parallel calls) is cheaper, faster and easier to test than an autonomous agent. Reach for an agent when the number and order of steps depends on what the model discovers along the way.\n\n## When subagents help\n\nAn **orchestrator** delegates focused subtasks to subagents that each get a clean context window. This helps when:\n\n- subtasks are independent and can run in parallel;\n- each subtask needs a lot of reading that would clutter the main context;\n- you want different tools or permissions per subtask.\n\n## When they hurt\n\nSubagents add latency, cost and coordination overhead. If tasks are tightly coupled and need shared state at every step, one agent with good context management is usually better.",
+      "visualId": "orchestrator-subagents",
+      "keyTakeaways": [
+        "Prefer deterministic workflows when the steps are known.",
+        "Subagents buy context isolation and parallelism at the price of coordination."
+      ],
+      "examTips": [
+        "Look for the word 'predictable' in a scenario: it usually points to a workflow, not an agent."
+      ],
+      "commonTraps": [
+        "Picking the most sophisticated architecture because it sounds impressive."
+      ],
+      "resources": [
+        { "title": "Building effective agents", "url": "https://www.anthropic.com/engineering/building-effective-agents", "type": "blog" }
+      ]
+    },
+    {
+      "id": "loop-guardrails",
+      "title": "Guardrails for long-running loops",
+      "estMinutes": 6,
+      "level": "deep",
+      "taskStatementIds": ["1.1"],
+      "eli5": "Give your agent a budget and a stopwatch so it can't run forever or spend more than you planned.",
+      "body": "## Budgets\n\nTrack iterations, tokens and wall-clock time. When a budget runs out, ask the model for a best-effort summary instead of failing silently.\n\n## Checkpoints\n\nPersist the message history after each tool round so a crash can resume rather than restart.",
+      "keyTakeaways": ["Budgets turn runaway loops into graceful summaries."],
+      "examTips": ["Resumable state is a strong signal of a production-ready answer."],
+      "commonTraps": ["Relying on the model to notice it is looping."],
+      "resources": []
+    }
+  ]
+}

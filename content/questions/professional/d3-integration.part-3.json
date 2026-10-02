@@ -1,0 +1,644 @@
+{
+  "certId": "professional",
+  "domainId": "d3-integration",
+  "questions": [
+    {
+      "id": "p-d3-b3-001",
+      "taskStatementId": "3.3",
+      "stem": "A retail company's support chat assistant gives accurate, well-reviewed answers, but usability testing shows customers abandon the chat because the screen stays blank for 7 to 9 seconds before the full reply appears. The product owner wants the perceived wait cut sharply **without any change to answer quality** and with minimal engineering work. What should the architect do first?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Move the assistant to the smallest, fastest model tier so every reply completes in roughly a third of the current time."
+        },
+        {
+          "id": "B",
+          "text": "Set a low `max_tokens` cap so replies are forced to finish sooner, and let customers ask follow-ups for more detail."
+        },
+        {
+          "id": "C",
+          "text": "Enable streaming so the reply renders token by token, cutting time-to-first-token while the content stays the same."
+        },
+        {
+          "id": "D",
+          "text": "Send chat requests through the Message Batches API to lower cost and free budget for more capacity."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "The complaint is **perceived** latency (a blank screen), and the constraint is *no change to answer quality*. Streaming returns text as it is generated, so the time-to-first-token drops sharply while the model, prompt and output stay identical. Anthropic's reduce-latency guidance separates baseline latency from time-to-first-token and lists streaming as the lever for perceived responsiveness.",
+      "whyWrong": {
+        "A": "A smaller model can be faster, but it is a quality trade-off that must be proven with evals; the stem forbids any change to answer quality.",
+        "B": "`max_tokens` is a blunt cap that truncates output mid-answer; it changes what customers receive and can produce incomplete replies.",
+        "D": "Batch processing is asynchronous (results can take up to 24 hours) and does not support streaming, so it is the opposite of what an interactive chat needs."
+      },
+      "difficulty": 1,
+      "mindset": "Fix perceived latency with streaming before trading away quality.",
+      "tags": [
+        "latency",
+        "streaming",
+        "ttft",
+        "trade-offs"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-latency",
+        "https://platform.claude.com/docs/en/build-with-claude/streaming"
+      ]
+    },
+    {
+      "id": "p-d3-b3-002",
+      "taskStatementId": "3.3",
+      "stem": "A logistics firm routes about 40,000 inbound shipment emails per hour into one of 12 queues; the model returns a single queue name per email. The current design calls the largest model tier at high effort for each email, and p95 latency now breaks the 2-second routing SLA. On a 3,000-email labeled set drawn from production, a smaller, faster model at low effort scores 97.1% routing accuracy against 97.4% for the current setup, and every misroute is caught by the receiving queue within minutes at negligible cost. Which decision is MOST defensible?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Switch routing to the smaller model at low effort, citing the eval results and the low cost of a misroute, and monitor accuracy on a production sample."
+        },
+        {
+          "id": "B",
+          "text": "Keep the largest model because it is the most capable and the 0.3-point accuracy gap could grow on unseen emails, then add servers to meet the SLA."
+        },
+        {
+          "id": "C",
+          "text": "Keep the largest model and add a system prompt instruction telling it to answer in one word so responses finish faster."
+        },
+        {
+          "id": "D",
+          "text": "Run both models on every email and use the larger model's answer whenever the two disagree, so accuracy never drops."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Configuration choices should be justified with **measured evidence and business impact**. A representative eval shows quality holds within 0.3 points, the cost of an error is low, and the SLA is being broken. Choosing the smaller, faster model at low effort is the documented trade-off: effort and model tier are the main levers on speed and cost, and Anthropic advises stepping down when your evals show quality holds. Ongoing sampled monitoring guards against drift.",
+      "whyWrong": {
+        "B": "\"Biggest is safest\" ignores the evidence and the business cost; more servers do not reduce per-request model latency, which is what breaks the SLA.",
+        "C": "The output is already a short label, so most of the time goes to input processing and reasoning, not output length. A prompt tweak does not change the model's speed tier.",
+        "D": "Running both models on every request adds cost, and waiting for the larger model on disagreements brings back the latency that breaks the SLA. It is over-engineered for errors that cost almost nothing."
+      },
+      "difficulty": 2,
+      "mindset": "Justify configuration with evals plus business cost of errors, not model prestige.",
+      "tags": [
+        "latency",
+        "model-selection",
+        "effort",
+        "evals"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/effort",
+        "https://platform.claude.com/docs/en/about-claude/models/choosing-a-model",
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-latency"
+      ]
+    },
+    {
+      "id": "p-d3-b3-003",
+      "taskStatementId": "3.3",
+      "stem": "An engineering team's research agent runs on a top-tier model at `high` effort. Traces show its planning and synthesis steps need deep reasoning, but most wall-clock time goes to dozens of routine subagent calls that only fetch a page and pull out three named fields. Users complain that each report takes too long. The team wants a lower end-to-end time **without weakening the planning and synthesis quality**. Which change is MOST appropriate?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Lower effort to `low` for the whole system, since the savings across dozens of subagent calls will outweigh any change in the planner's output."
+        },
+        {
+          "id": "B",
+          "text": "Add an instruction to every prompt saying \"be fast and concise\" so the model spends less time thinking on all steps, planner included."
+        },
+        {
+          "id": "C",
+          "text": "Set `max_tokens` to 300 on every call so neither the planner nor the subagents can produce long outputs that slow the run."
+        },
+        {
+          "id": "D",
+          "text": "Run the extraction subagents at `low` effort (or on a faster model) and keep the planner and synthesis at higher effort, confirming with evals."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "Effort can be set per call. The effort docs describe `low` as suited to simpler tasks that need speed and low cost, *such as subagents*, while `high` fits complex reasoning. Matching the configuration to each step keeps the deep steps intact and speeds up the high-volume simple ones. Evals confirm that quality holds.",
+      "whyWrong": {
+        "A": "Effort can be set per call, so there is no need to lower it everywhere. A system-wide drop also degrades the planning and synthesis steps the stem says must be protected.",
+        "B": "A prompt instruction is a soft nudge applied evenly to all steps, so it risks shallower planning and gives no reliable, targeted speed-up.",
+        "C": "`max_tokens` is a hard cap that truncates output. A 300-token cap would cut off the synthesis step and could break tool calls in the middle."
+      },
+      "difficulty": 2,
+      "mindset": "Tune configuration per step: cheap and fast where work is routine, deep where reasoning matters.",
+      "tags": [
+        "effort",
+        "latency",
+        "subagents",
+        "configuration"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/effort",
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-latency"
+      ]
+    },
+    {
+      "id": "p-d3-b3-004",
+      "taskStatementId": "3.3",
+      "stem": "A legal-ops assistant answers questions about a firm's 40,000-token policy manual. Every request sends the same system prompt and the full manual first, followed by a short question. Answers are accurate, but p95 latency is 11 seconds, and logs show replies average 600 words, mostly restated background. The architect must cut latency **without lowering accuracy**. Which TWO changes should the architect make? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Send requests through the Message Batches API, which processes them more efficiently than synchronous calls."
+        },
+        {
+          "id": "B",
+          "text": "Cache the static system prompt and manual as a prompt-cache prefix so repeated requests skip reprocessing it."
+        },
+        {
+          "id": "C",
+          "text": "Move the manual after the user's question so the model reads the question first and finds the relevant section faster."
+        },
+        {
+          "id": "D",
+          "text": "Switch to the smallest model tier immediately, since the manual already contains the answers."
+        },
+        {
+          "id": "E",
+          "text": "Instruct the model to answer in at most three sentences plus a citation, cutting the restated background."
+        }
+      ],
+      "correct": [
+        "B",
+        "E"
+      ],
+      "explanation": "Two independent latency sources exist. (1) The large, identical prefix is reprocessed on every request, and **prompt caching** cuts that processing time and cost. (2) The output is long. Anthropic's reduce-latency guidance recommends asking for shorter output with **sentence or paragraph limits**, which work better than word counts. Neither change alters the model or the source material, so accuracy is preserved.",
+      "whyWrong": {
+        "A": "Batches are asynchronous (up to 24 hours) and do not stream. They lower cost, not interactive latency.",
+        "C": "Placing volatile content (the question) before the static manual breaks the shared prefix, so caching can no longer help. Static content belongs first.",
+        "D": "Changing the model tier without evals risks accuracy, which the stem forbids, and it does not address the two measured causes of delay."
+      },
+      "difficulty": 2,
+      "mindset": "Measure where the time goes (prefix processing vs. output length) and fix each with a quality-neutral lever.",
+      "tags": [
+        "prompt-caching",
+        "latency",
+        "output-length",
+        "multi-select"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-latency",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching"
+      ]
+    },
+    {
+      "id": "p-d3-b3-005",
+      "taskStatementId": "3.3",
+      "stem": "An insurer re-scores 25,000 archived claims for fraud indicators each weekend. The job starts Friday at 6 p.m. and results are needed by Monday at 9 a.m. Accuracy matters most because flagged claims go to costly investigations, and finance wants the run's cost cut. An engineer proposes a parallel synchronous pipeline on the fastest small model to \"guarantee the deadline.\" What should the architect recommend?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Accept the proposal, because parallel synchronous calls on the fastest model give the firmest guarantee that the job finishes before Monday."
+        },
+        {
+          "id": "B",
+          "text": "Submit the claims through the Message Batches API using the higher-accuracy model, matching results back by `custom_id`."
+        },
+        {
+          "id": "C",
+          "text": "Use the fastest model synchronously, but ask it to double-check each fraud score before returning it to make up for lower accuracy."
+        },
+        {
+          "id": "D",
+          "text": "Stream every response so the job finishes sooner and partial results are visible as they arrive."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Nobody is waiting on individual responses, and the window is about 63 hours, far longer than the Batches API's 24-hour processing limit. Batches cost 50% of standard prices, so the team can keep the **more accurate** model and still cut cost. Results are matched by `custom_id` because they may not come back in order. The engineer optimized for latency that the business does not need.",
+      "whyWrong": {
+        "A": "It solves a latency problem that does not exist and gives up accuracy, the stated priority. The weekend window comfortably fits batch processing.",
+        "C": "Self-checking adds latency and cost, and it is not a reliable substitute for a more capable model on a high-stakes decision.",
+        "D": "Streaming improves perceived latency for a waiting human. It does not make a bulk offline job cheaper or more accurate, and batch requests do not support it anyway."
+      },
+      "difficulty": 2,
+      "mindset": "Match the processing mode to who is waiting: offline bulk work belongs in batch, keeping the accuracy you need.",
+      "tags": [
+        "batch",
+        "cost",
+        "latency",
+        "trade-offs"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/batch-processing",
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-latency"
+      ]
+    },
+    {
+      "id": "p-d3-b3-006",
+      "taskStatementId": "3.3",
+      "stem": "A hospital billing team uses Claude to suggest diagnosis codes, which certified coders then review. The current model achieves 94% top-1 accuracy at a p95 of 6 seconds. A smaller model reaches 86% at 2 seconds. Each wrong code that slips through review risks a claim denial costing hundreds of dollars, and coders report that weaker suggestions slow them down. An executive asks for \"the fastest option\" to hit a new 4-second target. Which response is MOST defensible?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Adopt the smaller model to hit the target, and add a prompt asking it to self-rate confidence on each code so coders can skip low-confidence suggestions and focus their review time."
+        },
+        {
+          "id": "B",
+          "text": "Run both models in parallel on each claim and show whichever suggestion returns first, so the 4-second target is met on every claim while the stronger model still contributes."
+        },
+        {
+          "id": "C",
+          "text": "Keep the current model, apply quality-neutral levers first (streaming, caching the static coding guidelines, shorter output), then present any remaining gap in cost-of-error terms."
+        },
+        {
+          "id": "D",
+          "text": "Adopt the smaller model, because a certified coder reviews every suggestion before submission, so the model's accuracy no longer drives claim-denial risk."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Anthropic's latency guidance says to get quality right first and then optimize latency. Here an 8-point accuracy drop has a measurable business cost (denials and slower coders). Quality-neutral levers (streaming, caching the static prefix, trimming output) should be used before giving up accuracy. Any remaining trade-off is then explained to the stakeholder in business terms, not settled by assumption.",
+      "whyWrong": {
+        "A": "Self-reported confidence is poorly calibrated, so it does not reliably flag errors and does not win back the 8 lost points.",
+        "B": "Because the small model nearly always returns first, this quietly becomes the 86% option while paying for two models.",
+        "D": "Human review is not free error correction. Worse suggestions slow coders down and wrong codes still get through, so accuracy still drives cost."
+      },
+      "difficulty": 3,
+      "mindset": "Quality first, then latency; exhaust quality-neutral levers and frame the residual trade-off in business cost.",
+      "tags": [
+        "latency",
+        "accuracy",
+        "stakeholders",
+        "trade-offs"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-latency",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
+        "https://platform.claude.com/docs/en/build-with-claude/streaming"
+      ]
+    },
+    {
+      "id": "p-d3-b3-007",
+      "taskStatementId": "3.3",
+      "stem": "A long-running support agent relies on prompt caching of its system prompt, tool definitions and growing conversation history. To save time, the team added logic that (1) changes the top-level `output_config.effort` value on each request based on how hard the latest question looks, and (2) adds or removes tool definitions on each request depending on the topic. Afterward, `cache_read_input_tokens` dropped to near zero and latency rose. Which TWO factors explain the regression? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Changing the top-level effort value between requests changes the rendered prompt, so cached prefixes from earlier turns no longer match."
+        },
+        {
+          "id": "B",
+          "text": "Cache reads count fully against input-token rate limits on most models, so the extra requests were throttled."
+        },
+        {
+          "id": "C",
+          "text": "Prompt caching is turned off whenever adaptive thinking is active, so any effort setting disables it."
+        },
+        {
+          "id": "D",
+          "text": "Changing the tool definitions invalidates the cache from the tools level down, so every request must reprocess the whole prefix."
+        },
+        {
+          "id": "E",
+          "text": "Effort only changes the length of visible text, so it cannot affect caching, and the drop must come from network latency."
+        }
+      ],
+      "correct": [
+        "A",
+        "D"
+      ],
+      "explanation": "Caching needs a byte-identical prefix. Tool definitions sit at the start of the cached prefix, so changing them invalidates everything after. The effort docs also warn that changing the top-level effort between requests does not keep cached prefixes, and recommend holding it constant within a cached conversation (or using per-message effort changes where supported). Both 'optimizations' destroyed cache reuse, which cost more latency than they saved.",
+      "whyWrong": {
+        "B": "For most models, cache reads do **not** count toward input-tokens-per-minute limits. Caching actually raises effective throughput.",
+        "C": "Caching and thinking work together. Changing thinking or effort settings between requests can invalidate parts of the cache, but turning on adaptive thinking does not disable prompt caching.",
+        "E": "Effort affects all output tokens, including tool calls and thinking, and the docs say explicitly that changing top-level effort between requests breaks cached prefixes."
+      },
+      "difficulty": 3,
+      "mindset": "Per-request 'optimizations' that mutate the prefix can cost more than they save; keep the cached prefix stable.",
+      "tags": [
+        "prompt-caching",
+        "effort",
+        "latency",
+        "multi-select"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/effort",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching"
+      ]
+    },
+    {
+      "id": "p-d3-b3-008",
+      "taskStatementId": "3.6",
+      "stem": "A software company runs an MCP server over its UI component documentation: about 400 component pages, each with a stable identifier, edited a few times a week. In the IDE host, developers almost always know which component they are working on (for example, the date picker) and want that exact page in context. Today the server exposes only a `search_docs` tool, and Claude sometimes skips the search or pulls a similarly named page such as \"date range picker\". Which design BEST fits this access pattern?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Rewrite the `search_docs` description to say Claude must always call it, and check the page title carefully, before answering any question about a component."
+        },
+        {
+          "id": "B",
+          "text": "Load all 400 pages into the system prompt of every session so that the right page is always somewhere in context, whatever component the developer asks about."
+        },
+        {
+          "id": "C",
+          "text": "Replace the docs server with a nightly embedding index and a vector-search tool so similar component names are ranked more accurately."
+        },
+        {
+          "id": "D",
+          "text": "Expose each page as an MCP resource with a stable URI so the host can let the developer attach the exact page, and keep the search tool for open-ended questions."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "The query pattern here is **known-item access**: the developer already knows exactly which page they need. MCP **resources** are designed for this. They are URI-identified context that is *application-driven*, so the host decides how to include them, for example through a picker where the user selects the item explicitly. The server can also offer resource templates (parameterized URIs) for lookup by component name. Tools, by contrast, are model-controlled, so a search tool leaves the choice of page to the model's judgment. Keeping the search tool covers exploratory questions where the user does not know which page applies.",
+      "whyWrong": {
+        "A": "A stronger description may make the search happen more often, but the model still chooses among similar names, and that choice is where the wrong page comes from. The developer already knows the exact page.",
+        "B": "Most sessions need one page, so sending all 400 on every request wastes tokens and dilutes attention. It also does not tell the model which of the similar pages the developer means.",
+        "C": "Similarity ranking is exactly what confuses \"date picker\" with \"date range picker\". A nightly index also adds infrastructure and can lag behind pages edited during the week."
+      },
+      "difficulty": 2,
+      "mindset": "When the user already knows the exact item, let them select it deterministically (MCP resources) instead of asking the model to search.",
+      "tags": [
+        "retrieval",
+        "mcp-resources",
+        "known-item",
+        "access-pattern"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-06-18/server/resources",
+        "https://modelcontextprotocol.io/docs/learn/server-concepts"
+      ]
+    },
+    {
+      "id": "p-d3-b3-009",
+      "taskStatementId": "3.6",
+      "stem": "A paralegal team uses an assistant to review one contract at a time. In each session a user uploads a different 80-page PDF contract and asks 5 to 10 questions about it, and no contract is reused in later sessions. An engineer proposes that, on each upload, the system chunks the contract, embeds the chunks into a vector database, and retrieves the top 5 chunks for each question. What should the architect recommend?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Send the whole contract in the request as a PDF document block, cached across that session's questions, so Claude reads every clause and can cite exact passages."
+        },
+        {
+          "id": "B",
+          "text": "Build the proposed per-upload vector index, because retrieving the five most relevant chunks keeps each question focused and cheaper than sending the whole contract."
+        },
+        {
+          "id": "C",
+          "text": "Ask users to paste in only the clauses they think are relevant, so the model sees just the important parts of the contract."
+        },
+        {
+          "id": "D",
+          "text": "Fine-tune a model on the firm's past contracts so it already knows typical clauses before each new contract is uploaded."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The data shape is **one document, supplied per session, small enough to fit in context, and read only a handful of times**. Contract questions often depend on defined terms, exceptions and cross-references spread across sections, which a top-5 chunk search can miss. An 80-page PDF fits within the API's per-request page limit, so it can go straight into the request. Prompt caching makes the follow-up questions in the session faster and cheaper, and citations let answers point to the exact passages. Building and discarding an index for each upload adds moving parts with no benefit.",
+      "whyWrong": {
+        "B": "Indexing a document that is read only a few times adds pipeline work, and top-k chunks can drop the definitions and exceptions an answer depends on. Once the document is cached, the extra cost of sending it whole is small.",
+        "C": "This hands retrieval to the user, who will miss clauses they don't know are relevant. That is the very risk a contract review is meant to catch.",
+        "D": "Fine-tuning does not put the specific uploaded contract's terms into the model, and it is a costly, unreliable way to supply facts. The answer has to come from this contract."
+      },
+      "difficulty": 1,
+      "mindset": "A single document that fits in context should be given to the model whole, not chunked and searched.",
+      "tags": [
+        "retrieval",
+        "long-context",
+        "pdf",
+        "prompt-caching"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/pdf-support",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
+        "https://platform.claude.com/docs/en/build-with-claude/citations",
+        "https://www.anthropic.com/news/contextual-retrieval"
+      ]
+    },
+    {
+      "id": "p-d3-b3-010",
+      "taskStatementId": "3.6",
+      "stem": "A finance team asks an assistant questions like \"What was net revenue by region for Q3, excluding SKUs under $20?\" The data lives in a warehouse table of 4 million order rows. The first prototype converted rows into text chunks in a vector store. Answers sound confident, but totals are routinely wrong. What should the architect change?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Use smaller chunks (one row per chunk) and raise top-k so more rows reach the model for summing."
+        },
+        {
+          "id": "B",
+          "text": "Give Claude a read-only SQL tool over the warehouse, with the schema described, so the database runs the aggregation."
+        },
+        {
+          "id": "C",
+          "text": "Add a step where the model re-adds the retrieved numbers to check its own arithmetic before answering."
+        },
+        {
+          "id": "D",
+          "text": "Switch to a model with a larger context window and load the full order table into the prompt."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "This is **structured, tabular data** queried with **aggregations and filters**. Similarity search cannot do exact filtering or reliably return *every* matching row, so totals come out wrong. The right retrieval strategy is a tool that runs a deterministic query (SQL) against the source of truth. Claude writes the query and explains the result, while the database does the math.",
+      "whyWrong": {
+        "A": "No similarity search over millions of rows will reliably return every row that matches the filter, so the totals stay wrong.",
+        "C": "Self-checking cannot recover rows that were never retrieved. The problem is incomplete data, not arithmetic.",
+        "D": "Four million rows will not fit in a context window, and exact aggregation is a job for a database, not token-by-token reasoning."
+      },
+      "difficulty": 2,
+      "mindset": "Structured data plus aggregate queries call for a deterministic query tool, not embeddings.",
+      "tags": [
+        "retrieval",
+        "structured-data",
+        "tools",
+        "sql"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview",
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "p-d3-b3-011",
+      "taskStatementId": "3.6",
+      "stem": "A platform team is building a coding agent for a 2-million-line monorepo that merges several hundred commits a day. A prototype used a nightly embedding index of code chunks, and the agent frequently edited functions that had since been renamed or moved. Which retrieval approach BEST fits this data and query pattern?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Re-index the embeddings every hour so the vector store lags the repository by less time."
+        },
+        {
+          "id": "B",
+          "text": "Load the entire repository into a 1M-token context window at the start of each task so nothing is stale."
+        },
+        {
+          "id": "C",
+          "text": "Let the agent search the live working tree just in time with grep, glob and read tools, following references as it goes."
+        },
+        {
+          "id": "D",
+          "text": "Have a senior engineer write a detailed architecture summary in the agent's memory file and rely on it instead of retrieval."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Code is fast-changing and highly structured, and queries are precise (symbols, callers, file paths). Agentic, just-in-time search over the live files always reflects the current state and uses exact matching. Anthropic's context-engineering guidance describes this lightweight approach (keep references, load content at runtime with tools), which is how Claude Code navigates codebases instead of using a pre-built index.",
+      "whyWrong": {
+        "A": "More frequent indexing narrows the staleness window but never closes it at hundreds of commits a day, and it adds operational cost.",
+        "B": "A 2-million-line repository is far larger than any context window. Loading huge context also dilutes attention and is expensive on every task.",
+        "D": "A static summary helps orientation, but it goes stale too and cannot replace looking at the actual current code."
+      },
+      "difficulty": 2,
+      "mindset": "For live, precise, fast-changing data, retrieve just in time from the source rather than from a stale index.",
+      "tags": [
+        "retrieval",
+        "agentic-search",
+        "codebase",
+        "just-in-time"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents"
+      ]
+    },
+    {
+      "id": "p-d3-b3-012",
+      "taskStatementId": "3.6",
+      "stem": "A company's internal assistant handles several kinds of requests. Which TWO pairings of request type and retrieval strategy are BEST matched? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "\"Total refunds issued per product line last quarter\": semantic search over refund records converted into text chunks, with top-k raised to 200 so more rows are summed."
+        },
+        {
+          "id": "B",
+          "text": "\"What is the current balance on account 50-1187?\": embedding search over a nightly export of account records, ranked by how similar each record is to the question."
+        },
+        {
+          "id": "C",
+          "text": "\"What did the national data-protection regulator publish this week about cookie consent?\": the web search tool, with `allowed_domains` limited to the regulator's official site."
+        },
+        {
+          "id": "D",
+          "text": "\"Explain our 3-page travel policy\", which nearly every request touches: a vector database with chunking, embeddings and a reranker built over the policy text."
+        },
+        {
+          "id": "E",
+          "text": "\"Find past support tickets similar to this new one\", where customers describe the same fault in very different words: embedding-based semantic search over resolved tickets."
+        }
+      ],
+      "correct": [
+        "C",
+        "E"
+      ],
+      "explanation": "Each request type has its own data shape and query pattern. **Recent public information** that is in neither the internal corpus nor the model's training data calls for live web search. Anthropic's web search tool supports `allowed_domains` to keep results to authoritative sources, and its answers always carry citations. **Fuzzy similarity across different wording** is the classic job for embeddings, which capture meaning even when no keywords overlap.",
+      "whyWrong": {
+        "A": "Aggregating over structured records needs a deterministic query (for example, a read-only SQL tool). Similarity search cannot guarantee it returns every matching row, so totals come out wrong.",
+        "B": "This is a live lookup by an exact key. It needs an account API or database tool queried at request time. A nightly export is stale, and similarity ranking is the wrong way to match an exact account number.",
+        "D": "A tiny, stable document that almost every request uses belongs in a cached prompt prefix. Retrieval adds moving parts and the risk of missing a chunk, for no benefit."
+      },
+      "difficulty": 3,
+      "mindset": "Choose the retrieval mechanism from the data's shape and freshness and the query's pattern, not one pipeline for everything.",
+      "tags": [
+        "retrieval",
+        "web-search",
+        "embeddings",
+        "data-shape",
+        "multi-select"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool",
+        "https://www.anthropic.com/news/contextual-retrieval",
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "p-d3-b3-013",
+      "taskStatementId": "3.6",
+      "stem": "A global HR assistant answers policy questions from an index holding every version of every regional policy, including superseded ones. An employee in Germany asks, \"What is the current parental leave entitlement?\" and gets the 2022 US policy. Its wording is semantically very close, but it is the wrong region and has been superseded. Policies carry structured attributes (region, effective date, status). What is the MOST reliable fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add an instruction to the system prompt telling the model to prefer the newest policy and the user's region whenever several candidate policies are retrieved."
+        },
+        {
+          "id": "B",
+          "text": "Keep region, effective date and status as chunk metadata, and have the retrieval tool apply hard filters (user's region, status = current) before ranking by similarity."
+        },
+        {
+          "id": "C",
+          "text": "Add several few-shot examples that show the model choosing the current German policy over the superseded US one in similar multi-version situations."
+        },
+        {
+          "id": "D",
+          "text": "Prepend each chunk's region, effective date and status to its text before embedding (contextual retrieval) so similarity search can tell the versions apart."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "The query has **hard constraints** (the user's region, and only policies that are currently in force) that similarity ranking cannot enforce, because versions read almost the same. The data already carries structured attributes, so the deterministic fix is to make the retrieval tool filter on them: only current, in-region documents can be candidates at all. This is the augmented-LLM pattern from Building Effective Agents (retrieval as a tool with explicit parameters) and removes the root cause instead of asking the model to compensate.",
+      "whyWrong": {
+        "A": "A prompt instruction is a soft control. The wrong document can still be the only one retrieved, and the model cannot reliably tell versions apart if the metadata is missing from the text.",
+        "C": "Few-shot examples shape behavior but do not guarantee the right document is retrieved. This is a retrieval problem disguised as a prompting one.",
+        "D": "Contextual retrieval improves ranking, and it is a reasonable addition, but it still leaves superseded and out-of-region policies as candidates that can outrank the right one. A hard filter is the more reliable control when the constraint is absolute."
+      },
+      "difficulty": 3,
+      "mindset": "When the query has hard constraints, enforce them deterministically with metadata filters, not prompts.",
+      "tags": [
+        "retrieval",
+        "metadata-filtering",
+        "deterministic-controls",
+        "rag"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview",
+        "https://platform.claude.com/cookbook/capabilities-retrieval-augmented-generation-guide",
+        "https://www.anthropic.com/news/contextual-retrieval"
+      ]
+    },
+    {
+      "id": "p-d3-b3-014",
+      "taskStatementId": "3.6",
+      "stem": "An operations team wants an assistant to answer questions like \"Which supplier made the valve that failed in incident 812, and what other open incidents involve that supplier?\" The data sits in an incident tracker and a parts database, both reachable by API. The current design embeds the question once, retrieves the top 10 chunks from a combined index, and answers. It usually fails, because the second lookup depends on the first answer. What is the BEST retrieval strategy?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Expose incident-lookup and parts-lookup tools and let Claude retrieve step by step, using each result to form the next query."
+        },
+        {
+          "id": "B",
+          "text": "Raise top-k to 100 so that both the incident record and the supplier's other open incidents are likely to appear in a single retrieval."
+        },
+        {
+          "id": "C",
+          "text": "Use larger chunks that merge incident and parts records so one chunk is more likely to contain the whole answer."
+        },
+        {
+          "id": "D",
+          "text": "Precompute a nightly summary of every supplier's incidents and add it to the system prompt for every request."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "This is a **multi-hop** query: the second lookup cannot be written until the first one is answered. Single-shot top-k retrieval cannot express that dependency. Giving Claude targeted lookup tools in an agentic loop lets it chain retrievals (incident → part → supplier → open incidents) against the systems of record, the augmented-LLM pattern from Building Effective Agents.",
+      "whyWrong": {
+        "B": "A wider net brings in noise and still cannot target 'that supplier' until the supplier is known. The dependency is unsolved.",
+        "C": "Merging records at index time distorts the data model and still cannot anticipate every multi-hop path users will ask about.",
+        "D": "A nightly summary goes stale for 'open' incidents and grows the prompt for every request, including ones that never need it."
+      },
+      "difficulty": 2,
+      "mindset": "Multi-hop questions need iterative, tool-driven retrieval, not a bigger single-shot search.",
+      "tags": [
+        "retrieval",
+        "multi-hop",
+        "agentic-retrieval",
+        "tools"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview"
+      ]
+    }
+  ]
+}

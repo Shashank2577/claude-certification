@@ -1,0 +1,651 @@
+{
+  "certId": "professional",
+  "domainId": "d3-integration",
+  "questions": [
+    {
+      "id": "p-d3-b1-001",
+      "taskStatementId": "3.1",
+      "stem": "An HR team builds an internal policy assistant with the Agent SDK. Its only job is to answer employee questions by searching and quoting the policy documents in a mounted folder. A security review finds that the agent's definition never lists its tools, so it inherits the full default tool set, including Bash, Write and WebFetch. The agent has never been seen misusing them. Which change BEST reduces risk while keeping the assistant working as it does today?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add a system-prompt rule that says the assistant must never run shell commands, write files or fetch web pages, and that it should only search and quote the policy folder."
+        },
+        {
+          "id": "B",
+          "text": "Add a PostToolUse hook that records every Bash, Write and WebFetch call to the security log, so that any misuse can be spotted and investigated afterwards."
+        },
+        {
+          "id": "C",
+          "text": "Give the agent an explicit, read-only tool list that covers only searching and reading the policy folder, so that shell, write and web tools are no longer available to it."
+        },
+        {
+          "id": "D",
+          "text": "Run the agent in default permission mode, so that a staff member has to approve each Bash, Write or WebFetch call before it runs in the production environment."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Least privilege means the agent gets **only the capabilities its role needs**. The assistant only reads and quotes policy files, so the right move is to define its tools explicitly (in a subagent or `AgentDefinition`, leaving `tools` out means it inherits everything) and limit them to read and search. Shell, write and web access then stop being attack surface, including against prompt injection hidden in a document. \"Never seen misusing them\" is a distractor. Risk comes from what the agent *can* do, not what it has done so far.",
+      "whyWrong": {
+        "A": "A prompt instruction is probabilistic guidance. The tools are still loaded, and a prompt injection in a policy document could still steer the agent into using them. A capability the role never needs should be removed, not discouraged.",
+        "B": "Logging is a detective control. It tells you about misuse after it has happened and does nothing to shrink the attack surface.",
+        "D": "Human approval is a compensating control that adds friction to a capability nobody needs. It also invites rubber-stamping. Removing the tool is simpler and stronger."
+      },
+      "difficulty": 2,
+      "mindset": "If the role never needs a capability, remove it; don't watch it, ask about it, or tell the model to avoid it.",
+      "tags": [
+        "least-privilege",
+        "capability-bloat",
+        "agent-sdk",
+        "subagents",
+        "tool-scoping"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/subagents",
+        "https://code.claude.com/docs/en/agent-sdk/permissions"
+      ]
+    },
+    {
+      "id": "p-d3-b1-002",
+      "taskStatementId": "3.1",
+      "stem": "A nightly, unattended Agent SDK job summarizes yesterday's log files. To stop it hanging on permission prompts, the team configured `allowed_tools=[\"Read\", \"Grep\", \"Glob\"]` together with `permission_mode=\"bypassPermissions\"`, and believes the job is now limited to those three read-only tools. A reviewer says this belief is wrong. What is the MOST appropriate correction that keeps the job fully unattended?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add the tools the job never needs (Bash, Write, Edit, WebFetch) to `disallowed_tools`; `allowed_tools` only pre-approves what it lists, while a bare-name deny removes a tool in every mode."
+        },
+        {
+          "id": "B",
+          "text": "Keep `bypassPermissions`, but move the three tool names from `allowed_tools` into a `.claude/settings.json` allow rule, because allow rules in settings files are enforced as a strict allowlist."
+        },
+        {
+          "id": "C",
+          "text": "Keep the configuration as it is, but add a sentence to the system prompt saying that only Read, Grep and Glob may be used, because the model treats the allowlist as guidance."
+        },
+        {
+          "id": "D",
+          "text": "Switch from `bypassPermissions` to `acceptEdits`, because that mode auto-approves only read-only tools and so turns the existing allowlist into a hard limit on the agent."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "In the Agent SDK, `allowed_tools` is an **auto-approve list, not a restriction**. Tools you don't list still exist and fall through to the permission mode, and `bypassPermissions` approves them, so Bash, Write and Edit can all run. To actually remove a tool, put its bare name in `disallowed_tools`: the tool definition is taken out of the request, and that deny holds in every mode, including `bypassPermissions`. For a locked-down headless agent the docs also suggest pairing `allowedTools` with `dontAsk`, where anything that would prompt is denied instead; but only a deny rule removes a capability.",
+      "whyWrong": {
+        "B": "Allow rules from settings files behave like `allowed_tools`: they approve, they don't restrict. In `bypassPermissions` mode, unlisted tools are still approved.",
+        "C": "A prompt sentence is guidance, not enforcement, and the premise is wrong. The allowlist was never limiting the tools in the first place.",
+        "D": "`acceptEdits` auto-approves file edits and filesystem commands, not read-only tools. Unlisted tools still fall through to the permission mode, so nothing is removed, and the job could now hit prompts or denials for calls that used to run."
+      },
+      "difficulty": 3,
+      "mindset": "Know which control removes a capability (deny/disallow) versus which merely pre-approves it (allow).",
+      "tags": [
+        "least-privilege",
+        "allowed_tools",
+        "disallowed_tools",
+        "permission-modes",
+        "agent-sdk",
+        "trap"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/permissions"
+      ]
+    },
+    {
+      "id": "p-d3-b1-003",
+      "taskStatementId": "3.1",
+      "stem": "A platform team's shared Claude Code project config connects nine MCP servers (ticketing, CRM, billing, two databases, analytics, chat, docs and a deployment server). Telemetry shows engineers on this repository use only the ticketing and docs servers. Engineers report that the agent sometimes picks a CRM or billing tool when they meant a ticketing tool, and the security team is uneasy that a coding session can reach billing and deployment at all. Which TWO changes MOST directly address both concerns? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Remove the seven unused servers from this repository's shared MCP configuration, so that only ticketing and docs are connected for sessions on this repository."
+        },
+        {
+          "id": "B",
+          "text": "Add a CLAUDE.md section that lists which servers are relevant to this repository and tells Claude to ignore the billing, CRM and deployment tools."
+        },
+        {
+          "id": "C",
+          "text": "Move the team to a model with a larger context window, so that all nine servers' tool definitions fit comfortably and selection improves."
+        },
+        {
+          "id": "D",
+          "text": "Give each project subagent an explicit `tools` list scoped to its role, so that each one sees only the few tools it needs and cannot reach CRM, billing or deployment tools."
+        },
+        {
+          "id": "E",
+          "text": "Add a hook that logs every billing and deployment tool call to the SIEM, so that the security team can review any access after the fact."
+        }
+      ],
+      "correct": [
+        "A",
+        "D"
+      ],
+      "explanation": "Both concerns come from **capability bloat**: tools that are available but not needed. Removing unused servers (A) takes billing and deployment off the attack surface and removes the overlapping tools that cause mis-selection. Scoping each subagent's `tools` (D) applies least privilege per role, so each agent can only reach a small, relevant set. Tool-search docs note that selection accuracy degrades as the number of available tools grows, and tools that stay connected remain discoverable and callable whether or not their schemas are loaded up front.",
+      "whyWrong": {
+        "B": "CLAUDE.md is advisory context. The tools stay connected and reachable, so the security concern remains, and Claude can still discover and pick the overlapping tools.",
+        "C": "A bigger window doesn't change what the agent is authorized to do. Selection errors come from too many overlapping tools, not from running out of room.",
+        "E": "Logging is detective. It records access after the fact and doesn't stop the agent reaching billing or deployment."
+      },
+      "difficulty": 2,
+      "mindset": "Fewer, role-scoped tools improve both safety and selection accuracy.",
+      "tags": [
+        "capability-bloat",
+        "mcp",
+        "claude-code",
+        "subagents",
+        "tool-selection"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/mcp",
+        "https://code.claude.com/docs/en/agent-sdk/subagents",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool"
+      ]
+    },
+    {
+      "id": "p-d3-b1-004",
+      "taskStatementId": "3.1",
+      "stem": "A market-research pipeline uses a coordinator and several subagents. The report-writing subagent reads web pages that other subagents collected and drafts a summary for analysts. Its configuration includes a `send_email` tool, which it has never needed, because emailing finished reports is done later by a separate approval step. The team worries that instructions hidden in a scraped web page could make it email data outside the company. What should the architect do FIRST?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Put a prompt-injection classifier in front of the report-writer that screens every scraped page and drops pages that look as though they contain hidden instructions."
+        },
+        {
+          "id": "B",
+          "text": "Add a line to the report-writer's system prompt telling it to treat web content as data only and never to follow any instructions found inside scraped pages."
+        },
+        {
+          "id": "C",
+          "text": "Keep `send_email` on the report-writer but log every call it makes, along with the recipient and subject, so that the security team can review the logs weekly."
+        },
+        {
+          "id": "D",
+          "text": "Remove `send_email` from the report-writer's tool set, leaving outbound email solely to the separate approval step that already exists after the report is drafted."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "The report-writer's role never involves sending email, so the tool is pure capability bloat. Removing it means no injected instruction can trigger exfiltration through it, because the capability isn't there. Classifiers and prompt hardening are reasonable *additional* layers against indirect injection, but they lower risk without removing it. Removing an unneeded tool is the cheapest structural fix and so the right first step.",
+      "whyWrong": {
+        "A": "A classifier is a useful extra layer but it is probabilistic and can miss injections. With the tool still present, a miss can still exfiltrate data. It is also more work than deleting one tool.",
+        "B": "Telling the model to treat tool content as data is recommended hardening, but it is guidance, not a guarantee. The dangerous capability is still available.",
+        "C": "Weekly log review finds exfiltration after the data has already left. That is detection, not prevention."
+      },
+      "difficulty": 1,
+      "mindset": "Remove the capability that makes the attack possible before layering detection on top.",
+      "tags": [
+        "least-privilege",
+        "prompt-injection",
+        "subagents",
+        "capability-bloat"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/mitigate-jailbreaks",
+        "https://code.claude.com/docs/en/agent-sdk/subagents"
+      ]
+    },
+    {
+      "id": "p-d3-b1-005",
+      "taskStatementId": "3.1",
+      "stem": "An enterprise assistant aggregates six MCP servers, about 180 tools in total, for staff across finance, HR, IT and sales. Product leadership has decided that every tool must stay available, because one conversation can span departments. Telemetry now shows tool definitions using a large share of each request's input tokens, and evals show the model more often picks a similar but wrong tool. Which approach BEST addresses the problem while respecting the product decision?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Remove every tool used by fewer than 5% of conversations from the configuration, so that the remaining toolset is small enough for reliable selection."
+        },
+        {
+          "id": "B",
+          "text": "Enable tool search with `defer_loading` on most tools, keep the few most frequently used tools loaded up front, and namespace tool names by service."
+        },
+        {
+          "id": "C",
+          "text": "Add a classifier in front of the assistant that routes each request to one of four department-specific agents, each loaded only with its own tools."
+        },
+        {
+          "id": "D",
+          "text": "Move to the model with the largest available context window, so that all 180 definitions fit with plenty of room left over for the conversation."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "The stem rules out removing tools: every tool must stay available. The problem is **loading all definitions up front**. The tool search tool lets Claude find and load tools on demand. Deferred tools stay out of context until a search finds them, the docs note that selection accuracy degrades once you exceed roughly 30–50 tools, and they recommend keeping the 3–5 most used tools non-deferred and namespacing names (`github_`, `slack_`) so one search matches a whole group. For MCP-connector servers you don't set `defer_loading` on individual tool definitions; you set it on the `mcp_toolset` entry, either once in `default_config` for the whole server or per tool in its `configs`. This cuts token cost and selection errors with no loss of capability.",
+      "whyWrong": {
+        "A": "This is tempting because it looks like least privilege, but it breaks the stated requirement. Least privilege removes what the role doesn't need. Here the role needs every tool, so the right lever is how tools are loaded, not whether they exist.",
+        "C": "Per-department routing adds a classifier and four agents to maintain, and it breaks the cross-department conversations the product requires. That is over-engineering when deferred loading solves the problem directly.",
+        "D": "A bigger window fits more tokens but doesn't stop selection accuracy falling across many similar tools, and you still pay for every definition on every request."
+      },
+      "difficulty": 3,
+      "mindset": "When every tool is genuinely needed, fix how tools are loaded (progressive discovery), not whether they exist.",
+      "tags": [
+        "capability-bloat",
+        "tool-search",
+        "defer_loading",
+        "progressive-discovery",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool",
+        "https://platform.claude.com/docs/en/agents-and-tools/mcp-connector"
+      ]
+    },
+    {
+      "id": "p-d3-b1-006",
+      "taskStatementId": "3.4",
+      "stem": "A claims-processing service runs a multi-agent workflow on the Agent SDK: a coordinator delegates to three subagents, each calling internal MCP tools. Operations sees occasional runs that take four times longer than usual, but the only logs are each run's final answer and total cost, so nobody can tell which subagent or tool call is slow. The company already runs an OpenTelemetry-compatible observability backend. What is the MOST effective way to make these slow runs diagnosable?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Have the coordinator end each run with a short self-report listing which subagents it used, how long each took and which tool calls seemed slow."
+        },
+        {
+          "id": "B",
+          "text": "Log the full prompt and the full response of every run to the application log, so that engineers can reconstruct where the time was spent after the fact by reading the transcripts."
+        },
+        {
+          "id": "C",
+          "text": "Enable the SDK's OpenTelemetry export, including traces, so that each model request and tool call is a span with subagent work nested, and tag runs with a service name."
+        },
+        {
+          "id": "D",
+          "text": "Pull the organization's usage and cost dashboard every morning and compare each day's total token usage with the previous day's totals to spot the slow runs."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Diagnosing latency in a multi-agent system needs **per-step, structured telemetry**, not final outputs. The Agent SDK exports OpenTelemetry metrics, log events and (beta) traces. Spans wrap each model request and tool call, with timing and token attributes, and a subagent's spans nest under the parent's tool span, so the whole delegation chain shows as one trace in the existing backend. Setting `OTEL_SERVICE_NAME` and resource attributes makes the runs easy to filter.",
+      "whyWrong": {
+        "A": "A model's self-report about its own timing isn't measured data. It can be wrong or invented, and it doesn't give comparable numbers across runs.",
+        "B": "Full prompts and responses are bulky, raise privacy concerns, and still lack per-call timing and parent/child structure, so you can't pinpoint the slow step.",
+        "D": "Daily aggregate usage can show that something changed, but it can't attribute latency to a specific subagent or tool call in a specific run."
+      },
+      "difficulty": 2,
+      "mindset": "Trace every decision and tool call as structured, correlated spans; don't infer from final outputs or self-reports.",
+      "tags": [
+        "observability",
+        "opentelemetry",
+        "tracing",
+        "agent-sdk",
+        "multi-agent"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/observability",
+        "https://code.claude.com/docs/en/monitoring-usage"
+      ]
+    },
+    {
+      "id": "p-d3-b1-007",
+      "taskStatementId": "3.4",
+      "stem": "A high-volume document-summarization service calls the Messages API with streaming. Its dashboard has one metric, \"API failures\", which counts only non-2xx HTTP responses, and the client retries every failure the same way. During an incident the team couldn't tell whether they had hit their own organization's limits or the platform was overloaded, and some users received truncated summaries that never showed up as failures. Which TWO monitoring changes BEST address these gaps? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add 400 and 401 responses to the automatic retry policy, so that short-lived spikes in those errors resolve themselves without anyone having to investigate."
+        },
+        {
+          "id": "B",
+          "text": "Split the failure metric by error type, tracking 429 rate-limit errors (with the rate-limit and retry-after headers) separately from 529 overloaded errors."
+        },
+        {
+          "id": "C",
+          "text": "Count only non-2xx responses as failures, because a stream that starts with HTTP 200 means the request completed successfully for the user."
+        },
+        {
+          "id": "D",
+          "text": "Raise the client's maximum retry count substantially for every error type, so that transient spikes stop appearing on the failure dashboard at all."
+        },
+        {
+          "id": "E",
+          "text": "Record `error` events that arrive inside a stream, and the `stop_reason` of each response, so that failures and truncation after an HTTP 200 are counted."
+        }
+      ],
+      "correct": [
+        "B",
+        "E"
+      ],
+      "explanation": "429 means **your** organization hit a rate limit. The response headers (`retry-after`, `anthropic-ratelimit-*`) tell you which limit and when it resets. A spend-cap 429 has no `retry-after` and won't clear with retries. 529 means the API is overloaded across all users. These call for different responses, so they need separate metrics (B). With streaming, an error can arrive as an SSE `error` event **after** a 200, and a response that hit `max_tokens` is truncated even though it succeeded at the HTTP level. Tracking in-stream errors and the `stop_reason` mix (E) catches the \"silent\" truncated summaries.",
+      "whyWrong": {
+        "A": "400 and 401 are client errors (a malformed request, bad credentials). Retrying them can't succeed and wastes capacity. They need a fix, not a retry.",
+        "C": "This is the blind spot that caused the problem. A streamed response can fail or be truncated after the 200 status is sent.",
+        "D": "More retries hide the signal instead of explaining it, and they make overload worse. Spend-cap 429s won't clear with retries anyway."
+      },
+      "difficulty": 2,
+      "mindset": "Classify failures by cause and look inside successful responses; one blended error metric hides what you need to act on.",
+      "tags": [
+        "observability",
+        "rate-limits",
+        "429",
+        "529",
+        "streaming",
+        "stop_reason"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://platform.claude.com/docs/en/api/rate-limits"
+      ]
+    },
+    {
+      "id": "p-d3-b1-008",
+      "taskStatementId": "3.4",
+      "stem": "A multi-tenant SaaS product runs an Agent SDK agent for thousands of customer users, all through one service API credential. The security team needs a per-end-user audit trail of which tools and MCP servers the agent used on each user's behalf, to forward to their SIEM. The company's privacy policy forbids storing customer document content or prompts in the observability backend. Which design BEST satisfies both requirements?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Enable raw API body logging, so that the complete request and response JSON for every call is exported and the user can be identified from the conversation text."
+        },
+        {
+          "id": "B",
+          "text": "Rely on the Claude Console usage reports filtered by API key, since every request is already attributed there to the credential that made the call to the API."
+        },
+        {
+          "id": "C",
+          "text": "Tell the agent in its system prompt to include the current user's ID in every response, then parse each response to build the audit trail from those IDs."
+        },
+        {
+          "id": "D",
+          "text": "Export OpenTelemetry log events with end-user and tenant IDs injected as resource attributes on each query, leaving prompt, tool-content and raw-body logging off."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "The SDK's telemetry is **structural by default**: tool names, decisions, durations and server connection events are exported, while prompts, tool inputs and outputs, and raw bodies are recorded only if you opt in (`OTEL_LOG_USER_PROMPTS`, `OTEL_LOG_TOOL_DETAILS`, `OTEL_LOG_TOOL_CONTENT`, `OTEL_LOG_RAW_API_BODIES`). Built-in identity attributes describe the **service credential**, not the end user, so the docs recommend injecting `enduser.id`/`tenant.id` via `OTEL_RESOURCE_ATTRIBUTES` on each `query()` call. Events such as `tool_decision`, `tool_result` and `mcp_server_connection` then form a per-user audit trail you can send to a SIEM without storing content.",
+      "whyWrong": {
+        "A": "Raw bodies contain the whole conversation, which is exactly the customer content the policy forbids. Getting the user from free text is fragile too.",
+        "B": "Usage is attributed to the shared service credential, so every user looks the same. It can't give a per-end-user audit trail.",
+        "C": "An audit trail can't rely on the model choosing to echo an ID. That's probabilistic, and the response text may also be shown to users or logged with content."
+      },
+      "difficulty": 3,
+      "mindset": "Attribute telemetry to the real actor and collect structure, not content, unless the pipeline is approved for content.",
+      "tags": [
+        "observability",
+        "audit",
+        "opentelemetry",
+        "privacy",
+        "multi-tenant",
+        "agent-sdk"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/observability",
+        "https://code.claude.com/docs/en/monitoring-usage"
+      ]
+    },
+    {
+      "id": "p-d3-b1-009",
+      "taskStatementId": "3.4",
+      "stem": "A sales-assistant agent built on the Agent SDK uses a remote CRM MCP server authenticated with an OAuth token passed in headers. After a routine credential rotation, the agent started answering account questions with generic, plausible-sounding text instead of CRM data. No exception was raised and the error dashboards stayed green for two days, until a sales manager noticed. Which monitoring change would have caught this EARLIEST?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Wrap each `query()` call in a try/except that catches MCP connection exceptions and raises an alert whenever one of them is thrown."
+        },
+        {
+          "id": "B",
+          "text": "Check the MCP server statuses from the `init` system message (and later status checks), and alert when a server is `failed` or `needs-auth`."
+        },
+        {
+          "id": "C",
+          "text": "Run a weekly LLM-as-judge evaluation over a sample of transcripts that scores whether each answer appears to be grounded in CRM data."
+        },
+        {
+          "id": "D",
+          "text": "Lower `max_turns` so that runs where the agent can't find CRM data end sooner and show up on the dashboard as incomplete runs."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "In the Agent SDK, **MCP servers that fail to connect do not throw**. The run continues without that server's tools, and Claude may fall back to other tools or general knowledge. The `init` message reports each server's `status` (`connected`, `pending`, `failed`, `needs-auth`, `disabled`), and when a server returns an authorization challenge it reports `needs-auth`. Because a server with a cached tool list can still show `pending` at init and connect on first use, also poll the status later (`get_mcp_status()` / `mcpServerStatus()`). Alerting on `failed`/`needs-auth` catches the broken credential on the first run after rotation.",
+      "whyWrong": {
+        "A": "This is the trap: connection failures don't raise exceptions, so the handler never fires. That's exactly why the dashboards stayed green.",
+        "C": "Eval sampling helps with quality monitoring, but weekly is too slow and indirect for a binary connectivity failure that structured status shows right away.",
+        "D": "Turn limits don't detect a missing server, and they could cut off legitimate long runs. The agent was producing answers, not looping."
+      },
+      "difficulty": 2,
+      "mindset": "Silent failures need explicit health signals; check structured status rather than waiting for exceptions or user complaints.",
+      "tags": [
+        "observability",
+        "mcp",
+        "silent-failure",
+        "agent-sdk",
+        "health-checks"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/mcp"
+      ]
+    },
+    {
+      "id": "p-d3-b1-010",
+      "taskStatementId": "3.7",
+      "stem": "A company's internal incident-tracking system has a REST API. Three groups want Claude to search and update incidents: developers in Claude Code, support staff in Claude Desktop, and a platform team building an Agent SDK service. Security wants one place to enforce authentication and decide which operations are exposed. Which integration approach is MOST appropriate?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Build one remote MCP server over Streamable HTTP that wraps the incident API, with authentication, and expose a small set of task-focused tools to all three hosts."
+        },
+        {
+          "id": "B",
+          "text": "Have each group write its own tool definitions that call the REST API directly from its own client code, so that each group can tailor the tools to its needs."
+        },
+        {
+          "id": "C",
+          "text": "Ship a command-line wrapper for the incident API, and tell each group to have Claude call it through a shell tool whenever it needs incident data."
+        },
+        {
+          "id": "D",
+          "text": "Deploy a dedicated incident agent and have the other three agents delegate every incident request to it through an agent-to-agent message protocol."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "MCP is the **standard way to expose one capability to many hosts**: Claude Code, Claude Desktop and the Agent SDK all support MCP servers. A single remote server over Streamable HTTP gives one place to enforce authentication and decide which operations become tools. Following tool-design guidance, those should be a few task-focused tools, not a 1:1 wrapper of every endpoint. The deciding factors here are many consumers plus a central security boundary.",
+      "whyWrong": {
+        "B": "Three separate implementations means three places to secure, keep in sync and audit, which is the opposite of what security asked for.",
+        "C": "A CLI through a shell tool needs shell access on every host (capability bloat), can't be used from Claude Desktop the same way, and spreads credentials around.",
+        "D": "Agent-to-agent delegation adds a whole extra agent and a model hop per request for what is plain tool access. That's over-engineered for CRUD operations."
+      },
+      "difficulty": 1,
+      "mindset": "Many hosts plus one controlled capability points to MCP; pick the simplest mechanism that centralizes the boundary.",
+      "tags": [
+        "mcp",
+        "integration-mechanism",
+        "streamable-http",
+        "tool-design"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/docs/learn/architecture",
+        "https://code.claude.com/docs/en/mcp",
+        "https://www.anthropic.com/engineering/writing-tools-for-agents"
+      ]
+    },
+    {
+      "id": "p-d3-b1-011",
+      "taskStatementId": "3.7",
+      "stem": "A team's CI pipeline is written in Go and runs in an existing container image. They want Claude to review each pull request's diff and emit findings as JSON that matches a fixed schema, which a later step posts to their dashboard. They want to do this with minimal changes to the pipeline and no new long-running services. A team member proposes building and hosting an MCP server that exposes the CI system to Claude. What should the architect recommend instead?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Rewrite the pipeline step in Python so that it can use the Agent SDK directly, and return the findings through the SDK's structured output support."
+        },
+        {
+          "id": "B",
+          "text": "Deploy a small agent-to-agent setup in which a review agent passes its findings to a formatting agent that is responsible for producing the JSON."
+        },
+        {
+          "id": "C",
+          "text": "Build the proposed MCP server, but host it as a sidecar container in the pipeline, so that no permanently running service is needed outside CI."
+        },
+        {
+          "id": "D",
+          "text": "Add a step that runs Claude Code in non-interactive mode (`claude -p`) with `--output-format json` and `--json-schema`, then reads the structured output."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "The qualifiers decide it: \"minimal changes\", \"no new long-running services\" and a Go pipeline. Headless Claude Code (`claude -p`) runs from any language's shell step. `--output-format json` gives machine-readable output, and `--json-schema` returns a validated result in the `structured_output` field. Adding `--bare` keeps the CI run reproducible by skipping host-specific hooks, MCP servers and CLAUDE.md. Nothing new has to be hosted, and nothing has to be rewritten.",
+      "whyWrong": {
+        "A": "Rewriting a pipeline step in another language goes against \"minimal changes\". The CLI already offers non-interactive structured output from any language.",
+        "B": "Two agents for review plus formatting is over-engineering. Schema-constrained output from one call handles the formatting.",
+        "C": "An MCP server exposes tools to a host. It doesn't run the review or produce findings. You'd still need a client that invokes Claude, so it adds work without meeting the goal."
+      },
+      "difficulty": 1,
+      "mindset": "Match the mechanism to the caller: a script or pipeline in any language calls the CLI; don't build a server you don't need.",
+      "tags": [
+        "integration-mechanism",
+        "claude-code",
+        "headless",
+        "ci-cd",
+        "structured-output"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/headless"
+      ]
+    },
+    {
+      "id": "p-d3-b1-012",
+      "taskStatementId": "3.7",
+      "stem": "A backend service calls the Messages API directly. The team wants Claude to use a vendor's MCP server, which the vendor ships only as a local package that runs over stdio. An engineer plans to pass the server's launch command in the Messages API's MCP connector configuration (`mcp_servers`) so the service needs no MCP client code. Security requires that the vendor's tools never be reachable from the public internet. What is the BEST course of action?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Put the stdio launch command in the connector's `url` field, because the connector starts local servers as subprocesses when the URL is not an https address."
+        },
+        {
+          "id": "B",
+          "text": "Run the vendor server behind a localhost SSE endpoint and point the connector at `http://127.0.0.1`, which keeps the vendor's tools off the public internet."
+        },
+        {
+          "id": "C",
+          "text": "Run the server through an MCP client inside the service, such as the Agent SDK's stdio configuration, since the connector only reaches public remote HTTP servers."
+        },
+        {
+          "id": "D",
+          "text": "Re-implement the vendor's tools as hand-written tool definitions in the service, then delete the vendor package so that no MCP is involved in the integration."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "The MCP connector lets the Messages API reach **remote** MCP servers without client code, but the server must be **publicly exposed over HTTP** (Streamable HTTP or SSE, with an `https://` URL). Local stdio servers can't be connected directly, and only tool calls are supported. A stdio-only server that must stay off the public internet therefore needs a local MCP client that launches it as a subprocess, for example the Agent SDK's `mcp_servers` stdio config (command/args/env).",
+      "whyWrong": {
+        "A": "The connector's `url` must be an https URL to a remote server. It never runs local commands.",
+        "B": "Anthropic's servers make the connector call, so they can't reach your localhost. SSE is also the deprecated transport, so building new work on it is a poor choice.",
+        "D": "Rewriting the vendor's tools by hand duplicates their logic. It then drifts from vendor updates and gives up the standard integration point, a lot of maintenance when a supported client path already exists."
+      },
+      "difficulty": 3,
+      "mindset": "Check where each integration path actually runs (your process vs Anthropic's) before choosing it.",
+      "tags": [
+        "mcp-connector",
+        "stdio",
+        "transports",
+        "integration-mechanism",
+        "agent-sdk"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/mcp-connector",
+        "https://code.claude.com/docs/en/agent-sdk/mcp",
+        "https://modelcontextprotocol.io/specification/2025-06-18/basic/transports"
+      ]
+    },
+    {
+      "id": "p-d3-b1-013",
+      "taskStatementId": "3.7",
+      "stem": "A finance agent connects to an MCP server whose tools return entire spreadsheets. A typical task reads a 40,000-row ledger export, keeps the rows for one cost center, and writes a summary to another system. Each run passes the whole ledger through the model's context twice (once when read, once when written onward), which makes runs slow and expensive and occasionally introduces copying errors. Which TWO changes BEST address the root cause? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Let the agent write and run code in a sandbox that calls the MCP tools, filters the rows there, and returns only the summary to the model."
+        },
+        {
+          "id": "B",
+          "text": "Switch to the model with the largest available context window, so that the full ledger fits into context with room to spare and no run has to truncate the data."
+        },
+        {
+          "id": "C",
+          "text": "Redesign the server's read tool to accept filter parameters and return paginated, concise results instead of the entire spreadsheet every time."
+        },
+        {
+          "id": "D",
+          "text": "Add a system-prompt instruction asking the agent to copy rows carefully and double-check its totals before it writes them into the other system."
+        },
+        {
+          "id": "E",
+          "text": "Add a subagent that reads the ledger in chunks and sends every row back to the coordinator, so that each model call sees a smaller slice of it."
+        }
+      ],
+      "correct": [
+        "A",
+        "C"
+      ],
+      "explanation": "The root cause is **large intermediate data flowing through the model's context**. Anthropic's \"code execution with MCP\" pattern has the agent call MCP tools from code and filter data in the execution environment, so only the result comes back; their example cut one workflow from about 150,000 to about 2,000 tokens (A). Tool-design guidance also says to return high-signal, filtered, paginated results instead of dumping whole datasets (C). Both stop the bulk data from entering context at all.",
+      "whyWrong": {
+        "B": "A bigger window lets more data through but still makes every run pay to process it, and it doesn't remove the copying-error risk.",
+        "D": "Asking the model to be careful doesn't change the data flow. Cost, latency and error risk all stay.",
+        "E": "Chunking in a subagent only isolates context if just a summary comes back. Sending every row to the coordinator moves the bloat rather than removing it, and adds an extra agent hop."
+      },
+      "difficulty": 2,
+      "mindset": "Keep bulk data out of the model's context: filter at the tool or in code, and pass back only what the model needs to reason about.",
+      "tags": [
+        "code-execution",
+        "mcp",
+        "context-efficiency",
+        "tool-design",
+        "integration-mechanism"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/code-execution-with-mcp",
+        "https://www.anthropic.com/engineering/writing-tools-for-agents"
+      ]
+    },
+    {
+      "id": "p-d3-b1-014",
+      "taskStatementId": "3.7",
+      "stem": "A procurement team is building an agent that drafts supplier contracts. Before a draft is sent, it needs a legal-risk judgment. The legal department already runs its own contract-review agent, which has access to privileged legal data the procurement team may not see, and the legal team changes its prompts and policies often. Which integration approach is MOST appropriate?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Give the procurement agent read access to legal's privileged data store, and copy legal's review prompt into a subagent that the procurement team maintains itself."
+        },
+        {
+          "id": "B",
+          "text": "Have the procurement agent delegate to legal's review agent through a defined interface that legal owns, passing the draft and receiving a structured risk verdict."
+        },
+        {
+          "id": "C",
+          "text": "Merge both agents into a single agent that has all procurement tools and all legal tools, so that one model can draft and review the contract in a single pass."
+        },
+        {
+          "id": "D",
+          "text": "Ask the procurement agent to perform a careful legal self-review of every draft, using a checklist that has been taken from legal's published contract policies."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "This is a case for **agent-to-agent delegation**. The capability is a judgment made by an agent another team owns, behind a security boundary (privileged data), and its logic changes often. Calling legal's agent through an interface legal owns (for example a tool or API endpoint) with explicit context in and a structured verdict out respects the boundary. Legal can also change its prompts without breaking procurement, and procurement never touches privileged data.",
+      "whyWrong": {
+        "A": "This breaks the security boundary by granting access to data procurement may not see, and the copied prompt will go stale as legal changes its policies.",
+        "C": "A merged agent with both teams' tools is capability bloat. It removes the boundary between procurement and privileged legal data, and it hurts tool selection.",
+        "D": "Self-review without legal's data or authority isn't the independent judgment the process needs, and a static checklist will drift from legal's evolving policies."
+      },
+      "difficulty": 2,
+      "mindset": "When another team owns the judgment and the data boundary, delegate to their agent through a contract; don't copy it or merge it.",
+      "tags": [
+        "agent-to-agent",
+        "integration-mechanism",
+        "security-boundary",
+        "multi-agent"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents",
+        "https://modelcontextprotocol.io/docs/learn/architecture"
+      ]
+    }
+  ]
+}

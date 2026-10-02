@@ -1,0 +1,517 @@
+{
+  "certId": "foundations",
+  "domainId": "d1-agentic",
+  "lessons": [
+    {
+      "id": "f-agentic-loop",
+      "title": "The agentic loop and stop_reason",
+      "estMinutes": 12,
+      "level": "core",
+      "taskStatementIds": [
+        "1.1"
+      ],
+      "eli5": "An agent works like a cook following a recipe who keeps asking a helper for ingredients. Each time the cook says 'I need something' (tool_use), the helper fetches it and hands it back, and the cook carries on. The cook is finished only when they say 'dinner is served' (end_turn), not when they happen to mutter something that sounds final.",
+      "visualId": "agentic-loop",
+      "body": "## What an agentic loop is\n\nA single API call to Claude returns one response. An **agent** is that call wrapped in a loop: Claude asks to use a tool, your code runs the tool, you hand the result back, and Claude decides what to do next. The loop repeats until Claude says it is finished.\n\nThe signal that drives the loop is the `stop_reason` field on every successful response. It is the only reliable, structured answer to the question \"why did the model stop talking?\"\n\n## The lifecycle, step by step\n\n1. **Send** the conversation (messages + the `tools` array) to Claude.\n2. **Inspect `stop_reason`.**\n3. If it is `tool_use`: run each requested tool, then **append** the assistant message and a user message containing the `tool_result` blocks to the history.\n4. **Call again** with the same tools array and the grown history. Claude now reasons over the new information.\n5. If it is `end_turn`: Claude has finished. Use the final answer and exit the loop.\n\n```python\nmessages = [{\"role\": \"user\", \"content\": task}]\nfor _ in range(SAFETY_CAP):            # safety net only, not the main stop\n    resp = client.messages.create(model=MODEL, max_tokens=4096,\n                                  tools=tools, messages=messages)\n    messages.append({\"role\": \"assistant\", \"content\": resp.content})\n    if resp.stop_reason == \"tool_use\":\n        results = [{\"type\": \"tool_result\", \"tool_use_id\": b.id,\n                    \"content\": run_tool(b.name, b.input)}\n                   for b in resp.content if b.type == \"tool_use\"]\n        messages.append({\"role\": \"user\", \"content\": results})\n        continue\n    if resp.stop_reason == \"end_turn\":\n        break\n    handle_other_stop_reason(resp)      # max_tokens, refusal, pause_turn...\n```\n\nThe key line is the append. Tool results only help if they go **into the conversation history**, because the model has no memory outside the messages you send.\n\n## Every stop_reason you should recognise\n\n| `stop_reason` | What it means | What your code should do |\n|---|---|---|\n| `end_turn` | Claude finished naturally | Stop the loop and use the answer |\n| `tool_use` | Claude wants one or more client tools run | Run them, return `tool_result` blocks, call again |\n| `max_tokens` | Output hit your `max_tokens` limit | The answer is **truncated, not done**. Raise the limit or continue; if the last block is a half-written `tool_use`, retry with a higher limit |\n| `stop_sequence` | One of your custom stop sequences fired | Check which one and act on it |\n| `pause_turn` | A server-tool loop (e.g. web search run by Anthropic) hit its iteration limit (default 10) | Send the assistant content back as-is to let it continue. Do not reply with `tool_result` blocks |\n| `refusal` | Claude declined for safety reasons | Not an HTTP error (it arrives with status 200). Read `stop_details` (it is `null` for every other stop reason), then retry on a fallback model or change the request |\n| `model_context_window_exceeded` | The context window filled before `max_tokens` | Treat like truncation; trim or compact context |\n\nRate limits (HTTP 429) and overload (529) are **errors**, not stop reasons. They come back as failed HTTP responses, never in `stop_reason`.\n\n## Message format rules that cause 400 errors\n\nWhen you answer a `tool_use` response, the next user message must:\n- contain **one `tool_result` per `tool_use` block**, each matched by `tool_use_id`;\n- put the `tool_result` blocks **first** (any extra text comes after them);\n- come **immediately after** the assistant message that requested the tools.\n\nBreaking any of these gives a 400 error such as \"tool_use ids were found without tool_result blocks immediately after\".\n\n## Model-driven decisions vs pre-configured trees\n\nIn an agentic loop, **Claude chooses the next tool** based on what it has learned so far. That is different from a pre-configured decision tree where your code hard-wires \"call A, then B, then C\". Decision trees are predictable but brittle when inputs vary; model-driven loops adapt but need guardrails (see the enforcement lessons). The exam wants you to know which is which and to recognise that the loop itself should be driven by `stop_reason`, while business-critical ordering is enforced in code.\n\n## Three anti-patterns the exam names\n\n1. **Parsing natural language to decide when to stop**, such as looking for \"I'm done\" or \"Final answer:\" in the text. Wording varies; `stop_reason` does not.\n2. **An arbitrary iteration cap as the primary stopping mechanism**, such as \"stop after 5 loops\". A cap is a fine *safety net* against runaway loops, but if it is the main exit you will cut off agents mid-task.\n3. **Treating the presence of assistant text as \"finished\".** Claude often writes text *and* requests a tool in the same response (\"Let me check the order...\"). Text does not mean done; `end_turn` does.\n\n## The same loop inside the Agent SDK\n\nThe Claude Agent SDK runs this loop for you. It streams messages and ends with a **`ResultMessage`** whose `subtype` tells you how the run ended:\n\n| `subtype` | Meaning |\n|---|---|\n| `success` | Finished normally; the `result` text is present |\n| `error_max_turns` | Hit `max_turns` (counts tool-use turns only) |\n| `error_max_budget_usd` | Hit `max_budget_usd` (includes subagent spend) |\n| `error_during_execution` | Something failed during the run |\n| `error_max_structured_output_retries` | Structured output could not be produced within retries |\n\nThe `result` field exists only on `success`, so check `subtype` first. `max_turns` and `max_budget_usd` are the SDK's safety nets, not its main stop.\n\n## Worked example\n\nA support agent receives \"Where is my order?\" Claude replies with text \"Let me look that up\" plus a `tool_use` for `get_customer`. A naive loop that stops when it sees text would end here and send the customer a non-answer. A correct loop sees `stop_reason == \"tool_use\"`, runs `get_customer`, appends the result, and calls again. Claude then calls `lookup_order`, gets the tracking data, and finally answers with `stop_reason == \"end_turn\"`.\n",
+      "keyTakeaways": [
+        "Continue the loop when stop_reason is tool_use; stop when it is end_turn.",
+        "Append every tool_result to the conversation history so the next call can reason over it.",
+        "max_tokens means truncated, not finished; refusal and pause_turn are 200 responses that need their own handling (read stop_details on refusal).",
+        "Iteration caps (max_turns, budget limits) are safety nets, never the primary stop.",
+        "tool_result blocks go first in the next user message, one per tool_use, matched by tool_use_id."
+      ],
+      "examTips": [
+        "If an option checks stop_reason for tool_use vs end_turn, it is almost always the right loop-control answer.",
+        "Eliminate options that detect completion by text content ('look for DONE', 'stop when the assistant writes a reply').",
+        "An option that only adds a max-iteration limit is a distractor unless the question explicitly asks about a safety net for runaway loops.",
+        "If a question describes HTTP 429/529, treat it as an error-handling question, not a stop_reason question."
+      ],
+      "commonTraps": [
+        "Assuming text in a response means the agent is finished, when the same response also contains a tool_use block.",
+        "Treating max_tokens as a successful finish and shipping a truncated answer.",
+        "Replying to pause_turn with tool_result blocks instead of sending the assistant content back as-is.",
+        "Thinking refusal arrives as an HTTP error; it is a normal 200 response with stop_reason refusal.",
+        "Putting explanatory text before the tool_result blocks in the user message, which triggers a 400 error."
+      ],
+      "resources": [
+        {
+          "title": "Handling stop reasons (Claude API docs)",
+          "url": "https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons",
+          "type": "docs"
+        },
+        {
+          "title": "Handle tool calls (Claude API docs)",
+          "url": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls",
+          "type": "docs"
+        },
+        {
+          "title": "How the agent loop works (Agent SDK)",
+          "url": "https://code.claude.com/docs/en/agent-sdk/agent-loop",
+          "type": "docs"
+        },
+        {
+          "title": "Tool use overview (Claude API docs)",
+          "url": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview",
+          "type": "docs"
+        }
+      ]
+    },
+    {
+      "id": "f-workflows-vs-agents",
+      "title": "Workflows vs agents: pick the simplest pattern that works",
+      "estMinutes": 10,
+      "level": "core",
+      "taskStatementIds": [
+        "1.1",
+        "1.6"
+      ],
+      "eli5": "A workflow is like an assembly line where every station is fixed in advance. An agent is like a handyman you send to fix 'whatever is wrong with the house' who decides each next step himself. Use the assembly line when the job is predictable; hire the handyman only when you cannot predict the steps.",
+      "visualId": "workflow-patterns",
+      "body": "## Two families of agentic systems\n\nAnthropic's engineering post *Building Effective Agents* splits LLM systems into two families:\n\n- **Workflows**: LLMs and tools orchestrated through **predefined code paths**. Your code decides the order of steps.\n- **Agents**: the LLM **dynamically directs its own process and tool use**. The model decides the next step at run time.\n\nBoth are legitimate. The exam rewards choosing the **simplest one that solves the problem**. Agents cost more, take longer, and their errors can compound across steps, so they are worth it only when the steps truly cannot be predicted.\n\n## The five workflow patterns\n\n| Pattern | How it works | Use it when | Example |\n|---|---|---|---|\n| **Prompt chaining** | Fixed sequence; each call works on the previous output, with optional checks (\"gates\") between steps | The task splits cleanly into known steps; you trade latency for accuracy | Draft marketing copy, then translate it; per-file code review, then a cross-file pass |\n| **Routing** | Classify the input, then send it to a specialised prompt, tool set or model | Distinct input categories need different handling | Refund questions vs technical questions vs general queries |\n| **Parallelization** | Run calls side by side: *sectioning* (independent subtasks) or *voting* (same task several times) | Subtasks are independent, or you want multiple opinions | One call screens for policy issues while another answers |\n| **Orchestrator-workers** | A central LLM breaks the task down **at run time** and delegates to workers, then combines results | You cannot know the subtasks in advance | Changing an unknown number of files; open-ended research |\n| **Evaluator-optimizer** | One call generates, another critiques against criteria, repeat | Clear evaluation criteria exist and iteration measurably helps | Literary translation refined over several rounds |\n\nThe difference between parallelization and orchestrator-workers is a favourite distinction: in parallelization **you** define the subtasks in code; in orchestrator-workers **the model** decides them based on the input.\n\n## The three design principles\n\n1. **Simplicity**: start with a single well-prompted call (an \"augmented LLM\" with retrieval, tools and memory). Add steps only when they demonstrably help.\n2. **Transparency**: make the agent's planning steps visible so humans can see and debug what it is doing.\n3. **A well-crafted agent-computer interface (ACI)**: invest in tool definitions and documentation as much as you would in a human UI. Anthropic's example of **poka-yoke** (mistake-proofing): their agent made errors with relative file paths, so they changed the tool to require absolute paths, and that class of error disappeared.\n\n## The cost of autonomy\n\nAnthropic's multi-agent research write-up reports that agents use roughly **4x** the tokens of a chat interaction, and multi-agent systems roughly **15x**. That spend pays off only for high-value tasks where the extra breadth matters. For a routine lookup, a single agent or even a plain workflow is the right call.\n\n## Decision guide\n\nAsk these questions in order:\n\n1. Can one well-prompted call with the right tools do it? **Stop there.**\n2. Are the steps known and fixed? Use **prompt chaining** (maybe with gates).\n3. Do inputs fall into clear categories? Add **routing**.\n4. Are there independent pieces? Use **parallelization**.\n5. Are the subtasks unknowable until you see the input? Use **orchestrator-workers** or a full **agent**.\n6. Is quality improved by critique against clear criteria? Add an **evaluator-optimizer** loop.\n\n## Worked example\n\nA team wants Claude to produce a weekly status report from three fixed sources (ticket tracker, CI dashboard, release notes). Someone proposes a coordinator with four subagents. The steps are fixed and known, the sources do not change, and nothing needs to be discovered at run time. A **prompt chain** (gather, summarise each source, combine) is cheaper, faster and easier to debug. Multi-agent here would spend roughly 15x the tokens for no gain.\n\nContrast: \"Investigate why checkout conversions dropped last week.\" Nobody knows which logs, dashboards or code paths matter until the investigation starts. That is open-ended, so an agent (or orchestrator-workers) fits.\n\n## How this shows up on the exam\n\nThe exam often offers a sophisticated option (a new agent, a classifier, a framework, a bigger model) next to a proportionate one. If the simpler pattern fixes the stated root cause, it wins. \"Multi-agent is always better\" and \"adopt a framework\" are classic wrong defaults.\n",
+      "keyTakeaways": [
+        "Workflows follow predefined code paths; agents let the model direct its own steps and tool use.",
+        "Know the five patterns: prompt chaining, routing, parallelization, orchestrator-workers, evaluator-optimizer.",
+        "Orchestrator-workers differs from parallelization because the subtasks are decided by the model at run time.",
+        "Start simple; agents cost about 4x chat tokens and multi-agent systems about 15x, so reserve them for high-value, unpredictable tasks.",
+        "Invest in the agent-computer interface: clear tools and mistake-proofing (poka-yoke) such as requiring absolute paths."
+      ],
+      "examTips": [
+        "When a fixed, predictable sequence is described, prefer prompt chaining over a dynamic agent.",
+        "When the scenario stresses that subtasks cannot be known in advance, choose orchestrator-workers or an agent.",
+        "Be suspicious of answers that add an agent, classifier or framework before a simpler fix has been tried.",
+        "Evaluator-optimizer is right only when clear evaluation criteria exist; without them the loop has nothing to optimise toward."
+      ],
+      "commonTraps": [
+        "Assuming multi-agent architectures are always more accurate and worth the cost.",
+        "Confusing parallelization (predefined subtasks) with orchestrator-workers (subtasks chosen at run time).",
+        "Choosing a framework or extra abstraction layer when a direct API call or prompt chain would do.",
+        "Picking routing to fix an ordering problem; routing decides which handler runs, not the order of steps."
+      ],
+      "resources": [
+        {
+          "title": "Building Effective AI Agents (Anthropic Engineering)",
+          "url": "https://www.anthropic.com/engineering/building-effective-agents",
+          "type": "blog"
+        },
+        {
+          "title": "How we built our multi-agent research system (Anthropic Engineering)",
+          "url": "https://www.anthropic.com/engineering/multi-agent-research-system",
+          "type": "blog"
+        },
+        {
+          "title": "Building agents with the Claude Agent SDK (Anthropic)",
+          "url": "https://claude.com/blog/building-agents-with-the-claude-agent-sdk",
+          "type": "blog"
+        }
+      ]
+    },
+    {
+      "id": "f-coordinator-pattern",
+      "title": "Coordinator-subagent (hub-and-spoke) design",
+      "estMinutes": 12,
+      "level": "core",
+      "taskStatementIds": [
+        "1.2"
+      ],
+      "eli5": "Think of a newsroom editor and a team of reporters. The editor decides which stories to chase, hands each reporter a clear assignment, collects their drafts, spots what is missing and sends someone back out. Reporters never pass notes to each other directly; everything goes through the editor, so nothing gets lost.",
+      "visualId": "orchestrator-subagents",
+      "body": "## The hub-and-spoke shape\n\nIn a coordinator-subagent system, one **coordinator** agent sits in the middle and specialised **subagents** sit around it (for example: web search, document analysis, synthesis, report writing). The coordinator:\n\n- **decomposes** the request into subtasks,\n- **delegates** each subtask to the right subagent,\n- **aggregates** the results,\n- **handles errors** and decides on recovery,\n- **routes all information** between subagents.\n\nSubagents do not talk to each other directly. Every message flows through the hub. That gives you three things the exam cares about: **observability** (one place to log and trace), **consistent error handling** (one policy, not four), and **controlled information flow** (each subagent sees only what it needs).\n\n## Subagents start with a blank slate\n\nA subagent does **not** inherit the coordinator's conversation history. It knows only what the coordinator puts in its prompt (covered in depth in the next lesson). This isolation is a feature: it keeps each subagent focused and keeps the coordinator's context clean, because only the subagent's final answer returns.\n\n## Choose subagents dynamically\n\nA good coordinator **analyses the query and picks the subagents it needs**, instead of running every request through the full pipeline.\n\n| Query | Sensible plan |\n|---|---|\n| \"What year was the company founded?\" | One quick search; skip document analysis and the report writer |\n| \"Compare three vendors' security certifications\" | Parallel searches (one per vendor), then synthesis |\n| \"Survey the impact of AI across creative industries\" | Many subtopics, parallel search and analysis, synthesis, report |\n\nAnthropic's research system scales effort the same way: a simple fact needs one agent and roughly 3-10 tool calls, a direct comparison 2-4 subagents, and complex research can justify more than 10 subagents. Always running the whole pipeline wastes tokens and time.\n\n## Partition the work to avoid duplication\n\nWhen several subagents search in parallel, give each a **distinct slice**: by subtopic, by source type (news vs academic papers vs filings), or by time period. Vague assignments such as \"research the topic\" lead to subagents duplicating each other's work and leaving gaps. Anthropic found that delegation messages work best when they include an **objective, an output format, guidance on tools and sources, and clear task boundaries**.\n\n## The biggest risk: decomposition that is too narrow\n\nIf the coordinator splits a broad topic into subtasks that cover only part of it, every subagent can succeed perfectly and the final report will still be incomplete. Example: a topic about \"AI and the creative industries\" decomposed only into painting, illustration and photography will never mention music, film or publishing.\n\nHow to diagnose it: **read the coordinator's logs**. If each subagent did exactly what it was assigned, the fault is upstream in the assignment, not in the search, analysis or synthesis agents. Blaming a downstream agent that worked correctly is the classic wrong answer.\n\n## Iterative refinement loop\n\nCoverage problems are also fixed by letting the coordinator check its own output:\n\n1. Delegate searches and analysis.\n2. Run synthesis.\n3. **Coordinator evaluates the synthesis for gaps** against the original question.\n4. If gaps exist, re-delegate **targeted** queries for the missing areas.\n5. Re-run synthesis. Repeat until coverage is sufficient.\n\n```text\ncoordinator -> [search A, search B, search C] -> analysis -> synthesis\n      ^                                                       |\n      |--------- gap found: \"no coverage of music\" -----------|\n```\n\n## Do not over-delegate\n\nSpawning a subagent has a cost: a fresh context, a new prompt, more tokens and latency. If the coordinator **already holds the information** needed for a step, it should do the step itself rather than package everything into a prompt for a new subagent.\n\n## Evidence from Anthropic's research system\n\nAnthropic's own multi-agent research system (a lead agent plus parallel subagents) outperformed a single agent by **90.2%** on their internal research evaluation, and running subagents and tool calls in parallel cut research time by **up to 90%** for complex queries. The cost was much higher token use, so the pattern suits broad, valuable research rather than simple lookups.\n\n## Worked example\n\nA research system keeps producing reports that miss regulatory angles. Logs show the coordinator assigns \"market size\", \"key players\" and \"technology trends\" for every topic. Search and synthesis agents all complete successfully. Fix: improve the coordinator's decomposition (instruct it to cover regulatory, economic and technical dimensions, and to check the synthesis for missing dimensions before finishing). Tuning the search agent's queries would not help, because it was never asked about regulation.\n",
+      "keyTakeaways": [
+        "The coordinator owns decomposition, delegation, aggregation, error handling and all inter-subagent communication.",
+        "Routing everything through the hub gives observability, consistent error handling and controlled information flow.",
+        "Pick subagents per query based on complexity instead of always running the full pipeline.",
+        "Partition work by subtopic or source type, with clear boundaries, to avoid duplication and gaps.",
+        "If every subagent succeeded but coverage is missing, the coordinator's decomposition is the root cause.",
+        "Use an iterative refinement loop: check synthesis for gaps, re-delegate targeted queries, re-synthesise."
+      ],
+      "examTips": [
+        "When logs show subagents completing their assignments correctly, eliminate every option that blames a downstream agent.",
+        "Prefer answers that route communication through the coordinator over answers that let subagents call each other directly.",
+        "For 'reduce cost/latency on simple queries', choose dynamic subagent selection rather than a bigger model or a fixed full pipeline.",
+        "Look for the words 'objective, output format, boundaries' in strong delegation answers."
+      ],
+      "commonTraps": [
+        "Blaming the synthesis or search agent for gaps that were created by a too-narrow task decomposition.",
+        "Letting subagents share state or message each other directly, which loses observability.",
+        "Always invoking every subagent for every query, which wastes tokens on simple requests.",
+        "Spawning a subagent for work the coordinator could do with context it already has."
+      ],
+      "resources": [
+        {
+          "title": "How we built our multi-agent research system (Anthropic Engineering)",
+          "url": "https://www.anthropic.com/engineering/multi-agent-research-system",
+          "type": "blog"
+        },
+        {
+          "title": "Subagents in the Agent SDK",
+          "url": "https://code.claude.com/docs/en/agent-sdk/subagents",
+          "type": "docs"
+        },
+        {
+          "title": "Building Effective AI Agents (Anthropic Engineering)",
+          "url": "https://www.anthropic.com/engineering/building-effective-agents",
+          "type": "blog"
+        },
+        {
+          "title": "Introduction to subagents (Anthropic Academy)",
+          "url": "https://anthropic.skilljar.com/introduction-to-subagents",
+          "type": "course"
+        }
+      ]
+    },
+    {
+      "id": "f-subagent-context",
+      "title": "Spawning subagents and passing context",
+      "estMinutes": 12,
+      "level": "core",
+      "taskStatementIds": [
+        "1.3"
+      ],
+      "eli5": "Sending work to a subagent is like emailing a freelancer who has never seen your project. They cannot read your notes or your earlier meetings; they only know what is in the email. So you write one complete brief with everything they need, and you get back one finished reply.",
+      "visualId": "orchestrator-subagents",
+      "body": "## How a subagent is spawned\n\nIn the Claude Agent SDK, a coordinator starts a subagent by calling a built-in tool. **The exam guide calls it the Task tool**, and states that the coordinator's `allowedTools` must include `\"Task\"` for it to delegate. Current SDK documentation names the same tool `Agent`: `tool_use` blocks say `Agent` (releases before Claude Code v2.1.63 said `Task`), while the `system:init` tools list still says `Task`. On the exam, answer with **Task**; in real code, know both names.\n\nOne nuance for real code: in the current SDK the `Agent` tool does not prompt for permission, so listing it in `allowedTools` is the documented convention rather than a hard requirement. What actually stops a coordinator from delegating is taking the tool away: a bare-name `disallowedTools` entry, or a subagent `tools` list that omits it. If the spawning tool is not available to the coordinator, it cannot delegate at all.\n\nSubagents are defined with `AgentDefinition` objects (or Markdown files in `.claude/agents/`):\n\n```python\nfrom claude_agent_sdk import ClaudeAgentOptions, AgentDefinition\n\noptions = ClaudeAgentOptions(\n    allowed_tools=[\"Read\", \"Grep\", \"Agent\"],  # exam guide wording: \"Task\"\n    agents={\n        \"web-researcher\": AgentDefinition(\n            description=\"Searches the web for recent, citable sources. \"\n                        \"Use for any question needing external facts.\",\n            prompt=\"You are a research specialist. Return findings as JSON \"\n                   \"with claim, source_url, title, published_date.\",\n            tools=[\"WebSearch\", \"WebFetch\"],\n            model=\"sonnet\",\n        ),\n    },\n)\n```\n\n| `AgentDefinition` field | Purpose |\n|---|---|\n| `description` (required) | Tells the coordinator **when** to use this subagent |\n| `prompt` (required) | The subagent's system prompt |\n| `tools` | Allowed tools; omit to inherit every tool available to subagents |\n| `disallowedTools` | Tools to remove (also accepts `mcp__<server>__*` patterns) |\n| `model` | e.g. `sonnet`, `opus`, `haiku`, `inherit`, or a full model ID |\n| `maxTurns`, `permissionMode`, `effort`, `skills` and others | Limits, permission behaviour, reasoning effort, preloaded skills |\n\n## Context isolation: the prompt is the only channel\n\nA (non-fork) subagent starts **fresh**. It does not receive:\n- the coordinator's conversation history,\n- the coordinator's tool results,\n- the coordinator's system prompt,\n- anything from previous invocations of the same subagent (no shared memory).\n\nFresh does not mean empty: the subagent still gets its **own** system prompt (`AgentDefinition.prompt`), its tool definitions, and the project `CLAUDE.md` when setting sources load it. But the **only** information path from coordinator to subagent is the **prompt string** passed in the Task call. Only the subagent's **final message** comes back. So if the synthesis subagent needs the web results and the document analysis, the coordinator must paste those findings **completely** into its prompt. \"Use the results from earlier\" means nothing to an agent that never saw them.\n\n## Preserve attribution with structured context\n\nWhen passing findings between agents, keep **content separate from metadata** so citations survive every hop:\n\n```json\n[\n  {\"claim\": \"Streaming revenue grew 8% year over year\",\n   \"source_url\": \"https://example.org/report\",\n   \"document\": \"Annual Music Report\",\n   \"page\": 14,\n   \"published\": \"2026-03-01\"}\n]\n```\n\nIf findings are flattened into a paragraph, the synthesis agent cannot tell which claim came from which source, and the final report loses its citations.\n\n## Run subagents in parallel the right way\n\nTo run subagents concurrently, the coordinator emits **multiple Task tool calls in a single response**. If it issues one Task call, waits for the result, then issues the next in a later turn, the work runs serially and takes far longer.\n\n| Approach | Result |\n|---|---|\n| Three Task calls in one coordinator response | Subagents run in parallel |\n| One Task call per turn across three turns | Subagents run one after another |\n\n## Brief subagents with goals, not scripts\n\nCoordinator prompts should state the **research goal and the quality criteria** (coverage, recency, source quality, output format) rather than step-by-step procedures. A subagent told \"search X, then open the first three links, then summarise\" cannot adapt when the first links are useless. A subagent told \"find at least three independent, recent sources on X; prefer primary data; return JSON in this format\" can.\n\n## Forking: the exception to isolation\n\n`fork_session` (covered in the sessions lesson) creates a **new branch that starts from a copy of an existing conversation**. That is how you explore two divergent approaches from one shared analysis baseline without repeating the analysis. It is the opposite of a fresh subagent: a fork inherits everything up to the branch point.\n\n## Limits worth knowing\n\nCurrent docs set defaults of 3 levels of nesting (`CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH`) and 20 concurrent subagents (`CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS`), and `max_budget_usd` includes subagent spend (spawning fails with `Budget limit reached` once the cap is hit). These are depth details; the exam focuses on the isolation and context-passing rules.\n\n## Worked example\n\nA synthesis subagent keeps producing reports with uncited claims. The coordinator prompt says \"Synthesize the research gathered so far.\" Root cause: the subagent never saw the research. Fix: include the complete search and analysis outputs in the Task prompt, as structured records with URL, document name and page for each claim, plus the expected output format.\n",
+      "keyTakeaways": [
+        "Subagents are spawned with the Task tool (named Agent in current docs); the exam guide says the coordinator's allowedTools must include it, and removing the tool makes delegation impossible.",
+        "Subagents do not inherit parent history, tool results or system prompt, and share no memory between invocations.",
+        "The Task prompt is the only channel in; only the subagent's final message comes back.",
+        "Pass complete prior findings in structured form that keeps metadata (URL, document, page) separate from content.",
+        "Emit multiple Task calls in one coordinator response to run subagents in parallel.",
+        "Brief subagents with goals and quality criteria, not rigid step-by-step procedures."
+      ],
+      "examTips": [
+        "If a coordinator cannot delegate at all, look for the answer that adds Task to allowedTools.",
+        "If a subagent's output ignores earlier findings, the fix is to pass those findings explicitly in its prompt.",
+        "For 'subagents run slowly one at a time', pick the option that emits several Task calls in one response.",
+        "When attribution or citations are lost between agents, choose structured content-plus-metadata hand-offs.",
+        "AgentDefinition description controls when a subagent is chosen; prompt is its system prompt."
+      ],
+      "commonTraps": [
+        "Believing subagents automatically see the coordinator's conversation or a shared memory.",
+        "Answering 'Agent' when the option list uses the exam guide's 'Task' wording (or rejecting Task as non-existent).",
+        "Spreading Task calls across separate turns and calling that parallel execution.",
+        "Writing procedural micro-instructions for subagents, which makes them brittle when results differ from expectations.",
+        "Summarising findings into prose before handing them on, which loses source metadata."
+      ],
+      "resources": [
+        {
+          "title": "Subagents in the Agent SDK",
+          "url": "https://code.claude.com/docs/en/agent-sdk/subagents",
+          "type": "docs"
+        },
+        {
+          "title": "Claude Code subagents",
+          "url": "https://code.claude.com/docs/en/sub-agents",
+          "type": "docs"
+        },
+        {
+          "title": "How we built our multi-agent research system (Anthropic Engineering)",
+          "url": "https://www.anthropic.com/engineering/multi-agent-research-system",
+          "type": "blog"
+        },
+        {
+          "title": "Introduction to subagents (Anthropic Academy)",
+          "url": "https://anthropic.skilljar.com/introduction-to-subagents",
+          "type": "course"
+        }
+      ]
+    },
+    {
+      "id": "f-enforcement-gates",
+      "title": "Programmatic enforcement and prerequisite gates",
+      "estMinutes": 12,
+      "level": "core",
+      "taskStatementIds": [
+        "1.4",
+        "1.5"
+      ],
+      "eli5": "Telling a new cashier 'always check ID before refunds' works most of the time. Making the till physically refuse to open until an ID has been scanned works every time. When mistakes cost real money, build the lock into the till instead of relying on the reminder.",
+      "visualId": "security-guardrails",
+      "body": "## Guidance vs enforcement\n\nThere are two ways to make an agent follow a workflow order:\n\n| | Prompt-based guidance | Programmatic enforcement |\n|---|---|---|\n| How | System prompt rules, few-shot examples | Hooks, prerequisite gates, removing tools, code checks |\n| Guarantee | **Probabilistic**: works most of the time | **Deterministic**: cannot be skipped |\n| Failure rate | Non-zero, even with a strong prompt | Zero for the rule it enforces |\n| Best for | Style, tone, judgment calls, preferences | Identity checks, money movement, compliance, safety limits |\n\nA prompt instruction always has a **non-zero failure rate**. That is acceptable for \"be friendly\" and unacceptable for \"verify the customer before issuing a refund\". The exam's rule of thumb: **match the strength of the guarantee to the business risk.** When the consequence is financial, legal or safety-related, enforce in code.\n\n## The prerequisite gate\n\nA prerequisite gate blocks downstream tool calls until an earlier step has succeeded. Classic support-agent example:\n\n- Required order: `get_customer` returns a **verified customer ID** → only then `lookup_order` and `process_refund`.\n- Problem: in a noticeable share of conversations, the agent jumps straight to `lookup_order` using the name the customer typed, occasionally matching the wrong account and refunding the wrong person.\n\nThe fix is a gate in code, for example with Agent SDK hooks:\n\n```python\nverified = {}   # session_id -> customer_id\n\nasync def record_verification(inp, tool_use_id, ctx):          # PostToolUse\n    if inp[\"tool_name\"].endswith(\"get_customer\"):\n        cid = extract_verified_id(inp[\"tool_response\"])\n        if cid:\n            verified[inp[\"session_id\"]] = cid\n    return {}\n\nasync def require_verification(inp, tool_use_id, ctx):         # PreToolUse\n    if inp[\"session_id\"] not in verified:\n        return {\"hookSpecificOutput\": {\n            \"hookEventName\": \"PreToolUse\",\n            \"permissionDecision\": \"deny\",\n            \"permissionDecisionReason\":\n                \"Call get_customer and obtain a verified customer ID first.\"}}\n    return {}\n```\n\nRegister `require_verification` on a matcher covering the order and refund tools (for example `mcp__support__lookup_order|mcp__support__process_refund`). The deny reason is returned to Claude, so it learns what to do next instead of retrying blindly. The gate could equally live inside your MCP server or tool implementation; what matters is that **code**, not the model, enforces the order.\n\n## Why the usual distractors fail\n\n| Option | Why it does not solve an ordering guarantee |\n|---|---|\n| Stronger wording in the system prompt (\"verification is MANDATORY\") | Still probabilistic; the failure rate drops but stays above zero |\n| More few-shot examples of the right order | Same: improves odds, does not guarantee |\n| A routing classifier that enables tool subsets per request type | Controls **which** tools are available, not the **order** they are called in |\n| A bigger or newer model | Better compliance is still not deterministic compliance |\n\n## How the Agent SDK evaluates permissions\n\nWhen Claude requests a tool, the SDK checks, in order:\n\n1. **Hooks** (PreToolUse can allow, deny, ask or defer)\n2. **Deny rules** (a bare tool name in `disallowed_tools` removes the tool from Claude's context entirely; a scoped rule such as `Bash(rm *)` denies only matching calls)\n3. **Ask rules**\n4. **Permission mode** (`default`, `acceptEdits`, `plan`, `dontAsk`, `auto`, `bypassPermissions`)\n5. **Allow rules**\n6. **`canUseTool` callback**\n\nConsequences worth remembering:\n- A hook **deny** applies even in `bypassPermissions` mode.\n- A hook **allow** does not skip later deny or ask rules.\n- Tools that are auto-approved never reach `canUseTool`, so a check that must run on **every** call belongs in a PreToolUse hook.\n\n## allowed_tools is not a whitelist\n\nA frequent trap: `allowed_tools` (`allowedTools`) **auto-approves** the listed tools. It does not restrict the agent to them; unlisted tools still exist and fall through to the permission mode. To take a tool away entirely, use `disallowed_tools`, or do not give the agent that tool in the first place. Least privilege means the agent simply does not have tools it should not use.\n\n## Worked example\n\nA billing agent must never refund more than $500 without a human. The team added \"Never refund more than $500\" to the system prompt; audits still find a few large refunds per month. Correct fix: a PreToolUse hook on the refund tool that reads the `amount` argument, **denies** calls above $500, and tells Claude to escalate with a handoff summary instead. (The hooks lesson covers this pattern in detail.)\n",
+      "keyTakeaways": [
+        "Prompt instructions give probabilistic compliance with a non-zero failure rate; hooks and gates give deterministic guarantees.",
+        "Use programmatic prerequisites when a step must happen first, e.g. block lookup_order and process_refund until get_customer returns a verified ID.",
+        "Match the strength of enforcement to the business risk: money, identity, compliance and safety need code.",
+        "SDK permission order: hooks, deny rules, ask rules, permission mode, allow rules, canUseTool.",
+        "allowed_tools auto-approves tools; it does not restrict the agent. Use disallowed_tools or omit the tool."
+      ],
+      "examTips": [
+        "Words like 'must', 'always', 'financial consequences', 'compliance' or 'guarantee' point to programmatic enforcement.",
+        "Eliminate prompt-strengthening and few-shot options when the question asks for a guarantee.",
+        "A routing classifier answers 'which tools?', not 'in what order?'; reject it for sequencing problems.",
+        "If an option says a hook deny is overridden by bypassPermissions, it is wrong."
+      ],
+      "commonTraps": [
+        "Choosing 'make the system prompt more emphatic' for a rule that must never be broken.",
+        "Thinking allowed_tools limits the agent to the listed tools.",
+        "Using a routing layer or tool subsetting to fix an ordering issue.",
+        "Assuming a bigger model makes compliance deterministic."
+      ],
+      "resources": [
+        {
+          "title": "Agent SDK permissions",
+          "url": "https://code.claude.com/docs/en/agent-sdk/permissions",
+          "type": "docs"
+        },
+        {
+          "title": "Intercept and control agent behavior with hooks (Agent SDK)",
+          "url": "https://code.claude.com/docs/en/agent-sdk/hooks",
+          "type": "docs"
+        },
+        {
+          "title": "Agent SDK overview",
+          "url": "https://code.claude.com/docs/en/agent-sdk/overview",
+          "type": "docs"
+        }
+      ]
+    },
+    {
+      "id": "f-handoff-multi-concern",
+      "title": "Structured handoffs and multi-concern requests",
+      "estMinutes": 10,
+      "level": "core",
+      "taskStatementIds": [
+        "1.4"
+      ],
+      "eli5": "When a nurse hands a patient to the next shift, they do not say 'see the notes somewhere'. They give a short, standard summary: who the patient is, what is wrong, what was done, what to do next. An agent escalating to a human should hand over the same kind of complete summary, because the human never saw the conversation.",
+      "visualId": "escalation-hitl",
+      "body": "## Two workflow skills in task statement 1.4\n\nBesides enforcement gates, task statement 1.4 tests two practical patterns:\n1. **Structured handoff** when an agent escalates mid-process to a human.\n2. **Decomposing a message that contains several separate concerns**, investigating them, and returning one unified answer.\n\n## The human does not have the transcript\n\nWhen an agent calls something like `escalate_to_human`, the human agent who picks up the case typically **cannot see the conversation transcript**. If the handoff says only \"Customer is upset about a refund, please help\", the human must start over: re-identify the customer, re-check orders, re-diagnose the problem. The customer repeats everything, and the value of the agent's work is lost.\n\nA structured handoff carries everything needed to act immediately:\n\n```json\n{\n  \"customer_id\": \"C-48213\",\n  \"order_ids\": [\"O-99102\"],\n  \"issue_summary\": \"Duplicate charge for one order\",\n  \"root_cause\": \"Payment retried after gateway timeout; both captures succeeded\",\n  \"evidence\": [\"capture tx_1 at 10:02\", \"capture tx_2 at 10:03\"],\n  \"amount_in_question\": 189.00,\n  \"actions_taken\": [\"Verified identity\", \"Confirmed duplicate capture\"],\n  \"why_escalated\": \"Account is flagged for a chargeback; policy requires human approval\",\n  \"recommended_action\": \"Refund tx_2 in full; remove chargeback flag\"\n}\n```\n\nThe essential fields from the exam guide are **customer ID, root cause, refund amount and recommended action**. Add what was already tried and why the agent escalated so the human does not repeat work.\n\n| Weak handoff | Strong handoff |\n|---|---|\n| Free-text \"customer wants a refund\" | Customer ID and order IDs |\n| No diagnosis | Root cause with evidence |\n| \"Please assist\" | Specific recommended action and amount |\n| Assumes the human can scroll back | Self-contained; readable without the transcript |\n\n## Use explicit identifiers, not names\n\nAgents and humans should work from **IDs** (`customer_id`, `order_id`) returned by tools, not from names or free text the customer typed. Names collide; two customers called \"J. Patel\" will eventually be confused. If a lookup returns several possible matches, the agent should **ask for another identifier** (email, order number) rather than guess.\n\n## Multi-concern requests\n\nCustomers often bundle several problems in one message:\n\n> \"My last order arrived damaged, I was charged twice for it, and I also want to change my delivery address for next month's subscription.\"\n\nThat is **three separate concerns**. A good agent:\n\n1. **Decomposes** the message into distinct items: damaged item, duplicate charge, address change.\n2. **Investigates each item**, in parallel where they are independent, using **shared context** (the same verified customer ID and order history, fetched once).\n3. **Synthesises one unified resolution** that addresses all three, in one coherent reply.\n\n| Anti-pattern | Problem |\n|---|---|\n| Answering only the first concern | Other issues are silently dropped |\n| Handling concerns one per turn, asking the customer to repeat | Slow, frustrating |\n| Re-verifying the customer separately for each concern | Wasted calls; inconsistent state |\n| Three separate replies that contradict each other | No unified resolution |\n\nIf one concern needs escalation (for example the refund exceeds policy) and the others do not, the agent can resolve the simple ones and escalate the remaining one **with a structured handoff that lists what was already done**.\n\n## Worked example\n\nA customer writes: \"Refund the broken blender and tell me why my loyalty points vanished.\" The agent verifies the customer (gate), then investigates both items in parallel: `lookup_order` for the blender and a points-history lookup. The blender refund is within policy and is processed. The points issue reveals a system bug the agent cannot fix, so it escalates that part with: customer ID, the points transaction IDs, the suspected root cause, the number of points missing, and the recommended action (restore points). The customer receives one reply covering both outcomes.\n",
+      "keyTakeaways": [
+        "Human agents usually lack the transcript, so escalations need a self-contained structured summary.",
+        "Minimum handoff content: customer ID, root cause, amount involved and recommended action; add actions already taken.",
+        "Work from explicit IDs returned by tools, not names; ask for another identifier when matches are ambiguous.",
+        "Split multi-concern messages into distinct items, investigate them (in parallel where independent) with shared context, then give one unified resolution."
+      ],
+      "examTips": [
+        "When the stem says the human 'does not have access to the conversation', pick the structured summary option.",
+        "Prefer answers that decompose a multi-part request over answers that handle only the primary issue.",
+        "Reject options that pick a customer heuristically when several match; the right move is to ask for more identifying information."
+      ],
+      "commonTraps": [
+        "Escalating with a vague note and assuming the human can read the chat history.",
+        "Passing the full raw transcript instead of a concise, structured summary of the decision-relevant facts.",
+        "Dropping secondary concerns in a multi-issue message.",
+        "Matching accounts by customer name instead of verified IDs."
+      ],
+      "resources": [
+        {
+          "title": "How the agent loop works (Agent SDK)",
+          "url": "https://code.claude.com/docs/en/agent-sdk/agent-loop",
+          "type": "docs"
+        },
+        {
+          "title": "Subagents in the Agent SDK",
+          "url": "https://code.claude.com/docs/en/agent-sdk/subagents",
+          "type": "docs"
+        },
+        {
+          "title": "How we built our multi-agent research system (Anthropic Engineering)",
+          "url": "https://www.anthropic.com/engineering/multi-agent-research-system",
+          "type": "blog"
+        }
+      ]
+    },
+    {
+      "id": "f-sdk-hooks",
+      "title": "Agent SDK hooks: interception and normalization",
+      "estMinutes": 12,
+      "level": "core",
+      "taskStatementIds": [
+        "1.5"
+      ],
+      "eli5": "Hooks are checkpoints your own code runs before and after every tool the agent uses. Before: a guard can say 'no, that refund is too big, send it to a manager'. After: a translator can tidy up messy results (three different date formats become one) before the agent reads them.",
+      "visualId": "hooks-lifecycle",
+      "body": "## What a hook is\n\nA hook is a **callback in your application** that the Agent SDK calls at a specific point in the agent's lifecycle. Hooks run **in your process, not in the model's context window**, so they cost no tokens and their logic cannot be talked around by the model. That is why they deliver **deterministic guarantees**, while prompt instructions deliver only **probabilistic compliance**.\n\n## The two hooks the exam cares about most\n\n| Hook | Fires | Typical use |\n|---|---|---|\n| `PreToolUse` | Before a tool call runs | Block, allow, ask for approval, defer, or rewrite the input |\n| `PostToolUse` | After a tool returns, before Claude sees the result | Normalise, redact or enrich the output; log |\n\nOther events available in both the Python and TypeScript SDKs include `PostToolUseFailure`, `UserPromptSubmit`, `Stop`, `SubagentStart`, `SubagentStop`, `PreCompact`, `PermissionRequest` and `Notification`. Some events (such as `SessionStart` and `SessionEnd`) are TypeScript-only as SDK callbacks.\n\n## Registering a hook\n\n```python\nfrom claude_agent_sdk import ClaudeAgentOptions, HookMatcher\n\noptions = ClaudeAgentOptions(hooks={\n    \"PreToolUse\":  [HookMatcher(matcher=\"mcp__billing__process_refund\",\n                                hooks=[refund_limit])],\n    \"PostToolUse\": [HookMatcher(matcher=\"^mcp__\", hooks=[normalize])],\n})\n```\n\nThe **matcher matches the tool name**, not file paths or arguments. MCP tools are named `mcp__<server>__<tool>`, so the regex `^mcp__` targets every MCP tool. To filter on arguments (an amount, a file path), check them **inside** the callback.\n\n## Pattern 1: block a policy violation and redirect\n\nBusiness rule: refunds above $500 need a human.\n\n```python\nasync def refund_limit(inp, tool_use_id, ctx):\n    if inp[\"tool_input\"].get(\"amount\", 0) > 500:\n        return {\"hookSpecificOutput\": {\n            \"hookEventName\": \"PreToolUse\",\n            \"permissionDecision\": \"deny\",\n            \"permissionDecisionReason\":\n              \"Refunds over $500 need human approval. Call escalate_to_human \"\n              \"with customer_id, root cause, amount and recommended action.\"}}\n    return {}   # empty object = no objection\n```\n\nThe deny stops the call, and the **reason is fed back to Claude**, which redirects it into the escalation workflow instead of retrying.\n\nPreToolUse decisions live inside `hookSpecificOutput`:\n\n| Field | Values / purpose |\n|---|---|\n| `permissionDecision` | `allow`, `deny`, `ask`, `defer` |\n| `permissionDecisionReason` | Explanation passed back |\n| `updatedInput` | A rewritten tool input (ignored with `defer`) |\n\n`defer` ends the turn with a result whose `stop_reason` is `tool_deferred`, so your application can approve and resume the call later.\n\nWhen several hooks respond, the most restrictive wins: **deny > defer > ask > allow**. One deny blocks the call regardless of the others. Matching hooks run in parallel, so do not write hooks that depend on each other's order.\n\n## Pattern 2: normalise heterogeneous data\n\nDifferent MCP servers return the same concept in different shapes: one returns `\"created\": 1767225600` (Unix seconds), another `\"2026-01-01T00:00:00Z\"` (ISO 8601), a third `\"status\": 3` where 3 means \"shipped\". Asking the model to reconcile these every time wastes tokens and invites mistakes. A PostToolUse hook converts them **before** Claude reasons over them:\n\n```python\nasync def normalize(inp, tool_use_id, ctx):\n    data = parse(inp[\"tool_response\"])\n    data = to_iso8601_dates(data)            # unify timestamps\n    data = map_status_codes(data)            # 3 -> \"shipped\"\n    return {\"hookSpecificOutput\": {\n        \"hookEventName\": \"PostToolUse\",\n        \"updatedToolOutput\": data}}\n```\n\nPostToolUse can set `updatedToolOutput` (replace what Claude sees; works for any tool) or `additionalContext` (append a note to the result). The older `updatedMCPToolOutput` field is deprecated.\n\n## Hooks vs prompts: the decision rule\n\n| Requirement | Use |\n|---|---|\n| Must never happen (refund above limit, write to a protected path) | PreToolUse **deny** |\n| Must happen first (verify before acting) | PreToolUse gate with state |\n| Data must be consistent before reasoning | PostToolUse **normalisation** |\n| Preferred style or judgement (\"be concise\") | Prompt instructions |\n\n## Gotchas\n\n- Matchers do not see arguments; filter inside the callback.\n- `Stop` ignores matchers.\n- A hook deny holds even in `bypassPermissions` mode.\n- Return `{}` to allow without changes.\n- Claude Code (the CLI) has the same events configured as shell commands in settings files; the SDK uses in-process callbacks with the same JSON output format.\n\n## Worked example\n\nAn agent mis-sorts orders by date because one tool returns epoch seconds and another returns ISO strings. Adding \"dates may be in different formats, convert carefully\" to the prompt helps sometimes. A PostToolUse hook on `^mcp__` that converts every timestamp to ISO 8601 fixes it every time, at zero token cost.\n",
+      "keyTakeaways": [
+        "PreToolUse intercepts outgoing calls: allow, deny, ask or defer, with a reason and optional updatedInput.",
+        "PostToolUse transforms results before the model sees them; use updatedToolOutput or additionalContext.",
+        "Hooks run in your process, cost no context tokens and give deterministic guarantees.",
+        "Matchers match tool names (mcp__<server>__<tool>, regex like ^mcp__); filter on arguments inside the callback.",
+        "With several hooks, deny > defer > ask > allow, and a hook deny holds even in bypassPermissions."
+      ],
+      "examTips": [
+        "Normalising mixed timestamp or status formats from several MCP tools = PostToolUse hook.",
+        "Blocking an action above a threshold and redirecting to escalation = PreToolUse hook with deny and a reason.",
+        "If the requirement says 'guaranteed', choose a hook over prompt wording.",
+        "Reject options that use a matcher to filter on a file path or argument value."
+      ],
+      "commonTraps": [
+        "Using PostToolUse to block an action; by then the tool has already run.",
+        "Asking the model in the prompt to normalise inconsistent formats instead of fixing the data in code.",
+        "Believing matchers can match on argument values such as an amount or a path.",
+        "Expecting the first-registered hook to win; the most restrictive decision wins."
+      ],
+      "resources": [
+        {
+          "title": "Intercept and control agent behavior with hooks (Agent SDK)",
+          "url": "https://code.claude.com/docs/en/agent-sdk/hooks",
+          "type": "docs"
+        },
+        {
+          "title": "Claude Code hooks reference",
+          "url": "https://code.claude.com/docs/en/hooks",
+          "type": "docs"
+        },
+        {
+          "title": "Agent SDK permissions",
+          "url": "https://code.claude.com/docs/en/agent-sdk/permissions",
+          "type": "docs"
+        }
+      ]
+    },
+    {
+      "id": "f-task-decomposition",
+      "title": "Task decomposition strategies",
+      "estMinutes": 10,
+      "level": "core",
+      "taskStatementIds": [
+        "1.6"
+      ],
+      "eli5": "If you have to inspect 14 rooms, you check each room properly one at a time, then walk the corridors to see how they connect. If you are told 'make this old house safe', you first walk around to see what is there, fix the most dangerous things first, and change your plan as you discover new problems.",
+      "visualId": "workflow-patterns",
+      "body": "## Two kinds of decomposition\n\nTask statement 1.6 asks you to pick the right way to break down a big job:\n\n| | Fixed sequential pipeline (prompt chaining) | Dynamic adaptive decomposition |\n|---|---|---|\n| Steps known in advance? | Yes | No; they emerge from findings |\n| Who decides the next step? | Your code | The model, based on what it has learned |\n| Best for | Predictable, multi-aspect reviews and transformations | Open-ended investigations |\n| Strength | Consistent, debuggable, repeatable | Adapts to surprises |\n| Weakness | Cannot react to unexpected findings | Less predictable, costs more |\n\n## Prompt chaining for predictable reviews\n\nWhen the work has a known shape, chain focused steps. The canonical exam example is a **large code review**.\n\nProblem: a single pass over many changed files gives uneven results: deep comments on some files, shallow ones on others, missed bugs, and even contradictory verdicts on identical code in different files. The cause is **attention dilution**: too much material in one pass for consistent depth.\n\nFix:\n1. **Per-file local pass**: analyse each file on its own for local issues (logic errors, style, error handling).\n2. **Separate cross-file integration pass**: examine interactions between files (data flow, interface contracts, duplicated logic).\n\n```text\nfile_1 -> local review --\\\nfile_2 -> local review ---+--> integration pass (cross-file data flow) --> report\nfile_n -> local review --/\n```\n\nEach local pass gets full attention on one file; the integration pass looks only at how files fit together. The local passes are independent, so they can also run in parallel.\n\nWhy the tempting alternatives are weaker:\n- **A bigger model or larger context window** holds more text but does not fix uneven attention.\n- **Forcing developers to submit smaller PRs** shifts the burden instead of fixing the review system.\n- **Running the whole review several times and keeping only issues found in a majority of runs** suppresses real bugs that are caught only intermittently.\n\n## Dynamic decomposition for open-ended work\n\nSome tasks cannot be planned up front. \"Add comprehensive tests to this legacy codebase\" is the exam's example. You do not yet know which modules matter, what is already tested or what depends on what. A good adaptive approach:\n\n1. **Map the structure**: modules, entry points, existing tests, dependencies.\n2. **Identify high-impact areas**: critical paths, frequently changed code, low existing coverage.\n3. **Create a prioritised plan** from that map.\n4. **Adapt the plan** as you discover new dependencies (for example, a module that needs a test fixture first, or hidden coupling that changes the order).\n\nEach step generates the next subtasks from what was found. A fixed script written before mapping the codebase would either test the wrong things or break on the first surprise.\n\n## Scaling effort to the task\n\nAnthropic's research system embeds explicit effort-scaling guidance in its lead agent: a simple fact-finding question needs about **one agent and a few tool calls**, while complex research may use **more than ten subagents** with clearly divided responsibilities. Decomposition depth should match the task; over-decomposing a simple question wastes tokens and adds coordination overhead.\n\n## Choosing quickly\n\n- Is the list of steps the same every time? **Chain it.**\n- Does the material exceed what one pass can treat evenly? **Split into focused passes plus an integration pass.**\n- Will what you learn in step 1 change what step 2 should be? **Decompose dynamically.**\n- Is the task tiny? **Do not decompose at all.**\n\n## Worked example\n\nA CI pipeline reviews pull requests. Small PRs (1-3 files) get good reviews; PRs touching 20 files get vague, inconsistent ones. Changing to a per-file local pass plus one integration pass makes review depth consistent regardless of PR size, and keeps cross-file problems (a renamed field not updated in a caller) visible in the integration pass.\n",
+      "keyTakeaways": [
+        "Use prompt chaining (fixed sequence) for predictable multi-aspect reviews; use dynamic decomposition for open-ended investigations.",
+        "Split large reviews into per-file local passes plus a separate cross-file integration pass to avoid attention dilution.",
+        "Bigger context windows do not fix uneven attention across many files.",
+        "For open-ended tasks: map structure, find high-impact areas, make a prioritised plan, adapt as dependencies appear.",
+        "Scale decomposition to task complexity; simple questions need one agent and a few tool calls."
+      ],
+      "examTips": [
+        "Inconsistent depth or contradictory feedback across many files signals attention dilution; pick focused passes plus an integration pass.",
+        "Reject 'use a model with a larger context window' for attention-quality problems.",
+        "Reject majority-vote consensus across repeated runs when the goal is catching bugs; it suppresses intermittent true positives.",
+        "When a stem stresses unknown structure or discovery, choose an adaptive plan over a fixed script."
+      ],
+      "commonTraps": [
+        "Believing one bigger pass with more context gives every file equal attention.",
+        "Pushing the problem onto developers (smaller PRs) instead of fixing the review design.",
+        "Writing a rigid step-by-step plan for an open-ended task before exploring the codebase.",
+        "Over-decomposing simple tasks into many subagents."
+      ],
+      "resources": [
+        {
+          "title": "Building Effective AI Agents (Anthropic Engineering)",
+          "url": "https://www.anthropic.com/engineering/building-effective-agents",
+          "type": "blog"
+        },
+        {
+          "title": "How we built our multi-agent research system (Anthropic Engineering)",
+          "url": "https://www.anthropic.com/engineering/multi-agent-research-system",
+          "type": "blog"
+        },
+        {
+          "title": "How the agent loop works (Agent SDK)",
+          "url": "https://code.claude.com/docs/en/agent-sdk/agent-loop",
+          "type": "docs"
+        }
+      ]
+    },
+    {
+      "id": "f-sessions",
+      "title": "Sessions: resume, continue and fork",
+      "estMinutes": 10,
+      "level": "core",
+      "taskStatementIds": [
+        "1.7",
+        "1.3"
+      ],
+      "eli5": "A session is the agent's notebook of everything said and done so far. You can reopen yesterday's notebook (resume), photocopy it to try a different idea without spoiling the original (fork), or, if the notes are badly out of date, start a fresh notebook with a short summary at the top.",
+      "body": "## What a session is\n\nA session is the **conversation history** an agent builds up: your prompts, every tool call, every tool result, every response. The Agent SDK and Claude Code write it to disk automatically so you can return to it.\n\nCrucially, a session stores the **conversation, not the filesystem**. If an agent edited files, those edits are real on disk regardless of which session you resume or fork. (Reverting file changes is a separate feature, file checkpointing, or simply git.)\n\n## The three ways back into a session\n\n| Operation | What it does | How |\n|---|---|---|\n| **Continue** | Picks up the **most recent** session in the current directory; no ID needed | CLI `claude --continue`; SDK `continue_conversation=True` (Python) / `continue: true` (TypeScript) |\n| **Resume** | Picks up a **specific** session by ID (or by name in the CLI) | CLI `claude --resume <session-name-or-id>`; SDK `resume=<session_id>` |\n| **Fork** | Creates a **new session** starting from a copy of an existing one's history; the original stays unchanged | SDK `resume=<id>` plus `fork_session=True` (`forkSession: true` in TS); CLI `--fork-session` with `--resume` or `--continue` |\n\nThe exam guide's wording: use **`--resume <session-name>`** to continue a specific, named investigation across work sessions, and **`fork_session`** to create independent branches from a shared analysis baseline. A session gets a name from `claude -n <name>` at startup or `/rename <name>` during the session; unnamed sessions get an auto-generated title you can also pass to `--resume`.\n\n## Capturing the session ID\n\nIn the SDK, read `session_id` from the final **`ResultMessage`**. It is present on **every** result, including error results such as `error_max_turns`, so you can resume and raise the limit. Session transcripts are stored as JSONL under `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl` and are local to the machine that created them unless you move them or use a session store.\n\n```python\nasync for msg in query(prompt=\"Map the payments module\", options=opts):\n    if isinstance(msg, ResultMessage):\n        session_id = msg.session_id\n\n# later: branch to compare two strategies from the same analysis\nfork_opts = ClaudeAgentOptions(resume=session_id, fork_session=True)\n```\n\n## When to fork\n\nFork when you want to **compare divergent approaches from one shared baseline**. Example: an agent spent an hour analysing a codebase. You want to compare two refactoring strategies (extract services vs modularise in place) or two testing strategies (heavy unit tests vs contract tests). Fork twice from the analysis session; each branch inherits the full analysis and explores one approach. The original analysis stays intact to fork again later.\n\nRemember: both forks work on the **same files**. If both edit code in the same directory, they will step on each other. Use separate git worktrees or branches when forks will write files.\n\n## Resume or start fresh?\n\nResuming is attractive because the agent already has its context. But that context includes **tool results captured at the time**. If the code or data has changed since, the old results are **stale** and the agent may reason confidently from outdated facts.\n\n| Situation | Best choice |\n|---|---|\n| Prior context is mostly still valid (short break, nothing changed) | **Resume** |\n| A few known files changed since the last session | **Resume and tell the agent exactly which files changed** so it re-reads just those |\n| Much has changed, or old tool results would mislead | **Start a new session and inject a structured summary** of the prior findings |\n\nA structured summary might list: the goal, conclusions so far, key file paths, open questions and decisions made. The fresh session re-gathers current data where needed instead of trusting stale results.\n\n## Targeted re-analysis after code changes\n\nWhen resuming after edits, do not make the agent re-explore the whole codebase, and do not leave it unaware of the changes. Tell it specifically:\n\n> \"Since our last session, `billing/invoice.py` and `billing/tax.py` were modified to add VAT support. Re-read those two files and update your analysis of the invoice flow; the rest is unchanged.\"\n\nThis keeps the valuable context, refreshes only what is stale, and saves time and tokens.\n\n## Related context controls in Claude Code\n\n- `/compact` summarises the current conversation in place so the same session can keep going.\n- `/clear` starts a new conversation with empty context; the previous one is saved and can still be reopened with `/resume`.\n- In the SDK, `ClaudeSDKClient` (Python) keeps one session across multiple `query()` calls automatically; TypeScript uses `continue: true`.\n\n## Worked example\n\nOn Monday a developer ran a named investigation into a memory leak. On Wednesday they want to continue, but teammates have since merged a fix to `cache/lru.py`. Best approach: `claude --resume leak-investigation`, then tell the agent that `cache/lru.py` changed and ask it to re-check that file before continuing. If instead half the module had been rewritten, a new session seeded with a structured summary of Monday's findings would be more reliable than resuming with stale tool output.\n",
+      "keyTakeaways": [
+        "A session is the conversation history; it does not snapshot or isolate the filesystem.",
+        "Continue = most recent session; resume = a specific session (--resume <session-name>); fork = new branch from a copy of the history, original unchanged.",
+        "Use fork_session to compare divergent approaches from a shared analysis baseline.",
+        "Resume when prior context is mostly valid; start fresh with an injected structured summary when tool results are stale.",
+        "After code changes, tell the resumed session which files changed for targeted re-analysis.",
+        "Capture session_id from ResultMessage; it is present even on error results."
+      ],
+      "examTips": [
+        "'Compare two approaches from the same analysis' = fork_session.",
+        "'Continue a specific named investigation across days' = --resume <session-name>.",
+        "'Files changed since last session' = resume and name the changed files, not full re-exploration.",
+        "'Earlier tool results are now outdated' = new session with a structured summary."
+      ],
+      "commonTraps": [
+        "Thinking a fork isolates file edits; forks share the same filesystem.",
+        "Resuming a session full of stale tool results and trusting its conclusions.",
+        "Making the agent re-explore the entire codebase when only a few files changed.",
+        "Confusing continue (most recent) with resume (specific session)."
+      ],
+      "resources": [
+        {
+          "title": "Work with sessions (Agent SDK)",
+          "url": "https://code.claude.com/docs/en/agent-sdk/sessions",
+          "type": "docs"
+        },
+        {
+          "title": "How the agent loop works (Agent SDK)",
+          "url": "https://code.claude.com/docs/en/agent-sdk/agent-loop",
+          "type": "docs"
+        },
+        {
+          "title": "Agent SDK overview",
+          "url": "https://code.claude.com/docs/en/agent-sdk/overview",
+          "type": "docs"
+        }
+      ]
+    },
+    {
+      "id": "f-d1-scenario-drill",
+      "title": "Scenario drill: support agent and research system",
+      "estMinutes": 12,
+      "level": "core",
+      "taskStatementIds": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7"
+      ],
+      "eli5": "Exam questions are like detective puzzles. Find the one clue that matters, cross off the suspects that only look guilty, and pick the fix that addresses the real cause at the right place, using no more machinery than needed.",
+      "visualId": "exam-strategy",
+      "body": "## The elimination funnel\n\nDomain 1 questions are long, scenario-based and full of plausible options. Use the same three steps every time:\n\n1. **Find the constraint.** What exactly is broken, and what does the business require? Look for qualifiers: \"must\", \"guarantee\", \"financial consequences\", \"85% of cases\", \"logs show\", \"first step\".\n2. **Strip the disguises.** Remove options that address a different problem, rely on probabilistic behaviour when a guarantee is needed, or add disproportionate machinery.\n3. **Pick the root-cause fix at the right layer.** Prompt for judgement, code for guarantees, coordinator for decomposition, tool scope for least privilege.\n\n## Distractor families you will meet\n\n| Family | Looks like | Why it is usually wrong |\n|---|---|---|\n| Stronger prompt / more few-shot | \"Make the instruction mandatory and add examples\" | Wrong when a guarantee is required |\n| Bigger model / larger context | \"Upgrade the model\" | Does not fix design or attention problems |\n| Self-assessment | \"Have the agent rate its confidence\" | Self-reported confidence is poorly calibrated |\n| Extra infrastructure | \"Add a classifier / routing layer / new agent\" | Over-engineered as a first step |\n| Blame the wrong component | \"The synthesis agent needs better instructions\" | Logs show the fault is upstream |\n| Over-provisioning | \"Give the agent all the tools\" | Violates least privilege and separation of concerns |\n\n## Drill 1: the agent that skips verification (support scenario)\n\n*Setup:* A support agent with tools `get_customer`, `lookup_order`, `process_refund`, `escalate_to_human` sometimes skips identity lookup and searches orders by the name the customer typed. A few refunds have gone to the wrong account.\n\n- Constraint: identity **must** be verified before money moves. That is a guarantee with financial consequences.\n- Disguises: stronger system prompt, more few-shot examples (both probabilistic); a classifier that enables tool subsets (controls availability, not order).\n- Right layer: a **programmatic prerequisite** that blocks `lookup_order` and `process_refund` until `get_customer` returns a verified ID.\n\n## Drill 2: the report that missed half the topic (research scenario)\n\n*Setup:* Every subagent reports success, but the final report on a broad topic covers only one sub-area. The coordinator log shows it created three subtasks, all within that one sub-area.\n\n- Constraint: coverage. The buried clue is \"the coordinator log shows\".\n- Disguises: improve the search agent's queries, add gap-detection to synthesis, loosen the analysis filter. All blame agents that did what they were asked.\n- Right layer: **the coordinator's decomposition is too narrow.** Fix how it partitions the topic (and add a gap-check refinement loop).\n\n## Drill 3: a subagent times out\n\n*Setup:* The web search subagent times out mid-research. How should the failure flow to the coordinator?\n\n- Constraint: the coordinator must be able to recover intelligently.\n- Disguises: retry internally and then return a generic \"unavailable\" (hides context); return an empty result marked success (silently suppresses the failure); abort the whole workflow (unnecessary).\n- Right layer: return **structured error context**: failure type, the query attempted, partial results, and possible alternatives, so the coordinator can retry differently, try another source or continue with a noted gap. Also distinguish \"the search failed\" from \"the search succeeded and found nothing\".\n\n## Drill 4: verification round trips are slow\n\n*Setup:* The synthesis agent often needs to check small facts, and every check goes synthesis → coordinator → search agent → coordinator → synthesis. Most checks are simple (a date, a name, a figure); a minority need real investigation.\n\n- Constraint: cut latency without hurting reliability. The buried qualifier is the split between simple and complex checks.\n- Disguises: give synthesis the full set of web tools (over-provisioning); batch all checks to the end (creates blocking dependencies because later synthesis may depend on verified facts); pre-cache speculative context (cannot predict needs).\n- Right layer: give synthesis a **narrowly scoped fact-verification tool** for the common simple case, and keep complex checks flowing through the coordinator. That is least privilege applied to the frequent path.\n\n## Drill 5: quick-fire\n\n| Stem clue | Answer pattern |\n|---|---|\n| Loop ends early when Claude writes \"Let me check...\" | Drive the loop on `stop_reason`, not text |\n| Coordinator cannot spawn subagents | Add `Task` to `allowedTools` |\n| Subagents run one after another | Emit multiple Task calls in one response |\n| Synthesis ignores prior findings | Pass findings explicitly, with metadata, in its prompt |\n| Refunds over a limit slip through | PreToolUse hook deny plus redirect to escalation |\n| Mixed date formats from MCP tools | PostToolUse normalisation hook |\n| 14-file review is uneven | Per-file passes plus an integration pass |\n| Compare two refactors from one analysis | `fork_session` |\n| Files changed since last session | Resume and name the changed files |\n| Human picks up an escalation blind | Structured handoff: customer ID, root cause, amount, recommended action |\n\n## Final checklist before you answer\n\n- Did I identify **what must be guaranteed** vs what is a judgement call?\n- Does my answer fix the **root cause** shown in the stem (logs, percentages, qualifiers)?\n- Is it the **least machinery** that works for a \"first step\" or \"most effective\" question?\n- Does it respect **least privilege** and **hub-and-spoke routing**?\n",
+      "keyTakeaways": [
+        "Apply the funnel: find the constraint, strip the disguises, fix the root cause at the right layer.",
+        "Guarantees belong in code (gates, hooks); judgement belongs in prompts.",
+        "When logs show subagents did their assigned work, the coordinator's decomposition is at fault.",
+        "Return structured error context (type, query, partial results, alternatives), never silent success or a generic failure.",
+        "Scope tools to the common case (least privilege) instead of over-provisioning an agent."
+      ],
+      "examTips": [
+        "Underline buried qualifiers such as percentages, 'logs show', 'must' and 'first step'; at least one option usually ignores them.",
+        "When two options both work, prefer the one that fixes the root cause with less machinery.",
+        "For multiple-response items, check that each chosen option independently addresses the stated constraint."
+      ],
+      "commonTraps": [
+        "Picking the most sophisticated architecture instead of the proportionate fix.",
+        "Choosing a prompt fix when the stem stresses financial or compliance consequences.",
+        "Marking a failed subagent call as a successful empty result.",
+        "Giving an agent broad tool access to remove round trips."
+      ],
+      "resources": [
+        {
+          "title": "How we built our multi-agent research system (Anthropic Engineering)",
+          "url": "https://www.anthropic.com/engineering/multi-agent-research-system",
+          "type": "blog"
+        },
+        {
+          "title": "Building Effective AI Agents (Anthropic Engineering)",
+          "url": "https://www.anthropic.com/engineering/building-effective-agents",
+          "type": "blog"
+        },
+        {
+          "title": "Intercept and control agent behavior with hooks (Agent SDK)",
+          "url": "https://code.claude.com/docs/en/agent-sdk/hooks",
+          "type": "docs"
+        },
+        {
+          "title": "Subagents in the Agent SDK",
+          "url": "https://code.claude.com/docs/en/agent-sdk/subagents",
+          "type": "docs"
+        }
+      ]
+    }
+  ]
+}

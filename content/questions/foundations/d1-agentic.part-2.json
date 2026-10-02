@@ -1,0 +1,722 @@
+{
+  "certId": "foundations",
+  "domainId": "d1-agentic",
+  "questions": [
+    {
+      "id": "f-d1-b2-001",
+      "taskStatementId": "1.2",
+      "scenario": "You are building a multi-agent research system with the Claude Agent SDK. A coordinator agent delegates to specialized subagents: one searches the web, one analyzes documents, one synthesizes findings, and one generates the final cited report.",
+      "stem": "Usage logs show that about 70% of incoming requests are narrow factual lookups (for example, \"When did this regulation take effect?\"). Every request still passes through all four subagents, so simple lookups take minutes and cost as much as full reports. What is the MOST effective change with minimal disruption to the existing design?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Switch every subagent to a smaller, faster model so that the full four-stage pipeline completes more cheaply for all request types"
+        },
+        {
+          "id": "B",
+          "text": "Have the coordinator assess each query's complexity and invoke only the subagents it needs, scaling effort from one search call up to the full pipeline"
+        },
+        {
+          "id": "C",
+          "text": "Add a separate classifier agent in front of the coordinator that labels each request and launches one of several prebuilt pipelines"
+        },
+        {
+          "id": "D",
+          "text": "Cache the final reports for previously seen topics so that repeated factual lookups can be answered without running the four-stage pipeline again"
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Deciding **which subagents to invoke based on query complexity** is a core coordinator responsibility. A coordinator that always runs the full pipeline wastes tokens and latency on simple requests. Anthropic's research-system write-up describes building effort-scaling rules into the lead agent: a simple fact needs one agent and a few tool calls, while complex research justifies many subagents. This change lives inside the coordinator's existing role, so it fixes the root cause with minimal disruption.",
+      "whyWrong": {
+        "A": "A smaller model makes each stage cheaper, but the waste comes from running stages that aren't needed. Quality also drops on the complex 30% of requests that need the full pipeline.",
+        "C": "This adds an extra agent and several pipelines to maintain, even though the coordinator already exists to make this exact decision. It is over-engineered and goes against \"with minimal disruption\".",
+        "D": "Caching helps only with exact repeats. New factual questions would still run the whole pipeline, so the root cause stays."
+      },
+      "difficulty": 2,
+      "mindset": "The coordinator should scale effort to the query instead of always running the full pipeline.",
+      "tags": [
+        "coordinator",
+        "dynamic-routing",
+        "effort-scaling",
+        "research-system"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/multi-agent-research-system"
+      ]
+    },
+    {
+      "id": "f-d1-b2-002",
+      "taskStatementId": "1.2",
+      "scenario": "You are building a multi-agent research system with the Claude Agent SDK. A coordinator agent delegates to specialized subagents: one searches the web, one analyzes documents, one synthesizes findings, and one generates the final cited report.",
+      "stem": "For broad topics the coordinator spawns three web-search subagents in parallel. Each delegation says only \"Research <topic> thoroughly.\" Traces show the three subagents run near-identical queries, return overlapping sources, and together miss whole segments of the topic. Which change BEST addresses the root cause?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Have the synthesis subagent deduplicate overlapping sources and flag missing segments so the coordinator can mention them in the report"
+        },
+        {
+          "id": "B",
+          "text": "Let the three search subagents message each other directly while they work so they can claim queries and avoid repeating a sibling's search"
+        },
+        {
+          "id": "C",
+          "text": "Partition the topic in the coordinator so each subagent gets a distinct subtopic or source type, with explicit boundaries on what belongs to the others"
+        },
+        {
+          "id": "D",
+          "text": "Run the three search subagents one after another, passing each one the earlier results so that later subagents can skip searches a sibling already ran"
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Overlap and gaps come from **vague delegation**: three agents given the same broad instruction do the same obvious work. The coordinator should partition the research scope (distinct subtopics or source types) and state task boundaries in each delegation. Anthropic's research-system post reports exactly this failure: vague task descriptions caused duplicated work and gaps. It recommends delegations with a clear objective, output format, tool guidance and boundaries.",
+      "whyWrong": {
+        "A": "Deduplicating afterwards hides the symptom. The tokens are already spent on duplicate searches, and the missing segments are only reported, never researched.",
+        "B": "Direct subagent-to-subagent communication breaks the hub-and-spoke model. The coordinator loses observability and control of the information flow, and the root cause (no partitioning) remains.",
+        "D": "Running them in sequence gives up the speed of parallel execution. It still doesn't assign distinct scope, so coverage gaps can remain."
+      },
+      "difficulty": 3,
+      "mindset": "Prevent duplication up front by partitioning scope in the delegation, not by cleaning up afterwards.",
+      "tags": [
+        "coordinator",
+        "scope-partitioning",
+        "delegation",
+        "parallel-subagents"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/multi-agent-research-system"
+      ]
+    },
+    {
+      "id": "f-d1-b2-003",
+      "taskStatementId": "1.2",
+      "scenario": "You are building a multi-agent research system with the Claude Agent SDK. A coordinator agent delegates to specialized subagents: one searches the web, one analyzes documents, one synthesizes findings, and one generates the final cited report.",
+      "stem": "To save latency, a developer proposes letting the web-search subagent send its results straight to the report subagent, skipping the coordinator. Which is the STRONGEST reason to keep all subagent communication routed through the coordinator?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Subagents in the Agent SDK can't produce output that another subagent is able to read unless the coordinator first converts it to a shared format"
+        },
+        {
+          "id": "B",
+          "text": "Routing through the coordinator lets subagents share one conversation history, so later subagents automatically see everything earlier ones did"
+        },
+        {
+          "id": "C",
+          "text": "The coordinator's model is usually larger, so its rewrite of every message improves the quality of the information that reaches each subagent"
+        },
+        {
+          "id": "D",
+          "text": "A central hub gives one place to observe the flow, handle errors consistently, and decide what information reaches which subagent"
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "In the **hub-and-spoke** pattern the coordinator manages all communication between subagents. That gives you **observability** (one place to trace what happened), **consistent error handling** (one component decides on retries, fallbacks and partial results), and **controlled information flow** (each subagent gets only what it needs). Point-to-point links give up all three to save a small amount of latency.",
+      "whyWrong": {
+        "A": "Nothing in the SDK prevents one agent's text output from being passed to another. The reason for the hub is architectural, not a format limitation.",
+        "B": "Subagents have isolated context and never share a conversation history. The coordinator has to pass context explicitly in each delegation prompt.",
+        "C": "The coordinator isn't valuable for being a larger model that rewrites messages. Its value is central control, tracing and error handling."
+      },
+      "difficulty": 1,
+      "mindset": "Hub-and-spoke exists for observability, consistent error handling and controlled information flow.",
+      "tags": [
+        "hub-and-spoke",
+        "coordinator",
+        "observability"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/subagents",
+        "https://www.anthropic.com/engineering/multi-agent-research-system"
+      ]
+    },
+    {
+      "id": "f-d1-b2-004",
+      "taskStatementId": "1.2",
+      "scenario": "You are building a multi-agent research system with the Claude Agent SDK. A coordinator agent delegates to specialized subagents: one searches the web, one analyzes documents, one synthesizes findings, and one generates the final cited report.",
+      "stem": "A user asks for a report on supply-chain risk across Southeast Asia. The synthesis subagent's draft notes that the gathered sources cover Vietnam and Thailand thoroughly but say almost nothing about Indonesia or the Philippines. The system currently publishes whatever synthesis returns. What should the architect implement to make reports MOST reliably complete?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Have the coordinator check synthesis for gaps, send targeted queries back to search and analysis, and re-run synthesis until coverage is sufficient"
+        },
+        {
+          "id": "B",
+          "text": "Tell the synthesis subagent to fill thin regions from its own background knowledge so that the final report covers each country named in the request"
+        },
+        {
+          "id": "C",
+          "text": "Raise the search subagent's maxTurns so that it naturally explores more countries before returning results on a broad regional topic"
+        },
+        {
+          "id": "D",
+          "text": "Re-run the entire pipeline from the start with a longer, more emphatic delegation prompt whenever a user complains that a published report is incomplete"
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "This is the **iterative refinement loop**. The coordinator evaluates the synthesis output for gaps, re-delegates *targeted* queries (here Indonesia and the Philippines) to the search and analysis subagents, then re-invokes synthesis until coverage meets the bar. It fixes the specific gap at the right layer, the coordinator, and reuses the work that is already good.",
+      "whyWrong": {
+        "B": "Filling gaps from the model's background knowledge produces uncited and possibly outdated claims in a system whose output must be cited. It hides the gap rather than closing it.",
+        "C": "More turns don't point the search at the missing countries. The subagent may just go deeper on what it already found, and the turn cap is a safety limit, not a coverage tool.",
+        "D": "This reacts only after a user complains, throws away the good coverage already gathered, and relies on prompt emphasis instead of a check for gaps."
+      },
+      "difficulty": 3,
+      "mindset": "The coordinator should evaluate the output, re-delegate the gaps, and re-synthesize, rather than ship whatever comes back.",
+      "tags": [
+        "iterative-refinement",
+        "coordinator",
+        "coverage-gaps",
+        "research-system"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/multi-agent-research-system"
+      ]
+    },
+    {
+      "id": "f-d1-b2-005",
+      "taskStatementId": "1.2",
+      "scenario": "You are building a multi-agent research system with the Claude Agent SDK. A coordinator agent delegates to specialized subagents: one searches the web, one analyzes documents, one synthesizes findings, and one generates the final cited report.",
+      "stem": "In its first turn the user tells the coordinator: \"The audience is hospital procurement officers; exclude vendor-sponsored studies.\" Delegation to the synthesis subagent says only \"Synthesize the attached findings into key insights.\" The synthesized output ignores both constraints. Which TWO statements correctly explain the problem or its fix? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "The synthesis subagent shares the coordinator's working memory, so the failure shows a reasoning limit that a larger model would fix"
+        },
+        {
+          "id": "B",
+          "text": "The synthesis subagent starts with a fresh context and doesn't see the coordinator's earlier conversation with the user"
+        },
+        {
+          "id": "C",
+          "text": "Writing the constraints into the coordinator's system prompt fixes it, because subagents inherit the parent agent's system prompt"
+        },
+        {
+          "id": "D",
+          "text": "Give the synthesis subagent a tool that reads the coordinator's full transcript, so it can find any constraints it needs on its own"
+        },
+        {
+          "id": "E",
+          "text": "The coordinator should write the audience and the exclusion rule directly into the delegation prompt it sends to the synthesis subagent"
+        }
+      ],
+      "correct": [
+        "B",
+        "E"
+      ],
+      "explanation": "Subagents run with **isolated context**. They don't inherit the coordinator's conversation history, tool results or system prompt, and the delegation prompt is the only way information gets from parent to subagent. So the synthesis subagent never saw the constraints (B), and the fix is for the coordinator to pass the relevant constraints explicitly in that prompt (E).",
+      "whyWrong": {
+        "A": "Subagents don't share the coordinator's memory. The model never received the constraints, so a larger model wouldn't help.",
+        "C": "A subagent doesn't receive the parent's system prompt. Its context is its own AgentDefinition prompt, the delegation message, its tool definitions and any project CLAUDE.md loaded through settingSources.",
+        "D": "Passing the whole transcript floods the subagent with irrelevant context and undoes the benefit of isolation. Pass only the specific constraints it needs."
+      },
+      "difficulty": 2,
+      "mindset": "A subagent knows only what the coordinator explicitly passes to it.",
+      "tags": [
+        "context-isolation",
+        "delegation",
+        "subagents"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/subagents"
+      ]
+    },
+    {
+      "id": "f-d1-b2-006",
+      "taskStatementId": "1.2",
+      "stem": "A colleague new to agent design asks what \"hub-and-spoke\" means in a coordinator-subagent system. Which description is MOST accurate?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Each subagent runs a full copy of the pipeline and the results are voted on, and the most common answer is returned to the user as the final result"
+        },
+        {
+          "id": "B",
+          "text": "Subagents form a chain where each one passes its output to the next one, and the last subagent in the chain returns the final answer to the user"
+        },
+        {
+          "id": "C",
+          "text": "One coordinator breaks down the task, delegates to subagents, receives their results, and handles all communication and error handling between them"
+        },
+        {
+          "id": "D",
+          "text": "All agents share one conversation thread and take turns adding to it, so every agent can see everything the others have done so far"
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "In hub-and-spoke the **coordinator is the hub**. It decomposes the work, decides which subagents to invoke, passes each one the context it needs, collects and aggregates their results, and handles errors. In this pattern subagents don't exchange information directly; everything flows through the hub, which is what gives you observability and consistent error handling.",
+      "whyWrong": {
+        "A": "This describes voting (a form of parallelization), not a coordinator-subagent hub.",
+        "B": "This is a sequential chain, which has no central hub controlling the flow.",
+        "D": "Coordinator-subagent systems isolate each subagent's context. There is no shared thread that every agent reads."
+      },
+      "difficulty": 1,
+      "mindset": "The coordinator is the single hub for decomposition, delegation, aggregation and error handling.",
+      "tags": [
+        "hub-and-spoke",
+        "coordinator",
+        "fundamentals"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/subagents",
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "f-d1-b2-007",
+      "taskStatementId": "1.2",
+      "scenario": "You are building a customer support resolution agent with the Claude Agent SDK. It handles returns, billing disputes and account issues through custom MCP tools (get_customer, lookup_order, process_refund, escalate_to_human), with a target of 80%+ first-contact resolution.",
+      "stem": "A customer writes: \"Order 88412 arrived cracked, I want a refund.\" The agent has already called get_customer and lookup_order, so it holds the verified customer ID, the order details and the return-window status. Once the order is verified, issuing the refund is a single process_refund call. An engineer proposes that from now on the agent hand every refund request to a dedicated \"refunds\" subagent, which would fetch the customer and order again before acting. What is the BEST response to the proposal?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Adopt it, because a subagent with a narrow refunds-only prompt tends to make more accurate decisions than a general support agent handling the refund"
+        },
+        {
+          "id": "B",
+          "text": "Keep this request in the main agent, since it already holds the needed context and a subagent would add cost, latency and another handoff"
+        },
+        {
+          "id": "C",
+          "text": "Adopt it, but have the subagent find the customer by name rather than by ID, so that it doesn't need the customer ID passed in its prompt"
+        },
+        {
+          "id": "D",
+          "text": "Adopt it, and extend the pattern with billing and account subagents so that each concern in a request is handled by a specialist in parallel"
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Spawn a subagent when isolation or parallelism adds real value. **Don't spawn one when the coordinator already holds the context.** Here the agent has the verified ID, the order and the policy status. A subagent would start from a fresh context, so the agent would either have to pass all of that along or the subagent would repeat the lookups. Either way the extra handoff adds tokens, latency and failure points. Anthropic notes that multi-agent systems use roughly 15x the tokens of a chat interaction, so they pay off only when the task's value justifies it.",
+      "whyWrong": {
+        "A": "Specialization pays off when a subagent's instructions or tool set would otherwise compete for space in the main agent's context, or when isolation protects the main conversation. Here the decision is a single verified tool call, so there is no accuracy gain to offset the extra handoff and repeated lookups.",
+        "C": "Matching on name is less reliable than using a verified ID and creates a risk of identifying the wrong customer. It makes the proposal worse.",
+        "D": "This request raises one concern. Spawning specialists for billing and account issues the customer never mentioned multiplies cost and complexity for no benefit, and still repeats the lookups the main agent already did."
+      },
+      "difficulty": 3,
+      "mindset": "Don't spawn a subagent when the coordinator already holds the context it needs.",
+      "tags": [
+        "when-not-to-spawn",
+        "customer-support",
+        "token-economics"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/multi-agent-research-system",
+        "https://code.claude.com/docs/en/agent-sdk/subagents"
+      ]
+    },
+    {
+      "id": "f-d1-b2-008",
+      "taskStatementId": "1.2",
+      "stem": "A due-diligence research coordinator delegates with one-line instructions such as \"Look into the target company's litigation history.\" Subagents often return findings in inconsistent shapes, wander into topics assigned to sibling subagents, or stop after one shallow search. Which TWO additions to the delegation messages would MOST improve results? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "A clear objective plus the exact output format the coordinator expects back, such as a list of findings with a source for each claim"
+        },
+        {
+          "id": "B",
+          "text": "A numbered, step-by-step list of the exact search queries to run in order, so that each subagent follows an identical, fixed procedure"
+        },
+        {
+          "id": "C",
+          "text": "The coordinator's entire conversation transcript, so each subagent has every piece of background that might possibly turn out to be relevant"
+        },
+        {
+          "id": "D",
+          "text": "Explicit task boundaries saying what this subagent covers, what sibling subagents cover, and which tools or sources to favor for the task"
+        },
+        {
+          "id": "E",
+          "text": "An instruction for each subagent to rate its own confidence from 1 to 10, so the coordinator can drop any findings that are rated low"
+        }
+      ],
+      "correct": [
+        "A",
+        "D"
+      ],
+      "explanation": "Anthropic's research-system lessons say each delegation needs an **objective, an output format, guidance on tools and sources, and clear task boundaries**. A short instruction like \"look into X\" led to duplicated work, gaps and inconsistent results. A fixes the inconsistent shapes and shallow stops. D fixes the drift into sibling subagents' scope.",
+      "whyWrong": {
+        "B": "Coordinators should give goals and quality criteria, not step-by-step procedures. Fixed query lists stop subagents from adapting to what they find.",
+        "C": "Sending the whole transcript adds noise and cost and blurs each subagent's focus. Pass only the context each task needs.",
+        "E": "Self-rated confidence is poorly calibrated and doesn't fix scope drift or output shape."
+      },
+      "difficulty": 2,
+      "mindset": "Delegate with an objective, an output format, tool guidance and boundaries: goals, not procedures.",
+      "tags": [
+        "delegation",
+        "coordinator",
+        "prompting-subagents"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/multi-agent-research-system"
+      ]
+    },
+    {
+      "id": "f-d1-b2-009",
+      "taskStatementId": "1.6",
+      "scenario": "You are integrating Claude Code into a CI/CD pipeline. It runs automated reviews on pull requests, generates test cases, and posts feedback as PR comments. Reviewers complain when feedback is shallow or full of false positives.",
+      "stem": "Claude reviews each pull request in a single pass over the whole diff. On a 35-file PR that changes an authentication flow, the review leaves detailed comments on the first few files, only generic remarks on the rest, and misses that a renamed token field breaks a consumer in another module. With the least added complexity, what change gives the MOST reliable review on large PRs?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Switch the review job to the model with the largest context window available, so that every file in the 35-file diff fits comfortably in one pass"
+        },
+        {
+          "id": "B",
+          "text": "Add a second instruction asking Claude to re-read its own review and confirm that it gave every file the same amount of attention"
+        },
+        {
+          "id": "C",
+          "text": "Add several few-shot examples of excellent reviews of large PRs to the review prompt, to show the depth of comment expected for each file"
+        },
+        {
+          "id": "D",
+          "text": "Split the review into a local analysis pass per file, followed by a separate cross-file integration pass that looks at interactions between files"
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "The symptoms show **attention dilution**: one pass over many files gives uneven depth and misses issues that span files. Prompt chaining fixes it. Each file gets a focused local pass, and a **separate integration pass** checks interfaces and dependencies between files, which is exactly where the renamed field breaks things. It is a simple, fixed decomposition, not a new agent architecture.",
+      "whyWrong": {
+        "A": "A larger context window lets more text fit, but it doesn't stop attention from being spread thin across all of it. Fitting the content isn't the same as reviewing it well.",
+        "B": "A self-check in the same diluted context tends to repeat the same blind spots, and it doesn't add a cross-file analysis step.",
+        "C": "Examples show the depth wanted but don't change how much attention a single pass can give to 35 files. They also add tokens to an already long prompt."
+      },
+      "difficulty": 2,
+      "mindset": "Split large reviews into focused per-file passes plus a dedicated cross-file pass.",
+      "tags": [
+        "prompt-chaining",
+        "attention-dilution",
+        "code-review",
+        "ci-cd"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "f-d1-b2-010",
+      "taskStatementId": "1.6",
+      "scenario": "Your engineering team uses Claude Code daily for code generation, refactoring, debugging and documentation, with shared CLAUDE.md files and custom slash commands.",
+      "stem": "A lead asks Claude Code to \"add comprehensive tests to our legacy billing service\": about 60 files, almost no existing tests, and module dependencies nobody fully understands. Which approach is MOST likely to produce valuable coverage efficiently?",
+      "options": [
+        {
+          "id": "A",
+          "text": "First map the structure and dependencies, find the highest-risk areas, then follow a prioritized plan that changes as new dependencies are found"
+        },
+        {
+          "id": "B",
+          "text": "Run a fixed pipeline that writes a test file for each source file in alphabetical order until every file in the service has a test file"
+        },
+        {
+          "id": "C",
+          "text": "Ask Claude to write the whole test suite in one response after reading all 60 files, so that it can see the full picture of the service at the same time"
+        },
+        {
+          "id": "D",
+          "text": "Spawn one subagent per source file in parallel, each told to write tests for its own file without information about the other files"
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "This is an **open-ended** task. You can't know the right subtasks until you understand the code. The recommended decomposition is to **map structure → identify high-impact areas → build a prioritized plan → adapt it** as dependencies come to light. Coverage goes where the risk is, and the plan changes as you learn more.",
+      "whyWrong": {
+        "B": "A fixed alphabetical pipeline ignores risk and dependencies. It spends as much effort on trivial files as on critical billing logic.",
+        "C": "A single huge pass invites attention dilution and gives no chance to adjust as dependencies are found.",
+        "D": "Isolated per-file subagents can't see cross-module dependencies. The result is shallow, possibly redundant tests, at many times the token cost."
+      },
+      "difficulty": 2,
+      "mindset": "For open-ended work: map first, prioritize by impact, and let the plan adapt.",
+      "tags": [
+        "dynamic-decomposition",
+        "legacy-code",
+        "test-generation",
+        "claude-code"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "f-d1-b2-011",
+      "taskStatementId": "1.6",
+      "stem": "A team reviews every marketing contract in the same four steps: check required clauses, check pricing terms against the rate card, check data-protection language, then write a summary. The steps never change. Which decomposition pattern is MOST appropriate?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Dynamic adaptive decomposition, where an orchestrator decides at run time which review steps each contract needs based on what it finds"
+        },
+        {
+          "id": "B",
+          "text": "Prompt chaining: a fixed sequence of focused steps, where each step's output feeds the next and programmatic checks can run between steps"
+        },
+        {
+          "id": "C",
+          "text": "A fully autonomous agent with a single open-ended instruction to review the contract in whatever way it judges is the most effective"
+        },
+        {
+          "id": "D",
+          "text": "Parallel voting, where several identical full reviews run at the same time and the most common overall verdict is the one kept"
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "When the steps are **predictable and fixed**, prompt chaining is the right decomposition. Each step is simpler and more accurate, and you can add programmatic gates between steps. Dynamic decomposition is for open-ended tasks whose subtasks depend on intermediate findings.",
+      "whyWrong": {
+        "A": "Dynamic decomposition adds cost and unpredictability when the steps are already known and stable.",
+        "C": "An autonomous agent is the least predictable choice for a fixed procedure. Start with the simplest pattern that works.",
+        "D": "Voting improves confidence on one judgment. It doesn't break a multi-aspect review into focused steps."
+      },
+      "difficulty": 1,
+      "mindset": "Predictable, fixed steps call for prompt chaining; open-ended investigation calls for dynamic decomposition.",
+      "tags": [
+        "prompt-chaining",
+        "pattern-selection",
+        "workflows"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "f-d1-b2-012",
+      "taskStatementId": "1.6",
+      "scenario": "You are building a developer productivity agent with the Claude Agent SDK. It helps engineers explore unfamiliar codebases and legacy systems using the built-in tools (Read, Write, Bash, Grep, Glob) plus several MCP servers.",
+      "stem": "An engineer asks the agent why an old order-sync job sometimes writes duplicate records. Nobody knows where the bug is: it could be in the scheduler, the retry wrapper, a database trigger or an upstream API. The current design runs a fixed five-step script (read README, list modules, read the main job file, read its tests, write a summary) no matter what each step finds. What should the architect change to make investigations like this MOST effective?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Keep the fixed script but extend it to ten steps that read more files, so that the likely root cause is more probably covered"
+        },
+        {
+          "id": "B",
+          "text": "Run all five steps at once in parallel subagents, then merge their summaries so that the investigation finishes in less time"
+        },
+        {
+          "id": "C",
+          "text": "Use an adaptive investigation plan, where the agent creates its next subtasks from what each step reveals and follows the most promising leads"
+        },
+        {
+          "id": "D",
+          "text": "Load the whole repository into a single prompt and ask the agent to identify the duplicate-write bug in one response, with no further tool calls"
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Debugging an unknown root cause is the textbook **open-ended investigation**. The next useful step depends on what you just learned. If the retry wrapper looks suspicious, the agent should dig there rather than move on to a scripted \"read tests\" step. Adaptive plans that create subtasks from intermediate findings are the recommended decomposition here, while fixed chains suit predictable work.",
+      "whyWrong": {
+        "A": "A longer fixed script still can't react to evidence. It reads more but doesn't follow leads.",
+        "B": "Running the same fixed steps in parallel makes them faster but no smarter, and the steps still ignore what the others find.",
+        "D": "One huge prompt invites attention dilution, may exceed the context window, and gives no chance to investigate step by step."
+      },
+      "difficulty": 3,
+      "mindset": "When the next step depends on what you find, decompose dynamically.",
+      "tags": [
+        "dynamic-decomposition",
+        "investigation",
+        "debugging",
+        "developer-productivity"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "f-d1-b2-013",
+      "taskStatementId": "1.6",
+      "scenario": "You are building a structured data extraction system with Claude. It pulls fields out of unstructured documents, validates the output against JSON schemas, and feeds downstream systems that expect consistent records.",
+      "stem": "Every incoming invoice goes through the same stages: identify the vendor template, extract line items, validate them against the JSON schema, then normalize currencies. A team member proposes replacing this with an autonomous orchestrator agent that decides at run time which stages to run and in what order, \"so it can handle anything.\" The stages haven't changed in a year. What is the BEST recommendation?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Adopt the orchestrator, since autonomous decomposition generalizes better than fixed stages and can absorb new document types without pipeline changes"
+        },
+        {
+          "id": "B",
+          "text": "Adopt the orchestrator, but add a self-review step where it confirms it ran every stage before it returns an extracted invoice record"
+        },
+        {
+          "id": "C",
+          "text": "Collapse all four stages into one large prompt, so that the model does template detection, extraction, validation and normalization together"
+        },
+        {
+          "id": "D",
+          "text": "Keep a fixed prompt chain with programmatic validation gates between stages, and add dynamic handling only if unpredictable inputs appear"
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "The workflow is **predictable**, so a fixed chain is simpler, cheaper and more reliable, and deterministic gates (such as schema validation) can catch errors between stages. Anthropic's guidance is to choose the simplest pattern that works and add agentic complexity only when it clearly improves results. An orchestrator here is over-engineered and less predictable.",
+      "whyWrong": {
+        "A": "This buys speculative flexibility for document types that don't exist yet, and pays for it now with unpredictability, higher cost and a harder-to-debug pipeline on a process whose steps are fixed and known. Add dynamic handling when the need appears, not before.",
+        "B": "A self-review step is a probabilistic patch on an unnecessary design. A fixed chain guarantees that every stage runs.",
+        "C": "Merging the stages into one prompt removes the focused steps and the gates between them, which makes errors harder to catch."
+      },
+      "difficulty": 2,
+      "mindset": "Don't add an agent where a predictable chain with code gates is enough.",
+      "tags": [
+        "prompt-chaining",
+        "over-engineering",
+        "structured-extraction",
+        "gates"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "f-d1-b2-014",
+      "taskStatementId": "1.6",
+      "scenario": "You are integrating Claude Code into a CI/CD pipeline. It runs automated reviews on pull requests, generates test cases, and posts feedback as PR comments. Reviewers complain when feedback is shallow or full of false positives.",
+      "stem": "Reviewers raise two complaints about the current single-call PR review: real security problems get buried under dozens of style nits, and some flagged \"vulnerabilities\" are false positives that block merges for no reason. The team wants to restructure the review around parallel LLM calls whose outputs are combined in code. Which TWO designs BEST address these two complaints? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Run the security review first and start the style review only after it finishes, passing it the security findings so that it can skip lines already flagged"
+        },
+        {
+          "id": "B",
+          "text": "Run separate security, correctness and style reviews in parallel, each with its own focused prompt, and merge their findings into separately labeled sections"
+        },
+        {
+          "id": "C",
+          "text": "Run the existing all-in-one review prompt three times in parallel on the same diff and post every finding that appears in any of the three runs"
+        },
+        {
+          "id": "D",
+          "text": "Run several independent security-review prompts on the same diff and mark a finding as merge-blocking only when a set number of them agree on it"
+        },
+        {
+          "id": "E",
+          "text": "Split the diff into three chunks of equal line count and give each chunk to a parallel reviewer that checks it for every kind of issue at once"
+        }
+      ],
+      "correct": [
+        "B",
+        "D"
+      ],
+      "explanation": "Anthropic describes two forms of **parallelization**. **Sectioning** splits a task into independent subtasks that run at the same time; Anthropic notes that when a task has several considerations, LLMs generally do better when each one gets its own call. Giving security, correctness and style their own focused reviews (B) stops style nits from crowding out security findings, and the Agent SDK docs use a similar example of running style, security and test-coverage reviewers concurrently. **Voting** runs the same task several times for higher confidence; reviewing code for vulnerabilities with several prompts is Anthropic's own example, and choosing a vote threshold is how you balance false positives against false negatives (D). Requiring agreement before a finding blocks a merge directly targets the false-positive complaint.",
+      "whyWrong": {
+        "A": "This is a sequential chain, not parallelization. Security and style are independent, so waiting adds latency for nothing, and a single security pass still decides alone, so false positives are not filtered.",
+        "C": "Each run still mixes every concern in one call, so style nits keep competing with security. Posting the union of three runs adds false positives instead of filtering them, which is the opposite of voting with a threshold.",
+        "E": "This sections the work on the wrong axis. Equal line-count chunks cut files and functions apart, each reviewer still mixes style with security, and nothing filters false positives."
+      },
+      "difficulty": 3,
+      "mindset": "Use sectioning to give each concern focused attention, and voting with a threshold to raise confidence and cut false positives.",
+      "tags": [
+        "parallelization",
+        "sectioning",
+        "voting",
+        "code-review",
+        "ci-cd"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents",
+        "https://code.claude.com/docs/en/agent-sdk/subagents"
+      ]
+    },
+    {
+      "id": "f-d1-b2-015",
+      "taskStatementId": "1.6",
+      "stem": "A three-step prompt chain drafts a product FAQ: step 1 produces an outline, step 2 writes answers for each outline item, step 3 edits for tone. About 1 in 15 runs, step 1 returns an outline missing the required \"Pricing\" and \"Security\" sections, and the final FAQ goes out incomplete. What is the MOST reliable fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add a programmatic check after step 1 that confirms the required sections exist and retries or stops the chain before step 2 runs"
+        },
+        {
+          "id": "B",
+          "text": "Tell step 2 to notice when sections are missing and add them while it writes answers for the outline items it receives"
+        },
+        {
+          "id": "C",
+          "text": "Merge the three steps into one prompt, so that a single response handles outlining, writing and tone together without any handoffs"
+        },
+        {
+          "id": "D",
+          "text": "Add more few-shot examples of complete outlines to step 1, so that the model sees the expected structure more often before it answers"
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "A key strength of prompt chaining is that you can put **programmatic gates** between steps. Checking for required sections is deterministic, so a simple code check catches every failure before it spreads, instead of lowering the failure rate with prompt changes.",
+      "whyWrong": {
+        "B": "This hands the problem to a later prompt, which is still probabilistic, and blurs what each step is responsible for.",
+        "C": "Merging the steps removes the checkpoint where the error could be caught and makes each part of the task harder.",
+        "D": "More examples may reduce the failure rate but can't guarantee the sections are there. A deterministic requirement needs a deterministic check."
+      },
+      "difficulty": 2,
+      "mindset": "Use code gates between chain steps for requirements that can be checked deterministically.",
+      "tags": [
+        "prompt-chaining",
+        "gates",
+        "deterministic-controls"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "f-d1-b2-016",
+      "taskStatementId": "1.6",
+      "stem": "An architect is deciding whether a new workflow should use a fixed sequential pipeline or dynamic, adaptive decomposition. Which TWO characteristics of the task MOST strongly favor dynamic decomposition? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "The steps are well known, stable and identical for every input that the workflow will need to process"
+        },
+        {
+          "id": "B",
+          "text": "Auditors require every run to follow the exact same sequence of steps so that runs can be compared"
+        },
+        {
+          "id": "C",
+          "text": "The subtasks can't be listed in advance, because they depend on what the investigation finds along the way"
+        },
+        {
+          "id": "D",
+          "text": "The business needs the lowest and most predictable latency and cost per run that the system can deliver"
+        },
+        {
+          "id": "E",
+          "text": "Each intermediate finding can open new lines of inquiry that change what the agent should do next"
+        }
+      ],
+      "correct": [
+        "C",
+        "E"
+      ],
+      "explanation": "Dynamic decomposition fits **open-ended** work, where the subtasks aren't known up front (C) and intermediate results change the plan (E). Anthropic contrasts this with workflows that follow predefined code paths, which are better when the steps are predictable.",
+      "whyWrong": {
+        "A": "Stable, known steps are the textbook case for a fixed chain.",
+        "B": "Requiring an identical sequence on every run favors a fixed pipeline, which is reproducible by design.",
+        "D": "Predictable cost and latency favor fixed workflows. Dynamic decomposition trades predictability for flexibility."
+      },
+      "difficulty": 2,
+      "mindset": "Choose dynamic decomposition only when you can't know the steps until you start.",
+      "tags": [
+        "pattern-selection",
+        "dynamic-decomposition",
+        "workflows"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    }
+  ]
+}

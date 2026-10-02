@@ -1,0 +1,547 @@
+{
+  "certId": "professional",
+  "domainId": "d1-solution-design",
+  "questions": [
+    {
+      "id": "p-d1-b1-001",
+      "taskStatementId": "1.1",
+      "stem": "An insurance carrier receives about 40,000 claim emails a day. Each one must go to one of eight fixed intake queues and have its policy number and incident date captured for the claims system. The categories rarely change, a few minutes of delay per email is acceptable, and the team wants a design that is **cheap to run and easy to audit**. Which solution design is the BEST fit?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Deploy an autonomous agent with CRM and policy-database tools that explores each claim and decides on its own how to route it and which records to update."
+        },
+        {
+          "id": "B",
+          "text": "Make one Claude call per email that returns the queue label and the fields in a defined JSON schema, validate it in code, and route in application code."
+        },
+        {
+          "id": "C",
+          "text": "Build a three-agent pipeline in which a classifier agent, an extraction agent and a verifier agent hand each email along and reach consensus before routing."
+        },
+        {
+          "id": "D",
+          "text": "Send every email to the largest available model with extended thinking turned on, so that the most capable reasoning is applied to each routing decision."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "The problem is a **fixed, predictable task**: a closed label set plus a few extracted fields. Anthropic's guidance is to find the simplest solution possible and add complexity only when it demonstrably helps; a single augmented LLM call with structured output, validated and acted on by deterministic code, gives low cost, predictable latency and an auditable trail (one call, one schema-conformant record per email). Routing stays in code, so it is deterministic and the model never holds the power to misroute on its own.",
+      "whyWrong": {
+        "A": "Agents suit open-ended problems whose steps cannot be predicted. Here the steps are known, so autonomy adds cost, latency and compounding-error risk, and makes the system harder to audit.",
+        "C": "Over-engineered. Multiple agents multiply token usage and failure points for a task one well-structured call handles; nothing in the requirements calls for consensus.",
+        "D": "A bigger model with extended thinking raises cost and latency on every one of 40,000 daily emails without addressing the stated goals of being cheap and auditable. Model size is not the constraint here."
+      },
+      "difficulty": 2,
+      "mindset": "Match the pattern to the problem: a predictable, closed task gets a single structured call plus code, not autonomy.",
+      "tags": [
+        "pattern-selection",
+        "augmented-llm",
+        "structured-output",
+        "cost"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents",
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs"
+      ]
+    },
+    {
+      "id": "p-d1-b1-002",
+      "taskStatementId": "1.1",
+      "stem": "A VP of Finance tells you: \"We want an AI agent for the accounts payable team, and we'd like a demo next month.\" No other requirements have been given. As the architect, what should you do FIRST?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Prototype a multi-agent system with separate agents for invoice intake, approvals and payments, so stakeholders can react to something concrete next month."
+        },
+        {
+          "id": "B",
+          "text": "Choose the most capable Claude model available, since model choice determines what the rest of the architecture can realistically achieve."
+        },
+        {
+          "id": "C",
+          "text": "Load all historical invoices and vendor contracts into a vector database, so that whatever is built later has the data it needs."
+        },
+        {
+          "id": "D",
+          "text": "Work with the AP team to pin down the business outcome, how success will be measured, and the cost, latency, risk and compliance constraints."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "Solution design starts from the **business problem, not the technology**. Defining specific, measurable success criteria and constraints first tells you whether an LLM is needed at all, which pattern fits (single call, workflow, agent) and which trade-offs matter. Anthropic's docs recommend defining success criteria before building and iterating.",
+      "whyWrong": {
+        "A": "Jumps to the most complex architecture before knowing the problem. Multi-agent systems cost far more tokens and are justified only for high-value tasks that need them.",
+        "B": "Model selection is a trade-off decision (cost, latency, capability) that can only be made once requirements are known; starting with it is technology-first thinking.",
+        "C": "Builds infrastructure speculatively. Without knowing the use case you cannot tell whether retrieval is needed, or what data, chunking or access controls it should have."
+      },
+      "difficulty": 1,
+      "mindset": "Requirements and success criteria come before patterns, models or infrastructure.",
+      "tags": [
+        "business-requirements",
+        "success-criteria",
+        "problem-framing"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests",
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "p-d1-b1-003",
+      "taskStatementId": "1.1",
+      "stem": "A supplements marketplace wants Claude to rewrite about 120,000 product listings each night. Leadership's two non-negotiables are **lowest possible cost** (descriptions are only needed by the next business day) and that **no description containing a prohibited health or medical claim is ever published**. Which TWO design decisions BEST meet these requirements? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Submit the nightly generation run through the Message Batches API rather than making individual synchronous calls for each item."
+        },
+        {
+          "id": "B",
+          "text": "Stream each generated description so that the first tokens arrive sooner and the pipeline can move faster."
+        },
+        {
+          "id": "C",
+          "text": "Add a strongly worded instruction to the system prompt telling Claude never to write health or medical claims."
+        },
+        {
+          "id": "D",
+          "text": "Gate publication on an automated prohibited-claims screen in the pipeline, routing any description that fails it to human review."
+        },
+        {
+          "id": "E",
+          "text": "Use a writer agent and a critic agent that iterate on every description until the critic agrees it is compliant."
+        }
+      ],
+      "correct": [
+        "A",
+        "D"
+      ],
+      "explanation": "**Cost:** the work is large-volume and not time-sensitive, which is exactly what the Message Batches API is for; it processes requests asynchronously at a 50% discount on input and output tokens, most batches finish in under an hour, and every batch completes (or expires) within 24 hours, so a nightly job comfortably fits a next-business-day deadline. **Guarantee:** \"never published\" is a hard requirement, so it belongs in the workflow as a deterministic gate that blocks publication, not in the prompt. Prompt instructions reduce violations but have a non-zero failure rate.",
+      "whyWrong": {
+        "B": "Streaming improves perceived latency (time to first token) for interactive users. It does nothing for cost, and there is no interactive user here.",
+        "C": "A useful addition, but a prompt instruction is probabilistic; it cannot guarantee that a prohibited claim never reaches publication.",
+        "E": "Roughly doubles (or more) the token cost of 120,000 listings, which conflicts with the lowest-cost requirement, and the critic is still a model judgment rather than a hard gate."
+      },
+      "difficulty": 2,
+      "mindset": "Non-urgent bulk work goes to batch; a 'never' requirement needs a gate in the workflow, not a sentence in the prompt.",
+      "tags": [
+        "batch",
+        "cost",
+        "guardrails",
+        "hard-gates",
+        "multiple-response"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/batch-processing",
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "p-d1-b1-004",
+      "taskStatementId": "1.1",
+      "stem": "A law firm wants an assistant that answers lawyers' questions about its internal clause library: roughly 3,000 precedent documents, about 40 million tokens in total, revised every week. Partners insist that **every answer cite the specific precedent it relies on** so it can be checked, and they want the solution to stay accurate as documents change **without retraining or re-engineering**. Which architecture BEST meets these requirements?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Place the full clause library in the system prompt and use prompt caching, so that every request can reference every precedent at a reduced input cost."
+        },
+        {
+          "id": "B",
+          "text": "Build an autonomous agent that browses the firm's shared drive folder by folder for each question and decides on its own which documents to open."
+        },
+        {
+          "id": "C",
+          "text": "Index the library for retrieval, re-index it on each weekly update, pass the most relevant passages into each request, and require answers to cite the retrieved sources."
+        },
+        {
+          "id": "D",
+          "text": "Create one dedicated agent per practice area, each preloaded with its own documents, plus a router agent that sends each incoming question to the right specialist."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "This is the **augmented LLM** building block: retrieval supplies the right context for each question, and grounding answers in the retrieved sources makes each claim checkable. The Citations feature returns the exact passages that support each claim as valid pointers into the supplied documents, which is more reliable than asking the model to quote on its own; citing retrieved document IDs works too. Weekly re-indexing keeps answers current with no retraining. It is the simplest design that meets size, freshness and auditability.",
+      "whyWrong": {
+        "A": "About 40 million tokens far exceeds any context window, so it is not feasible. Caching cuts the cost of a repeated prefix; it does not increase how much fits.",
+        "B": "Unbounded exploration of 3,000 documents per question is slow, expensive and unpredictable, and gives weaker citation guarantees than targeted retrieval.",
+        "D": "Over-engineered. A router plus many agents adds cost and failure points, and each practice area's corpus may still be too large to preload; retrieval already solves the selection problem."
+      },
+      "difficulty": 3,
+      "mindset": "When the knowledge is large and changing, retrieve and cite; don't stuff, browse or multiply agents.",
+      "tags": [
+        "augmented-llm",
+        "rag",
+        "citations",
+        "context-limits"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents",
+        "https://platform.claude.com/docs/en/build-with-claude/citations"
+      ]
+    },
+    {
+      "id": "p-d1-b1-005",
+      "taskStatementId": "1.1",
+      "stem": "A support organization wants Claude to speed up email replies. Compliance requires that **a licensed agent approve every outbound message**, and the CIO has asked for a solution that works **with minimal changes to the existing ticketing workflow** agents already use. Which design BEST satisfies both constraints?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Integrate Claude into the existing ticketing tool so it drafts a suggested reply on each ticket, which the agent reviews, edits if needed and sends."
+        },
+        {
+          "id": "B",
+          "text": "Deploy an autonomous agent that sends replies directly, with a system-prompt rule telling it to wait for a licensed agent's approval before sending anything."
+        },
+        {
+          "id": "C",
+          "text": "Replace the ticketing system with a new Claude-native support portal that has licensed-agent approval steps built into its own interface."
+        },
+        {
+          "id": "D",
+          "text": "Let Claude send replies automatically and have a team lead audit a random 10% sample each day to catch and correct any problems."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Drafting inside the current tool keeps the workflow intact (minimal change), and because the **human performs the send**, approval is enforced by the workflow's structure rather than by model behavior. The design maps directly to both stated constraints with the least added complexity.",
+      "whyWrong": {
+        "B": "Approval is a hard compliance gate, but here it depends on the model following a prompt rule. A probabilistic control cannot guarantee that every message is approved.",
+        "C": "May meet the approval rule, but replacing the ticketing system directly violates the 'minimal changes to the existing workflow' constraint.",
+        "D": "Sampling after sending detects problems; it doesn't prevent unapproved messages from going out, so it fails the 'every outbound message' requirement."
+      },
+      "difficulty": 3,
+      "mindset": "Read the qualifiers: 'every message' means a structural gate, and 'minimal changes' rules out the rebuild.",
+      "tags": [
+        "human-in-the-loop",
+        "hard-gates",
+        "business-constraints",
+        "augmented-llm"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "p-d1-b1-006",
+      "taskStatementId": "1.1",
+      "stem": "A logistics company's chatbot quotes shipping fees. Fees come from a published rate table keyed on weight band and destination zone, and finance requires quotes to be **exactly correct and reproducible** for audits. In testing, Claude occasionally misreads the table that is pasted into the prompt. Customers ask in free text, for example \"how much to send a 3 kg box to Lyon?\" What is the MOST reliable design?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Keep the table in the prompt and add a dozen worked examples showing how to look up each weight band and zone combination correctly."
+        },
+        {
+          "id": "B",
+          "text": "Implement the fee lookup as deterministic code exposed to Claude as a tool: Claude interprets the request and calls the tool, and the code returns the fee."
+        },
+        {
+          "id": "C",
+          "text": "Switch to a larger model with extended thinking enabled so that it reasons more carefully through the pasted table on every quote request."
+        },
+        {
+          "id": "D",
+          "text": "Ask Claude to compute the fee, then ask it to double-check its own arithmetic and table lookup before showing the price to the customer."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Split the problem by what each part needs. Understanding free-text requests is a **language task** and suits Claude; the fee itself is a **deterministic calculation** that must be exact and auditable, so it belongs in code. Tool use lets Claude collect the inputs and delegate the calculation to the function, which removes the root cause of the errors.",
+      "whyWrong": {
+        "A": "More few-shot examples may reduce the error rate but cannot make it zero, and 'exactly correct and reproducible' needs a deterministic guarantee.",
+        "C": "A bigger model is still probabilistic and costs more per quote; it compensates for the problem without removing it.",
+        "D": "Self-checking is another model judgment with its own error rate; it doesn't make the quote deterministic or auditable."
+      },
+      "difficulty": 2,
+      "mindset": "Use Claude for language and judgment; put exact, auditable computation in code it can call.",
+      "tags": [
+        "tool-use",
+        "deterministic-controls",
+        "problem-decomposition"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview",
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "p-d1-b1-007",
+      "taskStatementId": "1.4",
+      "stem": "A corporate-travel assistant built with the Claude Agent SDK has a coordinator agent that talks with the traveler and delegates hotel searches to a hotel-search subagent. Over several turns the traveler tells the coordinator that company policy caps hotels at EUR 180 per night and that the hotel must be within walking distance of the conference venue in Brussels. The coordinator then delegates with the prompt \"Find hotel options for the Brussels trip.\" The subagent returns well-reviewed hotels that are over the cap and across the city. Its search tool works correctly. What change MOST directly fixes this?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Expand the subagent's system prompt with general best practices for hotel searches and the company's standards for what makes a good recommendation."
+        },
+        {
+          "id": "B",
+          "text": "Move the subagent to the most capable model available so that it can infer the traveler's likely budget and location needs from the destination."
+        },
+        {
+          "id": "C",
+          "text": "Have the coordinator write the facts it has learned (the nightly cap, the venue address and the travel dates) into the task prompt it sends the subagent."
+        },
+        {
+          "id": "D",
+          "text": "Have the coordinator filter the returned hotels against the cap and distance, re-running the subagent until enough options pass the filter."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "A subagent works in **its own isolated context**. In the Agent SDK, unless the subagent is a fork, its context window starts fresh with no parent conversation history: the only content passed from parent to subagent is the Agent tool's prompt string, so anything the subagent needs (decisions, constraints, file paths) must be written into that prompt. The traveler's cap and venue live only in the coordinator's conversation, so the subagent never saw them. Writing them into the delegation removes the root cause.",
+      "whyWrong": {
+        "A": "Generic guidance doesn't tell the subagent this traveler's cap or venue. The missing information is specific to the conversation, and only the coordinator has it.",
+        "B": "No model can infer a specific EUR 180 policy cap or a venue address it was never given. This is a context-passing problem, not a capability problem.",
+        "D": "Treats the symptom after the tokens are spent. Each re-run is still blind to the constraints, so it may never return enough compliant options, and cost and latency grow with every retry."
+      },
+      "difficulty": 2,
+      "mindset": "Subagents only know what the delegation prompt tells them, so pass the context explicitly.",
+      "tags": [
+        "multi-agent",
+        "context-isolation",
+        "delegation",
+        "agent-sdk"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/subagents",
+        "https://www.anthropic.com/engineering/multi-agent-research-system"
+      ]
+    },
+    {
+      "id": "p-d1-b1-008",
+      "taskStatementId": "1.4",
+      "stem": "An HR team runs a single-agent assistant that answers employee policy questions; about 95% of questions are answered from one document lookup. An engineer proposes rebuilding it as a lead agent that coordinates several parallel subagents. Before approving, the architect lists the conditions under which the extra cost would be justified. Which TWO conditions, if they were true of this workload, would MOST strongly justify the multi-agent design? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Leadership wants to lower the cost per answered question as usage grows across the company and expects the rebuild to help."
+        },
+        {
+          "id": "B",
+          "text": "Typical requests require exploring many independent sources at once, and these lines of inquiry can proceed in parallel without depending on one another."
+        },
+        {
+          "id": "C",
+          "text": "Most requests can be answered with a single retrieval followed by a short, direct response, and that mix is not expected to change."
+        },
+        {
+          "id": "D",
+          "text": "The team wants to adopt an agent framework that supports multi-agent orchestration out of the box and has budget approved for it."
+        },
+        {
+          "id": "E",
+          "text": "The information needed per task routinely exceeds one context window, and each task is valuable enough to justify far higher token usage."
+        }
+      ],
+      "correct": [
+        "B",
+        "E"
+      ],
+      "explanation": "Multi-agent systems excel at **valuable tasks that involve heavy parallelization** and at tasks whose **information exceeds a single context window**. They also use roughly 15x the tokens of a chat interaction, so they make sense only when the task value pays for that. Anthropic notes they suit domains poorly when agents must share the same context or have many dependencies on each other. Neither condition holds for a 95% single-lookup workload, which is why the architect should reject the rebuild unless the workload changes.",
+      "whyWrong": {
+        "A": "Multi-agent designs raise token usage substantially, so a cost-reduction goal argues against them.",
+        "C": "Simple single-lookup requests are the case where a single agent, or even a single augmented call, is the right size; this argues against the rebuild.",
+        "D": "Framework availability is not a business justification; adopting complexity because tooling exists is a classic over-engineering trap."
+      },
+      "difficulty": 3,
+      "mindset": "Multi-agent is justified by parallel breadth and context overflow on high-value tasks, never by fashion or by hoped-for savings.",
+      "tags": [
+        "multi-agent",
+        "token-economics",
+        "pattern-selection",
+        "multiple-response"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/multi-agent-research-system",
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "p-d1-b1-009",
+      "taskStatementId": "1.4",
+      "stem": "In a due-diligence system, five subagents each analyze a set of filings and return results to a lead agent, which condenses them and passes its summary to a report-writing step. Reviewers find that the final reports often drop exact figures and **lose which filing and page each fact came from**, even though the subagents' raw outputs contained them. Which change BEST addresses the root cause?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add an instruction to the lead agent's system prompt telling it to take great care to preserve every exact figure and citation when it summarizes subagent results."
+        },
+        {
+          "id": "B",
+          "text": "Upgrade the lead agent to the largest available model so that it retains more detail when consolidating the five subagent outputs."
+        },
+        {
+          "id": "C",
+          "text": "Add a final step in which the report writer reviews its own draft and asks itself whether any figures or citations might be missing."
+        },
+        {
+          "id": "D",
+          "text": "Have subagents save full structured results (content plus source metadata) to shared storage and pass the lead references that the report step reads directly."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "The detail is lost in a **\"game of telephone\"**: each pass through the lead's context condenses it. Anthropic describes letting subagents persist outputs outside the coordinator and pass lightweight references, which improves fidelity and cuts the token overhead of copying large outputs through conversation history. Structured fields for source metadata keep attribution intact.",
+      "whyWrong": {
+        "A": "A prompt instruction is probabilistic and doesn't change the structure that forces repeated summarization; detail will still be lost.",
+        "B": "A bigger model still has to compress five outputs into one summary; it may lose less, but the lossy hop remains and costs more.",
+        "C": "Self-review cannot restore information that never reached the report writer; it can only guess at what is missing."
+      },
+      "difficulty": 2,
+      "mindset": "Don't route high-fidelity data through a summarizer: persist it and pass references.",
+      "tags": [
+        "multi-agent",
+        "context-passing",
+        "provenance",
+        "telephone-game"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/multi-agent-research-system"
+      ]
+    },
+    {
+      "id": "p-d1-b1-010",
+      "taskStatementId": "1.4",
+      "stem": "A coordinator agent built with the Claude Agent SDK must gather information from four subagents whose tasks are completely independent of one another. Each subagent takes about two minutes, and end-to-end runs take more than eight minutes because the coordinator invokes one subagent, waits for its result, then invokes the next. What is the MOST effective way to cut wall-clock time?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Have the coordinator issue all four independent subagent invocations together in the same response so that they run in parallel."
+        },
+        {
+          "id": "B",
+          "text": "Raise the coordinator's maximum number of turns so that it has more room to finish all four subagent calls within a single run."
+        },
+        {
+          "id": "C",
+          "text": "Merge the four subagents into one subagent that handles all four tasks one after another inside its own context."
+        },
+        {
+          "id": "D",
+          "text": "Move all four subagents to the largest available model so that each individual task finishes with fewer reasoning steps."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Independent subtasks should be **parallelized**. The Agent SDK lists parallelization as a core benefit of subagents: multiple subagents can run concurrently, so independent subtasks finish in the time of the slowest one rather than the sum of all of them. The coordinator achieves that by dispatching the independent invocations together rather than one per turn. Anthropic reports that parallel subagents and parallel tool calls cut research time by up to 90% on complex queries.",
+      "whyWrong": {
+        "B": "More turns lets a run go longer; it doesn't make the work faster, and the sequential pattern stays the same.",
+        "C": "Still sequential, and it gives up the context isolation that keeps each subagent focused.",
+        "D": "Larger models are generally slower and cost more per token; they don't remove the serialization that causes the delay."
+      },
+      "difficulty": 1,
+      "mindset": "Independent work runs in parallel; dependent work runs in sequence.",
+      "tags": [
+        "multi-agent",
+        "parallelization",
+        "latency",
+        "agent-sdk"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/subagents",
+        "https://www.anthropic.com/engineering/multi-agent-research-system"
+      ]
+    },
+    {
+      "id": "p-d1-b1-011",
+      "taskStatementId": "1.4",
+      "stem": "A content-operations pipeline uses a coordinator with three subagents: one fetches and summarizes external web pages, one drafts updates, and one writes approved updates to the CRM. The subagent definitions omit the `tools` field. During an incident, the web-summarizer subagent read a page containing hidden instructions and **modified several CRM records itself**. Which change MOST effectively prevents this from happening again?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add a system-prompt instruction to the web-summarizer telling it to ignore any instructions that appear inside fetched web content."
+        },
+        {
+          "id": "B",
+          "text": "Give each subagent an explicit `tools` list scoped to its role, so the web-summarizer has fetch and read tools only and no CRM write tool."
+        },
+        {
+          "id": "C",
+          "text": "Have the coordinator ask a separate model call to double-check every CRM write and confirm that it looks legitimate before it is applied."
+        },
+        {
+          "id": "D",
+          "text": "Enable detailed audit logging on all CRM writes so that any future unauthorized modification can be detected and rolled back quickly."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "When `tools` is omitted, a subagent **inherits every tool available to subagents**, so the subagent handling untrusted web content also held write access. **Least privilege** removes the capability: a tool left out of the list is not in the subagent's session at all, so injected instructions cannot cause a write. That structural control removes the root cause instead of detecting or compensating for it, which is the same reasoning as removing unneeded tools from an agent's configuration.",
+      "whyWrong": {
+        "A": "Worth having as defense in depth, but prompt-injection resistance is probabilistic; the subagent would still have the means to write.",
+        "C": "A model-based check is another probabilistic layer that can itself be manipulated, and it adds latency and cost to every legitimate write.",
+        "D": "Logging detects and helps recovery after the damage; it doesn't prevent the unauthorized write."
+      },
+      "difficulty": 2,
+      "mindset": "Remove capabilities a role doesn't need; prevention beats detection and model-based review.",
+      "tags": [
+        "least-privilege",
+        "subagents",
+        "prompt-injection",
+        "security"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/sub-agents",
+        "https://code.claude.com/docs/en/agent-sdk/subagents"
+      ]
+    },
+    {
+      "id": "p-d1-b1-012",
+      "taskStatementId": "1.4",
+      "stem": "A regulatory-research system has a lead agent that sends parallel subagents to check one jurisdiction each, using a client-side `search_regulations` tool. When the regulations database times out, the tool wrapper catches the exception and returns an empty result list. The subagent then reports \"no applicable regulations found,\" and the lead includes that in the final report as a clean result. An audit found two jurisdictions marked \"none found\" during a database outage. Which TWO changes BEST fix this? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Tell the lead agent in its system prompt to be skeptical of any \"none found\" result and to add a general note that the report may be incomplete."
+        },
+        {
+          "id": "B",
+          "text": "Return tool failures to the subagent as errors (a `tool_result` with `is_error: true` and a clear message, such as a timeout) rather than as an empty list."
+        },
+        {
+          "id": "C",
+          "text": "Abort the entire job and restart it from the beginning whenever any subagent's tool call raises an exception, so no report is built from partial data."
+        },
+        {
+          "id": "D",
+          "text": "Have subagents return a structured status (complete, partial or failed, with what they tried); the lead retries or flags failed ones as gaps, not findings."
+        },
+        {
+          "id": "E",
+          "text": "Raise the tool's timeout to ten minutes so that slow database responses during periods of heavy load are less likely to fail and come back empty."
+        }
+      ],
+      "correct": [
+        "B",
+        "D"
+      ],
+      "explanation": "The root cause is that **a failure is disguised as a valid empty answer**, and that false answer then travels up the hierarchy. Two fixes keep the failure visible at each hop. **(B) Tool to subagent:** the tool-use docs say that when a tool throws during execution you return the error message in the `tool_result` with `is_error: true`, ideally with an instructive message, so Claude can recover or adapt. Anthropic's multi-agent write-up likewise notes that letting the agent know when a tool is failing and letting it adapt works well, alongside deterministic safeguards such as retry logic. **(D) Subagent to lead:** a structured status lets the coordinator tell \"checked, nothing applies\" apart from \"could not check\", so it can retry the jurisdiction or report it as a gap.",
+      "whyWrong": {
+        "A": "Once the wrapper has turned the error into an empty list, the lead cannot tell a real \"none found\" from an outage. A blanket caveat weakens every result without fixing the false ones.",
+        "C": "Restarting long multi-agent jobs from scratch is expensive, and Anthropic recommends resuming from where the error occurred instead. It also throws away the jurisdictions that succeeded.",
+        "E": "May reduce timeouts, but in a real outage the wrapper still returns an empty list and the false \"none found\" result still reaches the report."
+      },
+      "difficulty": 3,
+      "mindset": "Never let a failure look like a valid empty result: surface errors at every hop so the orchestrator can retry or report the gap.",
+      "tags": [
+        "multi-agent",
+        "error-propagation",
+        "tool-use",
+        "reliability",
+        "multiple-response"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls",
+        "https://www.anthropic.com/engineering/multi-agent-research-system"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,739 @@
+{
+  "certId": "foundations",
+  "domainId": "d3-claude-code",
+  "questions": [
+    {
+      "id": "f-d3-b3-001",
+      "taskStatementId": "3.3",
+      "scenario": "Your team uses Claude Code every day for code generation, refactoring, debugging and documentation. You are responsible for the shared configuration in the repository: CLAUDE.md files, .claude/rules/, skills and settings, so that every developer gets consistent behaviour. The platform is split into 14 services. Each service keeps its own database migrations under services/<name>/db/migrations/, and the data team has strict conventions for migration files (reversible steps, no data backfills in schema migrations, naming by timestamp).",
+      "stem": "Developers report that Claude ignores the migration conventions about half the time when it writes new migration files. The conventions currently sit in a section of the 400-line root CLAUDE.md. You want the conventions applied automatically whenever Claude works with migration files in any service, without adding them to every session's context. What is the BEST change?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Copy a CLAUDE.md containing the migration conventions into each of the 14 migrations directories so the conventions sit next to the files they govern."
+        },
+        {
+          "id": "B",
+          "text": "Keep the conventions in the root CLAUDE.md but move them to the top of the file under a bold heading so Claude weights them more heavily."
+        },
+        {
+          "id": "C",
+          "text": "Move the conventions to .claude/rules/migrations.md with frontmatter paths: [\"services/*/db/migrations/**/*.sql\"] so they load when Claude reads a matching file."
+        },
+        {
+          "id": "D",
+          "text": "Package the conventions as a project skill named /migration-conventions and ask developers to invoke it before they start migration work."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "A path-scoped rule in `.claude/rules/` with a `paths` glob is the mechanism built for this: the rule loads when Claude reads a file that matches the pattern (for example the existing migrations it inspects before adding a new one), in whichever service it lives, so it is applied automatically and costs no context in unrelated sessions. One rule file also keeps the conventions in one place. The docs explicitly recommend moving content that matters for only part of the codebase out of CLAUDE.md and into path-scoped rules.",
+      "whyWrong": {
+        "A": "Subdirectory CLAUDE.md files do load lazily, but 14 copies of the same text will drift apart and every update has to be repeated. A single glob-scoped rule covers all services with one file.",
+        "B": "The conventions would still load in every session, and moving them up only nudges attention. It does not make loading conditional or the matching explicit.",
+        "D": "As proposed, the skill loads only when a developer invokes it or Claude judges it relevant. That is not automatic, path-based application, and it depends on developers remembering a manual step. Conventions tied to file patterns belong in a path-scoped rule."
+      },
+      "difficulty": 2,
+      "mindset": "Conventions tied to file patterns spread across a repo belong in a glob-scoped rule, not in more copies or louder text.",
+      "tags": [
+        "claude-rules",
+        "paths-frontmatter",
+        "glob",
+        "context-budget"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/memory#path-specific-rules"
+      ]
+    },
+    {
+      "id": "f-d3-b3-002",
+      "taskStatementId": "3.3",
+      "scenario": "Your team uses Claude Code every day for code generation, refactoring, debugging and documentation. You are responsible for the shared configuration in the repository: CLAUDE.md files, .claude/rules/, skills and settings, so that every developer gets consistent behaviour. The root CLAUDE.md has grown to about 900 lines. Roughly 250 of them are Terraform conventions that matter only for files under terraform/, which a small infrastructure group edits. Application developers never touch that folder.",
+      "stem": "Application developers say Claude follows the general coding standards less reliably since the file grew, and /context shows a large memory footprint at startup. With the smallest change to how the team works, how should you cut the always-loaded context while keeping the Terraform conventions applied automatically for the infrastructure group?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Move the Terraform section into .claude/rules/terraform.md with frontmatter paths: [\"terraform/**/*\"] and delete it from the root CLAUDE.md."
+        },
+        {
+          "id": "B",
+          "text": "Move the Terraform section into docs/terraform.md and replace it in the root CLAUDE.md with an @docs/terraform.md import line."
+        },
+        {
+          "id": "C",
+          "text": "Add a sentence to the root CLAUDE.md telling Claude to skip the Terraform section unless the current task involves infrastructure."
+        },
+        {
+          "id": "D",
+          "text": "Move the Terraform section into a skill with disable-model-invocation: true so it costs no context until an engineer runs it."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Rules with a `paths` field load only when Claude reads a matching file, so the 250 lines stop loading for application developers and still apply automatically under `terraform/`. The memory docs recommend moving content that matters for only part of the codebase into path-scoped rules and keeping each CLAUDE.md under about 200 lines.",
+      "whyWrong": {
+        "B": "`@` imports help organise a file, but imported files are expanded and loaded at launch, so context cost does not go down.",
+        "C": "The text still loads in every session, and whether it applies is left to Claude's judgment. Nothing becomes conditional.",
+        "D": "With `disable-model-invocation: true`, only a person can run the skill. The conventions would no longer apply automatically, which breaks the requirement and adds a manual step."
+      },
+      "difficulty": 2,
+      "mindset": "@imports organise context; path-scoped rules actually defer it.",
+      "tags": [
+        "claude-rules",
+        "imports",
+        "context-budget",
+        "claude-md-size"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/memory#path-specific-rules",
+        "https://code.claude.com/docs/en/memory#import-additional-files"
+      ]
+    },
+    {
+      "id": "f-d3-b3-003",
+      "taskStatementId": "3.3",
+      "stem": "A developer adds .claude/rules/api.md with frontmatter paths: [\"src/api/**/*.ts\"]. She starts a new session, runs /context straight away, and the rule is not listed under Memory files. She suspects the rule is broken. What is the MOST accurate explanation?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The YAML frontmatter is probably malformed, and Claude Code skips rule files whose frontmatter cannot be parsed."
+        },
+        {
+          "id": "B",
+          "text": "Rules in .claude/rules/ are loaded only when the root CLAUDE.md references them with an @ import line."
+        },
+        {
+          "id": "C",
+          "text": "New rule files only take effect after they are switched on from the /memory menu, which records them in local settings."
+        },
+        {
+          "id": "D",
+          "text": "This is expected: a path-scoped rule loads when Claude reads a file matching its pattern, so it shows up once a src/api file is read."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "Rules with `paths` frontmatter are conditional. They load when Claude reads a matching file, not at session start. Right after launch, before any `src/api/**/*.ts` file has been read, the rule is correctly absent. Have Claude read a matching file and run `/context` again to confirm it loads.",
+      "whyWrong": {
+        "A": "It is the other way round: if the frontmatter does not parse, Claude Code ignores it and loads the rule as though it had no `paths`. The rule would then appear at startup.",
+        "B": "Every `.md` file under `.claude/rules/` is discovered automatically and recursively. No import is needed.",
+        "C": "`/memory` lists and opens memory files and toggles auto memory. Rules do not need to be enabled there one by one."
+      },
+      "difficulty": 2,
+      "mindset": "Know when each memory mechanism loads before deciding it is broken.",
+      "tags": [
+        "claude-rules",
+        "paths-frontmatter",
+        "/context",
+        "troubleshooting"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/memory#path-specific-rules",
+        "https://code.claude.com/docs/en/memory#view-and-edit-with-%2Fmemory"
+      ]
+    },
+    {
+      "id": "f-d3-b3-004",
+      "taskStatementId": "3.3",
+      "scenario": "Your team uses Claude Code every day for code generation, refactoring, debugging and documentation. You are responsible for the shared configuration in the repository: CLAUDE.md files, .claude/rules/, skills and settings, so that every developer gets consistent behaviour. A developer moving from another AI editor ports his rule files into the repository. One of them, .claude/rules/payments.md, begins with this frontmatter:\n\n```yaml\n---\nglobs: \"src/payments/**\"\nalwaysApply: false\n---\n```",
+      "stem": "The team notices that the payment conventions now appear in every session's context, including sessions that never touch payment code. What is the root cause, and the correct fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The glob is a quoted string instead of a YAML list, so it is rejected. Rewrite it as a list with one pattern per line."
+        },
+        {
+          "id": "B",
+          "text": "Claude Code reads only the paths field in a rule, so it ignores both keys and loads the rule unconditionally. Rename globs to paths."
+        },
+        {
+          "id": "C",
+          "text": "alwaysApply needs to be the first key in the frontmatter for its false value to be honoured. Reorder the keys so it comes first."
+        },
+        {
+          "id": "D",
+          "text": "Rules are always global unless their file sits in a subfolder named after the scope. Move it to .claude/rules/payments/payments.md."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "`paths` is the only frontmatter field Claude Code reads from a rule file, and any other field is ignored without an error. A rule without `paths` is unconditional and loads at launch. Renaming `globs` to `paths` (and dropping `alwaysApply`) makes it load only when Claude reads files under `src/payments/`.",
+      "whyWrong": {
+        "A": "`paths` accepts either a YAML list or a comma-separated string, so string form is not the problem. The real issue is the key name.",
+        "C": "`alwaysApply` is not a Claude Code rule field at all. Key order is irrelevant because the key is ignored.",
+        "D": "Subfolders under `.claude/rules/` are only for organisation and are discovered recursively. A rule in a subfolder without `paths` still loads unconditionally."
+      },
+      "difficulty": 3,
+      "mindset": "Config copied from another tool fails silently; check the exact field names the target tool reads.",
+      "tags": [
+        "claude-rules",
+        "frontmatter",
+        "paths-frontmatter",
+        "migration-trap"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/memory#rules-frontmatter-reference",
+        "https://code.claude.com/docs/en/memory#path-specific-rules"
+      ]
+    },
+    {
+      "id": "f-d3-b3-005",
+      "taskStatementId": "3.3",
+      "scenario": "Your team uses Claude Code every day for code generation, refactoring, debugging and documentation. You are responsible for the shared configuration in the repository: CLAUDE.md files, .claude/rules/, skills and settings, so that every developer gets consistent behaviour. The root CLAUDE.md mixes four kinds of content: universal coding standards; React component conventions that apply to *.tsx files scattered across many packages; GraphQL resolver conventions for files under packages/*/src/resolvers/; and a 60-line, step-by-step release checklist used about once a month.",
+      "stem": "You want to cut what loads in every session without losing automatic application of conventions where they matter. Which TWO changes should you make? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Split each of the four kinds of content into its own file under docs/ and pull them all back into CLAUDE.md with @ import lines."
+        },
+        {
+          "id": "B",
+          "text": "Move the React and GraphQL conventions into .claude/rules/ files whose paths globs match **/*.tsx and packages/*/src/resolvers/**."
+        },
+        {
+          "id": "C",
+          "text": "Place a CLAUDE.md with the React conventions in each package root so they load when Claude works anywhere inside that package."
+        },
+        {
+          "id": "D",
+          "text": "Move the universal coding standards into each developer's ~/.claude/CLAUDE.md so the shared project file stays short."
+        },
+        {
+          "id": "E",
+          "text": "Move the monthly release checklist into a project skill so its full text loads only when the release workflow is invoked."
+        }
+      ],
+      "correct": [
+        "B",
+        "E"
+      ],
+      "explanation": "Path-scoped rules suit conventions tied to file patterns: they load only when Claude reads matching files, even when those files are spread across packages. A multi-step procedure that is rarely needed belongs in a skill, where only its short description sits in context until it is invoked. Universal standards stay in the project CLAUDE.md. The memory docs give exactly this split: move procedures to skills and part-of-codebase content to path-scoped rules.",
+      "whyWrong": {
+        "A": "Imports load at launch, so this reorganises the text without cutting context.",
+        "C": "A package-level CLAUDE.md loads for every file in that package, not just `.tsx` files, and it duplicates the text across packages. A single glob rule matches the file type wherever it sits.",
+        "D": "User-level CLAUDE.md is not shared through git. New teammates and CI would lose the standards, and the copies would drift."
+      },
+      "difficulty": 3,
+      "mindset": "Always-loaded for universal facts, path rules for file-pattern conventions, skills for on-demand procedures.",
+      "tags": [
+        "claude-rules",
+        "skills",
+        "claude-md-hierarchy",
+        "context-budget"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/memory#when-to-add-to-claude-md",
+        "https://code.claude.com/docs/en/memory#path-specific-rules",
+        "https://code.claude.com/docs/en/skills"
+      ]
+    },
+    {
+      "id": "f-d3-b3-006",
+      "taskStatementId": "3.3",
+      "scenario": "Your team uses Claude Code every day for code generation, refactoring, debugging and documentation. You are responsible for the shared configuration in the repository: CLAUDE.md files, .claude/rules/, skills and settings, so that every developer gets consistent behaviour. Code under src/gen/ is produced by a code generator and is overwritten on every build. A path-scoped rule, .claude/rules/generated.md with paths: [\"src/gen/**\"], says: \"Never edit these files; change the generator templates instead.\"",
+      "stem": "Despite the rule, Claude still edits files in src/gen/ every few days, and those edits are silently lost at the next build. The team wants these edits blocked by Claude Code itself, regardless of what Claude decides, rather than merely discouraged. What should you do?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Rewrite the rule in capital letters with a short explanation of why edits are lost, so Claude understands how serious the constraint is."
+        },
+        {
+          "id": "B",
+          "text": "Widen the rule's paths to \"**/*\" so the instruction is in context in every session, not only after a generated file has been read."
+        },
+        {
+          "id": "C",
+          "text": "Add several worked examples to the rule showing Claude declining to edit a generated file and editing the template instead."
+        },
+        {
+          "id": "D",
+          "text": "Add a deny rule such as Edit(/src/gen/**) to the project's .claude/settings.json so Claude Code blocks those edits whatever Claude decides."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "Rules and CLAUDE.md are context. Claude reads them and tries to follow them, but compliance is not guaranteed. Permission rules are enforced by Claude Code itself, and deny rules block in every permission mode, including `bypassPermissions`. In a project settings file, a path with a single leading `/` is anchored at the settings source, which for project settings is the project directory, so `Edit(/src/gen/**)` blocks Claude's edit tools (and recognised file-writing shell commands and redirects) for everything under `src/gen/`. A PreToolUse hook that rejects matching edits would also work. Either way, the guarantee comes from a deterministic control, not from stronger wording.",
+      "whyWrong": {
+        "A": "Stronger wording may raise compliance, but it is still a probabilistic instruction. The requirement is that edits be impossible.",
+        "B": "Loading the instruction everywhere costs context in every session and still relies on Claude choosing to comply.",
+        "C": "Examples steer behaviour but enforce nothing. It is the same probabilistic mechanism with more tokens."
+      },
+      "difficulty": 2,
+      "mindset": "If it must never happen, enforce it with a permission rule or hook; rules only advise.",
+      "tags": [
+        "claude-rules",
+        "permissions",
+        "deterministic-control",
+        "deny-rules"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/permissions#read-and-edit",
+        "https://code.claude.com/docs/en/permission-modes",
+        "https://code.claude.com/docs/en/memory#claude-md-vs-auto-memory"
+      ]
+    },
+    {
+      "id": "f-d3-b3-007",
+      "taskStatementId": "3.3",
+      "stem": "A rule file has frontmatter paths: [\"src/*.ts\"]. It loads when Claude reads src/index.ts but not when Claude reads src/services/user/repository.ts, and the team wants it to cover every TypeScript file under src/. What is the correct change?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Use an absolute pattern such as /home/ci/repo/src/*.ts, because rule paths are resolved from the filesystem root."
+        },
+        {
+          "id": "B",
+          "text": "Change the pattern to src/**/*.ts so that ** matches any number of nested directories below src/."
+        },
+        {
+          "id": "C",
+          "text": "Keep the pattern but have Claude edit the file instead of reading it, since rules match on edits rather than reads."
+        },
+        {
+          "id": "D",
+          "text": "Add an @src/services import line to the rule so its scope extends into that subdirectory tree."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "In glob syntax, a single `*` matches within one directory level, so `src/*.ts` matches only TypeScript files directly in `src/`. `**` matches across directory levels, so `src/**/*.ts` covers every `.ts` file under `src/`. The docs' examples draw this exact contrast (`src/components/*.tsx` for one directory, `**/*.ts` for any directory).",
+      "whyWrong": {
+        "A": "Rule patterns are project-relative globs, as in the documented examples. Hard-coding one machine's absolute path would break on every other checkout.",
+        "C": "Path-scoped rules trigger when Claude reads a matching file. The pattern itself is what fails to match.",
+        "D": "`@` imports pull file contents into memory files. They do nothing to widen a rule's glob scope."
+      },
+      "difficulty": 1,
+      "mindset": "Get the glob right: * stays in one folder, ** crosses folders.",
+      "tags": [
+        "claude-rules",
+        "glob",
+        "paths-frontmatter"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/memory#path-specific-rules"
+      ]
+    },
+    {
+      "id": "f-d3-b3-008",
+      "taskStatementId": "3.3",
+      "stem": "A tech lead wrote a path-scoped rule for accessibility conventions in *.tsx files and saved it as ~/.claude/rules/a11y.md on her laptop. It works for her, but teammates and the CI review job never get it. Which TWO actions should she take to fix and verify this? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Move the file into the repository's .claude/rules/ directory, keep its paths frontmatter, and commit it so every clone receives it."
+        },
+        {
+          "id": "B",
+          "text": "Paste the rule's contents into a CLAUDE.local.md at the project root so it loads for anyone who opens the project."
+        },
+        {
+          "id": "C",
+          "text": "Add scope: project to the rule's frontmatter so Claude Code promotes the user-level file to every session in this repository."
+        },
+        {
+          "id": "D",
+          "text": "In a fresh session from a clean clone, have Claude read a matching .tsx file, then run /context and check the rule is listed under Memory files."
+        },
+        {
+          "id": "E",
+          "text": "Copy the rule into her ~/.claude/CLAUDE.md as well, so it loads at launch rather than only when matching files are read."
+        }
+      ],
+      "correct": [
+        "A",
+        "D"
+      ],
+      "explanation": "`~/.claude/rules/` holds personal rules that apply only on that machine. Team-shared rules belong in the project's `.claude/rules/`, committed to version control. Because the rule is path-scoped, the right check is to read a matching file in a clean clone and then confirm with `/context`, which lists the CLAUDE.md and rules files loaded in the session.",
+      "whyWrong": {
+        "B": "`CLAUDE.local.md` is for personal, project-specific notes and is meant to be gitignored, so teammates still would not get it. It would also lose the path scoping.",
+        "C": "`paths` is the only frontmatter field Claude Code reads in a rule. A `scope` key is ignored, and a user-level file is never promoted.",
+        "E": "User-level CLAUDE.md is also personal and unshared. This does nothing for teammates or CI and adds always-loaded context."
+      },
+      "difficulty": 1,
+      "mindset": "Shared behaviour must live in version-controlled project config; personal scopes never reach the team.",
+      "tags": [
+        "claude-rules",
+        "user-vs-project-scope",
+        "/context",
+        "team-config"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/memory#user-level-rules",
+        "https://code.claude.com/docs/en/memory#organize-rules-with-claude/rules/"
+      ]
+    },
+    {
+      "id": "f-d3-b3-009",
+      "taskStatementId": "3.6",
+      "scenario": "Your company runs Claude Code inside its CI/CD pipeline. On each pull request it reviews the diff, proposes test cases, and posts feedback. Developers will only trust it if the feedback is actionable and the false-positive rate stays low, and the jobs must run unattended. A new nightly job runs claude \"Review today's merged changes for security issues and list each finding with file and line\". The job never finishes and is killed at the runner's timeout. A teammate who ran the same command locally adds that the output, when it appears, is free-form prose that the comment-posting script cannot parse.",
+      "stem": "Which TWO changes address both problems most directly? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Run the command with -p (--print) so Claude Code handles the prompt non-interactively, prints the result and exits."
+        },
+        {
+          "id": "B",
+          "text": "Pipe the output of the yes command into claude so any interactive question receives an answer automatically."
+        },
+        {
+          "id": "C",
+          "text": "Add --output-format json together with --json-schema describing the findings, and read the validated object from the JSON output."
+        },
+        {
+          "id": "D",
+          "text": "Add --permission-mode plan so Claude only analyses and never stops to ask for approval to make edits."
+        },
+        {
+          "id": "E",
+          "text": "Add a line to the prompt asking Claude to answer only with a JSON array and with no surrounding prose."
+        }
+      ],
+      "correct": [
+        "A",
+        "C"
+      ],
+      "explanation": "`-p`/`--print` is the documented non-interactive mode. Claude Code processes the prompt, writes the result to stdout and exits, which stops the job waiting for terminal input. `--output-format json` with `--json-schema` returns schema-conforming data in the `structured_output` field, which a script can parse reliably to post findings.",
+      "whyWrong": {
+        "B": "This is a shell workaround, not a documented Claude Code mode. The documented way to run non-interactively is `-p`; feeding `yes` into the process does not reliably make it exit, and it does nothing about the unparseable output.",
+        "D": "Plan mode controls whether Claude may edit. It does not make the CLI non-interactive, so the session still waits for input.",
+        "E": "A prompt instruction makes JSON more likely but does not guarantee it, and it adds no validation. The schema flag is the deterministic control."
+      },
+      "difficulty": 1,
+      "mindset": "CI needs -p to exit and a schema to parse; prompt wording guarantees neither.",
+      "tags": [
+        "ci-cd",
+        "headless",
+        "-p",
+        "json-schema",
+        "structured-output"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/headless",
+        "https://code.claude.com/docs/en/headless#get-structured-output"
+      ]
+    },
+    {
+      "id": "f-d3-b3-010",
+      "taskStatementId": "3.6",
+      "scenario": "Your company runs Claude Code inside its CI/CD pipeline. On each pull request it reviews the diff, proposes test cases, and posts feedback. Developers will only trust it if the feedback is actionable and the false-positive rate stays low, and the jobs must run unattended. The review step runs claude -p with --output-format json and a valid --json-schema describing an array of findings (path, line, severity, message). The posting script pipes the output to jq -r '.result' and then tries to parse that value as the findings array.",
+      "stem": "The script keeps failing because the value it extracts is a prose summary, not the findings array. What is the correct fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Change the script to read the structured_output field, which holds the schema-conforming object, and keep result for the human-readable text."
+        },
+        {
+          "id": "B",
+          "text": "Add a sentence to the prompt telling Claude to put the raw JSON array in its final message instead of a prose summary."
+        },
+        {
+          "id": "C",
+          "text": "Switch to --output-format stream-json and rebuild the findings from the text deltas emitted during the run."
+        },
+        {
+          "id": "D",
+          "text": "Assume the schema was silently ignored and simplify it until result contains JSON, then parse that field."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "With `--output-format json` plus `--json-schema`, the response carries request metadata (session ID, usage and so on), and the validated, schema-conforming data appears in the `structured_output` field. The `result` field holds the text response. The script is reading the wrong field.",
+      "whyWrong": {
+        "B": "This puts a probabilistic instruction in place of a guaranteed field that already exists, and the text output would still need fragile parsing.",
+        "C": "Streaming is for real-time display. Rebuilding structured data from token deltas is more complex and gains nothing for a batch CI step.",
+        "D": "Current Claude Code fails with an error when the schema is invalid, so a valid schema is not being silently ignored. The data is in `structured_output`."
+      },
+      "difficulty": 2,
+      "mindset": "Know where the guaranteed structure lands before reaching for prompt tweaks.",
+      "tags": [
+        "ci-cd",
+        "json-schema",
+        "structured-output",
+        "output-format"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/headless#get-structured-output"
+      ]
+    },
+    {
+      "id": "f-d3-b3-011",
+      "taskStatementId": "3.6",
+      "scenario": "Your company runs Claude Code inside its CI/CD pipeline. On each pull request it reviews the diff, proposes test cases, and posts feedback. Developers will only trust it if the feedback is actionable and the false-positive rate stays low, and the jobs must run unattended. A pipeline step uses claude -p to implement small fixes from issue descriptions. The next step runs claude -p --continue \"Now review the changes you just made and report any bugs\". Over a month, this review step almost never flags anything, yet human reviewers later find real defects in about one in five of these changes.",
+      "stem": "What is the MOST effective change to improve defect detection in the review step?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Keep the continued session but change the review prompt so Claude acts as a harsh, adversarial reviewer who has to find at least three problems."
+        },
+        {
+          "id": "B",
+          "text": "Keep the continued session and ask Claude to rate its confidence for each change, then fail the build when any rating is below a threshold."
+        },
+        {
+          "id": "C",
+          "text": "Run the review as a separate claude -p invocation that does not continue the generating session, giving it the diff and the review criteria."
+        },
+        {
+          "id": "D",
+          "text": "Keep the continued session but switch the review step to a larger model, so the same context is examined with more reasoning capacity."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "A session that wrote the code keeps the reasoning that produced it, so it tends to confirm its own choices instead of challenging them. An independent review instance, a fresh invocation with only the diff, the criteria and project context such as CLAUDE.md, examines the change without that bias. This is the session-isolation principle the exam guide names for CI review.",
+      "whyWrong": {
+        "A": "The biased context is still there, and forcing a quota of findings drives up false positives, which the pipeline must keep low.",
+        "B": "Self-rated confidence from the same biased session is poorly calibrated. It measures the model's view of its own work, not the defects.",
+        "D": "A bigger model does not remove the anchoring from the session's own reasoning. The root cause is the shared context, not capacity."
+      },
+      "difficulty": 2,
+      "mindset": "Reviewers need fresh eyes: isolate the review session from the session that wrote the code.",
+      "tags": [
+        "ci-cd",
+        "independent-review",
+        "session-isolation",
+        "code-review"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/headless",
+        "https://code.claude.com/docs/en/github-actions"
+      ]
+    },
+    {
+      "id": "f-d3-b3-012",
+      "taskStatementId": "3.6",
+      "scenario": "Your company runs Claude Code inside its CI/CD pipeline. On each pull request it reviews the diff, proposes test cases, and posts feedback. Developers will only trust it if the feedback is actionable and the false-positive rate stays low, and the jobs must run unattended. A PR review job posts inline comments from structured findings. Each time the author pushes new commits, the job re-runs on the full PR diff. Developers complain that the same issues are posted again with slightly different wording, and that comments still appear for issues they have already fixed.",
+      "stem": "Which approach BEST removes the duplicate comments while still catching problems introduced by the new commits?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Have the posting script drop any new finding whose message text exactly matches a comment already on the PR before posting."
+        },
+        {
+          "id": "B",
+          "text": "Pass the previous run's findings into the review prompt and instruct Claude to report only new issues or earlier ones still unaddressed."
+        },
+        {
+          "id": "C",
+          "text": "Resume the earlier review session with --continue so Claude remembers what it posted last time and avoids repeating it."
+        },
+        {
+          "id": "D",
+          "text": "Instruct Claude to word each finding the same way on every run, so the posting script can match and skip repeats."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Including the earlier findings in context, and asking only for issues that are new or still unaddressed, lets Claude reason about what the new commits changed. It can skip issues that were fixed and avoid restating open ones. The exam guide names this practice for re-running reviews after new commits.",
+      "whyWrong": {
+        "A": "Wording varies between runs, so exact-match deduplication misses most repeats. It also cannot tell that an issue has since been fixed.",
+        "C": "`--continue` picks up the most recent conversation in the directory, which on shared runners may not be this PR's session. It also brings stale reasoning about the old diff instead of a clear list of prior findings.",
+        "D": "Wording stability is a probabilistic request. Repeats would still slip through and fixed issues would still be re-reported."
+      },
+      "difficulty": 3,
+      "mindset": "Give the model the prior state explicitly and ask for the delta; don't rely on string matching or implicit memory.",
+      "tags": [
+        "ci-cd",
+        "code-review",
+        "duplicate-comments",
+        "context-passing"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/headless"
+      ]
+    },
+    {
+      "id": "f-d3-b3-013",
+      "taskStatementId": "3.6",
+      "scenario": "Your company runs Claude Code inside its CI/CD pipeline. On each pull request it reviews the diff, proposes test cases, and posts feedback. Developers will only trust it if the feedback is actionable and the false-positive rate stays low, and the jobs must run unattended. A test-generation step asks Claude to propose unit tests for changed modules. Reviewers reject most suggestions: many duplicate scenarios that the existing test files already cover, and many are trivial getter checks that ignore the team's shared fixtures and its standard for what counts as a valuable test.",
+      "stem": "Which TWO changes will MOST improve the quality of the generated tests? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Run the step with --bare so that the output is reproducible and does not vary with each runner's local configuration."
+        },
+        {
+          "id": "B",
+          "text": "Give the existing test files for the changed modules to Claude as context, so it can see which scenarios are already covered."
+        },
+        {
+          "id": "C",
+          "text": "Ask for three times as many tests per module and keep only the longest ones, on the theory that longer tests check more behaviour."
+        },
+        {
+          "id": "D",
+          "text": "Document in the project CLAUDE.md the testing standards, what makes a test valuable, and the fixtures available to reuse."
+        },
+        {
+          "id": "E",
+          "text": "Ask Claude to score each proposed test from 1 to 10 for value and automatically discard any test scored below 7."
+        }
+      ],
+      "correct": [
+        "B",
+        "D"
+      ],
+      "explanation": "Test generation avoids duplicates only when Claude can see the existing tests, so supply them in context. CLAUDE.md is how CI-invoked Claude Code gets project context such as testing standards, criteria for a valuable test, and available fixtures. These two changes target both root causes.",
+      "whyWrong": {
+        "A": "`--bare` skips auto-discovery of CLAUDE.md, so it would remove the project context the step needs. Reproducibility is not the problem here.",
+        "C": "Length is not a proxy for value. This raises cost and noise without targeting duplication or standards.",
+        "E": "Self-scoring with no stated criteria is unreliable, and it does not show Claude which scenarios already exist."
+      },
+      "difficulty": 2,
+      "mindset": "Quality problems in generation usually come from missing context; supply what exists and what good looks like.",
+      "tags": [
+        "ci-cd",
+        "test-generation",
+        "claude-md",
+        "context"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/headless",
+        "https://code.claude.com/docs/en/memory"
+      ]
+    },
+    {
+      "id": "f-d3-b3-014",
+      "taskStatementId": "3.6",
+      "scenario": "Your company runs Claude Code inside its CI/CD pipeline. On each pull request it reviews the diff, proposes test cases, and posts feedback. Developers will only trust it if the feedback is actionable and the false-positive rate stays low, and the jobs must run unattended. Following the documentation's recommendation for scripted runs, the platform team added --bare to every CI invocation of claude -p. Results became consistent across runners because hooks and settings on the runner images no longer leak in. However, PR reviews now ignore the review criteria (severity definitions, what not to flag) that live in the repository's CLAUDE.md, and false positives have risen.",
+      "stem": "The team wants to restore the review criteria while keeping the reproducibility gained from bare mode. What should they do?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Remove --bare from the review job, accepting that whatever is installed on each runner can again influence the review."
+        },
+        {
+          "id": "B",
+          "text": "Copy the review criteria into ~/.claude/CLAUDE.md on the runner image so they are present wherever the job runs."
+        },
+        {
+          "id": "C",
+          "text": "Move the review criteria into a separate file and import it from the root CLAUDE.md with an @ line so it is always loaded."
+        },
+        {
+          "id": "D",
+          "text": "Keep --bare and pass the committed review-criteria file explicitly with --append-system-prompt-file in the review command."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "Bare mode skips auto-discovery of hooks, skills, plugins, MCP servers, auto memory and CLAUDE.md. Anything the run needs must be passed explicitly with flags, and the docs list `--append-system-prompt` and `--append-system-prompt-file` for this. Pointing the flag at a version-controlled criteria file restores the criteria without reopening auto-discovery.",
+      "whyWrong": {
+        "A": "This would restore the criteria but give up the reproducibility the team explicitly wants to keep. It trades one problem for the other.",
+        "B": "Bare mode skips CLAUDE.md at every scope, user level included. It would also move the criteria out of version control onto the runner image.",
+        "C": "Imports are part of CLAUDE.md loading, which bare mode skips completely, so the imported file would not load either."
+      },
+      "difficulty": 3,
+      "mindset": "Know what a mode turns off, and supply required context explicitly instead of abandoning the mode.",
+      "tags": [
+        "ci-cd",
+        "bare-mode",
+        "append-system-prompt",
+        "claude-md",
+        "reproducibility"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/headless#start-faster-with-bare-mode"
+      ]
+    },
+    {
+      "id": "f-d3-b3-015",
+      "taskStatementId": "3.6",
+      "stem": "An unattended CI job asks Claude Code to run the project's test suite with npm test and fix any failing tests by editing source files. In the logs, the shell and edit actions are denied because no one can approve permission prompts. Using the principle of least privilege, what is the BEST configuration?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Pass --allowedTools \"Bash(npm test *)\" \"Edit\" so that only the test command and file edits are pre-approved for the run."
+        },
+        {
+          "id": "B",
+          "text": "Run the job with --permission-mode bypassPermissions so that no tool call in the pipeline is ever held for approval."
+        },
+        {
+          "id": "C",
+          "text": "Pass --allowedTools \"Bash,Edit\" so that any shell command Claude decides it needs is approved together with file edits."
+        },
+        {
+          "id": "D",
+          "text": "Add a line to CLAUDE.md stating that Claude has permission to run npm test and to edit source files in this repository."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "`--allowedTools` takes permission-rule syntax. `Bash(npm test *)` uses the trailing space-star wildcard, so only `npm test` commands (with or without extra arguments) are approved, and `Edit` pre-approves file edits. Reading files in the working directory needs no approval, so the job gets exactly what it needs and nothing more.",
+      "whyWrong": {
+        "B": "Bypass mode removes approval for almost everything, which goes far beyond the job's needs and is the opposite of least privilege.",
+        "C": "A bare `Bash` entry approves every shell command, including network or destructive ones. The scope is far too broad.",
+        "D": "Permissions are enforced by Claude Code, not by the model. Text in CLAUDE.md cannot grant or revoke tool access."
+      },
+      "difficulty": 2,
+      "mindset": "Pre-approve exactly the commands a job needs; instructions in memory files can't grant permissions.",
+      "tags": [
+        "ci-cd",
+        "allowedTools",
+        "permissions",
+        "least-privilege"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/headless#auto-approve-tools",
+        "https://code.claude.com/docs/en/permissions"
+      ]
+    },
+    {
+      "id": "f-d3-b3-016",
+      "taskStatementId": "3.6",
+      "scenario": "Your company runs Claude Code inside its CI/CD pipeline. On each pull request it reviews the diff, proposes test cases, and posts feedback. Developers will only trust it if the feedback is actionable and the false-positive rate stays low, and the jobs must run unattended. A two-stage job runs on a shared self-hosted runner where several pipelines execute in parallel from the same checkout directory. Stage 1 runs claude -p to analyse a failing build, reading logs and files with tools. Stage 2 must continue that same conversation, with all of stage 1's tool results available, to draft a fix plan.",
+      "stem": "What is the MOST reliable way for stage 2 to continue stage 1's conversation?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Run stage 2 with --continue, which reopens the most recent conversation from the directory and keeps stage 1's tool results."
+        },
+        {
+          "id": "B",
+          "text": "Paste stage 1's final text answer into stage 2's prompt and start a new session, since that summary holds the relevant findings."
+        },
+        {
+          "id": "C",
+          "text": "Run stage 1 with --output-format json, capture its session_id, and start stage 2 with --resume followed by that ID."
+        },
+        {
+          "id": "D",
+          "text": "Set a shared environment variable naming the session in both stages so Claude Code attaches stage 2 to stage 1's conversation."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "With `--output-format json`, the output includes `session_id`. Passing that ID to `--resume` continues exactly that conversation, including its tool history, whatever other sessions exist on the runner. The headless docs recommend capturing the session ID when several conversations may be running. (Choosing the ID up front with `--session-id <uuid>` in stage 1 and resuming it in stage 2 is an equivalent variant of the same idea: address the session explicitly by ID.)",
+      "whyWrong": {
+        "A": "`--continue` reopens the most recent conversation in the directory. When parallel pipelines share the checkout, that may be another job's session, so it is a race condition rather than a reliable link to stage 1.",
+        "B": "A new session gets only the summary text, not the tool results the requirement asks for, and details are lost in the summary.",
+        "D": "No environment variable joins two runs into one conversation. Claude Code does set `CLAUDE_CODE_SESSION_ID` for its own subprocesses and hooks, but that reports the current session; it does not attach a new run to an old one. The session must be addressed explicitly, by capturing `session_id` (or fixing it with `--session-id`) and passing it to `--resume`."
+      },
+      "difficulty": 3,
+      "mindset": "In concurrent automation, address state explicitly by ID; 'most recent' is a race condition.",
+      "tags": [
+        "ci-cd",
+        "session-management",
+        "resume",
+        "output-format"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/headless#continue-conversations"
+      ]
+    }
+  ]
+}

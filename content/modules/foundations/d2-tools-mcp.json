@@ -1,0 +1,418 @@
+{
+  "certId": "foundations",
+  "domainId": "d2-tools-mcp",
+  "lessons": [
+    {
+      "id": "f-tool-descriptions",
+      "title": "Tool descriptions drive tool selection",
+      "estMinutes": 10,
+      "level": "core",
+      "taskStatementIds": [
+        "2.1"
+      ],
+      "eli5": "Claude picks a tool the way you pick a drawer in an unlabelled kitchen: by reading the label. If two drawers both say \"stuff\", you open the wrong one. A tool's description is its label, so a detailed label is the cheapest fix for wrong picks.",
+      "visualId": "tool-design",
+      "body": "## Why the description matters so much\n\nWhen you give Claude tools, it never sees your code behind them. It sees only three things per tool: a **name**, a **description** and an **input schema**. The API turns these into a special system prompt, and Claude chooses which tool to call by reading that text. Anthropic's tool-definition docs call the description **\"by far the most important factor\"** in tool performance.\n\nSo when the model keeps calling the wrong tool, the first thing to suspect is not the model. It is the label you gave it.\n\n## Anatomy of a strong description\n\nThe docs recommend **at least 3 to 4 sentences**, more for complex tools. A strong description covers:\n\n| Element | Question it answers | Example fragment |\n|---|---|---|\n| Purpose | What does this do? | \"Returns the status, items and shipping events for one order.\" |\n| When to use | Which requests belong here? | \"Use when the user mentions an order, a purchase, a delivery or an order number.\" |\n| When NOT to use | Where is the boundary with similar tools? | \"Do not use for account details such as email or address; use get_customer for those.\" |\n| Input formats | What does each parameter look like? | \"order_id is the 8-character code such as ORD-4821, not the customer number.\" |\n| Example queries | What does a matching request sound like? | \"\\\"Where is my package?\\\", \\\"Cancel order ORD-4821\\\"\" |\n| Edge cases & limits | What happens at the edges? | \"Orders older than 24 months are archived and return not_found.\" |\n| Output | What comes back? | \"Returns JSON with status, items[], tracking_url.\" |\n\n## Worked example: two tools that look the same\n\nA support agent has two tools:\n\n```json\n{\"name\": \"get_customer\", \"description\": \"Retrieves customer information\"}\n{\"name\": \"get_order\",    \"description\": \"Retrieves order details\"}\n```\n\nA user writes: *\"Can you check what happened with ORD-4821?\"* Both tools take an identifier, and both descriptions are a single vague phrase. \"Check what happened\" sounds like it could be about the customer, so the agent sometimes calls `get_customer`.\n\nThe improved version of `get_order`:\n\n```json\n{\n  \"name\": \"get_order\",\n  \"description\": \"Looks up a single order by its order ID and returns status, line items, payment state and shipping events. Use this whenever the user refers to an order, purchase, package, delivery, refund of a specific purchase, or quotes an ID starting with 'ORD-'. Do NOT use it to look up who a customer is or their account settings; use get_customer for that. If the user gives only an email, call get_customer first to find their orders. Orders older than 24 months are archived and return status 'archived'.\",\n  \"input_schema\": {\n    \"type\": \"object\",\n    \"properties\": {\n      \"order_id\": {\"type\": \"string\", \"description\": \"Order ID in the form ORD-NNNN, e.g. ORD-4821\"}\n    },\n    \"required\": [\"order_id\"]\n  }\n}\n```\n\nNow the model has an explicit trigger (\"ORD-\"), an explicit boundary (\"not for account settings\") and a handoff rule for the overlap case.\n\n## Why this is the right *first* step\n\nExam questions about misrouting usually offer four kinds of fix. Rank them like an architect:\n\n| Option | Verdict as a first step |\n|---|---|\n| Expand the tool descriptions (purpose, inputs, examples, boundaries) | **Best first step.** Cheap, fixes the root cause (the model lacks information), and keeps the model doing the choosing. |\n| Add many few-shot routing examples to the system prompt | Helps, but adds token overhead on every call and treats the symptom. |\n| Build a keyword/regex routing layer in front of the model | Over-engineered and brittle; it bypasses the model's understanding of language. |\n| Merge the tools into one generic tool | Can be valid later, but it is a larger redesign than the problem needs right now. (The define-tools docs do recommend consolidating related operations such as `create_pr` / `review_pr` / `merge_pr` into one tool with an `action` parameter, but that is a design-time choice, not the first fix for a description problem.) |\n\nThe pattern to remember: **when the model lacks information, give it the information** before you add machinery.\n\n## The system prompt can sabotage good descriptions\n\nTool choice is influenced by *all* the text Claude sees, not only the tool definitions. A system prompt line such as *\"Always check the customer's record before answering anything\"* can push the model toward `get_customer` even for clear order questions. The word \"always\" plus the noun \"customer\" creates an unintended link between many requests and one tool.\n\nWhen you debug misrouting, review the system prompt for **keyword-sensitive instructions** that might override otherwise good descriptions. Fix by making the instruction conditional (\"When the user asks about their account, check the customer record first\") or by removing it.\n\n## Optional extra: input_examples and naming rules\n\n- The API accepts an optional `input_examples` field: example inputs that must validate against your schema (an invalid example causes a 400 error). The docs estimate roughly 20 to 50 tokens per example for simple tools and 100 to 200 for complex ones. Use them for tools with tricky formats, but they don't replace a good description.\n- Tool names must match `^[a-zA-Z0-9_-]{1,128}$`: letters, digits, underscore and hyphen, up to 128 characters.\n- Prefer unambiguous parameter names: `user_id`, not `user`.\n\n## Quick checklist\n\n1. Could a new colleague pick the right tool from the descriptions alone?\n2. Does each tool say when **not** to use it, naming the sibling tool?\n3. Are input formats and an example request given?\n4. Does any system prompt sentence create a keyword link to one tool?\n",
+      "keyTakeaways": [
+        "The description is the primary signal Claude uses to choose a tool; Anthropic's docs call it by far the most important factor.",
+        "Aim for at least 3-4 sentences: purpose, when to use, when NOT to use (naming the similar tool), input formats, example queries, edge cases and output.",
+        "For misrouting between similar tools, expanding the descriptions is the best first step, ahead of few-shot examples, routing layers or tool consolidation.",
+        "Keyword-heavy system prompt instructions (\"always check the customer...\") can create unintended tool associations that override good descriptions.",
+        "input_examples is optional and must validate against the schema; tool names must match ^[a-zA-Z0-9_-]{1,128}$."
+      ],
+      "examTips": [
+        "Look for the words \"first step\" or \"most effective first\". The answer is usually the cheapest change that fixes the root cause: richer descriptions.",
+        "If the stem quotes one-line descriptions such as \"Retrieves X information\", the problem is description quality, so pick the option that adds formats, examples and boundaries.",
+        "Eliminate keyword routers and classifiers as over-engineering; they bypass the model's language understanding.",
+        "If the descriptions are already detailed and misrouting persists, check the system prompt for keyword-sensitive wording."
+      ],
+      "commonTraps": [
+        "Adding 5-8 few-shot routing examples: plausible, but it adds token overhead and does not fix the missing information in the tool definitions.",
+        "Building a pre-processing router based on keywords or regex: brittle and over-engineered for a description problem.",
+        "Merging the tools into one generic lookup tool as the first move: a valid redesign, but disproportionate as a first step.",
+        "Switching to a larger model: tool selection failures from vague descriptions are not a model-size problem."
+      ],
+      "resources": [
+        {
+          "title": "Define tools (Claude API docs)",
+          "url": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools",
+          "type": "docs"
+        },
+        {
+          "title": "Writing effective tools for agents (Anthropic Engineering)",
+          "url": "https://www.anthropic.com/engineering/writing-tools-for-agents",
+          "type": "blog"
+        },
+        {
+          "title": "Tool use overview (Claude API docs)",
+          "url": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview",
+          "type": "docs"
+        }
+      ]
+    },
+    {
+      "id": "f-tool-boundaries",
+      "title": "Renaming, splitting and consolidating tools",
+      "estMinutes": 9,
+      "level": "core",
+      "taskStatementIds": [
+        "2.1"
+      ],
+      "eli5": "If a toolbox holds two screwdrivers both labelled \"fix things\", you'll grab the wrong one. You can relabel them (\"Phillips\" and \"flat\"), or swap a vague multi-tool for a few tools that each do one clear job. Good tool sets have no overlap and no mystery.",
+      "visualId": "tool-design",
+      "body": "## The overlap problem\n\nMisrouting is not only caused by short descriptions. It is also caused by **overlap**: two tools whose names and descriptions both plausibly fit the same request.\n\nExample from a research agent:\n\n| Tool | Description |\n|---|---|\n| `analyze_content` | \"Analyzes content and returns key information.\" |\n| `analyze_document` | \"Analyzes a document and returns key information.\" |\n\nIs a web page \"content\" or a \"document\"? Is a PDF? The model has to guess, and it will guess differently on different runs. No amount of prompting fixes a design where two tools honestly mean the same thing.\n\n## Fix 1: rename and re-describe to remove overlap\n\nGive each tool a name that says what makes it **different**, and make the description match:\n\n```text\nanalyze_content  ->  extract_web_results\n  \"Extracts titles, snippets and URLs from web search result pages.\n   Use only for pages returned by the web_search tool. For uploaded\n   PDFs or internal reports, use the document tools instead.\"\n```\n\nNow the boundary is in the name itself (web results vs. documents), and the description names the alternative.\n\n## Fix 2: split a generic tool into purpose-specific tools\n\nA single `analyze_document` tool that does \"anything with a document\" has a vague contract. Callers don't know what they'll get back, and the model doesn't know when it applies. Split it into tools with clear **input/output contracts**:\n\n| New tool | Input | Output | Use when |\n|---|---|---|---|\n| `extract_data_points` | document_id, list of fields | JSON of field -> value, with page refs | You need specific facts or numbers |\n| `summarize_content` | document_id, max_words | Plain-text summary | You need a short overview |\n| `verify_claim_against_source` | claim, document_id | supported / contradicted / not_found + quote | You need to check one statement |\n\nEach tool now has one job, a predictable output, and a description that can say when to use it instead of its siblings.\n\n## Fix 3 (sometimes): consolidate into a workflow-level tool\n\nAnthropic's engineering post *Writing effective tools for agents* warns against tools that are **1:1 wrappers of API endpoints**. If an agent must call `list_users`, then `list_events`, then `create_event` to book a meeting, it burns tokens and has three chances to go wrong. A single `schedule_event` tool that does the lookup internally matches how the task is actually done.\n\nSo \"split\" and \"consolidate\" are not opposites. The rule is: **one tool per meaningful task**, with a clear contract.\n\n| Situation | Move |\n|---|---|\n| Two tools mean the same thing | Rename and re-describe (or merge) |\n| One tool does many unrelated things | Split into purpose-specific tools |\n| Many tiny tools are always called together in sequence | Consolidate into one workflow-level tool |\n\n## Other design practices from Anthropic's guidance\n\n- **Namespacing:** prefix related tools by service or resource (`asana_search`, `jira_search`) so the model can tell similar tools apart across servers.\n- **Return high-signal data:** return the fields the agent needs, with meaningful identifiers (names, slugs) rather than only opaque UUIDs.\n- **Offer a response format switch:** an optional `response_format` parameter such as `\"concise\"` or `\"detailed\"` lets the agent ask for less when it only needs an ID.\n- **Paginate, filter and truncate** large results with sensible defaults, and tell the agent how to get more.\n- **Unambiguous parameters:** `user_id` beats `user`; `start_date (YYYY-MM-DD)` beats `date`.\n- **Make mistakes hard (poka-yoke):** design arguments so the wrong call is difficult. For example, require absolute paths if relative paths cause errors, or use an enum instead of free text.\n\n## Worked example\n\nA legal-research agent has `search`, `search_docs` and `lookup`. Logs show it calls `search` (public web) when the user asks about the firm's internal precedents.\n\n1. Rename by scope: `web_search`, `internal_precedent_search`, `case_citation_lookup`.\n2. In each description, state the corpus searched and name the sibling tool for the other corpus.\n3. Check the system prompt: the line *\"Search thoroughly before answering\"* nudges toward the generic web tool. Reword it to *\"Search the internal precedent database first for firm matters.\"*\n\nNo new infrastructure, and the overlap is gone.\n",
+      "keyTakeaways": [
+        "Overlapping tool names/descriptions (analyze_content vs analyze_document) cause misrouting that prompting alone can't fix.",
+        "Rename to encode the difference (analyze_content -> extract_web_results) and give the description a matching, specific scope.",
+        "Split generic tools into purpose-specific ones with clear input/output contracts (extract_data_points, summarize_content, verify_claim_against_source).",
+        "Avoid 1:1 API-endpoint wrappers; consolidate steps that always go together into one task-level tool (schedule_event).",
+        "Namespace related tools, return high-signal fields, paginate/truncate, and use unambiguous parameter names."
+      ],
+      "examTips": [
+        "When two tools have near-identical descriptions, pick the option that renames and/or re-describes them to remove the overlap.",
+        "When one tool is vague and does everything, pick splitting into purpose-specific tools with defined inputs and outputs.",
+        "\"Split\" and \"consolidate\" can both be right: ask whether the tools map to distinct tasks (split) or one task spread over many calls (consolidate)."
+      ],
+      "commonTraps": [
+        "Keeping both overlapping tools and adding a system prompt rule to prefer one: it treats the symptom and still leaves two tools meaning the same thing.",
+        "Thinking more tools always means more capability: overlapping tools reduce selection reliability.",
+        "Wrapping every API endpoint as its own tool: it increases calls, tokens and error chances.",
+        "Using vague parameter names like \"user\" or \"data\" that the model must guess at."
+      ],
+      "resources": [
+        {
+          "title": "Writing effective tools for agents (Anthropic Engineering)",
+          "url": "https://www.anthropic.com/engineering/writing-tools-for-agents",
+          "type": "blog"
+        },
+        {
+          "title": "Define tools (Claude API docs)",
+          "url": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools",
+          "type": "docs"
+        }
+      ]
+    },
+    {
+      "id": "f-mcp-errors",
+      "title": "Structured error responses for MCP tools",
+      "estMinutes": 11,
+      "level": "core",
+      "taskStatementIds": [
+        "2.2"
+      ],
+      "eli5": "If a waiter only ever says \"kitchen problem\", you can't tell whether to wait five minutes, order something else, or leave. A good tool error says what kind of problem it is, whether trying again could help, and what to tell the customer, so the agent can react sensibly.",
+      "visualId": "error-recovery",
+      "body": "## Two error channels in MCP\n\nThe MCP specification separates two kinds of failure:\n\n| Channel | Example | Who sees it |\n|---|---|---|\n| **Protocol error** (JSON-RPC error) | Unknown tool name, malformed arguments (e.g. code `-32602`, invalid params) | The client/host; the request itself was invalid |\n| **Tool execution error** (result with `isError: true`) | The API timed out, the record is locked, a business rule blocked the action | **The model**, so it can reason about what to do next |\n\nThe exam's \"MCP `isError` flag pattern\" is the second channel. The tool *ran*, something went wrong, and the server returns a normal result marked as an error:\n\n```json\n{\n  \"content\": [{\n    \"type\": \"text\",\n    \"text\": \"{\\\"errorCategory\\\": \\\"transient\\\", \\\"isRetryable\\\": true, \\\"message\\\": \\\"Inventory service timed out after 10s. Retrying in a few seconds is likely to succeed.\\\"}\"\n  }],\n  \"isError\": true\n}\n```\n\nThe Claude API has the same idea for your own tools: a `tool_result` block with `\"is_error\": true`, whose content should say **what went wrong and what to try next** (for example \"Rate limit exceeded. Retry after 60 seconds.\"), not just \"failed\".\n\n## The four error categories\n\nThe MCP specification itself defines only the `isError` flag. The category names and the `errorCategory` / `isRetryable` fields below are the design convention the exam guide uses (it sometimes writes the flag as `retriable`). The idea is what matters: tell the agent **what kind** of failure happened and **whether retrying can help**.\n\n| Category | Typical cause | Retry? | What the agent should do |\n|---|---|---|---|\n| **Transient** | Timeout, service unavailable, rate limit | Yes, usually after a wait | Retry (with backoff), or try an alternative source |\n| **Validation** | Bad input: wrong ID format, missing field | Not as-is | Fix the input or ask the user for the right value |\n| **Business** | Policy violation: refund over the limit, account frozen | No | Explain the rule to the user; escalate if appropriate |\n| **Permission** | Caller lacks access to the resource | No (not without new rights) | Stop, report, or escalate to someone with access |\n\n## Why \"Operation failed\" is a design bug\n\nIf every failure returns the same generic string, the agent cannot tell a 2-second hiccup from a hard policy block. It will either retry things that can never succeed (wasting time and tokens) or give up on things that would have worked a moment later. **Uniform errors remove the information the agent needs to choose a recovery.**\n\nStructured metadata fixes this. Return, at minimum:\n\n- `errorCategory`: transient, validation, business or permission\n- `isRetryable`: a boolean, so the agent doesn't waste retries\n- a **human-readable description** of what happened\n\nFor business-rule violations, also mark them non-retryable and include a **customer-friendly explanation** the agent can pass on:\n\n```json\n{\n  \"errorCategory\": \"business\",\n  \"isRetryable\": false,\n  \"message\": \"Refund of $640 exceeds the $500 self-service limit.\",\n  \"customerMessage\": \"Refunds above $500 need a quick review by our billing team. I can open that request for you now.\"\n}\n```\n\n## Access failure vs. a valid empty result\n\nThis distinction is heavily tested. Consider a search tool:\n\n| What happened | Correct return | Wrong return |\n|---|---|---|\n| Search ran and found nothing | Success, `results: []` (a real answer: \"no matches\") | n/a |\n| Search could not run (timeout, auth failure) | `isError: true`, category + retryable flag | `results: []` marked as success |\n\nIf a timeout is reported as an empty success, the agent (and the user) will believe \"there are no matching records\", which is a confident, wrong conclusion. **An empty list means \"I looked and found nothing\". An error means \"I could not look\".** Never let the second pretend to be the first.\n\n## Error handling across agents\n\nIn a coordinator-subagent system, apply this policy:\n\n1. **Recover locally first.** A subagent that hits a transient error should retry or try an alternative itself. The coordinator shouldn't have to manage every hiccup.\n2. **Propagate only what you can't resolve.** When the subagent gives up, it returns structured context: the failure type, the query it attempted, any **partial results**, and what it already tried (or what alternatives exist).\n3. **Let the coordinator decide.** With that context the coordinator can re-scope the task, use another source, continue with partial data and note the gap, or escalate.\n\nAnti-patterns:\n\n| Anti-pattern | Why it's wrong |\n|---|---|\n| Retry silently, then return a generic \"search unavailable\" | Hides what was tried and discards partial results |\n| Catch the timeout and return an empty success | Turns an access failure into a false \"no results\" |\n| Let one subagent's exception terminate the whole workflow | One recoverable failure kills all the other good work |\n\n## Worked example\n\nAn order-lookup MCP tool fails in three ways during testing:\n\n- Database replica timeout -> `transient`, `isRetryable: true`, \"retry in 5s\".\n- User typed \"4821\" instead of \"ORD-4821\" -> `validation`, `isRetryable: false`, \"order_id must look like ORD-NNNN; ask the user for the full ID\".\n- The order belongs to another account -> `permission`, `isRetryable: false`, \"this caller can't view the order; ask the customer to sign in to the owning account\".\n\nEach response tells the agent its next move without guessing.\n",
+      "keyTakeaways": [
+        "MCP has two channels: JSON-RPC protocol errors (bad request, e.g. unknown tool) and tool execution errors returned in the result with isError: true so the model can react.",
+        "Classify failures as transient, validation, business or permission; return errorCategory, isRetryable and a human-readable message.",
+        "Business-rule violations should be non-retryable and carry a customer-friendly explanation the agent can relay.",
+        "Generic \"Operation failed\" errors prevent sensible recovery and cause wasted retries or premature give-ups.",
+        "An access failure is not an empty result: never return [] as success when the query couldn't run.",
+        "Subagents recover locally from transient errors and escalate only unresolved failures, with partial results and what was attempted."
+      ],
+      "examTips": [
+        "For error-propagation questions, the best answer passes structured context upward: failure type, attempted query, partial results, alternatives.",
+        "If an option returns an empty result marked as success after a timeout, eliminate it: it hides the failure.",
+        "If an option terminates the entire workflow on one subagent error, eliminate it: it throws away recoverable work.",
+        "Look for isRetryable / retriable: false in options about policy violations: retrying a business rule never helps."
+      ],
+      "commonTraps": [
+        "Retrying with backoff and then returning a generic \"unavailable\" message: retrying is fine, but the generic final status loses the context the coordinator needs.",
+        "Treating every error as retryable: wastes calls on validation, business and permission errors that can't succeed.",
+        "Raising a protocol-level exception for business failures so the model never sees them: execution errors belong in the result with isError: true.",
+        "Assuming an empty list proves nothing exists when the source was actually unreachable."
+      ],
+      "resources": [
+        {
+          "title": "MCP specification: Tools (2025-06-18)",
+          "url": "https://modelcontextprotocol.io/specification/2025-06-18/server/tools",
+          "type": "docs"
+        },
+        {
+          "title": "Handle tool calls (Claude API docs)",
+          "url": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls",
+          "type": "docs"
+        },
+        {
+          "title": "Writing effective tools for agents (Anthropic Engineering)",
+          "url": "https://www.anthropic.com/engineering/writing-tools-for-agents",
+          "type": "blog"
+        },
+        {
+          "title": "How we built our multi-agent research system (Anthropic Engineering)",
+          "url": "https://www.anthropic.com/engineering/multi-agent-research-system",
+          "type": "blog"
+        }
+      ]
+    },
+    {
+      "id": "f-tool-distribution",
+      "title": "Scoping tools per agent",
+      "estMinutes": 9,
+      "level": "core",
+      "taskStatementIds": [
+        "2.3"
+      ],
+      "eli5": "In a hospital, the receptionist doesn't carry a scalpel. Each person gets the tools for their job, plus maybe one or two shared ones they use all the time. Agents work the same way: fewer, role-specific tools mean fewer wrong choices.",
+      "visualId": "orchestrator-subagents",
+      "body": "## More tools, worse choices\n\nEvery tool you add is another option the model must rule out on every turn. Giving one agent **18 tools instead of 4 or 5** makes tool selection noticeably less reliable: more similar-looking options, more descriptions to weigh, more chances to pick a near-miss. Tool definitions also consume context tokens on every request.\n\nThe architect's instinct should be: **what is the smallest tool set that lets this agent do its job?**\n\n## Out-of-role tools get misused\n\nWhen an agent has a tool outside its specialty, it tends to use it, even when it shouldn't. Classic example: a **synthesis agent** whose job is to combine findings into a report is given web search \"just in case\". It then starts doing its own research mid-synthesis, duplicating the search agent's work, pulling unvetted sources and slowing the run.\n\nThe fix is not a stronger prompt (\"only search if really necessary\"). The fix is to **not give it the tool**.\n\n## Scoped tool sets in a multi-agent system\n\n| Agent | Role | Tools |\n|---|---|---|\n| Coordinator | Plans, delegates, aggregates | Task/Agent delegation, maybe a planning scratchpad |\n| Search subagent | Finds sources | `web_search`, `load_document` |\n| Analysis subagent | Extracts facts | `extract_data_points`, `summarize_content` |\n| Synthesis subagent | Writes the report | `verify_fact` (scoped), `write_section` |\n\nIn Claude Code and the Agent SDK, you set this with each subagent's tool list (for example the `tools` field in a subagent's frontmatter, or the `tools` option in an SDK `AgentDefinition`).\n\n## Constrain generic tools\n\nA general tool is also a broad capability. Replace it with a constrained version that does only what the role needs:\n\n| Generic | Constrained | Why it's better |\n|---|---|---|\n| `fetch_url` (any URL) | `load_document` (validates the URL is a document from an approved source) | Prevents arbitrary browsing and odd inputs |\n| `run_sql` (any query) | `get_customer_orders(customer_id)` | No accidental writes or full-table scans |\n| `bash` | `run_tests(path)` | Only the action the role needs |\n\nThis is least privilege applied to agents: the safest tool is the one that can't do the wrong thing.\n\n## Cross-role tools for frequent needs\n\nStrict separation has a cost. Suppose the synthesis agent often needs to check a single date or figure. If every check means returning control to the coordinator, which calls the search agent, which returns to the coordinator, which re-invokes synthesis, each check costs several round trips.\n\nThe balanced design:\n\n- Give synthesis a **narrow, scoped** tool for the **common, simple** case, for example `verify_fact(claim)` that returns a quick confirmation with a source.\n- Keep **complex** verification (needs real research) routed **through the coordinator** to the search agent.\n\n| Option | Verdict |\n|---|---|\n| Scoped `verify_fact` for simple checks; complex ones still go via coordinator | **Best**: cuts most round trips while keeping roles clear |\n| Give synthesis all the web search tools | Removes round trips but invites misuse and role creep |\n| Batch all verifications to the end of the pass | Adds delay and still pays round trips; later sections may depend on earlier checks |\n| Leave as is | Keeps latency high for the frequent simple case |\n\n## Worked example\n\nA document-processing pipeline has a single agent with 17 tools: PDF parsing, OCR, translation, 6 CRM tools, email, Slack, 3 search tools and more. It frequently emails customers when it should only be updating the CRM.\n\n1. Split by role: an **intake agent** (parse, OCR, translate), a **CRM agent** (4 CRM tools), and a **notification agent** (email, Slack) that only runs when the coordinator decides a message is needed.\n2. Replace the generic `crm_update(any_field)` with `update_case_status(case_id, status)` and `attach_summary(case_id, text)`.\n3. Each agent now chooses among 3 to 5 tools, and the email tool simply isn't available where it was being misused.\n",
+      "keyTakeaways": [
+        "Too many tools per agent (e.g. 18 vs 4-5) degrades selection reliability and costs context.",
+        "Agents misuse tools outside their specialty (a synthesis agent running web searches); remove the tool rather than prompting against it.",
+        "Replace generic tools with constrained ones (fetch_url -> load_document that validates document URLs).",
+        "Allow a narrow cross-role tool for high-frequency simple needs (verify_fact) and keep complex cases routed through the coordinator.",
+        "Scope tools per subagent via its tool list (subagent tools field / SDK agent definition)."
+      ],
+      "examTips": [
+        "When the stem gives frequency data (e.g. most cases simple, a few complex), the answer usually handles the frequent case with a scoped tool and routes the rare complex case through the coordinator.",
+        "Prefer options that remove or narrow capabilities over options that add prompt rules telling an agent not to use a tool.",
+        "Eliminate \"give the agent all the tools\" options: they solve latency by breaking role boundaries."
+      ],
+      "commonTraps": [
+        "Giving every agent every tool \"for flexibility\": it lowers reliability and invites misuse.",
+        "Fixing tool misuse with a system prompt warning instead of removing the tool.",
+        "Batching all cross-role requests until the end of a pass: it often adds latency and creates dependency problems.",
+        "Keeping a broad generic tool (fetch any URL, run any SQL) when a constrained, validated tool covers the role's needs."
+      ],
+      "resources": [
+        {
+          "title": "How we built our multi-agent research system (Anthropic Engineering)",
+          "url": "https://www.anthropic.com/engineering/multi-agent-research-system",
+          "type": "blog"
+        },
+        {
+          "title": "Agent SDK: Subagents",
+          "url": "https://code.claude.com/docs/en/agent-sdk/subagents",
+          "type": "docs"
+        },
+        {
+          "title": "Claude Code subagents",
+          "url": "https://code.claude.com/docs/en/sub-agents",
+          "type": "docs"
+        },
+        {
+          "title": "Writing effective tools for agents (Anthropic Engineering)",
+          "url": "https://www.anthropic.com/engineering/writing-tools-for-agents",
+          "type": "blog"
+        }
+      ]
+    },
+    {
+      "id": "f-tool-choice",
+      "title": "tool_choice: auto, any, forced and none",
+      "estMinutes": 9,
+      "level": "core",
+      "taskStatementIds": [
+        "2.3",
+        "4.3"
+      ],
+      "eli5": "tool_choice is a dial for how much freedom Claude gets on one turn. Picture a waiter: \"auto\" means \"bring a dish if the guest seems to need one\", \"any\" means \"you must bring one of the dishes on this menu\", a forced tool means \"bring exactly this dish now\", and \"none\" means \"just chat with the guest, bring nothing\".",
+      "visualId": "structured-output",
+      "body": "## The four settings\n\n`tool_choice` is a request parameter in the Messages API. It controls whether, and which, tool Claude must call on that turn.\n\n| Value | JSON | Behavior | Typical use |\n|---|---|---|---|\n| **auto** | `{\"type\": \"auto\"}` | Claude decides whether to call a tool or answer in text. **Default when tools are provided.** | Normal agent loops |\n| **any** | `{\"type\": \"any\"}` | Claude **must** call one of the provided tools, but chooses which. | Guarantee structured output via a tool when you don't know which schema fits |\n| **tool** (forced) | `{\"type\": \"tool\", \"name\": \"extract_metadata\"}` | Claude **must** call that specific tool. | Make a specific step happen first |\n| **none** | `{\"type\": \"none\"}` | Claude may not call tools. (Default when no tools are provided.) | A pure text turn, e.g. a final summary |\n\n## Forcing a first step, then continuing\n\nA common pipeline need: \"always extract metadata before doing anything else\". Prompt instructions (\"first call extract_metadata\") work most of the time but not every time. Forcing makes it deterministic for that turn:\n\n```python\nfirst = client.messages.create(\n    model=MODEL,\n    max_tokens=1024,\n    tools=[extract_metadata, lookup_author, enrich_citations],\n    tool_choice={\"type\": \"tool\", \"name\": \"extract_metadata\"},\n    messages=[{\"role\": \"user\", \"content\": doc_text}],\n)\n# Run extract_metadata, append the tool_result, then continue the\n# conversation with tool_choice={\"type\": \"auto\"} so Claude can pick\n# the enrichment tools it needs in follow-up turns.\n```\n\nThe key pattern is **force the first call, then process later steps in follow-up turns** with a looser setting. Leaving the forced setting on every turn would make Claude call the same tool over and over.\n\n## Guaranteeing a tool call with \"any\"\n\nSuppose a pipeline receives invoices, receipts and purchase orders, each with its own extraction tool (`extract_invoice`, `extract_receipt`, `extract_po`). You need structured JSON every time, never a chatty reply like \"This looks like an invoice!\".\n\n- `auto` might return text.\n- Forcing one tool would be wrong when the document type is unknown.\n- `any` **guarantees a tool call** while letting Claude pick the right schema.\n\n## Side effects to know\n\n- **No preamble.** With `any` or a forced tool, the API prefills the assistant turn so it goes straight to `tool_use`; Claude won't write explanatory text before the call. If you want an explanation *and* a tool call, use `auto` and ask for both in the prompt.\n- **Caching.** Changing `tool_choice` between requests invalidates cached message blocks (tool definitions and system prompt can remain cached).\n- **Guaranteed call is not guaranteed correctness.** Forcing a tool ensures the *shape* of the response is a tool call; it doesn't make the extracted values correct. Validation and retry still matter (Domain 4). Strict tool use (`strict: true` on the tool definition) can additionally guarantee the inputs match the schema.\n\n## Version note (current docs vs. the exam)\n\nThe exam guide tests `auto`, `any` and forced tool selection as concepts, and questions key on that wording. Current API docs add model-specific limits: manual extended thinking does not support `any` or forced `tool`, and the docs list some of the newest models as rejecting `any`/`tool` with a 400 error, recommending `auto` plus strict tool use or structured outputs instead. For the exam, learn the three options and when to use each; in production, check your target model's docs before relying on forced selection.\n\n## Decision guide\n\n| You need... | Choose |\n|---|---|\n| Normal agentic behavior; Claude may answer directly | `auto` |\n| A tool call every time, Claude picks which | `any` |\n| One specific tool to run (often as step 1) | `{\"type\":\"tool\",\"name\":...}` |\n| A text-only turn even though tools are defined | `none` |\n\n## Worked example\n\nA compliance pipeline sometimes skips `classify_sensitivity` and goes straight to `publish_summary`. Options: (a) add \"ALWAYS classify first\" in caps to the prompt, (b) force `classify_sensitivity` on the first turn and switch to `auto` afterwards, (c) set `any` on every turn. Option (b) guarantees ordering for the step that matters. Option (c) guarantees *a* tool call but not *which*. Option (a) is still probabilistic. For a hard compliance guarantee across later steps, combine the forced first call with programmatic checks (such as a hook or prerequisite gate) on the publish tool.\n",
+      "keyTakeaways": [
+        "auto (default with tools): Claude may call a tool or reply in text. any: must call some tool. {\"type\":\"tool\",\"name\":...}: must call that tool. none: no tools.",
+        "Force a specific tool to guarantee a first step (e.g. extract_metadata), then continue in follow-up turns with auto.",
+        "Use any to guarantee a structured tool call when several schemas are possible and the right one isn't known in advance.",
+        "With any or a forced tool there is no natural-language preamble before tool_use.",
+        "A guaranteed tool call guarantees the format, not the correctness of the values; changing tool_choice invalidates cached message blocks."
+      ],
+      "examTips": [
+        "\"Must always call tool X first\" -> forced tool selection on that turn, then follow-up turns.",
+        "\"Model sometimes replies with conversational text instead of calling a tool\" -> tool_choice any.",
+        "If the stem says the document type varies, forcing one specific extraction tool is wrong; any lets Claude pick the schema.",
+        "Questions use the exam guide's wording: auto, any, forced tool. Don't eliminate those just because newer models restrict them."
+      ],
+      "commonTraps": [
+        "Believing any lets Claude explain its reasoning before the tool call: the response is prefilled, so there's no preamble.",
+        "Leaving a forced tool_choice on for every turn: Claude keeps calling the same tool.",
+        "Using auto and a stronger prompt when the requirement is a guaranteed tool call.",
+        "Assuming a forced tool call means the extracted data is semantically correct."
+      ],
+      "resources": [
+        {
+          "title": "Define tools (Claude API docs)",
+          "url": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools",
+          "type": "docs"
+        },
+        {
+          "title": "Tool use overview (Claude API docs)",
+          "url": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview",
+          "type": "docs"
+        },
+        {
+          "title": "Handle tool calls (Claude API docs)",
+          "url": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls",
+          "type": "docs"
+        }
+      ]
+    },
+    {
+      "id": "f-mcp-architecture",
+      "title": "MCP architecture: hosts, clients, servers and primitives",
+      "estMinutes": 10,
+      "level": "core",
+      "taskStatementIds": [
+        "2.4"
+      ],
+      "eli5": "MCP is like a universal power socket for AI apps. Any tool or data source that ships with the standard plug (an MCP server) can be plugged into any AI app that has the socket (an MCP host), without custom wiring each time.",
+      "visualId": "mcp-architecture",
+      "body": "## What MCP is for\n\nThe **Model Context Protocol (MCP)** is an open standard for connecting AI applications to tools and data. Instead of writing a custom integration for every pair of app and system, a system exposes an **MCP server** once, and any MCP-capable application can use it. Messages use **JSON-RPC 2.0**, sessions are stateful, and both sides announce what they support during initialization (**capability negotiation**).\n\n## The three roles\n\n| Role | What it is | Example |\n|---|---|---|\n| **Host** | The AI application the user runs. Creates and manages clients, enforces security and user consent, coordinates the model. | Claude Code, Claude Desktop, your own agent app |\n| **Client** | A connector inside the host. Each client holds a **1:1 stateful session with one server**. | One client for the GitHub server, another for the database server |\n| **Server** | A program that exposes capabilities (tools, resources, prompts). | A Jira server, a Postgres server, a filesystem server |\n\nA host connects to many servers by creating many clients. Servers should not see the whole conversation or each other; the host enforces those boundaries.\n\n## Server primitives: who controls what\n\nThis \"who controls it\" column is a favorite source of exam distractors.\n\n| Primitive | Controlled by | What it is | Example |\n|---|---|---|---|\n| **Tools** | **The model** | Actions Claude decides to invoke (`tools/list`, `tools/call`) | `create_issue`, `run_query` |\n| **Resources** | **The application** (the spec says \"application-driven\") | Readable data identified by URI that the host can list and attach as context (`resources/list`, `resources/read`) | Issue summaries, a docs tree, a database schema |\n| **Prompts** | **The user** | Reusable templated messages the user chooses to run; in Claude Code they appear as slash commands named `/mcp__<server>__<prompt>` | `/mcp__github__pr_review`, `/mcp__jira__create_issue` |\n\n### Why resources reduce tool calls\n\nWithout resources, an agent exploring an unfamiliar database might call `list_tables`, then `describe_table` ten times, just to learn what exists. If the server exposes the **schema as a resource** (or a catalog of issue summaries, or a documentation hierarchy), the agent can see what data is available up front and go straight to the right tool call. Resources give **visibility into available content without exploratory tool calls**.\n\n## Client features (the server asking the client)\n\n| Feature | What it does | Key point |\n|---|---|---|\n| **Sampling** | The server asks the **client's** model to generate a completion | The server needs no model API key of its own; humans should be able to review |\n| **Roots** | The client tells the server which filesystem locations (`file://` URIs) are in scope | Advisory boundaries, not a security sandbox |\n| **Elicitation** | The server asks the user for input through the client, using a simple flat schema | The user can accept, decline or cancel; servers must not request sensitive information this way |\n\n## Transports\n\n| Transport | How it works | Use |\n|---|---|---|\n| **stdio** | Host launches the server as a local subprocess; JSON-RPC over stdin/stdout | Local tools. **stdout must carry only MCP messages; logs go to stderr.** A stray `print()` to stdout corrupts the protocol. |\n| **Streamable HTTP** | One HTTP endpoint (POST and GET), optionally streaming with SSE | Remote/shared servers |\n| HTTP+SSE (old) | Earlier two-endpoint design | **Deprecated**, replaced by Streamable HTTP |\n\nFor local HTTP servers, the spec requires validating the `Origin` header and recommends binding to `127.0.0.1` rather than all interfaces.\n\n## Security basics\n\n- The spec says clients **must treat tool annotations as untrusted** unless the server is trusted. Apply the same caution to tool descriptions: a malicious description can carry prompt-injection text.\n- Tool results are data, not instructions.\n- **Token passthrough is forbidden**: a server must not accept tokens that were not issued for it.\n- Hosts should show users what a tool will do and let them deny calls.\n\n## Worked example\n\nA team's agent needs to answer questions about their internal wiki and file tickets.\n\n- Expose the wiki's page tree as a **resource** so the agent can see what pages exist.\n- Expose `search_wiki` and `create_ticket` as **tools** (model-controlled actions).\n- Expose a \"weekly incident summary\" **prompt** that engineers run on demand.\n- Run it locally over **stdio** during development and as **Streamable HTTP** when shared.\n",
+      "keyTakeaways": [
+        "Host (the AI app, enforces consent) -> clients (1:1 stateful session per server) -> servers (expose primitives), over JSON-RPC 2.0 with capability negotiation.",
+        "Tools are model-controlled, resources are application-driven, prompts are user-controlled (in Claude Code: /mcp__<server>__<prompt> slash commands).",
+        "Resources expose content catalogs (issue summaries, doc hierarchies, DB schemas) so agents don't need exploratory tool calls.",
+        "Sampling = the server asks the client's model; roots = advisory filesystem scope; elicitation = server asks the user via a flat schema.",
+        "Transports: stdio (stdout only for MCP messages, logs to stderr) and Streamable HTTP; HTTP+SSE is deprecated.",
+        "Treat descriptions from untrusted servers and all tool results as untrusted input."
+      ],
+      "examTips": [
+        "\"Agent wastes calls discovering what data exists\" -> expose a catalog/schema as an MCP resource.",
+        "Watch for reversed control: an option claiming resources are model-controlled or sampling uses the server's model is wrong.",
+        "A stdio server that breaks after adding debug logging is writing to stdout; logs belong on stderr."
+      ],
+      "commonTraps": [
+        "Saying resources and tools are interchangeable: tools are actions the model invokes; resources are content the application exposes.",
+        "Thinking one client can talk to several servers: each client has a 1:1 session with one server.",
+        "Treating roots as an enforced sandbox: they are advisory boundaries.",
+        "Choosing HTTP+SSE as the modern remote transport: it's deprecated in favour of Streamable HTTP."
+      ],
+      "resources": [
+        {
+          "title": "MCP specification: Architecture (2025-06-18)",
+          "url": "https://modelcontextprotocol.io/specification/2025-06-18/architecture",
+          "type": "docs"
+        },
+        {
+          "title": "MCP specification: Resources (2025-06-18)",
+          "url": "https://modelcontextprotocol.io/specification/2025-06-18/server/resources",
+          "type": "docs"
+        },
+        {
+          "title": "MCP specification: Transports (2025-06-18)",
+          "url": "https://modelcontextprotocol.io/specification/2025-06-18/basic/transports",
+          "type": "docs"
+        },
+        {
+          "title": "MCP security best practices",
+          "url": "https://modelcontextprotocol.io/specification/2025-06-18/basic/security_best_practices",
+          "type": "docs"
+        },
+        {
+          "title": "Model Context Protocol: Getting started",
+          "url": "https://modelcontextprotocol.io/docs/getting-started/intro",
+          "type": "docs"
+        },
+        {
+          "title": "Introduction to Model Context Protocol (Anthropic Academy)",
+          "url": "https://anthropic.skilljar.com/introduction-to-model-context-protocol",
+          "type": "course"
+        }
+      ]
+    },
+    {
+      "id": "f-mcp-claude-code",
+      "title": "Configuring MCP servers in Claude Code",
+      "estMinutes": 10,
+      "level": "core",
+      "taskStatementIds": [
+        "2.4"
+      ],
+      "eli5": "Think of MCP servers as apps you install for Claude. The ones the whole team needs go in a shared list file saved inside the project (.mcp.json), so everyone who downloads the project gets them. The ones only you are trying out stay in a private file in your home folder (~/.claude.json). Passwords never go in the shared list; it only names the variable that holds them.",
+      "visualId": "claude-code-config",
+      "body": "## Three scopes, two files\n\n| Scope | Where it's stored | Who gets it | How to add |\n|---|---|---|---|\n| **Local** (default) | `~/.claude.json`, under this project | Only you, only this project | `claude mcp add ...` |\n| **Project** | **`.mcp.json`** at the repository root (committed to git) | Everyone who clones the repo | `claude mcp add --scope project ...` |\n| **User** | `~/.claude.json` (top level) | Only you, in all your projects | `claude mcp add --scope user ...` |\n\nThe exam's framing is simple:\n\n- **Shared team tooling -> project scope, `.mcp.json`.** It's versioned with the code, so every teammate gets the same servers.\n- **Personal or experimental servers -> user scope, `~/.claude.json`.** They don't affect anyone else.\n\nNote the terminology trap: \"local\" scope is *also* stored in `~/.claude.json`, not in `.claude/settings.local.json`.\n\nIf the same server name is defined in several scopes, Claude Code uses one definition, in the order **local > project > user**. Fields are not merged between them.\n\n## Keep secrets out of git with variable expansion\n\n`.mcp.json` is committed, so it must never contain tokens. Claude Code expands environment variables inside it: `${VAR}`, and `${VAR:-default}` for a fallback value. Expansion works in `command`, `args`, `env`, `url` and `headers`.\n\n```json\n{\n  \"mcpServers\": {\n    \"team-tracker\": {\n      \"type\": \"http\",\n      \"url\": \"${TRACKER_MCP_URL:-https://mcp.example.com/mcp}\",\n      \"headers\": { \"Authorization\": \"Bearer ${TRACKER_TOKEN}\" }\n    },\n    \"github\": {\n      \"type\": \"stdio\",\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"<github-mcp-server-package>\"],\n      \"env\": { \"GITHUB_TOKEN\": \"${GITHUB_TOKEN}\" }\n    }\n  }\n}\n```\n\nEach developer sets `GITHUB_TOKEN` and `TRACKER_TOKEN` in their own environment; the shared file only names them.\n\nBecause a committed `.mcp.json` could launch arbitrary commands, Claude Code asks each user to **approve project-scoped servers** the first time they're used.\n\n## All servers' tools are available together\n\nAt startup Claude Code connects to every configured server and **discovers their tools at connection time**. Tools from your user-scope servers and the team's project-scope servers are **available simultaneously**; one doesn't hide the other. MCP tools appear with names like `mcp__<server>__<tool>`, which is also how you reference them in permission rules.\n\nUseful operational facts:\n\n- `/mcp` shows server status and handles OAuth login. A server that fails to connect doesn't stop the session or throw an error. With tool search on (the default) Claude Code tells Claude about the failure, but in Agent SDK runs Claude can silently fall back to built-in tools instead, so check `/mcp` (or the init message's server status) when a tool seems missing.\n- Prompts exposed by a server appear as slash commands named `/mcp__<server>__<prompt>`.\n- Large MCP outputs: Claude Code warns above 10,000 tokens and caps at 25,000 by default (adjustable with `MAX_MCP_OUTPUT_TOKENS`).\n- Tool search can defer loading MCP tool schemas to save context.\n\n## When the agent ignores your MCP tool\n\nA team adds an MCP server with a `search_codebase_index` tool that understands symbols, ownership and history. But Claude keeps using the built-in Grep instead. Why? The built-in tools are familiar and well-described; the MCP tool's description says only \"Searches the index.\"\n\nFix: **enhance the MCP tool's description** to explain its capabilities and outputs in detail, and when it's better than text search (\"Returns definitions, all references across services, owning team and last change. Prefer this over text search when looking for where a symbol is used.\"). This is Task 2.1 applied to MCP.\n\n## Build vs. reuse\n\nFor standard integrations (Jira, GitHub, Slack, common databases), **use an existing community or vendor MCP server**. Reserve **custom servers for team-specific workflows** that no existing server covers, such as your internal deployment approval process. Writing your own Jira server costs effort and maintenance with no benefit.\n\n## Worked example\n\nA new teammate clones the repo and says Claude can't see the team's ticket tools, though they work for everyone else. You check: the server was added with the default (local) scope by the lead, so it lives in the lead's `~/.claude.json`.\n\n1. Re-add it at project scope (`claude mcp add --scope project ...`) so it lands in `.mcp.json`.\n2. Replace the hard-coded token with `${TRACKER_TOKEN}`.\n3. Commit `.mcp.json`; teammates approve the server on first use and set the variable locally.\n\nMeanwhile, the lead's experimental \"local-notes\" server stays in user scope, and both sets of tools remain available to the lead at the same time.\n",
+      "keyTakeaways": [
+        "Project scope = .mcp.json at the repo root, committed and shared with the team; user scope = ~/.claude.json for personal/experimental servers; local (default) is also in ~/.claude.json.",
+        "Use ${VAR} and ${VAR:-default} expansion in .mcp.json so tokens like ${GITHUB_TOKEN} are never committed.",
+        "Tools from all configured servers are discovered at connection time and available simultaneously.",
+        "Same-name server precedence: local > project > user, with no field merging; project servers need approval on first use.",
+        "If Claude prefers Grep over a richer MCP tool, improve the MCP tool's description.",
+        "Prefer existing community servers for standard integrations (e.g. Jira); build custom only for team-specific workflows."
+      ],
+      "examTips": [
+        "\"Whole team needs this server\" -> .mcp.json (project scope). \"Just me / trying something\" -> ~/.claude.json (user scope).",
+        "Any option that commits a literal token in .mcp.json is wrong; look for ${ENV_VAR} expansion.",
+        "\"Agent uses built-in tools instead of the MCP tool\" -> improve the MCP tool description, not remove built-ins or add prompt rules first.",
+        "Beware invented files such as .claude/mcp.json or .claude/config.json; the shared file is .mcp.json at the project root."
+      ],
+      "commonTraps": [
+        "Putting team servers in ~/.claude.json: new teammates won't get them.",
+        "Thinking user-scope and project-scope servers are mutually exclusive: their tools are available together.",
+        "Assuming local scope is stored in .claude/settings.local.json.",
+        "Writing a custom MCP server for a standard system that already has a maintained server.",
+        "Hard-coding secrets in a committed config file."
+      ],
+      "resources": [
+        {
+          "title": "Connect Claude Code to tools via MCP",
+          "url": "https://code.claude.com/docs/en/mcp",
+          "type": "docs"
+        },
+        {
+          "title": "Claude Code settings",
+          "url": "https://code.claude.com/docs/en/settings",
+          "type": "docs"
+        },
+        {
+          "title": "Agent SDK: MCP",
+          "url": "https://code.claude.com/docs/en/agent-sdk/mcp",
+          "type": "docs"
+        },
+        {
+          "title": "Claude Code in Action (Anthropic Academy)",
+          "url": "https://anthropic.skilljar.com/claude-code-in-action",
+          "type": "course"
+        }
+      ]
+    },
+    {
+      "id": "f-builtin-tools",
+      "title": "Choosing built-in tools: Grep, Glob, Read, Write, Edit, Bash",
+      "estMinutes": 10,
+      "level": "core",
+      "taskStatementIds": [
+        "2.5"
+      ],
+      "eli5": "Glob is the library catalogue: it finds books by title. Grep is skimming every page for a phrase. Read is reading a whole book, Write is replacing a book, and Edit is fixing one sentence with correction tape. Pick the one that matches the question you're asking.",
+      "body": "## The six tools at a glance\n\n| Tool | What it does | Ask yourself |\n|---|---|---|\n| **Glob** | Finds files by **path/name pattern**, e.g. `**/*.test.tsx`, `src/**/*.ts` | \"Which files are *called* something?\" |\n| **Grep** | Searches file **contents** for a pattern (regex) | \"Which files *contain* something?\" |\n| **Read** | Loads a file's full contents (or a line range) | \"What exactly does this file say?\" |\n| **Write** | Creates a file or overwrites it entirely | \"I'm creating or fully replacing a file.\" |\n| **Edit** | Replaces one exact, unique piece of text in a file | \"I'm changing a specific spot.\" |\n| **Bash** | Runs shell commands | \"I need to run something: tests, build, git.\" |\n\nThe single most tested distinction: **Glob = file names/paths, Grep = file contents.**\n\n| Task | Right tool | Why not the other |\n|---|---|---|\n| Find all test files for React components | Glob `**/*.test.tsx` | Grep would search inside files, not names |\n| Find every caller of `calculateTax(` | Grep `calculateTax\\(` | Glob can't see inside files |\n| Locate where the message \"Session expired\" is defined | Grep | It's file content |\n| List every `Dockerfile` in the monorepo | Glob `**/Dockerfile` | It's a file name |\n| Find files importing `legacy-auth` | Grep `from ['\"]legacy-auth` | Import statements are content |\n\n## Edit vs. Read + Write\n\n**Edit** does exact string replacement: it takes an `old_string` and a `new_string`. For the edit to apply, `old_string` must match the file **exactly** (whitespace included) and must appear **exactly once**. That uniqueness is what makes Edit safe: it changes only the intended spot.\n\nWhen Edit fails because the anchor text isn't unique (for example, the same `return null;` appears six times), the options are:\n\n1. Give a longer `old_string` with enough surrounding context to be unique, or use `replace_all` if every occurrence should change.\n2. Otherwise, fall back to **Read + Write**: read the full file, produce the corrected full content, and write it back. The exam presents this as the reliable fallback when Edit can't find a unique anchor.\n\nUse **Write** directly for new files or when you really are replacing the whole file. Don't use Write for a one-line change in a large file you haven't read; you risk losing content.\n\n## Explore incrementally, not all at once\n\nA tempting but poor strategy in an unfamiliar codebase is \"read every file first\". It floods the context window and buries the relevant parts. The effective pattern is:\n\n1. **Grep** for an entry point: the route, function name, error string or config key from the task.\n2. **Read** that file.\n3. Follow its imports: **Read** the files it calls, **Grep** for further symbols as they come up.\n4. Stop when you can explain the flow you care about.\n\nThis builds understanding where it's needed and keeps context lean.\n\n## Tracing usage through wrapper modules\n\nSuppose `payments/index.ts` re-exports helpers under new names:\n\n```ts\nexport { chargeCard as charge, refundCard as refund } from './stripe';\nexport * from './ledger';\n```\n\nGrepping for `chargeCard` misses every caller that uses `charge`. The reliable method:\n\n1. **Read** the wrapper module(s) and list **all exported names**, including aliases and re-exports.\n2. **Grep** for each name across the codebase.\n3. Combine the results.\n\n## Bash: when nothing else fits\n\nUse Bash to run tests, builds, linters, git commands and other programs. Prefer the dedicated tools for searching and editing files when they're available: they're easier to permission, review and audit than ad-hoc shell pipelines.\n\n## Version note\n\nThe exam guide treats Grep and Glob as distinct built-in tools, and questions key on that. In current Claude Code docs, on macOS, Linux and WSL the Grep and Glob tools are left out of the default tool set and Claude searches with `find`/`grep` through Bash; they come back if you name them in `--tools`/`--allowedTools` or list them in a subagent's `tools` without Bash. Other documented details: Grep is built on ripgrep (regex syntax, respects `.gitignore`), and Glob results are sorted by modification time. The decision rule, names vs. contents, is the same either way.\n\n## Worked example\n\nTask: \"Rename the `retryPolicy` option to `retryStrategy` everywhere and update its tests.\"\n\n- Grep `retryPolicy` to find every usage (content search).\n- Glob `**/*retry*.test.ts` to find related test files (name search).\n- Read each file with a hit; use Edit for each unique occurrence.\n- In a file where `retryPolicy:` appears in many identical object literals, use a longer anchor, `replace_all`, or Read + Write.\n- Bash: run the test suite to confirm.\n",
+      "keyTakeaways": [
+        "Glob matches file paths/names (e.g. **/*.test.tsx); Grep searches file contents (callers, error messages, imports).",
+        "Read/Write work on whole files; Edit replaces one exact, unique string.",
+        "When Edit fails because the anchor text isn't unique, use a larger unique anchor or fall back to Read + Write.",
+        "Explore incrementally: Grep for entry points, Read to follow imports, rather than reading every file up front.",
+        "To trace usage through wrapper modules, first list all exported names (including aliases), then Grep for each.",
+        "Use Bash for running commands (tests, builds, git), not as a substitute for the file tools."
+      ],
+      "examTips": [
+        "Pattern in the stem is a file name or extension -> Glob. Pattern is something written inside files -> Grep.",
+        "\"Edit failed: multiple matches\" -> Read + Write (or a more specific unique anchor), not repeated Edit attempts.",
+        "Options that read the entire codebase up front are distractors; prefer Grep-then-Read exploration.",
+        "If callers are \"missing\" after a search, suspect re-exports/aliases in wrapper modules."
+      ],
+      "commonTraps": [
+        "Using Grep to find files by name or Glob to search for a function call.",
+        "Retrying the same Edit with the same non-unique anchor.",
+        "Using Write to make a small change in a large file without reading it first.",
+        "Reading every file in the repo before starting, which floods context.",
+        "Searching only for the original function name when wrapper modules re-export it under aliases."
+      ],
+      "resources": [
+        {
+          "title": "Claude Code tools reference",
+          "url": "https://code.claude.com/docs/en/tools-reference",
+          "type": "docs"
+        },
+        {
+          "title": "Claude Code in Action (Anthropic Academy)",
+          "url": "https://anthropic.skilljar.com/claude-code-in-action",
+          "type": "course"
+        },
+        {
+          "title": "Claude Code subagents",
+          "url": "https://code.claude.com/docs/en/sub-agents",
+          "type": "docs"
+        }
+      ]
+    }
+  ]
+}

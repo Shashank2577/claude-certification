@@ -1,0 +1,462 @@
+{
+  "certId": "foundations",
+  "domainId": "d5-context",
+  "lessons": [
+    {
+      "id": "f-context-preservation",
+      "title": "Keeping critical facts alive across long interactions",
+      "estMinutes": 12,
+      "level": "core",
+      "taskStatementIds": [
+        "5.1"
+      ],
+      "eli5": "Imagine a waiter who takes a long order and keeps rewriting his notes shorter and shorter. Soon \"two lattes, one oat milk, table 12, allergic to nuts\" becomes \"some coffees\". The fix is a sticky note with the exact details that never gets rewritten, plus keeping only the useful parts of anything new he writes down.",
+      "visualId": "context-window",
+      "body": "## Why long conversations lose information\n\nEvery token in the context window costs attention. Anthropic's docs describe **context rot**: as the token count grows, the model gets worse at recalling and using any single fact. Current models have very large windows (1M tokens on the newest Opus and Sonnet models), but **a bigger window does not fix this**. Careful curation beats raw capacity. Task 5.1 is about three ways critical information gets lost, and the fix for each.\n\n| How it gets lost | What it looks like | The fix |\n|---|---|---|\n| **Progressive summarization** | \"Customer was charged $247.83 twice on 3 March, wants a refund by Friday\" becomes \"customer has a billing issue\" | Keep a persistent **case facts block** outside the summarized history |\n| **Lost in the middle** | In a long aggregated input, findings in the middle sections are left out of the answer | Put a key-findings summary **at the start** and use explicit section headers |\n| **Tool-result bloat** | Each order lookup returns 40+ fields, and only 5 matter for a return | **Trim tool output** to the relevant fields before it goes into history |\n\n## 1. The case facts block\n\nSummaries are lossy, and they lose exactly the things that matter most in support and finance work: **amounts, percentages, dates, order numbers, statuses, and what the customer said they expect**. The fix is to pull these transactional facts out into a structured block and include it **in every prompt**, separate from the conversation summary.\n\n```text\n<case_facts>\ncustomer_id: C-88172\norder_id: ORD-55120   status: delivered 2026-09-14\nissue: duplicate charge   amount: 247.83 USD (x2)\ncustomer_expectation: refund of one charge by Friday 2026-10-04\n</case_facts>\n<conversation_summary> ...may be compressed freely... </conversation_summary>\n```\n\nThe summary can be as short as you like, because the facts the next answer depends on are never summarized.\n\n**Multi-issue sessions.** When one customer raises a refund, an address change and a missing item in one chat, keep a **separate structured layer per issue** (order ID, amount, status, next step). Without it, details from one issue blur into another.\n\n## 2. Mitigate position effects\n\nModels handle the **beginning and end** of long inputs reliably, and may skip findings in the **middle**. When a coordinator gathers results from many subagents into one long input:\n\n- Put a **summary of key findings first**.\n- Organize the detailed results under **explicit section headers** (for example `## Source 3: 2025 market survey`).\n- For long documents in general, the Claude prompting docs advise putting the long material near the top and the question at the end.\n\n## 3. Trim tool output before it accumulates\n\nTool results stay in the history for every later turn, so a verbose result is paid for again and again. If `lookup_order` returns 40+ fields and a return only needs `order_id`, `items`, `purchase_date`, `return_window_end` and `status`, keep those five. You can filter in your tool wrapper or in a post-tool hook, before the result is appended.\n\n## 4. Pass the complete history\n\nThe Messages API is **stateless**. The model only knows what you send in this request. To keep the conversation coherent you must send the full conversation history (or a deliberate, curated version of it: case facts + summary + recent turns) on **every** request. If you drop earlier turns by accident, the agent \"forgets\" what it already promised.\n\n## 5. Shape what upstream agents send downstream\n\nIn multi-agent systems the downstream agent (often a synthesizer) has a limited context budget. Change the **upstream** agents so they return **structured data** rather than long prose and reasoning chains:\n\n```json\n{\"key_facts\": [\"...\"], \"citations\": [{\"url\": \"...\", \"excerpt\": \"...\"}],\n \"relevance\": 0.82, \"source_date\": \"2026-05-01\", \"method\": \"survey, n=1,200\"}\n```\n\nRequire **metadata** (dates, source locations, methodological context) so the synthesizer can interpret findings correctly later. This links to provenance (task 5.6).\n\n## Worked example\n\nA support agent handles 30-turn conversations. After turn 20 it starts quoting the wrong refund amount. Logs show automatic summarization replaced \"$247.83\" with \"a charge\". Which change is right?\n\n- Raise the context window or switch to a bigger model: **no**. Capacity is not the problem. The fact was destroyed by summarization.\n- Tell the model in the system prompt to \"remember amounts carefully\": **weak**. The number is no longer in its context.\n- **Extract the transactional facts into a case facts block that is re-sent with every request**: **yes**. It fixes the root cause.\n\n## Current-docs note\n\nThe Claude API also offers server-side **compaction** (summarizes older turns) and **context editing** (clears old tool results), both in beta at the time of writing. Both are useful, but both are lossy for anything you don't protect. The exam's principle still holds: facts that must survive go in a block that is **never** summarized.",
+      "keyTakeaways": [
+        "Summaries lose numbers, dates, IDs and customer expectations. Keep them in a persistent case facts block, outside the summarized history, in every prompt.",
+        "Lost in the middle: put a key-findings summary first and use explicit section headers in long aggregated inputs.",
+        "Trim verbose tool results to the relevant fields before they enter the history, because they are paid for on every later turn.",
+        "The API is stateless. Send the complete (or deliberately curated) conversation history on every request.",
+        "Make upstream agents return structured facts, citations, relevance scores and metadata, not long reasoning, when downstream context is limited."
+      ],
+      "examTips": [
+        "When a stem says the agent \"forgets\" or blurs a specific number or date late in a conversation, look for the option that moves those facts into a persistent structured block. Bigger windows and stronger \"remember\" instructions are distractors.",
+        "If a synthesizer misses findings from the middle of a long input, the answer is reordering (summary first) plus section headers, not a bigger model.",
+        "If context fills quickly in a tool-heavy agent, trimming tool outputs to relevant fields is the proportionate first step.",
+        "Watch for the buried qualifier \"downstream agent has a limited context budget\": it points to changing the upstream agent's output format."
+      ],
+      "commonTraps": [
+        "Choosing a larger context window or a 1M-token model to fix information loss. Context rot means more capacity does not mean better recall.",
+        "Relying on the conversation summary to keep exact amounts and dates.",
+        "Sending only the latest user message to a stateless API and expecting the model to remember earlier turns.",
+        "Telling the downstream agent to \"be concise\" when the problem is that the upstream agent sends verbose output."
+      ],
+      "resources": [
+        {
+          "title": "Context windows (Claude docs)",
+          "url": "https://platform.claude.com/docs/en/build-with-claude/context-windows",
+          "type": "docs"
+        },
+        {
+          "title": "Effective context engineering for AI agents (Anthropic Engineering)",
+          "url": "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents",
+          "type": "blog"
+        },
+        {
+          "title": "Prompting best practices, incl. long-context tips (Claude docs)",
+          "url": "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices",
+          "type": "docs"
+        },
+        {
+          "title": "Compaction (Claude docs)",
+          "url": "https://platform.claude.com/docs/en/build-with-claude/compaction",
+          "type": "docs"
+        },
+        {
+          "title": "Context editing (Claude docs)",
+          "url": "https://platform.claude.com/docs/en/build-with-claude/context-editing",
+          "type": "docs"
+        },
+        {
+          "title": "Claude Certified Architect – Foundations exam guide (PDF)",
+          "url": "https://everpath-course-content.s3-accelerate.amazonaws.com/instructor%2F6nizmqk8tpzpfjvt6qmmav7rh%2Fpublic%2F1783542750%2FClaude+Certified+Architect+%E2%80%93+Foundations+Exam+Guide.pdf",
+          "type": "docs"
+        }
+      ]
+    },
+    {
+      "id": "f-escalation",
+      "title": "Escalation and resolving ambiguity",
+      "estMinutes": 11,
+      "level": "core",
+      "taskStatementIds": [
+        "5.2"
+      ],
+      "eli5": "A good shop assistant fetches the manager when you ask for one, or when the rulebook has nothing about your situation. They don't fetch the manager just because you sound grumpy, or because they feel unsure. And if two customers have the same name on the list, they ask for your phone number instead of guessing.",
+      "visualId": "escalation-hitl",
+      "body": "## What escalation is for\n\nAn agent that escalates too often wastes human time and fails its resolution targets. One that escalates too rarely makes decisions it has no authority to make. Task 5.2 asks you to design **calibrated** escalation: clear triggers, written down, shown with examples.\n\n## The three valid triggers\n\n| Trigger | Example | Correct behavior |\n|---|---|---|\n| **Customer explicitly asks for a human** | \"I want to speak to a person.\" | Escalate **immediately**. Don't investigate first, and don't try \"one more fix\". |\n| **Policy exception or gap** | Policy covers price adjustments for *our own site*, and the customer asks you to match a *competitor's* price | Escalate. The policy is silent, and the agent should not invent policy. |\n| **No meaningful progress** | Several attempts, the tools can't resolve it, the agent is going in circles | Escalate, with a structured handoff summary |\n\nNote what is **not** on the list: \"the case looks complex\", \"the customer is angry\", \"the model feels unsure\". Complexity alone is not a trigger. A complex case that policy clearly covers can still be resolved by the agent.\n\n## Frustration is not a request\n\nSeparate two situations:\n\n1. **\"Get me a human now.\"** This is an explicit request. Honor it straight away.\n2. **\"This is ridiculous, my package is late again!\"** This is frustration about an issue the agent *can* solve. **Acknowledge the frustration, offer the fix**, and escalate only if the customer **repeats** that they want a person.\n\n## Why sentiment and self-rated confidence are bad triggers\n\n- **Sentiment** measures how the customer feels, not how hard the case is. A polite customer can have a case that needs a policy exception, and a furious one can have a two-minute fix. Escalating on sentiment answers a different question.\n- **Self-reported confidence** (for example \"rate your confidence 1–10\") is **poorly calibrated**. An agent that wrongly handles hard cases is usually *confidently* wrong, so a threshold on its own score doesn't catch those cases.\n\n## The fix: explicit criteria plus few-shot examples\n\nWhen an agent escalates easy cases and keeps hard ones, the root cause is **unclear decision boundaries**. The proportionate first fix is in the system prompt:\n\n```text\nEscalate to a human when ANY of these is true:\n- The customer explicitly asks for a human or manager.\n- The request needs an exception to policy, or policy does not cover it.\n- You have made two resolution attempts and the issue is unchanged.\nResolve yourself when the case is covered by policy, even if the customer is upset.\n\n<example> Customer: \"Item arrived smashed, photo attached, want a replacement.\"\nAction: resolve (standard damage replacement with evidence). </example>\n<example> Customer: \"BigMart sells it $40 cheaper, match it.\"\nAction: escalate (competitor price matching is not covered by policy). </example>\n```\n\nThe examples show where the line is, which a list of rules alone can't do.\n\nOptions that look heavier are usually wrong as a *first* step: a separately trained classifier needs labeled data and infrastructure before you have even tried fixing the prompt. Sentiment analysis measures the wrong thing.\n\n## Ambiguity: several matches\n\nIf `find_customer(name=\"J. Smith\")` returns three accounts, the agent must **ask for another identifier** (email, order number, postcode). It must **not** pick one heuristically (\"most recent\", \"first in the list\"). Acting on the wrong account is a privacy and correctness failure. Put this rule in the instructions:\n\n```text\nIf a lookup returns more than one match, do not choose. Ask the customer\nfor one additional identifier (email, order number or postcode).\n```\n\n## Worked example\n\nLogs: the agent hands over \"replace my broken mug, photo attached\" but tries to handle \"waive the restocking fee because my company has a contract with you\" by itself. First-contact resolution is far below target.\n\n- Add a confidence-score threshold: **no**. The agent is confidently wrong on the hard cases.\n- Escalate when sentiment is negative: **no**. It doesn't correlate with complexity.\n- Train an escalation classifier: **disproportionate** as a first step.\n- **Add explicit escalation criteria with few-shot examples of escalate vs resolve**: **yes**.\n\n## Handoff quality\n\nWhen the agent does escalate, the human should not have to start from zero. Pass a structured summary: customer ID, case facts, what was tried, why it is escalating, and what the customer wants. This reuses the case facts block from task 5.1.",
+      "keyTakeaways": [
+        "Valid triggers: an explicit request for a human, a policy exception or gap, and no meaningful progress.",
+        "Honor an explicit request for a human immediately, with no investigation first.",
+        "For frustration about a solvable issue: acknowledge it, offer the fix, and escalate only if the customer asks again.",
+        "Sentiment and self-reported confidence are unreliable measures of case complexity.",
+        "Fix miscalibrated escalation with explicit criteria plus few-shot examples in the system prompt.",
+        "Several lookup matches: ask for another identifier. Never pick one heuristically."
+      ],
+      "examTips": [
+        "For escalation calibration questions, the answer is almost always \"explicit criteria + few-shot examples\". Eliminate self-rated confidence (miscalibrated), sentiment (wrong signal) and a trained classifier (over-engineered first step).",
+        "Read the customer's words carefully. \"I want a human\" is a request to honor now. \"This is so frustrating\" is not a request.",
+        "Competitor price matching, waived fees, or anything the policy doesn't mention means escalate. The agent should not improvise policy.",
+        "If the stem mentions several matching records, eliminate any option that picks by recency, order or likelihood."
+      ],
+      "commonTraps": [
+        "Trying to resolve the issue first after a customer has explicitly asked for a human.",
+        "Escalating every angry customer, even when the fix is routine.",
+        "Routing on the model's own 1–10 confidence score.",
+        "Treating \"complex\" as the same thing as \"needs escalation\". Policy coverage is what matters.",
+        "Choosing the most recently active account when a name lookup returns several matches."
+      ],
+      "resources": [
+        {
+          "title": "Customer support agent use-case guide (Claude docs)",
+          "url": "https://platform.claude.com/docs/en/about-claude/use-case-guides/customer-support-chat",
+          "type": "docs"
+        },
+        {
+          "title": "Building effective agents (Anthropic Engineering)",
+          "url": "https://www.anthropic.com/engineering/building-effective-agents",
+          "type": "blog"
+        },
+        {
+          "title": "Prompting best practices, incl. few-shot examples (Claude docs)",
+          "url": "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices",
+          "type": "docs"
+        },
+        {
+          "title": "Claude Certified Architect – Foundations exam guide (PDF)",
+          "url": "https://everpath-course-content.s3-accelerate.amazonaws.com/instructor%2F6nizmqk8tpzpfjvt6qmmav7rh%2Fpublic%2F1783542750%2FClaude+Certified+Architect+%E2%80%93+Foundations+Exam+Guide.pdf",
+          "type": "docs"
+        }
+      ]
+    },
+    {
+      "id": "f-error-propagation",
+      "title": "Error propagation across multi-agent systems",
+      "estMinutes": 11,
+      "level": "core",
+      "taskStatementIds": [
+        "5.3"
+      ],
+      "eli5": "If you send a friend to the library and it's closed, you want them to say \"it was closed, I tried the side door, here are two pages I copied earlier, and the other library opens at 3\". You don't want \"couldn't do it\", you don't want \"they had no books\" (a lie), and you don't want them to cancel the whole school project.",
+      "visualId": "error-recovery",
+      "body": "## The coordinator can only recover from what it can see\n\nIn a coordinator-subagent system the coordinator decides what happens after a failure: retry, rephrase, try another source, continue with partial results, or tell the user. It can only decide well if the subagent's report says **what actually happened**. Task 5.3 is about designing that report.\n\n## Four ways to report a failure\n\nA web-search subagent times out partway through its research. Compare:\n\n| Approach | What the coordinator sees | Verdict |\n|---|---|---|\n| Structured error context | `failure_type: timeout`, the query attempted, 3 partial results, suggestion: narrow the date range or use the news index | **Correct**. The coordinator can make a real decision. |\n| Generic status | \"search unavailable\" (after hidden retries) | Hides context. The coordinator can't tell a timeout from an auth failure or a bad query. |\n| Silent suppression | `status: success, results: []` | Anti-pattern. A failure looks like \"nothing exists\", so the final report is quietly incomplete. |\n| Abort everything | Exception goes to a top-level handler that ends the workflow | Anti-pattern. One failed branch throws away all the good work. |\n\n## Access failure vs valid empty result\n\nThis distinction is tested often:\n\n- **Access failure**: the query **did not run** (timeout, 5xx, permission denied, rate limited). The data may exist. The coordinator has to decide whether to retry.\n- **Valid empty result**: the query **ran successfully** and found nothing. That is information (\"no recalls were filed for this model\"), and retrying won't change it.\n\nIf both come back as `[]`, the coordinator might report \"no recalls\" when the truth is \"we couldn't check\". Keep them separate in the response shape:\n\n```json\n{\"status\": \"error\",\n \"error\": {\"type\": \"timeout\", \"retryable\": true,\n           \"attempted\": \"recalls site:gov 'Model X' 2024..2026\",\n           \"partial_results\": [{\"url\": \"...\", \"excerpt\": \"...\"}],\n           \"alternatives\": [\"query regulator API directly\", \"narrow to 2025-2026\"]}}\n\n{\"status\": \"ok\", \"results\": [], \"note\": \"query completed; zero matches\"}\n```\n\nAt the MCP layer the same idea shows up as tool execution errors returned in the result with **`isError: true`** (plus a useful message), so the model can see the failure and react, instead of a vague failure or a fake success.\n\n## Recover locally, propagate what you can't fix\n\nNot every hiccup should go up to the coordinator:\n\n1. **Transient** failures (one timeout, one 503): the subagent retries locally, for example with backoff, a small number of times.\n2. If it **still can't** resolve the problem, it propagates a **structured** error that includes what it tried and any partial results.\n3. **Non-retryable** failures (permission denied, invalid input, a business rule): propagate straight away. Retrying won't help.\n\nThis keeps the coordinator's context clean, so it isn't flooded with every blip, while making sure real failures are never hidden.\n\n## Coverage annotations in the final output\n\nWhen some sources fail, the synthesis must not pretend coverage is complete. Structure the output to show what is well supported and where the gaps are:\n\n```markdown\n## Findings\n- EV battery costs fell sharply 2020–2025 [3 independent sources] — well supported\n## Coverage gaps\n- Regulatory outlook (EU): regulator database timed out after retries; finding\n  based on one secondary source only — treat as provisional\n```\n\nThe reader (or a downstream agent) can then judge how far to trust each section.\n\n## Worked example\n\nA research pipeline produces confident reports that leave out whole regions. Investigation shows one regional subagent catches API errors and returns `results: []` with `success: true`. Fix: return a structured error (type, attempted query, partial results), distinguish it from a genuine empty result, and have the synthesizer add a coverage-gap note. Tweaking prompts or adding more subagents won't help, because the failure is invisible.",
+      "keyTakeaways": [
+        "Return structured error context: failure type, what was attempted, partial results and alternatives, so the coordinator can choose a recovery.",
+        "Keep access failures (the query didn't run, may need a retry) separate from valid empty results (the query ran and found nothing).",
+        "Generic \"unavailable\" statuses hide context. Empty-as-success hides the failure completely. Ending the whole workflow on one failure wastes good work.",
+        "Subagents retry transient failures locally and propagate only what they can't resolve, with what they tried and any partial results.",
+        "Synthesis output needs coverage annotations: which findings are well supported and where sources were unavailable."
+      ],
+      "examTips": [
+        "In error-flow questions, pick the option that gives the coordinator the most decision-relevant information (type, query, partial results, alternatives).",
+        "Retry-with-backoff options look responsible, but if they end in a generic status they hide context. Read to the end of the option.",
+        "An \"empty result marked successful\" option is always an anti-pattern. So is \"terminate the workflow\".",
+        "If the stem says a report states \"no data found\" when a source actually failed, the root cause is mixing access failures with empty results."
+      ],
+      "commonTraps": [
+        "Thinking retries alone solve error propagation. They don't if the final message is \"search unavailable\".",
+        "Returning [] for both timeouts and genuine no-match results.",
+        "Escalating every transient blip to the coordinator, which floods its context.",
+        "Presenting a synthesis as complete when a source family failed."
+      ],
+      "resources": [
+        {
+          "title": "How we built our multi-agent research system (Anthropic Engineering)",
+          "url": "https://www.anthropic.com/engineering/multi-agent-research-system",
+          "type": "blog"
+        },
+        {
+          "title": "MCP specification: Tools (error handling and isError)",
+          "url": "https://modelcontextprotocol.io/specification/2025-06-18/server/tools",
+          "type": "docs"
+        },
+        {
+          "title": "Writing effective tools for agents (Anthropic Engineering)",
+          "url": "https://www.anthropic.com/engineering/writing-tools-for-agents",
+          "type": "blog"
+        },
+        {
+          "title": "Building effective agents (Anthropic Engineering)",
+          "url": "https://www.anthropic.com/engineering/building-effective-agents",
+          "type": "blog"
+        },
+        {
+          "title": "Claude Certified Architect – Foundations exam guide (PDF)",
+          "url": "https://everpath-course-content.s3-accelerate.amazonaws.com/instructor%2F6nizmqk8tpzpfjvt6qmmav7rh%2Fpublic%2F1783542750%2FClaude+Certified+Architect+%E2%80%93+Foundations+Exam+Guide.pdf",
+          "type": "docs"
+        }
+      ]
+    },
+    {
+      "id": "f-codebase-exploration",
+      "title": "Managing context while exploring large codebases",
+      "estMinutes": 11,
+      "level": "core",
+      "taskStatementIds": [
+        "5.4"
+      ],
+      "eli5": "Exploring a huge codebase (all the code behind one piece of software) is like mapping a giant museum. If you try to remember every room in your head you start mixing them up. So you send helpers to check specific wings, you write a running map on paper, and if the lights go out you pick up from the map instead of starting again.",
+      "visualId": "context-window",
+      "body": "## The symptom: drift in long sessions\n\nAfter a long exploration session the agent's answers change. It contradicts what it said an hour ago, and it starts talking about \"typical patterns\" (\"services usually validate input in a middleware layer\") instead of the **specific classes it actually found** (`RefundPolicyValidator` in `billing/rules.py`). That is **context degradation**: early findings are buried under thousands of tokens of file listings, grep output and stack traces. Task 5.4 lists five techniques.\n\n| Technique | What it does | When to reach for it |\n|---|---|---|\n| **Subagent delegation** | Runs verbose searches in an isolated context and returns only a summary | Specific questions: \"find all test files\", \"trace refund flow dependencies\" |\n| **Scratchpad files** | Keeps key findings on disk across context boundaries | Long investigations, and anything you will refer back to |\n| **Phase summaries** | Condenses phase N's findings and injects them into phase N+1's subagents | Multi-phase exploration (map → trace → propose) |\n| **State manifests** | Each agent exports its state to a known location, and the coordinator reloads it | Crash recovery and resuming long jobs |\n| **`/compact`** | Summarizes the current conversation in place so the session can continue | Context filling up with discovery output |\n\n## 1. Delegate exploration to subagents\n\nA subagent gets a **fresh context window**. It can read 60 files and run 30 greps, then hand back a short answer. The main agent keeps only that answer and stays focused on the high-level picture. In Claude Code, the built-in **Explore** subagent is read-only and made for exactly this. (The exam guide calls the spawning mechanism the **Task** tool. Claude Code renamed it the **Agent** tool in v2.1.63, and `Task` still works as an alias. Same idea.)\n\n```text\nMain agent (coordinator):\n  -> subagent A: \"List every test file touching refunds; return paths + 1-line purpose\"\n  -> subagent B: \"Trace RefundService.issue() callers and side effects; return a call chain\"\n  <- receives two short structured summaries, not 90 file dumps\n```\n\n## 2. Scratchpad files\n\nAsk the agent to keep a findings file (for example `notes/exploration.md`) and to **read it back before answering later questions**:\n\n```markdown\n# Refund flow findings\n- Entry: api/refunds.py::create_refund -> RefundService.issue()\n- Validation: billing/rules.py::RefundPolicyValidator (30-day window, hard-coded)\n- Side effects: emits RefundIssued -> ledger/consumer.py\n- Open question: who calls legacy_refund()? (2 call sites, both cron)\n```\n\nThe file survives compaction, `/clear` and new sessions, because it is on disk and not in the context window. The same pattern is behind the API's memory tool and Anthropic's guidance on long-running agents (progress logs that every new session reads first).\n\n## 3. Summarize between phases\n\nBefore you start the next exploration phase, write a summary of what the last phase found and put it into the **initial prompt** of the next phase's subagents. Without it, each new subagent starts from nothing and repeats the discovery work, or contradicts earlier findings.\n\n## 4. Crash recovery with manifests\n\nFor long multi-agent jobs, design for interruption:\n\n```json\n{\"file\": \"state/manifest.json\", \"phase\": 2, \"completed\": [\"map-modules\", \"trace-refunds\"],\n \"pending\": [\"trace-chargebacks\"],\n \"agent_state\": {\"trace-refunds\": \"state/trace-refunds.json\"}}\n```\n\nEach agent **exports its state to a known location**. On resume the coordinator **loads the manifest** and **injects** the relevant state into each agent's prompt, so the work continues from where it stopped.\n\n## 5. `/compact`\n\nIn Claude Code, `/compact` summarizes the conversation so far and the session continues in less context. You can add focus instructions, for example `/compact keep the refund-flow findings and file paths`. After compaction the project-root CLAUDE.md is re-read from disk, but instructions that only existed in the conversation may be lost, which is another reason to keep key findings in a scratchpad file. Compare with **`/clear`**, which starts a **new, empty** conversation.\n\n## Worked example\n\nTwo hours into mapping a monorepo, Claude Code starts calling a class `OrderManager` that doesn't exist. Best response: have it write confirmed findings to a scratchpad, run `/compact` (or start the next phase with subagents seeded with the scratchpad summary), and send remaining deep-dives to Explore subagents. \"Use a model with a larger context window\" treats the symptom. \"Start over with `/clear`\" throws away the progress.",
+      "keyTakeaways": [
+        "Context degradation shows up as inconsistent answers and vague \"typical patterns\" instead of the specific classes found earlier.",
+        "Delegate verbose, specific investigations to subagents (for example Explore) so the main agent keeps only summaries.",
+        "Scratchpad files keep findings outside the context window. Have the agent re-read them before answering.",
+        "Summarize each phase and inject the summary into the next phase's subagents.",
+        "Crash recovery: agents export state to a known location, and the coordinator loads a manifest on resume and injects it into prompts.",
+        "/compact summarizes and continues. /clear starts an empty conversation."
+      ],
+      "examTips": [
+        "If the stem describes drift or references to generic patterns after a long session, look for scratchpads, subagent delegation or /compact. Not a bigger model.",
+        "A specific, verbose question (\"find all callers of X\") is the textbook case for a subagent. The main agent coordinates.",
+        "Resume-after-crash questions point to state exports plus a manifest the coordinator loads. Not \"re-run everything\", and not \"rely on conversation history\".",
+        "Expect the exam's \"Task tool\" wording. Treat it as the same as the Agent tool in current docs."
+      ],
+      "commonTraps": [
+        "Using /clear when you want to keep going. It throws away the session's working context.",
+        "Having the main agent run every grep itself and fill its own context with raw output.",
+        "Spawning next-phase subagents without a summary of earlier findings.",
+        "Assuming instructions given only in the conversation survive /compact. Put durable rules in CLAUDE.md and findings in files."
+      ],
+      "resources": [
+        {
+          "title": "Subagents in Claude Code (Claude Code docs)",
+          "url": "https://code.claude.com/docs/en/sub-agents",
+          "type": "docs"
+        },
+        {
+          "title": "Manage Claude's memory: CLAUDE.md and /compact (Claude Code docs)",
+          "url": "https://code.claude.com/docs/en/memory",
+          "type": "docs"
+        },
+        {
+          "title": "What survives compaction (Claude Code docs)",
+          "url": "https://code.claude.com/docs/en/context-window#what-survives-compaction",
+          "type": "docs"
+        },
+        {
+          "title": "Common workflows (Claude Code docs)",
+          "url": "https://code.claude.com/docs/en/common-workflows",
+          "type": "docs"
+        },
+        {
+          "title": "Effective harnesses for long-running agents (Anthropic Engineering)",
+          "url": "https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents",
+          "type": "blog"
+        },
+        {
+          "title": "Memory tool (Claude docs)",
+          "url": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/memory-tool",
+          "type": "docs"
+        },
+        {
+          "title": "Introduction to subagents (Anthropic Academy)",
+          "url": "https://anthropic.skilljar.com/introduction-to-subagents",
+          "type": "course"
+        }
+      ]
+    },
+    {
+      "id": "f-human-review",
+      "title": "Human review workflows and confidence calibration",
+      "estMinutes": 11,
+      "level": "core",
+      "taskStatementIds": [
+        "5.5"
+      ],
+      "eli5": "A school says \"97% of our students pass\", but every student in one small class fails. The average hides it. Before you stop checking homework, check each class separately. Then keep spot-checking a few random pages from every class, because new kinds of mistakes can still turn up.",
+      "visualId": "escalation-hitl",
+      "body": "## The question behind task 5.5\n\nYou have an extraction pipeline (invoices, contracts, medical forms) and humans review its output. Reviewers are expensive and few, so the business wants to **reduce human review** for \"high-confidence\" results. Task 5.5 tests whether you can do that **safely**.\n\n## Trap 1: aggregate accuracy hides weak segments\n\n\"97% field accuracy overall\" sounds ready for automation. But break it down:\n\n| Segment | Volume | Accuracy |\n|---|---|---|\n| Standard invoices | 80% | 99.4% |\n| Credit notes | 12% | 96.0% |\n| Handwritten receipts | 8% | **78%** |\n| Field: `tax_amount` (all types) | — | **88%** |\n\nThe average is held up by the large, easy segment. **Validate accuracy by document type and by field** before you automate any segment. You might automate standard invoices and keep handwritten receipts, and every `tax_amount`, under full review.\n\n## Trap 2: raw confidence scores aren't calibrated\n\nHaving the model output **field-level confidence** is useful: it tells reviewers *which field* to check, not just which document. But a stated \"0.95\" doesn't mean 95% correct. To use the scores for routing:\n\n1. Build a **labeled validation set** (human-verified ground truth).\n2. Compare stated confidence with actual accuracy, per field and per document type.\n3. **Set thresholds from that data**, for example: \"for `total_amount` on invoices, confidence ≥ 0.9 is 99.5% accurate, so skip review; for `tax_amount` no threshold reaches the target, so always review.\"\n\n```json\n{\"vendor_name\": {\"value\": \"Acme GmbH\", \"confidence\": 0.97},\n \"total_amount\": {\"value\": 1840.00, \"confidence\": 0.93},\n \"tax_amount\":  {\"value\": 293.78, \"confidence\": 0.71, \"note\": \"two VAT lines, unclear\"}}\n```\n\nThis is different from the escalation trap in task 5.2. There, an *uncalibrated* self-rating is used as the main decision rule. Here, scores are **calibrated against ground truth** and used to **route reviewer attention**.\n\n## Keep measuring: stratified random sampling\n\nAutomating the high-confidence results doesn't mean you stop checking them. Errors drift: a new vendor template or a scanner change can create **new error patterns** that the model is confident about. So:\n\n- **Randomly sample** a small share of auto-approved, high-confidence extractions for human review.\n- **Stratify** the sample by document type, vendor and field, so rare segments are actually included. A plain random sample of 200 might contain no handwritten receipts.\n- Track error rates per stratum over time, and send any new pattern back into the prompt, the examples or the thresholds.\n\n## Routing what goes to humans\n\nReviewer capacity is limited, so prioritize:\n\n- **Low-confidence** fields (below the calibrated threshold).\n- **Ambiguous or contradictory sources**, for example two different totals on one invoice, or a contract amendment that conflicts with the original.\n- Segments that haven't been validated yet.\n- A sampled slice of high-confidence output (for monitoring, as above).\n\nMake review **meaningful**: show the reviewer the specific field, the source snippet and why it was flagged. A queue of whole documents that reviewers approve without reading is a rubber stamp, not a control.\n\n## Worked example\n\nA team reports 97% accuracy on 10,000 extracted documents and proposes removing human review for every extraction with confidence ≥ 0.9. What should come first?\n\n- Approve, because 97% is above the 95% target: **no**. The aggregate may hide weak segments.\n- Ask the model to double-check its high-confidence answers: **no**. Self-review doesn't measure the error rate.\n- **Break accuracy down by document type and field, calibrate the 0.9 threshold against a labeled set per segment, automate only the segments that pass, and keep stratified sampling running**: **yes**.",
+      "keyTakeaways": [
+        "Aggregate accuracy can hide poor performance on particular document types or fields. Validate each segment before reducing review.",
+        "Field-level confidence scores route reviewer attention, but only after calibration against a labeled validation set.",
+        "Stratified random sampling of high-confidence output measures ongoing error rates and catches new error patterns.",
+        "Send low-confidence fields and ambiguous or contradictory sources to humans, and prioritize, because reviewer capacity is limited.",
+        "Automate segment by segment, not all at once on the strength of one overall number."
+      ],
+      "examTips": [
+        "An overall accuracy figure in the stem (\"97% overall\") is a hint: the answer usually involves breaking it down by document type or field.",
+        "Prefer \"calibrate thresholds on labeled data\" over \"use the model's confidence directly\".",
+        "When asked how to keep monitoring after automation, look for stratified random sampling of high-confidence items, not only reviewing low-confidence ones.",
+        "Eliminate options that remove all human review at once, or that use model self-checking as the measure of error rate."
+      ],
+      "commonTraps": [
+        "Treating a high overall accuracy as proof every segment is safe to automate.",
+        "Using raw, uncalibrated confidence scores as the threshold.",
+        "Sampling only low-confidence items. That never shows the errors the model is confident about.",
+        "Plain (unstratified) random sampling that misses rare but risky document types."
+      ],
+      "resources": [
+        {
+          "title": "Define success criteria and build evaluations (Claude docs)",
+          "url": "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests",
+          "type": "docs"
+        },
+        {
+          "title": "Reduce hallucinations (Claude docs)",
+          "url": "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-hallucinations",
+          "type": "docs"
+        },
+        {
+          "title": "Building effective agents (Anthropic Engineering)",
+          "url": "https://www.anthropic.com/engineering/building-effective-agents",
+          "type": "blog"
+        },
+        {
+          "title": "Claude Certified Architect – Foundations exam guide (PDF)",
+          "url": "https://everpath-course-content.s3-accelerate.amazonaws.com/instructor%2F6nizmqk8tpzpfjvt6qmmav7rh%2Fpublic%2F1783542750%2FClaude+Certified+Architect+%E2%80%93+Foundations+Exam+Guide.pdf",
+          "type": "docs"
+        }
+      ]
+    },
+    {
+      "id": "f-provenance",
+      "title": "Provenance and uncertainty in multi-source synthesis",
+      "estMinutes": 11,
+      "level": "core",
+      "taskStatementIds": [
+        "5.6"
+      ],
+      "eli5": "When you write a school report from five books, you note which book each fact came from and when the book was written. If two books disagree, you write \"Book A says 40, Book B says 55\" instead of quietly picking one. And a number from 2019 that differs from one from 2025 may not be a disagreement at all. Things changed.",
+      "visualId": "rag-pipeline",
+      "body": "## Where provenance gets lost\n\nIn a multi-agent research system, search subagents find facts, and then one or more **summarization** steps compress them before a synthesis agent writes the report. Each compression step can drop the link between a **claim** and its **source**. The final report says \"the market grew 34%\", and nobody can tell where the number came from or whether it is still current. Task 5.6 is about designing the pipeline so that doesn't happen.\n\n## 1. Structured claim-source mappings\n\nRequire every subagent to return claims **with their sources attached**, in a structure that downstream agents must **keep and merge**, not rewrite as prose:\n\n```json\n{\"claims\": [\n  {\"claim\": \"Global heat-pump sales rose 11% in 2025\",\n   \"source\": {\"title\": \"Annual Heat Pump Market Review\", \"url\": \"https://example.org/hp-2025\",\n              \"excerpt\": \"...sales increased by 11% year on year...\",\n              \"published\": \"2026-02-10\", \"data_period\": \"2025\",\n              \"method\": \"industry shipment data, 21 countries\"}}]}\n```\n\nThe synthesis agent is told to carry each source with its claim through to the final report. If two subagents report the same claim, it **merges** the sources instead of keeping one.\n\nOn the API side, the **Citations** feature returns pointers into the documents you supplied, which helps with grounding. The architectural principle is the same whichever mechanism you use: **no claim without its source, at every stage**.\n\n## 2. Conflicting values: annotate, don't pick\n\nTwo credible sources disagree: one says the market is $4.2B, the other says $5.1B. Wrong responses: pick the larger, pick the more recent one without saying so, or average them. Right response:\n\n- Finish the analysis with **both values included and explicitly annotated** with their sources.\n- Let the **coordinator** decide how to reconcile them (look for a third source, check the methods, or report the range) **before** synthesis.\n- In the report, keep each source's own characterization and method (\"survey of 300 firms\" vs \"customs data\").\n\n## 3. Dates prevent false contradictions\n\nA 2021 statistic and a 2025 statistic that differ may both be right. **Require publication and data-collection dates** in subagent outputs. Without dates, the synthesizer may report a \"contradiction\" that is really just a trend, or mix old and new numbers in one sentence.\n\n| Without dates | With dates |\n|---|---|\n| \"Sources disagree: adoption is 18% or 31%.\" | \"Adoption rose from 18% (2021 survey) to 31% (2025 survey).\" |\n\n## 4. Separate established from contested findings\n\nStructure the report so readers can see how certain each part is:\n\n```markdown\n## Well-established (multiple independent sources agree)\n## Contested (credible sources disagree; values and methods shown)\n## Gaps (sources unavailable or insufficient) — see coverage notes\n```\n\nThis works together with the coverage annotations from task 5.3.\n\n## 5. Render each content type in its own format\n\nDon't force every finding into one format. Use **tables for financial data**, **prose for news and narrative developments**, and **structured lists for technical findings**. A uniform format (for example everything as bullets) loses the comparisons a table makes easy, and the context prose provides.\n\n## Worked example\n\nA synthesis report gives one market-size number, and a reviewer can't trace it. The pipeline shows that subagents returned prose summaries and the synthesizer chose the \"most authoritative-sounding\" figure. Fix: subagents return claim-source mappings with excerpts and dates. Conflicting figures are kept and annotated, and the coordinator reconciles them before synthesis. The report separates established findings from contested ones. \"Tell the synthesizer to cite its sources\" is weaker, because the source links were already lost upstream.",
+      "keyTakeaways": [
+        "Summarization drops claim-to-source links unless they are carried as structured data.",
+        "Subagents output claim-source mappings (URL or document name, excerpt, dates, method), and every later stage keeps and merges them.",
+        "When credible sources conflict, include both values with their sources and let the coordinator reconcile. Never pick one silently.",
+        "Publication and collection dates stop a change over time from being read as a contradiction.",
+        "Reports separate well-established, contested and gap areas, and render financial data as tables, news as prose and technical findings as lists."
+      ],
+      "examTips": [
+        "If attribution is missing in the final report, the fix is upstream: a structured claim-source output from subagents, kept through synthesis. A \"cite your sources\" instruction at the end is too late.",
+        "With conflicting statistics, eliminate options that average, pick the newest without saying so, or pick the \"most reputable\" silently.",
+        "If two figures differ and the stem mentions different years, look for the option that requires dates.",
+        "For format questions, the right answer matches the format to the content type rather than using one uniform format."
+      ],
+      "commonTraps": [
+        "Letting each summarization step rewrite findings as prose without sources.",
+        "Treating any numerical disagreement as an error to resolve by picking one value.",
+        "Ignoring methodological differences (sample size, geography, definitions) when comparing figures.",
+        "Making every section of the output bullets, or every section prose, whatever the content."
+      ],
+      "resources": [
+        {
+          "title": "How we built our multi-agent research system (Anthropic Engineering)",
+          "url": "https://www.anthropic.com/engineering/multi-agent-research-system",
+          "type": "blog"
+        },
+        {
+          "title": "Citations (Claude docs)",
+          "url": "https://platform.claude.com/docs/en/build-with-claude/citations",
+          "type": "docs"
+        },
+        {
+          "title": "Reduce hallucinations (Claude docs)",
+          "url": "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-hallucinations",
+          "type": "docs"
+        },
+        {
+          "title": "Effective context engineering for AI agents (Anthropic Engineering)",
+          "url": "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents",
+          "type": "blog"
+        },
+        {
+          "title": "Claude Certified Architect – Foundations exam guide (PDF)",
+          "url": "https://everpath-course-content.s3-accelerate.amazonaws.com/instructor%2F6nizmqk8tpzpfjvt6qmmav7rh%2Fpublic%2F1783542750%2FClaude+Certified+Architect+%E2%80%93+Foundations+Exam+Guide.pdf",
+          "type": "docs"
+        }
+      ]
+    },
+    {
+      "id": "f-caching-awareness",
+      "title": "Prompt caching: what Foundations expects you to know",
+      "estMinutes": 7,
+      "level": "deep",
+      "taskStatementIds": [
+        "5.1"
+      ],
+      "eli5": "If you tell a helper the same long instructions every morning, they can keep a copy and only read the part that's new today. That saves time and money, but only if the start of the instructions is word-for-word the same each day.",
+      "visualId": "prompt-caching",
+      "body": "## Scope first\n\nThe Foundations exam guide lists **prompt caching implementation details as out of scope**. You need to know that caching exists, what problem it solves, and how it relates to context design. You don't need breakpoint limits, TTL arithmetic or pricing calculations. (Those belong to the Professional exam.) This lesson gives you the concept, plus a few facts from the current docs so the idea makes sense.\n\n## The idea\n\nLong-running agents and support bots send the **same large prefix** with every request: system prompt, tool definitions, policy documents, examples. Without caching, the model processes that prefix from scratch every time. **Prompt caching** lets the API reuse the work it already did on a prefix that is **identical** to one it saw recently. You pay much less for the cached part, and latency drops.\n\n| | Without caching | With caching (prefix reused) |\n|---|---|---|\n| Stable prefix (system + tools + policies) | Processed and billed in full on every call | Read from cache at a fraction of the normal input price |\n| New part (latest turns, case facts) | Processed | Processed |\n| Effect | Cost grows with prefix size × calls | Big savings when the prefix is large and reused often |\n\nFrom the current docs (for orientation, not memorization): you mark cacheable content with `cache_control`; the default cache lifetime is **5 minutes** (a 1-hour option exists); cache **reads** cost roughly **a tenth** of the base input price on most models (even less on the newest ones), while cache **writes** cost more than normal input (1.25x for the 5-minute cache, 2x for the 1-hour cache).\n\n## Why it matters for context design\n\nCaching rewards a specific prompt layout: **static content first, changing content last**.\n\n```text\n[tools]            <- stable, cached\n[system prompt]    <- stable, cached\n[policy docs]      <- stable, cached\n--- cache boundary ---\n[case facts block] <- changes per customer\n[recent turns]     <- changes every request\n```\n\nA match must be exact. If you put something that changes, like a timestamp or the customer's name, at the **top** of the system prompt, every request has a different prefix and nothing is reused.\n\nThis fits with task 5.1. The **case facts block** changes per conversation, so it belongs after the stable prefix. Your carefully curated, trimmed context is also cheaper when the static part is cached.\n\n## What caching does *not* do\n\n- It doesn't make the context window bigger. Cached tokens still count toward the window.\n- It doesn't fix **lost in the middle** or **context rot**. The model still has to attend to everything you send.\n- It doesn't keep facts through summarization. That is the case facts block's job.\n- It doesn't change what the model outputs. It is a cost and latency optimization only.\n\n## How it might appear on Foundations\n\nMostly as a **distractor** or as background. If a question is about information loss, wrong escalations or missing citations, an option like \"enable prompt caching\" doesn't address the root cause. Caching answers \"how do we cut cost and latency for a large repeated prefix?\", which is a different question.\n\n## Related\n\nThe Message Batches API (task 4.5) is a different cost lever: a 50% discount for asynchronous, non-urgent work. Don't mix them up. Caching is about **reusing a repeated prefix**, and batching is about **not needing an immediate answer**.",
+      "keyTakeaways": [
+        "Foundations only expects you to know caching exists. Implementation details are out of scope.",
+        "Caching reuses an identical, recently seen prompt prefix, which cuts cost and latency for the repeated part.",
+        "Put static content (tools, system prompt, reference docs) first and changing content (case facts, recent turns) last.",
+        "Caching doesn't enlarge the window, fix lost-in-the-middle, or keep facts through summarization."
+      ],
+      "examTips": [
+        "If \"enable prompt caching\" is offered as a fix for a correctness or information-loss problem, eliminate it. It is a cost and latency lever.",
+        "Don't over-study breakpoint counts or minimum cacheable lengths for Foundations.",
+        "Caching (repeated prefix) and batching (no immediate answer needed) are separate levers."
+      ],
+      "commonTraps": [
+        "Believing cached tokens don't count toward the context window.",
+        "Putting a timestamp or per-user data at the top of the system prompt and expecting cache hits.",
+        "Choosing caching to fix escalation, accuracy or provenance problems."
+      ],
+      "resources": [
+        {
+          "title": "Prompt caching (Claude docs)",
+          "url": "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
+          "type": "docs"
+        },
+        {
+          "title": "Context windows (Claude docs)",
+          "url": "https://platform.claude.com/docs/en/build-with-claude/context-windows",
+          "type": "docs"
+        },
+        {
+          "title": "Claude Certified Architect – Foundations exam guide (PDF)",
+          "url": "https://everpath-course-content.s3-accelerate.amazonaws.com/instructor%2F6nizmqk8tpzpfjvt6qmmav7rh%2Fpublic%2F1783542750%2FClaude+Certified+Architect+%E2%80%93+Foundations+Exam+Guide.pdf",
+          "type": "docs"
+        }
+      ]
+    },
+    {
+      "id": "f-d5-scenario-drill",
+      "title": "Scenario drill: reliability under pressure",
+      "estMinutes": 12,
+      "level": "core",
+      "taskStatementIds": [
+        "5.1",
+        "5.2",
+        "5.3",
+        "5.4",
+        "5.5",
+        "5.6"
+      ],
+      "eli5": "This is practice. Seven short stories where something goes wrong, and for each one you learn to spot the real cause and choose the simplest fix that actually solves it.",
+      "visualId": "exam-strategy",
+      "body": "## How Domain 5 questions are built\n\nDomain 5 questions usually describe a system that **mostly works** and then show one symptom: a wrong number late in a chat, a missing region in a report, an escalation that shouldn't have happened. Four or five options follow, and several of them would \"help\" a little. The correct one **fixes the root cause with the least machinery**. Use this elimination funnel:\n\n1. **Name the symptom precisely.** Is information being *lost*, *hidden*, *misrouted* or *mis-scored*?\n2. **Find the root-cause layer.** Context shape? Error reporting? Escalation criteria? Measurement?\n3. **Eliminate the usual distractors:** a bigger model or window; the model's self-rated confidence; sentiment; a new classifier or extra agent as a *first* step; a generic retry that ends in a vague status; silently picking one value.\n4. **Pick the proportionate structural fix.**\n\n## Case 1: \"Get me a person\"\n\n*A customer writes: \"I've explained this twice. Transfer me to a human.\" Their problem is a missed delivery, which the agent can handle.*\n\n- Tempting: \"Investigate the order first so the human has context.\" That delays an explicit request.\n- **Answer:** escalate immediately, with a structured handoff (case facts, what was tried). An explicit request is honored, whether or not the issue is easy. (5.2)\n- Variant: if the customer had only said \"This is so frustrating\", the right move is to acknowledge, offer the fix, and escalate only if they ask again.\n\n## Case 2: Three Jane Parks\n\n*`find_customer(\"Jane Park\")` returns three accounts. The agent picks the one with the latest order and issues a refund.*\n\n- **Answer:** instruct the agent to ask for another identifier (email, order number) whenever there are several matches. Picking heuristically is never right. (5.2)\n\n## Case 3: Subagent timeout\n\n*In a research system, the patents subagent times out. The final report says \"no relevant patents were found\".*\n\n- Diagnosis: an access failure was reported as a valid empty result.\n- Eliminate: \"add retries and return 'patent search unavailable'\" (still hides context); \"terminate the workflow\" (wastes the other subagents' work).\n- **Answer:** return structured error context (type, attempted query, partial results, alternatives), keep failures separate from empty results, and add a coverage-gap note in the synthesis. (5.3)\n\n## Case 4: Conflicting statistics\n\n*Two credible reports give different adoption rates (22% and 35%). The synthesizer reports 35% because the source \"sounded more authoritative\".*\n\n- Check first: do they have different dates? If one is from 2022 and one from 2025, it may be a trend, not a conflict. That is why dates are required.\n- **Answer:** keep both values with their sources (and dates and methods), let the coordinator reconcile before synthesis, and show the result under \"contested\" if it can't be resolved. (5.6)\n\n## Case 5: The 97% report\n\n*An extraction pipeline is 97% accurate overall. The product owner wants to stop human review of every extraction with model confidence ≥ 0.9.*\n\n- Eliminate: \"approve, because it beats the target\"; \"have the model re-check its own high-confidence fields\".\n- **Answer:** break accuracy down by document type and field, calibrate the threshold against a labeled validation set, automate only the segments that pass, and keep stratified random sampling of high-confidence output. (5.5)\n\n## Case 6: The forgetful long chat\n\n*Turn 35 of a support chat: the agent offers a refund of \"around $200\". The customer said $247.83 at turn 4. Older turns are auto-summarized.*\n\n- **Answer:** a persistent case facts block, outside the summary, re-sent every turn. Also trim the verbose order-lookup results that filled the context. (5.1)\n\n## Case 7: Drifting codebase answers\n\n*After three hours of exploration, Claude Code describes \"a typical repository pattern\" instead of the `LedgerWriter` class it found earlier.*\n\n- **Answer:** scratchpad file of confirmed findings, `/compact` with focus instructions, and subagents (for example Explore) for remaining deep-dives, seeded with a phase summary. (5.4)\n\n## Quick decision table\n\n| Symptom in stem | Likely answer family |\n|---|---|\n| Exact numbers or dates blur over a long chat | Case facts block outside the summary |\n| Middle findings missing | Key-findings summary first + section headers |\n| Easy cases escalated, hard ones kept | Explicit criteria + few-shot examples |\n| \"No data\" when a source actually failed | Structured error; failure ≠ empty |\n| High overall accuracy, pressure to automate | Segment analysis + calibration + stratified sampling |\n| Untraceable or conflicting figures | Claim-source mappings, dates, annotate conflicts |\n| Long-session drift in code exploration | Scratchpad + subagents + /compact |",
+      "keyTakeaways": [
+        "Name the symptom (lost, hidden, misrouted or mis-scored information) before you look at the options.",
+        "The right answer fixes the root cause with the least machinery.",
+        "Usual Domain 5 distractors: a bigger window or model, self-rated confidence, sentiment, a classifier as a first step, vague retries, silently picking a value.",
+        "Many cases combine tasks. A good handoff reuses case facts, and good synthesis uses both coverage notes and provenance."
+      ],
+      "examTips": [
+        "Read the customer's exact words and the stem's numbers. The buried qualifier usually decides between two plausible options.",
+        "If two options both look right, choose the one that acts upstream (at the source of the loss) over one that patches the final output.",
+        "For \"first step\" wording, prefer prompt or structure changes over new infrastructure."
+      ],
+      "commonTraps": [
+        "Choosing an option because it adds robustness in general (retries, bigger model) when it doesn't touch the specific failure.",
+        "Missing that an explicit human request overrides \"but the issue is easy\".",
+        "Treating dated, differing statistics as a contradiction."
+      ],
+      "resources": [
+        {
+          "title": "Claude Certified Architect – Foundations exam guide (PDF)",
+          "url": "https://everpath-course-content.s3-accelerate.amazonaws.com/instructor%2F6nizmqk8tpzpfjvt6qmmav7rh%2Fpublic%2F1783542750%2FClaude+Certified+Architect+%E2%80%93+Foundations+Exam+Guide.pdf",
+          "type": "docs"
+        },
+        {
+          "title": "Effective context engineering for AI agents (Anthropic Engineering)",
+          "url": "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents",
+          "type": "blog"
+        },
+        {
+          "title": "How we built our multi-agent research system (Anthropic Engineering)",
+          "url": "https://www.anthropic.com/engineering/multi-agent-research-system",
+          "type": "blog"
+        },
+        {
+          "title": "Customer support agent use-case guide (Claude docs)",
+          "url": "https://platform.claude.com/docs/en/about-claude/use-case-guides/customer-support-chat",
+          "type": "docs"
+        }
+      ]
+    }
+  ]
+}

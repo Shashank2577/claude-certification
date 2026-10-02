@@ -1,0 +1,645 @@
+{
+  "certId": "foundations",
+  "domainId": "d2-tools-mcp",
+  "questions": [
+    {
+      "id": "f-d2-b3-001",
+      "taskStatementId": "2.3",
+      "scenario": "Scenario: Multi-Agent Research System. A coordinator agent built with the Claude Agent SDK delegates to specialized subagents: a web search agent, a document analysis agent, a synthesis agent and a report generation agent. The system produces comprehensive, cited research reports.",
+      "stem": "During testing, traces show the synthesis agent sometimes calls the web search tool on its own when it notices a thin section, pulling in unvetted sources that bypass the document analysis agent's quality checks. Every subagent currently inherits the full tool set. What is the MOST effective fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add a line to the synthesis agent's system prompt saying it must never search the web and should only work with the findings it was given."
+        },
+        {
+          "id": "B",
+          "text": "Define the synthesis agent with a tools list that contains only what synthesis needs, so the web search tool is not available to it at all."
+        },
+        {
+          "id": "C",
+          "text": "Add a PostToolUse hook that logs every web search the synthesis agent makes so reviewers can audit the unvetted sources afterwards."
+        },
+        {
+          "id": "D",
+          "text": "Rewrite the web search tool's description to say it is intended only for the web search agent and should be ignored by other agents."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Agents that hold tools outside their specialty tend to misuse them. The root-cause fix is **scoped tool access**: give each subagent only the tools its role needs. In the Agent SDK, a subagent's `tools` field is an allowlist (omitting it inherits everything). If the synthesis agent never sees the web search tool, it cannot call it. That is a deterministic guarantee rather than a request.",
+      "whyWrong": {
+        "A": "A prompt instruction is guidance, not enforcement. It lowers the rate of misuse but cannot guarantee zero, and the tool still adds to the agent's decision space.",
+        "C": "Logging is a compensating control. It records the problem after it happens instead of preventing it.",
+        "D": "Tool descriptions steer selection, but asking the model to ignore a tool it holds is still a soft control. The cleaner fix is to remove the tool from that agent."
+      },
+      "difficulty": 2,
+      "mindset": "Least privilege by construction: if a role should never use a tool, don't give it that tool.",
+      "tags": [
+        "tool-distribution",
+        "scoped-tools",
+        "subagents",
+        "least-privilege"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/subagents",
+        "https://www.anthropic.com/engineering/multi-agent-research-system"
+      ]
+    },
+    {
+      "id": "f-d2-b3-002",
+      "taskStatementId": "2.3",
+      "scenario": "Scenario: Multi-Agent Research System. A coordinator agent built with the Claude Agent SDK delegates to specialized subagents: a web search agent, a document analysis agent, a synthesis agent and a report generation agent. The system produces comprehensive, cited research reports.",
+      "stem": "The report generation agent has no lookup tools. Whenever it needs to confirm a citation detail, such as a publication year or an author's spelling, it hands the request back to the coordinator, which sends it to the web search agent. Analysis shows about 90% of these requests are single-field lookups, while the rest involve conflicting sources that need real investigation. The round trips are adding significant latency. Which approach BEST reduces the overhead without weakening the system's reliability?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Give the report generation agent the full web search toolset so it can resolve every citation question itself without involving the coordinator."
+        },
+        {
+          "id": "B",
+          "text": "Merge the web search agent and the report generation agent into one agent so citation questions never need to cross an agent boundary."
+        },
+        {
+          "id": "C",
+          "text": "Have the report generation agent collect all of its citation questions and send them to the coordinator as one batch after it finishes drafting."
+        },
+        {
+          "id": "D",
+          "text": "Give the report generation agent a narrow citation-lookup tool for single-field checks, and keep routing source conflicts through the coordinator."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "The exam guide's pattern is a **scoped cross-role tool for a high-frequency need**, while complex cases still go through the coordinator. A narrow lookup tool removes most round trips. Because it is constrained, it does not turn the report agent into a second search agent, and the hard cases still get the specialist's investigation and the coordinator's oversight.",
+      "whyWrong": {
+        "A": "Handing over the full search toolset invites cross-specialization misuse and enlarges the agent's tool set. It solves latency by giving up role separation.",
+        "B": "Merging agents is an over-correction. It destroys the specialization and context isolation the architecture relies on, just to fix a latency problem.",
+        "C": "Batching cuts the number of handoffs but still pushes every trivial lookup through the coordinator and the specialist, and the draft is written before the facts are confirmed, so sections may need rework once the batch comes back."
+      },
+      "difficulty": 3,
+      "mindset": "Grant a narrow cross-role tool for the frequent simple case; route the rare complex case through the coordinator.",
+      "tags": [
+        "tool-distribution",
+        "cross-role-tools",
+        "coordinator",
+        "latency"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/multi-agent-research-system",
+        "https://code.claude.com/docs/en/agent-sdk/subagents"
+      ]
+    },
+    {
+      "id": "f-d2-b3-003",
+      "taskStatementId": "2.3",
+      "scenario": "Scenario: Customer Support Resolution Agent. You are building a support agent with the Claude Agent SDK. It resolves returns, billing disputes and account issues through custom MCP tools (get_customer, lookup_order, process_refund, escalate_to_human), with a target of 80%+ first-contact resolution.",
+      "stem": "Over several releases the single support agent has accumulated 19 MCP tools, including inventory, shipping, marketing-preference and internal reporting tools that apply only to rare requests. The team has already rewritten every tool description and confirmed they are clear and distinct, yet the agent still picks the wrong tool on routine refund and billing requests more often than it did when it had five tools. What should the architect do FIRST?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Cut the agent's tool set down to the few tools routine requests need, and route the rare specialized requests to a separate agent that holds those tools."
+        },
+        {
+          "id": "B",
+          "text": "Add a set of few-shot examples to the system prompt showing the correct tool choice for each of the most common refund and billing requests."
+        },
+        {
+          "id": "C",
+          "text": "Move the agent to a larger, more capable model so it can reason more reliably about which of the 19 tools fits each request."
+        },
+        {
+          "id": "D",
+          "text": "Add an instruction asking the agent to list the candidate tools and double-check its choice before calling any tool on refund or billing requests."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Giving an agent too many tools (the guide's example is 18 instead of 4-5) **degrades selection reliability by increasing decision complexity**. Descriptions are already ruled out as the cause, so the root cause is tool count. Scope the routine agent to what it needs and send rare cases to an agent that holds the specialized tools.",
+      "whyWrong": {
+        "B": "Few-shot examples are a common tempting distractor. They add tokens and only patch the specific cases shown, while the oversized tool set stays.",
+        "C": "A bigger model costs more and leaves the design flaw in place. The guide treats tool count as the lever.",
+        "D": "Self-check instructions are soft guidance that add latency. They do not shrink the decision space that causes the errors."
+      },
+      "difficulty": 2,
+      "mindset": "Fewer, role-relevant tools beat more prompting when selection accuracy drops.",
+      "tags": [
+        "tool-count",
+        "tool-selection",
+        "scoped-tools",
+        "distractor-few-shot"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/writing-tools-for-agents",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools"
+      ]
+    },
+    {
+      "id": "f-d2-b3-004",
+      "taskStatementId": "2.3",
+      "scenario": "Scenario: Structured Data Extraction. You are building a system that uses Claude to extract information from unstructured documents, validates the output against JSON schemas, and passes the results to downstream systems. It must handle edge cases gracefully.",
+      "stem": "To make sure metadata is extracted first, a developer sets tool_choice to {\"type\": \"tool\", \"name\": \"extract_metadata\"} in a shared request config that every turn of the conversation reuses. The first turn now works, but runs never finish: each time a tool result is sent back, Claude calls extract_metadata again and never reaches lookup_vendor or enrich_line_items. What is the BEST fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Rewrite the descriptions of lookup_vendor and enrich_line_items to explain when each should be called, so Claude moves on to them after extraction."
+        },
+        {
+          "id": "B",
+          "text": "Add a system prompt rule saying extract_metadata may be called only once per document and that the enrichment tools must follow it."
+        },
+        {
+          "id": "C",
+          "text": "Apply the forced tool_choice only on the first request, and send the later turns with \"auto\" so Claude can pick the enrichment tools."
+        },
+        {
+          "id": "D",
+          "text": "Start a new conversation after the first turn, because a forced tool_choice stays locked in for the rest of a conversation once it is set."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "`tool_choice` is a **per-request** parameter. `{\"type\": \"tool\", \"name\": \"extract_metadata\"}` forces that tool on every request that carries it, so reusing it on later turns forces the same call again and the run loops. The intended pattern is to force `extract_metadata` on the first request only, then return to `auto` (or `any`, if a tool call is mandatory on that step) so Claude can choose the enrichment tools using the values it just extracted. Note: the docs state that forced tool use (`any` or `tool`) is not supported with manual extended thinking or on some newer models; on those, use `auto` with strict tool use or structured outputs.",
+      "whyWrong": {
+        "A": "Descriptions guide selection only when Claude is choosing. While `tool_choice` names extract_metadata, Claude has no choice to make, so better descriptions change nothing.",
+        "B": "A prompt rule cannot override an API-level setting. The forced `tool_choice` still requires extract_metadata on every request that carries it.",
+        "D": "Nothing locks in. `tool_choice` applies only to the request it is sent with. Restarting also throws away the extracted metadata, and the shared config would force the same tool again in the new conversation."
+      },
+      "difficulty": 2,
+      "mindset": "tool_choice applies per request: force only the step that must be forced, then hand control back to the model.",
+      "tags": [
+        "tool_choice",
+        "forced-tool",
+        "ordering",
+        "extraction",
+        "misconfiguration"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools"
+      ]
+    },
+    {
+      "id": "f-d2-b3-005",
+      "taskStatementId": "2.3",
+      "scenario": "Scenario: Structured Data Extraction. You are building a system that uses Claude to extract information from unstructured documents, validates the output against JSON schemas, and passes the results to downstream systems. It must handle edge cases gracefully.",
+      "stem": "After the extraction and validation turns finish, the pipeline sends one last request in the same conversation asking Claude for a short plain-English summary of the extracted fields for a human reviewer. Now and then Claude calls an extraction tool again instead of writing the summary. The requests use prompt caching, and the team wants the cached tool definitions and system prompt to stay valid on this final request. Which change BEST meets both goals?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Drop the tools array from the final request so that Claude has no tools available and can only reply with text."
+        },
+        {
+          "id": "B",
+          "text": "Keep the same tools array and set tool_choice to {\"type\": \"none\"} on the final request so Claude cannot call any tool."
+        },
+        {
+          "id": "C",
+          "text": "Keep tool_choice at \"auto\" and add a line to the final user message telling Claude to reply in text without calling tools."
+        },
+        {
+          "id": "D",
+          "text": "Add a write_summary tool to the tools array and force it on the final request so the summary comes back as a tool call."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "`tool_choice: {\"type\": \"none\"}` **prevents Claude from using any tools** on that request while the tool definitions stay in place. The prompt caching docs list what each change invalidates: a change to `tool_choice` affects only the cached message blocks, so the tool definitions and system prompt stay cached. Changing the tool definitions themselves, by removing or adding tools, invalidates the entire cache, because the cache prefix is built in the order `tools`, `system`, `messages`. `none` also works on models and settings where forced tool use (`any` or `tool`) is not supported.",
+      "whyWrong": {
+        "A": "This does stop tool calls, but it changes the `tools` level of the cache prefix, which invalidates the whole cache (tools, system and messages). It fails the caching goal.",
+        "C": "A text instruction lowers the odds of a tool call but does not guarantee it. `auto` still lets Claude call a tool.",
+        "D": "Adding a tool changes the tool definitions and invalidates the entire cache. It also forces a tool call when the reviewer just needs text, and forced tool use is not available on every model."
+      },
+      "difficulty": 2,
+      "mindset": "To stop tool calls on one step, change tool_choice to none rather than changing the tool list.",
+      "tags": [
+        "tool_choice",
+        "none",
+        "prompt-caching",
+        "extraction"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching"
+      ]
+    },
+    {
+      "id": "f-d2-b3-006",
+      "taskStatementId": "2.3",
+      "stem": "An application sends tools in a Messages API request and does not set tool_choice. Which statement BEST describes how Claude behaves?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Claude must call at least one of the provided tools before it can produce any text response for the user."
+        },
+        {
+          "id": "B",
+          "text": "Claude must call the first tool listed in the tools array, and may choose among the others only in later turns."
+        },
+        {
+          "id": "C",
+          "text": "Claude ignores the tools unless the user message explicitly names one of the tools that should be called."
+        },
+        {
+          "id": "D",
+          "text": "Claude decides for itself whether to call one or more tools or to answer directly in text without calling any tool."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "When tools are provided, the default `tool_choice` is **`auto`**: the model decides whether to call tools and which ones, and it may reply with text alone. `any` requires some tool call. `{\"type\":\"tool\",\"name\":...}` requires a specific tool. `none` prevents tool calls.",
+      "whyWrong": {
+        "A": "That describes `tool_choice: \"any\"`, not the default.",
+        "B": "No mode forces the first listed tool. Forcing a specific tool requires naming it explicitly.",
+        "C": "Under `auto`, Claude picks tools based on their descriptions and the request. The user does not need to name a tool."
+      },
+      "difficulty": 1,
+      "mindset": "Know the four tool_choice modes: auto (model decides), any (some tool), tool (that tool), none.",
+      "tags": [
+        "tool_choice",
+        "auto",
+        "fundamentals"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools"
+      ]
+    },
+    {
+      "id": "f-d2-b3-007",
+      "taskStatementId": "2.3",
+      "scenario": "Scenario: Multi-Agent Research System. A coordinator agent built with the Claude Agent SDK delegates to specialized subagents: a web search agent, a document analysis agent, a synthesis agent and a report generation agent. The system produces comprehensive, cited research reports.",
+      "stem": "The document analysis agent has a generic fetch_url tool so it can open the PDFs and papers the search agent finds. Reviews show it sometimes follows links to forums, ad pages and login walls, and then analyzes that content as if it were a source document. What is the BEST change to the agent's tooling?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Replace fetch_url with a load_document tool that accepts only document URLs, checks them against allowed formats and sources, and rejects anything else."
+        },
+        {
+          "id": "B",
+          "text": "Keep fetch_url but add a system prompt rule telling the agent to open only links that point to PDFs or academic publisher pages."
+        },
+        {
+          "id": "C",
+          "text": "Remove fetch_url from the document analysis agent and have the coordinator fetch every document and paste the raw contents into the agent's prompt."
+        },
+        {
+          "id": "D",
+          "text": "Keep fetch_url and add a second analysis agent that reviews each fetched page and decides whether it counts as a legitimate source document."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The exam guide's pattern is **replacing a generic tool with a constrained alternative**, for example swapping `fetch_url` for `load_document`, which validates document URLs. The constraint lives in the tool's code, so it is enforced every time, and the narrower name and description also make the tool's purpose clear to the model.",
+      "whyWrong": {
+        "B": "A prompt rule is a soft control. The generic capability stays, and so does the misuse risk.",
+        "C": "This pushes fetching onto the coordinator, bloats its context with raw documents and removes the specialist's ability to load what it needs.",
+        "D": "Adding an agent to clean up after a too-broad tool is over-engineering. Constrain the tool instead."
+      },
+      "difficulty": 2,
+      "mindset": "Constrain the tool itself; a narrow, validating tool beats a broad one plus instructions.",
+      "tags": [
+        "constrained-tools",
+        "tool-design",
+        "subagents",
+        "least-privilege"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/writing-tools-for-agents",
+        "https://www.anthropic.com/engineering/multi-agent-research-system"
+      ]
+    },
+    {
+      "id": "f-d2-b3-008",
+      "taskStatementId": "2.3",
+      "scenario": "Scenario: Customer Support Resolution Agent. You are building a support agent with the Claude Agent SDK. It resolves returns, billing disputes and account issues through custom MCP tools (get_customer, lookup_order, process_refund, escalate_to_human), with a target of 80%+ first-contact resolution.",
+      "stem": "You are splitting the support system into a triage subagent, which identifies the customer and classifies the request, and a resolution subagent, which handles refunds and account changes. A coordinator routes between them. Which TWO tool distributions BEST apply scoped tool access? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Give both subagents the same full set of tools so either one can finish a case without handing it back if the conversation shifts."
+        },
+        {
+          "id": "B",
+          "text": "Give the triage subagent get_customer and lookup_order, and leave process_refund out of its tool list entirely."
+        },
+        {
+          "id": "C",
+          "text": "Give the triage subagent process_refund but tell it in its prompt to use the tool only for refunds below a small dollar threshold."
+        },
+        {
+          "id": "D",
+          "text": "Give the coordinator every backend tool as well, so it can step in and handle a case directly whenever a subagent is slow to respond."
+        },
+        {
+          "id": "E",
+          "text": "Give the resolution subagent process_refund and escalate_to_human, plus the read-only lookups it needs to verify the case."
+        }
+      ],
+      "correct": [
+        "B",
+        "E"
+      ],
+      "explanation": "Scoped access means **each agent gets only the tools its role requires**. Triage reads and classifies, so it needs lookups but no write actions such as refunds. Resolution acts, so it needs `process_refund`, `escalate_to_human` and the lookups that support verification. This shrinks each agent's decision space and keeps high-impact actions inside the role that owns them.",
+      "whyWrong": {
+        "A": "Identical full tool sets defeat the split. Both agents face the larger decision space and can misuse tools outside their role.",
+        "C": "A prompt-only threshold is not enforcement. Triage has no reason to hold a refund tool at all, and limits like this belong in code or hooks.",
+        "D": "A coordinator that holds every backend tool tends to do the work itself instead of delegating, and it becomes an over-privileged single point of failure."
+      },
+      "difficulty": 2,
+      "mindset": "Map tools to roles: read-only roles get read tools, acting roles get the actions they own.",
+      "tags": [
+        "tool-distribution",
+        "scoped-tools",
+        "customer-support",
+        "least-privilege"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/subagents",
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "f-d2-b3-009",
+      "taskStatementId": "2.3",
+      "scenario": "Scenario: Developer Productivity with Claude. You are building developer tools with the Claude Agent SDK. Agents help engineers explore unfamiliar codebases, explain legacy systems, generate boilerplate and automate repetitive tasks using the built-in tools (Read, Write, Edit, Bash, Grep, Glob) plus MCP servers.",
+      "stem": "You add a legacy-code-explainer subagent that should only read and search code. In the top-level query options you set allowed_tools to [\"Read\", \"Grep\", \"Glob\"], but traces show the subagent still running Bash and editing files when the session runs in a permissive mode. Which change MOST reliably limits the subagent to read-only tools?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add a clear statement to the subagent's prompt saying it is strictly read-only and must never run shell commands or modify any files."
+        },
+        {
+          "id": "B",
+          "text": "Move Read, Grep and Glob to the front of allowed_tools so they take priority, and add a note that other tools are for the main agent."
+        },
+        {
+          "id": "C",
+          "text": "Set the subagent definition's tools field to [\"Read\", \"Grep\", \"Glob\"] so that only those tools are available inside that subagent."
+        },
+        {
+          "id": "D",
+          "text": "Switch the whole session to plan mode so that no agent, including the main agent, can edit files while the explainer is running."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "In the Agent SDK, `allowed_tools` is an **auto-approve list, not a restriction**. Tools not on it still exist and fall through to the permission mode, so a permissive mode such as `bypassPermissions` lets them run (the docs warn that `allowed_tools` does not constrain that mode). A subagent's `tools` field in its definition is an allowlist: a tool left out is not in the subagent's session at all, and omitting the field inherits every tool. That is the way to scope a subagent deterministically. `disallowedTools` is the complementary way to remove specific tools.",
+      "whyWrong": {
+        "A": "A prompt statement is guidance, not enforcement. The tools stay available.",
+        "B": "Order in `allowed_tools` means nothing, and the list does not hide other tools in the first place.",
+        "D": "Plan mode is session-wide and does not remove tools. It routes file edits and file-modifying shell commands to the approval callback for every agent, including the main agent's legitimate work, while read-only Bash still runs. It does not scope the one subagent."
+      },
+      "difficulty": 3,
+      "mindset": "Pre-approval is not restriction: scope a subagent with its own tools allowlist.",
+      "tags": [
+        "agent-sdk",
+        "allowed_tools",
+        "subagents",
+        "permissions",
+        "trap"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/subagents",
+        "https://code.claude.com/docs/en/agent-sdk/permissions"
+      ]
+    },
+    {
+      "id": "f-d2-b3-010",
+      "taskStatementId": "2.3",
+      "stem": "A developer sets tool_choice to \"any\" on a request that includes three tools. Which TWO statements about the response are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "The response will contain at least one tool_use block calling one of the three provided tools."
+        },
+        {
+          "id": "B",
+          "text": "Claude will first write a short explanation of its plan in text, then emit the tool_use block."
+        },
+        {
+          "id": "C",
+          "text": "Claude must call all three tools in the same response because \"any\" applies to the whole tool list."
+        },
+        {
+          "id": "D",
+          "text": "No natural-language text will come before the tool_use block, because the API prefills the assistant turn."
+        },
+        {
+          "id": "E",
+          "text": "Claude may still decide that no tool is relevant and return a plain text answer in its place."
+        }
+      ],
+      "correct": [
+        "A",
+        "D"
+      ],
+      "explanation": "With `tool_choice: \"any\"` the model **must call one of the provided tools** and chooses which. With `any` or a forced tool, the API **prefills the assistant message** to force tool use, so no natural-language text comes before the `tool_use` block. If you want an explanation and a tool call together, use `auto` and ask for the explanation in the prompt. (Forced tool use is not available with manual extended thinking or on some newer models; there the request fails rather than behaving differently.)",
+      "whyWrong": {
+        "B": "Prefilling under `any` means there is no text preamble. Getting text plus a tool call requires `auto`.",
+        "C": "\"any\" means at least one tool of the model's choosing, not every tool.",
+        "E": "Answering with text only is `auto` behavior. `any` removes that option."
+      },
+      "difficulty": 2,
+      "mindset": "\"any\" guarantees a tool call and suppresses preamble text; pick it only when that is what you want.",
+      "tags": [
+        "tool_choice",
+        "any",
+        "prefill",
+        "fundamentals"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools"
+      ]
+    },
+    {
+      "id": "f-d2-b3-011",
+      "taskStatementId": "2.3",
+      "scenario": "Scenario: Multi-Agent Research System. A coordinator agent built with the Claude Agent SDK delegates to specialized subagents: a web search agent, a document analysis agent, a synthesis agent and a report generation agent. The system produces comprehensive, cited research reports.",
+      "stem": "To make the coordinator 'flexible', the team gave it every tool any subagent has (web search, document loading, citation formatting, report export, 16 tools in total) along with the tool it uses to spawn subagents. Traces show the coordinator often does searches and drafting itself, skips delegation, and makes more tool-selection mistakes than any subagent. Which TWO changes BEST address this? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add a strongly worded instruction to the coordinator's prompt telling it to always delegate and never use specialist tools itself."
+        },
+        {
+          "id": "B",
+          "text": "Give the coordinator a larger model and a higher max_turns limit so it has more room to plan before choosing between tools."
+        },
+        {
+          "id": "C",
+          "text": "Remove the specialist tools from the coordinator so it keeps the subagent-spawning tool and only the few tools it needs to coordinate."
+        },
+        {
+          "id": "D",
+          "text": "Merge all four subagents into the coordinator, since it already has their tools and is doing much of their work anyway."
+        },
+        {
+          "id": "E",
+          "text": "Make sure each specialist tool sits only with the subagent whose role needs it, so every agent has a small, role-specific tool set."
+        }
+      ],
+      "correct": [
+        "C",
+        "E"
+      ],
+      "explanation": "The coordinator's job is to decompose, delegate and aggregate. Giving it every specialist tool both **tempts it to do the work itself** and **inflates its decision space**, which lowers selection accuracy. The fix is structural: keep the coordinator lean (the subagent-spawning tool plus coordination tools), and give each subagent only its role's tools.",
+      "whyWrong": {
+        "A": "A prompt instruction against tools it still holds is soft guidance. The tools still invite misuse and still clutter selection.",
+        "B": "A bigger model and more turns add cost without removing the root cause, which is an oversized, cross-role tool set.",
+        "D": "Merging abandons the specialization and context isolation the system relies on. It makes the tool-count problem worse."
+      },
+      "difficulty": 3,
+      "mindset": "A coordinator coordinates; give it the tools to delegate, not the tools to do everyone's job.",
+      "tags": [
+        "coordinator",
+        "tool-distribution",
+        "tool-count",
+        "multi-agent"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/multi-agent-research-system",
+        "https://code.claude.com/docs/en/agent-sdk/subagents"
+      ]
+    },
+    {
+      "id": "f-d2-b3-012",
+      "taskStatementId": "2.3",
+      "stem": "A conversational assistant was configured with tool_choice set to \"any\" on every turn because the team once saw it skip a needed order lookup. Users now report that it never asks clarifying questions, never just answers simple questions, and sometimes calls a lookup tool with half-guessed parameters when the request is ambiguous. What is the BEST correction with the least added complexity?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Keep \"any\" on every turn but add an ask_clarifying_question tool so the model has a tool it can call whenever it needs more information."
+        },
+        {
+          "id": "B",
+          "text": "Switch to forcing the order lookup tool on every turn so that at least the most important tool is always called with whatever input exists."
+        },
+        {
+          "id": "C",
+          "text": "Return to \"auto\" for conversational turns, improve the lookup tool's description of when to use it, and force tools only on specific steps that require them."
+        },
+        {
+          "id": "D",
+          "text": "Keep \"any\" but raise the model's effort setting so that it reasons more carefully before choosing which tool to call each turn."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "`any` **removes the option of a text-only reply**, so the model must call some tool even when the right move is to ask a question or answer directly. That is why it guesses parameters. Conversational turns need `auto`, and the original missed lookup is better fixed at the tool-description level. Reserve `any` or forced selection for pipeline steps where a tool call is mandatory.",
+      "whyWrong": {
+        "A": "A 'clarify' tool works around the misconfiguration instead of fixing it. Simple questions still cannot be answered directly without yet another wrapper tool, so complexity grows while the root cause (forcing a tool call on every conversational turn) stays.",
+        "B": "Forcing one tool on every turn is even more rigid. Every message would trigger a lookup, whether relevant or not.",
+        "D": "More reasoning effort does not change the constraint. Under `any` the model still cannot reply without a tool call."
+      },
+      "difficulty": 3,
+      "mindset": "Match tool_choice to the step: auto for open conversation, any/forced only where a tool call is mandatory.",
+      "tags": [
+        "tool_choice",
+        "auto",
+        "any",
+        "over-correction"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools"
+      ]
+    },
+    {
+      "id": "f-d2-b3-013",
+      "taskStatementId": "2.3",
+      "stem": "An architect is explaining why each agent in a multi-agent system should get a small, role-specific tool set rather than access to every available tool. Which TWO reasons are valid? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "The Messages API rejects any request that defines more than a handful of tools, so large tool sets fail outright."
+        },
+        {
+          "id": "B",
+          "text": "More tools increase the number of options the model has to weigh, which makes tool selection less reliable."
+        },
+        {
+          "id": "C",
+          "text": "Tool definitions are processed outside the context window, so the only cost of extra tools is slower responses."
+        },
+        {
+          "id": "D",
+          "text": "Agents that hold tools outside their specialty tend to misuse them, such as a synthesis agent starting its own web searches."
+        },
+        {
+          "id": "E",
+          "text": "Scoping tools removes the need to write detailed descriptions, since an agent with few tools will always pick correctly."
+        }
+      ],
+      "correct": [
+        "B",
+        "D"
+      ],
+      "explanation": "The exam guide gives two reasons. **Too many tools degrades selection reliability** by increasing decision complexity, and **agents with tools outside their specialization tend to misuse them**. Scoping fixes both.",
+      "whyWrong": {
+        "A": "The motivation is not a small hard API limit. Large tool sets are accepted by the API, but they hurt selection quality.",
+        "C": "Tool definitions are part of the model's input and consume tokens, so they do add context cost.",
+        "E": "Scoping and good descriptions work together. Clear descriptions are still the main way the model chooses among the tools it has."
+      },
+      "difficulty": 1,
+      "mindset": "Scoped tools improve selection accuracy and prevent cross-role misuse.",
+      "tags": [
+        "tool-count",
+        "scoped-tools",
+        "fundamentals"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/writing-tools-for-agents",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools"
+      ]
+    },
+    {
+      "id": "f-d2-b3-014",
+      "taskStatementId": "2.3",
+      "stem": "A request includes several tools, and the application needs to guarantee that Claude calls the tool named extract_invoice on this request and no other tool. Which tool_choice setting achieves this?",
+      "options": [
+        {
+          "id": "A",
+          "text": "{\"type\": \"tool\", \"name\": \"extract_invoice\"}"
+        },
+        {
+          "id": "B",
+          "text": "{\"type\": \"any\"} with extract_invoice listed first in the tools array"
+        },
+        {
+          "id": "C",
+          "text": "{\"type\": \"auto\"} with an instruction to call extract_invoice"
+        },
+        {
+          "id": "D",
+          "text": "{\"type\": \"none\"} plus a user message that names extract_invoice"
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "**Forced tool selection** uses `{\"type\": \"tool\", \"name\": \"<tool_name>\"}`. It requires the model to call that specific tool. `any` requires some tool, `auto` lets the model decide, and `none` prevents tool calls. (Forced tool use is rejected with manual extended thinking and on some newer models; the docs then recommend `auto` with strict tool use or structured outputs.)",
+      "whyWrong": {
+        "B": "\"any\" lets the model choose among all tools. Array order does not force a choice.",
+        "C": "Under \"auto\" the model may follow the instruction, but nothing guarantees it. It may call another tool or reply with text.",
+        "D": "\"none\" prevents tool use entirely, which is the opposite of the requirement."
+      },
+      "difficulty": 1,
+      "mindset": "Guarantee a specific tool with forced selection, not with instructions.",
+      "tags": [
+        "tool_choice",
+        "forced-tool",
+        "fundamentals"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools"
+      ]
+    }
+  ]
+}

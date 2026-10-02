@@ -1,0 +1,640 @@
+{
+  "certId": "foundations",
+  "domainId": "d2-tools-mcp",
+  "questions": [
+    {
+      "id": "f-d2-b1-001",
+      "taskStatementId": "2.1",
+      "scenario": "Multi-Agent Research System: a coordinator delegates to a web-search subagent, a document-analysis subagent, a synthesis subagent and a report subagent. The tool registry is shared, so every subagent can see the definitions of the other agents' tools.",
+      "stem": "Traces show that when the coordinator asks the document-analysis subagent to review an uploaded PDF, the subagent often calls `analyze_content`, a tool written for parsing raw web search results, instead of `analyze_document`. Both descriptions read almost the same: \"Analyzes content and returns key findings.\" With the smallest change that fixes the root cause, what should the architect do?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add five or six few-shot examples to the subagent's system prompt that show PDF review tasks routed to `analyze_document`."
+        },
+        {
+          "id": "B",
+          "text": "Move the subagent to a larger, more capable model that is better at telling apart two tools with similar purposes."
+        },
+        {
+          "id": "C",
+          "text": "Rename `analyze_content` to `extract_web_results` and rewrite its description to say it handles web search results only."
+        },
+        {
+          "id": "D",
+          "text": "Merge both tools into one `analyze` tool that takes a `source_type` parameter and branches internally on its value."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "The misrouting comes from **overlapping tool interfaces**: two tools with near-identical names and descriptions. The model picks tools mainly from their names and descriptions, so the root-cause fix is to remove the overlap. Renaming `analyze_content` to `extract_web_results` and giving it a web-specific description makes each tool's purpose distinct. It is also a small, local change.",
+      "whyWrong": {
+        "A": "Few-shot examples treat the symptom. They cost tokens on every call, and the two ambiguous tool definitions are still there for any request the examples don't cover.",
+        "B": "A bigger model still sees two tools that describe themselves the same way. The ambiguity is in the interface, not in model capability, and this option adds cost without fixing it.",
+        "D": "The docs do recommend consolidating related operations, such as several actions on one resource, behind an `action` parameter. These two tools, though, parse different sources for different subagents. Merging them only moves the same choice into a `source_type` value the model must still get right, and it is a larger redesign than the stem’s \"smallest change\" allows."
+      },
+      "difficulty": 2,
+      "mindset": "When tools are misrouted, fix the overlapping names and descriptions before adding prompt patches or model upgrades.",
+      "tags": [
+        "tool-descriptions",
+        "tool-naming",
+        "misrouting",
+        "multi-agent"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools",
+        "https://www.anthropic.com/engineering/writing-tools-for-agents"
+      ]
+    },
+    {
+      "id": "f-d2-b1-002",
+      "taskStatementId": "2.1",
+      "scenario": "Customer Support Resolution Agent: built on the Claude Agent SDK with custom MCP tools get_customer, lookup_order, process_refund and escalate_to_human. Last sprint the team rewrote all four tool descriptions so each one lists input formats, example requests and when to use a sibling tool instead.",
+      "stem": "Even with the improved descriptions, the agent still calls `get_customer` first on many order-only billing disputes, such as \"I was charged twice on order 88412, my account shows two payments.\" The system prompt contains the line: \"Whenever a customer mentions their account, always start by retrieving the customer record.\" What is the MOST effective next step?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Rewrite the system prompt line so it no longer ties the keyword \"account\" to a tool, and let the tool descriptions drive selection."
+        },
+        {
+          "id": "B",
+          "text": "Add more detail to the `lookup_order` description stressing that it should be preferred whenever an order number appears."
+        },
+        {
+          "id": "C",
+          "text": "Add a pre-processing classifier that finds order numbers in the message and forces `lookup_order` on that turn."
+        },
+        {
+          "id": "D",
+          "text": "Add a follow-up instruction asking the agent to re-check its tool choice and retry when the first tool returns no order data."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The descriptions are already good, so the remaining cause is the **system prompt**. Its keyword-triggered instruction (\"account\" → retrieve the customer record) creates an unintended tool association that overrides the descriptions. Part of tool design is checking system prompts for keyword-sensitive wording like this and removing or rewording it.",
+      "whyWrong": {
+        "B": "The descriptions were just improved. Making them longer competes with an explicit system prompt instruction instead of removing the conflict.",
+        "C": "A keyword routing layer is extra machinery that bypasses the model's understanding, and it will misfire on messages that mention both an account and an order.",
+        "D": "Self-checking after the fact adds wasted tool calls and latency, and the instruction causing the wrong first choice is still in the prompt."
+      },
+      "difficulty": 3,
+      "mindset": "Good tool descriptions can be overridden by a keyword-triggered rule in the system prompt, so check the prompt too.",
+      "tags": [
+        "system-prompt",
+        "tool-selection",
+        "keyword-sensitivity",
+        "customer-support"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools",
+        "https://www.anthropic.com/engineering/writing-tools-for-agents"
+      ]
+    },
+    {
+      "id": "f-d2-b1-003",
+      "taskStatementId": "2.1",
+      "scenario": "Multi-Agent Research System: the document-analysis subagent has one tool, analyze_document(document_id, instructions). It returns free-form text. The synthesis subagent consumes that text to build cited reports.",
+      "stem": "Output from `analyze_document` is inconsistent. The same document comes back as a summary in one run, a bullet list of statistics in another, and an opinion about whether a claim holds up in a third. The synthesis subagent struggles to cite reliably. Which change BEST addresses this at the tool-design level?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Make the `instructions` parameter required and add a system prompt rule telling callers to always say exactly which output they expect."
+        },
+        {
+          "id": "B",
+          "text": "Add a post-processing step that asks a second model call to convert any `analyze_document` output into a single consistent format."
+        },
+        {
+          "id": "C",
+          "text": "Keep the one tool but add a long description listing every type of analysis it can perform, with an example of each."
+        },
+        {
+          "id": "D",
+          "text": "Split it into `extract_data_points`, `summarize_content` and `verify_claim_against_source`, each with a defined input and output contract."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "A generic tool with an open-ended `instructions` parameter has no stable contract, so its behaviour and output shape vary from call to call. Splitting it into **purpose-specific tools with defined input/output contracts** lets the model pick the exact operation it needs and gives the synthesis agent predictable data to cite.",
+      "whyWrong": {
+        "A": "This still depends on free-text instructions to define behaviour. Callers can phrase requests differently, so there is still no fixed output contract.",
+        "B": "A second normalising call adds latency and cost and hides the underlying design problem. It may also lose detail the synthesis step needs.",
+        "C": "Documenting more modes for one tool keeps the ambiguity about which mode a call will use. The return shape is still undefined."
+      },
+      "difficulty": 2,
+      "mindset": "Split a do-everything tool into narrow tools with clear contracts.",
+      "tags": [
+        "tool-boundaries",
+        "splitting-tools",
+        "io-contracts",
+        "multi-agent"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/writing-tools-for-agents",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools"
+      ]
+    },
+    {
+      "id": "f-d2-b1-004",
+      "taskStatementId": "2.1",
+      "stem": "A team is writing the description for a new `search_invoices` tool. It sits next to a similar `search_payments` tool. Which TWO kinds of content will do the most to help Claude choose and call this tool correctly? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Internal implementation notes, such as which database tables and indexes the tool queries behind the scenes."
+        },
+        {
+          "id": "B",
+          "text": "Clear boundaries: when to use this tool, and when `search_payments` is the right choice instead."
+        },
+        {
+          "id": "C",
+          "text": "A tie-breaker rule saying this tool should be preferred over `search_payments` whenever the model is unsure which applies."
+        },
+        {
+          "id": "D",
+          "text": "A note asking the model to explain its reasoning step by step inside a parameter before searching."
+        },
+        {
+          "id": "E",
+          "text": "Accepted input formats (for example invoice ID patterns and date ranges) plus one or two example queries."
+        }
+      ],
+      "correct": [
+        "B",
+        "E"
+      ],
+      "explanation": "Anthropic's tool-use docs call the description **by far the most important factor** in tool performance. A strong description says what the tool does, **when to use it and when not to** (especially compared with similar tools), what each parameter means and its expected **formats**, plus caveats and example queries. These details remove ambiguity between neighbouring tools.",
+      "whyWrong": {
+        "A": "Backend details such as table and index names don't help the model decide when or how to call the tool. They spend tokens without adding selection signal.",
+        "C": "A tie-breaker adds bias, not information. It pushes the model to over-use `search_invoices` on payment questions instead of telling it what separates the two tools. Boundaries beat preference rules.",
+        "D": "A reasoning parameter doesn't help with selection, and the docs warn that asking for reasoning extraction in parameters can backfire. Use a clear description instead."
+      },
+      "difficulty": 1,
+      "mindset": "A good description says what, when and when not, accepted inputs, and examples.",
+      "tags": [
+        "tool-descriptions",
+        "boundaries",
+        "input-formats"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools"
+      ]
+    },
+    {
+      "id": "f-d2-b1-005",
+      "taskStatementId": "2.1",
+      "stem": "A product manager with no engineering background asks why Claude sometimes calls the wrong one of two similar internal tools. Each tool has a short name and a one-line description, and their parameters look alike. Which explanation is MOST accurate?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Claude mainly picks tools by their order in the tools list, so the tool listed first is chosen more often whenever two look similar."
+        },
+        {
+          "id": "B",
+          "text": "Claude relies mostly on each tool's name and description to decide which one fits, so thin, similar descriptions make the choice unreliable."
+        },
+        {
+          "id": "C",
+          "text": "Claude decides by checking each tool's backend code at runtime, so the fix is to make the two tools' code paths clearly different."
+        },
+        {
+          "id": "D",
+          "text": "Claude keys mainly on the input schema, so as long as the two parameter lists differ in type the wording of the descriptions matters little."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "The model only sees the tool **definitions**: name, description and input schema. The description is the main signal it uses to match a request to a tool. When two descriptions are minimal and similar, selection becomes unreliable. The fix is to make each description clearly distinct.",
+      "whyWrong": {
+        "A": "List order isn't the documented selection mechanism. Reordering won't fix ambiguity that comes from two near-identical definitions.",
+        "C": "The model never sees or runs the tool's implementation. It only sees the definition in the request.",
+        "D": "Clear parameter names and types help, but the description is the primary selection signal. Two tools with look-alike schemas and thin descriptions stay ambiguous no matter how the types are tuned."
+      },
+      "difficulty": 1,
+      "mindset": "The model can only choose well when the tool definitions are clear.",
+      "tags": [
+        "tool-selection",
+        "tool-descriptions",
+        "fundamentals"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools"
+      ]
+    },
+    {
+      "id": "f-d2-b1-006",
+      "taskStatementId": "2.1",
+      "stem": "An internal scheduling agent was built by wrapping every calendar REST endpoint as its own tool, about 30 in total, such as `list_users`, `list_events`, `get_free_busy` and `create_event`. Booking one meeting now takes 6–8 chained calls, and the agent often stops after listing events without creating the booking. Which redesign is MOST likely to improve reliability without adding new infrastructure?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Consolidate the common workflow into one higher-level `schedule_event` tool that finds availability and books in a single call."
+        },
+        {
+          "id": "B",
+          "text": "Add a planner subagent that breaks every booking request into the exact sequence of endpoint calls before the main agent starts executing."
+        },
+        {
+          "id": "C",
+          "text": "Paste the full REST API reference into the system prompt so the agent understands how all 30 endpoints relate to each other."
+        },
+        {
+          "id": "D",
+          "text": "Raise the agent's maximum turn limit so that long chains of endpoint calls have enough room to reach the final booking step."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Anthropic's guidance on writing tools for agents is to build a **few thoughtful, task-oriented tools** instead of wrapping every API endpoint one-to-one, and the tool-use docs likewise say to consolidate related operations into fewer, more capable tools. A `schedule_event` tool hides the multi-step plumbing, cuts the number of tool calls, and gives the model one clearly described action for the user's real goal.",
+      "whyWrong": {
+        "B": "A planner subagent is over-engineering. It adds an extra agent and more context passing to work around a poor tool surface instead of fixing it.",
+        "C": "Dumping the API reference into the prompt bloats the context. The agent still has to choose among 30 low-level tools.",
+        "D": "More turns only allow longer chains. They don't fix the stalled workflow and they increase cost and latency."
+      },
+      "difficulty": 3,
+      "mindset": "Design tools around user tasks, not one tool per API endpoint.",
+      "tags": [
+        "tool-consolidation",
+        "api-wrappers",
+        "tool-design",
+        "over-engineering"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/writing-tools-for-agents",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools"
+      ]
+    },
+    {
+      "id": "f-d2-b1-007",
+      "taskStatementId": "2.1",
+      "scenario": "Customer Support Resolution Agent: get_customer(identifier) and lookup_order(identifier) both accept a free-text identifier. Customer IDs look like C-482913 and order numbers look like 482913-A. Customers often paste whichever number they have.",
+      "stem": "The agent sometimes sends order numbers to `get_customer` and customer IDs to `lookup_order`. The team wants the most effective interface-level changes, and doesn't want to add new components. Which TWO changes should they make? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Rename each parameter to say what it holds, `customer_id` and `order_id`, instead of a shared generic `identifier`."
+        },
+        {
+          "id": "B",
+          "text": "Add a system prompt instruction telling the agent to ask the customer which kind of number they have before calling either tool."
+        },
+        {
+          "id": "C",
+          "text": "Have the agent call both tools on every request and keep whichever one returns a non-empty result to the conversation."
+        },
+        {
+          "id": "D",
+          "text": "Document each ID format with an example in the matching description, and say when to use the other tool instead."
+        },
+        {
+          "id": "E",
+          "text": "Move the support agent to the largest available model so that it can infer the right identifier type more reliably."
+        }
+      ],
+      "correct": [
+        "A",
+        "D"
+      ],
+      "explanation": "Both fixes improve the **tool interface itself**. Unambiguous parameter names (`customer_id`, not `identifier`) say what each tool expects. Descriptions that give accepted input formats with examples (C-482913 vs 482913-A), plus boundaries pointing to the sibling tool, give the model what it needs to route correctly.",
+      "whyWrong": {
+        "B": "This is a prompt-level workaround, not an interface change. It adds a clarifying round trip to every conversation even though the two ID patterns are already distinguishable once the tools document them.",
+        "C": "Calling both tools every time doubles tool calls and latency, and an order number could also match a customer record by accident. It hides the interface problem instead of fixing it.",
+        "E": "A larger model costs more and the tool definitions are still ambiguous. Interface clarity is the cheaper root-cause fix."
+      },
+      "difficulty": 2,
+      "mindset": "Clear parameter names plus documented formats beat warnings and bigger models.",
+      "tags": [
+        "parameter-naming",
+        "input-formats",
+        "tool-descriptions",
+        "customer-support"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/writing-tools-for-agents",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools"
+      ]
+    },
+    {
+      "id": "f-d2-b1-008",
+      "taskStatementId": "2.4",
+      "scenario": "Developer Productivity with Claude: a platform team is rolling out Claude Code across a 40-engineer monorepo. Everyone should get the same GitHub MCP server automatically when they clone the repo. The server authenticates with a personal access token.",
+      "stem": "Which configuration BEST meets the goal of shared, consistent setup without exposing credentials?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Commit `.mcp.json` with the token written directly in the `headers` block, since the repository is private to the company."
+        },
+        {
+          "id": "B",
+          "text": "Commit a project-scoped `.mcp.json` that references the token as `${GITHUB_TOKEN}`, with each engineer setting that variable locally."
+        },
+        {
+          "id": "C",
+          "text": "Ask each engineer to run `claude mcp add` with `--scope user` and their token, following a setup page on the wiki."
+        },
+        {
+          "id": "D",
+          "text": "Describe the GitHub server's URL and auth steps in the project CLAUDE.md so Claude can connect to it when needed."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Project scope (`.mcp.json` at the repo root, committed to git) is the right place for **shared team tooling**. Claude Code expands environment variables such as `${GITHUB_TOKEN}` inside `.mcp.json` (in `command`, `args`, `env`, `url` and `headers`), so the config can be shared while each person's secret stays in their own environment.",
+      "whyWrong": {
+        "A": "A private repo is still the wrong place for secrets. Hard-coded tokens leak through clones, forks, logs and git history.",
+        "C": "User scope works for one person, but it relies on 40 people setting it up by hand and drifting apart. Nothing in the repo keeps the setup consistent.",
+        "D": "CLAUDE.md holds instructions and context. It doesn't configure or connect MCP servers."
+      },
+      "difficulty": 1,
+      "mindset": "Shared tooling goes in .mcp.json, and secrets stay in ${ENV_VARS}.",
+      "tags": [
+        "mcp-config",
+        "project-scope",
+        "env-var-expansion",
+        "secrets"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/mcp"
+      ]
+    },
+    {
+      "id": "f-d2-b1-009",
+      "taskStatementId": "2.4",
+      "stem": "An engineer wants to try an experimental MCP server they wrote for personal note-taking. They want it in every repository they open with Claude Code, but it must not show up for teammates or change any committed files. Where should it be configured?",
+      "options": [
+        {
+          "id": "A",
+          "text": "In the project `.mcp.json` of each repository, telling teammates to decline the approval prompt when Claude Code asks."
+        },
+        {
+          "id": "B",
+          "text": "In the local scope of each repository, by running `claude mcp add` without a scope flag once in every project they open."
+        },
+        {
+          "id": "C",
+          "text": "In user scope, by running `claude mcp add` with `--scope user`, which stores it in `~/.claude.json` for all of their projects."
+        },
+        {
+          "id": "D",
+          "text": "In each repository's committed `.claude/settings.json` file, under a personal section that is labelled for that one engineer."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "**User scope** is stored in `~/.claude.json`. It is available in all of that person's projects and stays private to them, which matches \"personal and experimental, everywhere, invisible to the team\". Project scope (`.mcp.json`) is for shared team tooling.",
+      "whyWrong": {
+        "A": "This changes committed files and pushes an experiment onto the whole team. Relying on people to decline a prompt is fragile.",
+        "B": "Local scope is private, but it only applies to one project. They would have to repeat the setup in every repository, which misses the \"every repository\" requirement.",
+        "D": "Committed settings are shared with everyone who clones the repo, so they can't hold a private, personal server."
+      },
+      "difficulty": 2,
+      "mindset": "Use user scope for personal servers you want in every project, and project scope for team tooling.",
+      "tags": [
+        "mcp-config",
+        "user-scope",
+        "local-scope"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/mcp"
+      ]
+    },
+    {
+      "id": "f-d2-b1-010",
+      "taskStatementId": "2.4",
+      "scenario": "Developer Productivity with Claude: the agent helps engineers explore a large legacy codebase. It has the built-in tools (Read, Write, Bash, Grep, Glob) and an internal MCP server with `code_index_search`, which resolves symbol definitions, call sites and cross-repository references from a prebuilt index. The tool's description reads: \"Searches code.\"",
+      "stem": "Engineers ask questions like \"Where is `calculateTax` called across our services?\" The agent almost always uses Grep, misses calls in other repositories, and gets confused by string matches in comments. What should the architect do FIRST?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add a PreToolUse hook that blocks Grep on every call, so the agent is forced to fall back to the MCP search tool instead."
+        },
+        {
+          "id": "B",
+          "text": "Remove Grep from the agent's available tools with `disallowed_tools`, so the MCP tool is the only search option left."
+        },
+        {
+          "id": "C",
+          "text": "Add a line to CLAUDE.md telling the agent to always prefer MCP tools over built-in tools for any kind of code search."
+        },
+        {
+          "id": "D",
+          "text": "Rewrite the MCP tool's description to state its symbol, call-site and cross-repo capabilities, outputs, and when it beats Grep."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "This is a **selection** problem caused by a thin description. \"Searches code\" gives the agent no reason to prefer the MCP tool over a familiar built-in. The fix is to say what the tool can do and what it returns (symbol resolution, call sites, cross-repo references), and when to use it instead of Grep. Grep stays available for the plain text searches it is good at.",
+      "whyWrong": {
+        "A": "Hooks are for deterministic policy enforcement. No policy is broken here. Blocking Grep everywhere also breaks legitimate text searches such as log strings and config keys.",
+        "B": "Removing Grep hides the selection problem by removing a useful tool. The agent still doesn't understand what the MCP tool offers.",
+        "C": "A blanket \"always prefer MCP\" rule is a keyword-style instruction that will misroute simple text searches. The tool description itself is still vague."
+      },
+      "difficulty": 3,
+      "mindset": "If the agent ignores a better tool, fix the tool's description first, not by blocking the alternative.",
+      "tags": [
+        "mcp-tools",
+        "tool-descriptions",
+        "built-in-tools",
+        "grep"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/mcp",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools"
+      ]
+    },
+    {
+      "id": "f-d2-b1-011",
+      "taskStatementId": "2.4",
+      "scenario": "Developer Productivity with Claude: the team wants the agent to read and update Jira tickets, and also to run the company's own release-approval process. That process checks a homegrown change-freeze calendar and a sign-off database that exist only inside this company.",
+      "stem": "Which TWO decisions best follow MCP integration best practice? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Build one custom MCP server covering both Jira and release approval, so all tools share the same code base and conventions."
+        },
+        {
+          "id": "B",
+          "text": "Give the agent Bash so it can call the Jira REST API with curl, and avoid running any MCP server for Jira at all."
+        },
+        {
+          "id": "C",
+          "text": "Use an existing, maintained Jira MCP server for ticket operations instead of writing a Jira integration from scratch."
+        },
+        {
+          "id": "D",
+          "text": "Paste the Jira API documentation into CLAUDE.md so the agent can construct the right requests on its own each time."
+        },
+        {
+          "id": "E",
+          "text": "Write a small custom MCP server only for the release-approval workflow, since no existing server knows those internal systems."
+        }
+      ],
+      "correct": [
+        "C",
+        "E"
+      ],
+      "explanation": "For **standard integrations** like Jira, use an existing community or vendor MCP server rather than reinventing it. **Reserve custom servers for team-specific workflows** that no existing server can cover, such as the internal change-freeze calendar and sign-off database.",
+      "whyWrong": {
+        "A": "Rebuilding Jira support that already exists adds build and maintenance work with no gain. Shared conventions don't justify duplicating a solved integration.",
+        "B": "Raw curl through Bash means no structured tool interface, no tool descriptions and weaker guardrails. It also puts credential handling in shell commands.",
+        "D": "Docs in CLAUDE.md cost context on every session and still leave the agent to build raw requests itself. Nothing is integrated as a tool."
+      },
+      "difficulty": 2,
+      "mindset": "Use existing servers for standard systems, and build custom servers only for what is unique to you.",
+      "tags": [
+        "mcp-servers",
+        "community-servers",
+        "build-vs-buy",
+        "jira"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/mcp"
+      ]
+    },
+    {
+      "id": "f-d2-b1-012",
+      "taskStatementId": "2.4",
+      "scenario": "Multi-Agent Research System: the document-analysis subagent queries an internal analytics database through an MCP server with the tools `list_tables`, `describe_table` and `run_query`.",
+      "stem": "Logs show that before almost every real query, the subagent makes 10–15 exploratory calls to `list_tables` and `describe_table` just to work out what data exists. This adds latency and fills its context. What is the MOST effective change?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Expose the schema catalog (tables, columns, descriptions) as MCP resources, so the data is visible up front without exploratory calls."
+        },
+        {
+          "id": "B",
+          "text": "Add a system prompt instruction asking the subagent to limit itself to at most three exploratory calls before running a query."
+        },
+        {
+          "id": "C",
+          "text": "Add a schema-discovery subagent that explores the database first and returns its findings to the analysis subagent on each task."
+        },
+        {
+          "id": "D",
+          "text": "Merge `list_tables` and `describe_table` into one `explore_database` tool that returns every table and column in a single large response."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "MCP **resources** exist to expose content catalogs, such as database schemas, documentation hierarchies and issue summaries, as data the application can provide. The agent can see what is available **without exploratory tool calls**. This removes the discovery loop at its source.",
+      "whyWrong": {
+        "B": "A call cap is a probabilistic limit. If the subagent stops early it may write wrong queries, and the missing schema information is still missing.",
+        "C": "An extra subagent adds orchestration and context-passing overhead and still does the same exploration, just somewhere else.",
+        "D": "One huge dump uses even more context on every call and doesn't use the protocol feature designed for catalogs."
+      },
+      "difficulty": 2,
+      "mindset": "Expose catalogs as resources so the agent doesn't spend tool calls discovering them.",
+      "tags": [
+        "mcp-resources",
+        "content-catalogs",
+        "context-efficiency",
+        "multi-agent"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-06-18/server/resources",
+        "https://code.claude.com/docs/en/mcp"
+      ]
+    },
+    {
+      "id": "f-d2-b1-013",
+      "taskStatementId": "2.4",
+      "stem": "A developer's repository has a committed `.mcp.json` that defines `jira` and `github` servers. They have also added a personal `notes` server at user scope. A teammate proposes overriding the `github` server for themselves by adding a local-scope server with the same name. Which TWO statements about how Claude Code behaves here are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "User-scope servers are ignored in any repository that has a `.mcp.json`, so the `notes` server won't load in this repository."
+        },
+        {
+          "id": "B",
+          "text": "Tools from every configured server are made available to the agent together, so it can use tools from several servers in the same session."
+        },
+        {
+          "id": "C",
+          "text": "If the same server name exists at local and project scope, Claude Code uses the local definition and connects to that server once."
+        },
+        {
+          "id": "D",
+          "text": "When the same name appears in two scopes, Claude Code merges their fields, so local values fill in only the keys they redefine."
+        },
+        {
+          "id": "E",
+          "text": "The agent must be told in the system prompt which server to load before tools from that server become available to call."
+        }
+      ],
+      "correct": [
+        "B",
+        "C"
+      ],
+      "explanation": "Servers from every scope are combined. Their tools are **available at the same time** (Claude Code discovers them from each connected server, and with tool search on by default it loads definitions on demand), so `jira`, `github` and `notes` all work together. When the same name appears in more than one scope, Claude Code connects once using the highest-precedence definition (**local > project > user**). It does not merge fields.",
+      "whyWrong": {
+        "A": "Scopes add together. A project `.mcp.json` doesn't turn off user-scope servers.",
+        "D": "There is no field-level merge. The higher-precedence definition replaces the others completely.",
+        "E": "Server loading is done by configuration, not by the prompt. Configured servers connect and expose their tools without any prompt instruction."
+      },
+      "difficulty": 3,
+      "mindset": "Scopes add together, tools are available at the same time, and name clashes go to the narrowest scope.",
+      "tags": [
+        "mcp-config",
+        "scope-precedence",
+        "tool-discovery"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/mcp"
+      ]
+    },
+    {
+      "id": "f-d2-b1-014",
+      "taskStatementId": "2.4",
+      "scenario": "Claude Code for Continuous Integration: a pipeline runs Claude Code non-interactively on each pull request to review changes. Review quality improves when Claude can query the team's issue tracker through the MCP server already defined in the repository's committed `.mcp.json`, which reads its API key from `${TRACKER_API_KEY}`.",
+      "stem": "The CI job needs that server with the least added machinery and without exposing the key. What should the team do?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Have a CI step write a temporary copy of `.mcp.json` with the key pasted in, then delete that file once the review job finishes."
+        },
+        {
+          "id": "B",
+          "text": "Keep the committed `.mcp.json` as it is and supply `TRACKER_API_KEY` to the job as an environment variable from the CI secret store."
+        },
+        {
+          "id": "C",
+          "text": "Put the key into the review prompt passed to Claude, and have Claude add it to the server's request headers when needed."
+        },
+        {
+          "id": "D",
+          "text": "Replace the MCP server with a pre-step script that dumps all open tracker issues into a file for Claude to read during review."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "The existing config already uses **environment-variable expansion**. Claude Code resolves `${TRACKER_API_KEY}` in `.mcp.json` at runtime, so CI only has to inject the variable from its secret store. In non-interactive (`claude -p`) runs Claude Code loads project-scoped servers without the approval prompt, so the shared, committed config works the same locally and in CI, and the secret never touches the repo or the prompt.",
+      "whyWrong": {
+        "A": "Writing the secret to a file on disk adds steps and leak risk, for example through artifacts, logs or a failed cleanup, when expansion already solves the problem.",
+        "C": "Putting a secret in the prompt exposes it to the model's context and to logs. Claude also doesn't control MCP transport headers.",
+        "D": "Dumping every issue wastes context and goes stale. It replaces a working, targeted integration with a cruder workaround."
+      },
+      "difficulty": 2,
+      "mindset": "Commit the config and inject secrets through the environment, never through files or prompts.",
+      "tags": [
+        "ci-cd",
+        "env-var-expansion",
+        "secrets",
+        "mcp-config"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/mcp"
+      ]
+    }
+  ]
+}

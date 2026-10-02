@@ -1,0 +1,509 @@
+{
+  "certId": "foundations",
+  "domainId": "d4-prompting",
+  "lessons": [
+    {
+      "id": "f-explicit-criteria",
+      "title": "Explicit criteria beat vague instructions",
+      "estMinutes": 10,
+      "level": "core",
+      "taskStatementIds": [
+        "4.1"
+      ],
+      "eli5": "Telling a new referee to \"be strict\" means nothing; telling them \"call a foul when a player's hands push another player's back\" gives everyone the same calls. Claude works the same way: precise rules about what counts produce precise results.",
+      "visualId": "prompt-anatomy",
+      "body": "## Why vague instructions fail\n\nWhen a review or classification prompt produces too many false positives, the first instinct is to add a softener: *\"be conservative\"*, *\"only report findings you are highly confident about\"*, *\"avoid nitpicks\"*. These feel like they should help. They don't, at least not reliably. The model has no shared definition of \"conservative\" with you, so it guesses one, and the guess shifts from input to input. You end up with the same noise, just distributed differently.\n\nWhat does improve precision is a **specific, categorical definition of what to report and what to skip**. The model can check a concrete input against a concrete rule. It can't check an input against a mood.\n\n| Vague instruction | Explicit criterion |\n|---|---|\n| \"Check that comments are accurate.\" | \"Flag a comment only when the behavior it describes contradicts what the code actually does.\" |\n| \"Be conservative about security findings.\" | \"Report: injection, missing authz checks, secrets in source, unsafe deserialization. Skip: style, naming, missing docstrings.\" |\n| \"Only flag high-confidence issues.\" | \"Report a null-dereference only if a code path exists where the value can be null at the point of use.\" |\n| \"Classify urgency sensibly.\" | \"**High** = production outage or data loss. **Medium** = a feature is broken but has a workaround. **Low** = cosmetic.\" |\n\nNotice that each right-hand cell names a **category** and a **test**. That is the pattern the exam wants you to recognize.\n\n## Report vs skip lists\n\nGood review prompts state both sides of the boundary:\n\n```xml\n<review_criteria>\n  <report>\n    - Logic errors that change program output\n    - Security vulnerabilities (injection, auth bypass, secret exposure)\n    - Comments whose described behavior contradicts the code\n  </report>\n  <skip>\n    - Formatting and naming preferences\n    - Patterns used consistently elsewhere in this repository\n    - Suggestions that are purely stylistic\n  </skip>\n</review_criteria>\n```\n\nThe skip list matters as much as the report list. \"Patterns used consistently elsewhere in this repository\" tells the model that a local convention is not a defect, which removes a large class of false positives at the source.\n\n## False positives destroy trust in the true positives\n\nA reviewer that is right 95% of the time on security but wrong 60% of the time on \"documentation quality\" is not perceived as \"mostly right\". Developers learn to skim or dismiss **all** of its comments, including the accurate ones. One noisy category poisons the whole channel.\n\nThat gives you a practical remedy the exam guide calls out directly: **temporarily disable the high false-positive categories** while you rewrite their criteria. You keep shipping the categories that are already precise, trust recovers, and you re-enable the improved category once it measures well. This is better than:\n\n- adding \"be careful\" to the noisy category (doesn't change behavior),\n- lowering every category with a confidence filter (suppresses good findings too), or\n- leaving it on and asking developers to ignore it (trust keeps eroding).\n\n## Severity needs examples, not adjectives\n\n\"Critical\", \"major\" and \"minor\" mean different things to different readers. To get consistent classification, define each level and attach a **concrete code example** to each one:\n\n```text\nCRITICAL - exploitable now or causes data loss.\n  e.g. query = \"SELECT * FROM users WHERE id=\" + request.args[\"id\"]\nMAJOR - wrong behavior in a reachable path, no security impact.\n  e.g. off-by-one in pagination that drops the last record\nMINOR - correct but fragile or confusing.\n  e.g. magic number 86400 with no named constant\n```\n\nWith anchored examples, two runs over the same code land on the same severity much more often, because the model compares against the anchors instead of interpreting an adjective.\n\n## Worked example\n\nA team's PR bot posts about 40 comments per PR; developers dismiss most of them. Analysis shows that the \"comment accuracy\" category is the noisiest: it flags any comment that is incomplete or slightly out of date.\n\n1. **Rewrite the criterion**: \"Flag a comment only when the behavior it claims contradicts the code's actual behavior. Do not flag comments that are merely incomplete.\"\n2. **Add a skip rule**: \"Do not flag TODO comments or comments describing intent.\"\n3. **Disable the category in production** until the rewrite is measured on a sample of past PRs.\n4. **Keep the precise categories** (security, logic bugs) running the whole time.\n\nThe fix is all in the prompt's criteria. It does not need a bigger model, a second classifier, or a confidence threshold.\n\n## Where this connects\n\nExplicit criteria pair naturally with few-shot examples (lesson *f-few-shot*), which show the boundary in action, and with a `detected_pattern` field (lesson *f-validation-retry*), which tells you *which* criteria are producing dismissed findings.",
+      "keyTakeaways": [
+        "Precision comes from categorical criteria (what to report, what to skip), not from adjectives like \"conservative\" or \"high-confidence\".",
+        "State both sides of the boundary: a report list and a skip list (for example, local repository conventions are not defects).",
+        "One noisy category erodes developer trust in all categories, including the accurate ones.",
+        "Temporarily disable high false-positive categories while you rewrite their criteria; keep the precise ones running.",
+        "Define each severity level with a concrete code example so classification is consistent across runs."
+      ],
+      "examTips": [
+        "When a stem says \"too many false positives\" or \"developers ignore the findings\", look for the option that writes specific report/skip criteria. Options that say \"instruct the model to be more conservative\" or \"only report high-confidence findings\" are the classic distractor.",
+        "If trust has already collapsed, the best first step often includes disabling the noisiest category temporarily rather than tuning everything at once.",
+        "Inconsistent severity labels point to defining severity levels with concrete examples, not to switching models.",
+        "Prefer the answer that changes the prompt's definitions over answers that add new infrastructure (a second classifier, a routing layer) when the root cause is unclear criteria."
+      ],
+      "commonTraps": [
+        "Adding \"be careful\", \"be conservative\" or \"avoid false positives\" to the prompt: sounds reasonable, does not reliably change behavior.",
+        "Filtering by the model's self-reported confidence as the main precision fix: confidence is not calibrated against your definition of a real issue.",
+        "Turning off the whole reviewer instead of only the noisy category.",
+        "Assuming a larger or newer model will fix vague criteria."
+      ],
+      "resources": [
+        {
+          "title": "Prompting best practices (Claude docs)",
+          "url": "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices",
+          "type": "docs"
+        },
+        {
+          "title": "Prompt engineering overview (Claude docs)",
+          "url": "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/overview",
+          "type": "docs"
+        },
+        {
+          "title": "Anthropic interactive prompt engineering tutorial",
+          "url": "https://github.com/anthropics/prompt-eng-interactive-tutorial",
+          "type": "course"
+        },
+        {
+          "title": "Official Foundations exam guide (PDF)",
+          "url": "https://everpath-course-content.s3-accelerate.amazonaws.com/instructor%2F6nizmqk8tpzpfjvt6qmmav7rh%2Fpublic%2F1783542750%2FClaude+Certified+Architect+%E2%80%93+Foundations+Exam+Guide.pdf",
+          "type": "docs"
+        }
+      ]
+    },
+    {
+      "id": "f-prompt-fundamentals",
+      "title": "Building blocks of a strong prompt",
+      "estMinutes": 10,
+      "level": "core",
+      "taskStatementIds": [
+        "4.1",
+        "4.2"
+      ],
+      "eli5": "A good prompt is like a good work order: who you are, what the job is, the materials, an example of a finished piece, and what the result should look like. Clear labels on each part stop the worker from mixing them up.",
+      "visualId": "prompt-anatomy",
+      "body": "## The golden rule: clear and direct\n\nAnthropic's prompting guidance starts with a simple test: **show your prompt to a colleague who has little context on the task. If they would be confused, Claude will be too.** Claude doesn't know your team's conventions, the reason for the task, or what \"good\" looks like unless you say so.\n\nBeing direct means:\n- stating the task and the desired output explicitly;\n- listing steps in order (numbered) when order matters;\n- asking explicitly for extra effort if you want it (\"include edge cases\", \"go beyond the basics\").\n\n## Explain why, not just what\n\nA bare rule is followed literally. A rule with a reason is **generalized**. Compare:\n\n| Bare rule | Rule with motivation |\n|---|---|\n| \"Never use ellipses.\" | \"Your response will be read aloud by a text-to-speech engine, so never use ellipses; it can't pronounce them.\" |\n| \"Don't include PII.\" | \"This summary is posted to a public channel, so omit names, emails and account numbers.\" |\n\nWith the reason, Claude also avoids *related* problems you didn't list (other unpronounceable symbols, other identifying details).\n\n## The parts of a strong prompt\n\n| Part | Purpose | Typical location |\n|---|---|---|\n| Role | Focuses tone and expertise (\"You are a senior payments engineer reviewing PRs\") | `system` parameter |\n| Context and motivation | Who the output is for, why it matters | system or top of user turn |\n| Input data / documents | The material to work on | user turn, wrapped in tags |\n| Instructions and criteria | What to do, what to report or skip | user turn |\n| Examples | Show the expected output and edge-case judgment | `<examples>` block |\n| Output format | Shape of the answer, or a schema | instructions, or a tool / structured output |\n\n## XML tags separate the parts\n\nWrapping each part in a descriptive tag stops Claude from confusing instructions with data, which matters most when the input itself contains text that looks like instructions.\n\n```xml\n<instructions>\nSummarize each contract's termination clauses. Quote the clause before summarizing it.\n</instructions>\n<documents>\n  <document index=\"1\">\n    <source>vendor_msa_2025.pdf</source>\n    <document_content>...</document_content>\n  </document>\n</documents>\n```\n\nThere are no \"magic\" tag names. Use consistent, descriptive names and nest them when the content is hierarchical.\n\n## Long documents: data at the top, question at the end\n\nFor long inputs (roughly 20k+ tokens), Anthropic recommends putting the **documents at the top** of the prompt and the **query and instructions at the end**. Their testing showed answer quality improvements of up to 30% with this order, especially with multiple documents. For long-document Q&A, asking Claude to **first extract the relevant quotes** and then answer from those quotes also reduces hallucination.\n\n## Controlling length and format\n\n- **Word counts are a weak control.** Models work in tokens, so \"exactly 150 words\" is imprecise. Ask for a number of sentences, bullets or paragraphs instead.\n- **Show the format** with an example rather than describing it in prose (see *f-few-shot*).\n- **For machine-readable output**, use tool use with a JSON schema or structured outputs (see *f-structured-output*) instead of hoping free text parses.\n\n## A note on prefill (version drift)\n\nOlder material teaches *prefilling* the assistant turn (for example starting it with `{`) to force JSON. On current docs, **prefill is not supported on Claude 4.6 and later models**: a request that ends with an assistant message returns HTTP 400. The current replacements are structured outputs, strict tool use, or a direct instruction. If an exam option relies on prefill to *guarantee* structure, tool use with a schema is still the more reliable answer.\n\n## Worked example: rewriting a weak prompt\n\n**Before:** \"Look at this ticket and tell me what to do.\"\n\n**After:**\n\n```text\nSystem prompt (the `system` API parameter):\nYou are a tier-2 support engineer for a billing platform.\n\nUser turn:\n<ticket>{{TICKET_TEXT}}</ticket>\n<instructions>\n1. Classify the ticket as one of: refund_request, billing_error, account_access, other.\n2. If refund_request, state whether it is within the 30-day policy window and why.\n3. Recommend one next action for the agent.\nThe output is shown to a human agent who has 30 seconds to read it, so answer in 3 bullets or fewer.\n</instructions>\n```\n\nThe rewrite adds a role, separates data from instructions, gives explicit categories (with an `other` escape hatch), orders the steps, and explains *why* brevity matters. (The 30-day window here is an example business rule, not a Claude fact.)",
+      "keyTakeaways": [
+        "Golden rule: if a colleague with little context would be confused by the prompt, Claude will be too.",
+        "Explaining why a rule exists lets Claude generalize it to cases you didn't list.",
+        "Use XML tags to separate instructions, context, input data and examples.",
+        "For long documents, put the documents first and the question last; ask for relevant quotes before the answer.",
+        "Limit length by sentences or paragraphs, not word counts; use schemas, not prose, for machine-readable output.",
+        "Prefill is unsupported on Claude 4.6+ (HTTP 400); use structured outputs or tool use instead."
+      ],
+      "examTips": [
+        "If an option gives the model a reason for a constraint and another just restates the constraint more forcefully (CAPS, \"NEVER\"), prefer the one with the reason.",
+        "Questions about long-document Q&A quality: the better answer places documents before the query and/or asks for supporting quotes first.",
+        "When the requirement is machine-parseable output, prose instructions (\"respond only in JSON\") are weaker than tool use or structured outputs.",
+        "The exam rewards the simplest prompt-level fix when the root cause is an unclear prompt; don't jump to multi-agent designs."
+      ],
+      "commonTraps": [
+        "Shouting (all caps, repeated \"MUST\") instead of adding missing context or criteria.",
+        "Putting the question at the top and a long document after it.",
+        "Relying on an exact word-count limit.",
+        "Treating prefill as a current, guaranteed way to force JSON on the newest models."
+      ],
+      "resources": [
+        {
+          "title": "Prompting best practices (Claude docs)",
+          "url": "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices",
+          "type": "docs"
+        },
+        {
+          "title": "Prompt engineering overview (Claude docs)",
+          "url": "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/overview",
+          "type": "docs"
+        },
+        {
+          "title": "Reduce hallucinations (Claude docs)",
+          "url": "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-hallucinations",
+          "type": "docs"
+        },
+        {
+          "title": "Anthropic interactive prompt engineering tutorial",
+          "url": "https://github.com/anthropics/prompt-eng-interactive-tutorial",
+          "type": "course"
+        }
+      ]
+    },
+    {
+      "id": "f-few-shot",
+      "title": "Few-shot examples for consistency and judgment",
+      "estMinutes": 10,
+      "level": "core",
+      "taskStatementIds": [
+        "4.2"
+      ],
+      "eli5": "Instead of describing the perfect sandwich in words, you show a trainee three finished sandwiches, including the tricky one with no bread left. They copy the style and learn how to handle the odd cases too.",
+      "visualId": "prompt-anatomy",
+      "body": "## When to reach for examples\n\nFew-shot (also called multishot) prompting means including a handful of worked input/output examples in the prompt. The exam guide frames it as **the most effective technique when detailed instructions alone still produce inconsistent output**. If you've already written clear criteria and the format or judgment still wobbles from run to run, examples are the next lever, before changing models or adding infrastructure.\n\nExamples do four distinct jobs:\n\n| Job | What the examples show | Problem it fixes |\n|---|---|---|\n| Format | The exact output shape (e.g. location, issue, severity, suggested fix) | Inconsistent or unactionable output |\n| Ambiguous-case judgment | Why one action was chosen over plausible alternatives | Wrong tool choice, wrong escalation, wrong label on borderline inputs |\n| Acceptable vs problematic | A pattern that *looks* suspicious but is fine, next to one that is a real issue | False positives |\n| Varied inputs | Correct extraction from different document layouts | Empty or null required fields, hallucinated values |\n\n## How many, and what kind\n\n- The exam guide says **2-4 targeted examples** for ambiguous scenarios. Anthropic's docs suggest **3-5** as a general starting point. Both point to *a few well-chosen examples*, not dozens.\n- **Relevant**: mirror your real inputs.\n- **Diverse**: cover edge cases and vary the surface details so the model doesn't latch onto an accidental pattern (for example, every example answer being \"High\").\n- **Structured**: wrap them in tags so they are clearly separate from the real input.\n\n```xml\n<examples>\n  <example>\n    <input>if (user.role == \"admin\" || true) { grantAccess(); }</input>\n    <output>\n      location: auth.js:42\n      issue: Condition always true; every user is granted admin access.\n      severity: CRITICAL\n      suggested_fix: Remove \"|| true\".\n    </output>\n  </example>\n  <example>\n    <input>const TIMEOUT_MS = 30000; // matches the gateway timeout</input>\n    <output>No finding. Named constant with a documented reason is acceptable.</output>\n  </example>\n</examples>\n```\n\nThe second example is the important one for precision: it shows a **non-finding**. Without it, a reviewer told to look for \"magic numbers\" may flag every numeric literal.\n\n## Show the reasoning for ambiguous cases\n\nFor judgment calls, the example should include a short explanation of **why** the chosen action beat the alternatives. For instance, in a support agent:\n\n```text\nRequest: \"I was charged twice, can you look into it?\"\nChosen: call lookup_order before issue_refund.\nWhy: the customer asserts a duplicate charge but has not identified the\norder; refunding first risks refunding the wrong charge. lookup_order\nconfirms both charges exist.\n```\n\nBecause the example explains the principle (verify before an irreversible action), the model can **generalize** it to new cases that are not in the examples at all, such as a duplicate subscription renewal. This is the point the exam stresses: well-made examples teach judgment that transfers, rather than a lookup table that only matches listed cases.\n\n## Examples for extraction quality\n\nIn extraction pipelines, few-shot examples fix two common failures:\n\n1. **Varied document structure.** A research-paper extractor that only saw papers with a bibliography at the end returns `null` for citations in papers that use inline citations. Add one example of each layout (inline citations vs bibliography; methodology in its own section vs embedded in the results).\n2. **Informal values.** Show how to normalize \"about two cups\" or \"a tablespoon-ish\" into your target unit, or how to return `null` when there is genuinely no value. This reduces hallucinated values.\n\n## Worked example\n\nA ticket-routing prompt has clear category definitions but still sends \"I can't log in after changing my card\" to `billing` half the time and `account_access` the other half.\n\n- **Not** the first fix: more emphatic instructions, a bigger model, a separate classifier.\n- **Fix:** add 3 examples, including this exact borderline shape, each with one line of reasoning (\"login failure is the blocking symptom; billing change is context, so route to account_access\").\n\nMeasure the change on a held-out set of real tickets, not on the examples themselves.\n\n## Limits\n\nFew-shot improves consistency; it does not **guarantee** anything. If a rule must never be broken (for example, never refund without verification), the guarantee belongs in code, such as a hook or prerequisite check, not in examples. And if the output must parse, use a schema (next lesson).",
+      "keyTakeaways": [
+        "Few-shot is the go-to fix when clear instructions still produce inconsistent format or judgment.",
+        "Use a few targeted examples: 2-4 per the exam guide (3-5 in Anthropic's docs), relevant, diverse and wrapped in <examples>/<example> tags.",
+        "For ambiguous cases, show why the chosen action beat the plausible alternatives so the model generalizes the principle.",
+        "Include negative examples (acceptable patterns that are not findings) to cut false positives.",
+        "In extraction, examples covering varied document layouts fix empty/null required fields and reduce hallucinated values.",
+        "Examples raise consistency but don't guarantee compliance; hard rules belong in code."
+      ],
+      "examTips": [
+        "Stem pattern: \"the instructions are detailed but outputs are inconsistent\" points to adding few-shot examples.",
+        "If the stem says the model misses a field only for certain document formats, the answer is examples covering those formats, not making the field required.",
+        "Few-shot is a distractor when the scenario needs a guarantee (compliance, financial actions). Choose programmatic enforcement there.",
+        "Prefer \"2-4 examples showing reasoning for the ambiguous cases\" over \"add 50 examples\" or \"fine-tune\"."
+      ],
+      "commonTraps": [
+        "Examples that all share an accidental feature (same severity, same length), which the model then copies.",
+        "Only positive examples, so the model never learns what not to flag.",
+        "Testing the prompt only on the examples it contains.",
+        "Using more examples as a fix for a missing guarantee."
+      ],
+      "resources": [
+        {
+          "title": "Prompting best practices (Claude docs)",
+          "url": "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices",
+          "type": "docs"
+        },
+        {
+          "title": "Increase output consistency (Claude docs)",
+          "url": "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/increase-consistency",
+          "type": "docs"
+        },
+        {
+          "title": "Reduce hallucinations (Claude docs)",
+          "url": "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-hallucinations",
+          "type": "docs"
+        },
+        {
+          "title": "Anthropic interactive prompt engineering tutorial",
+          "url": "https://github.com/anthropics/prompt-eng-interactive-tutorial",
+          "type": "course"
+        }
+      ]
+    },
+    {
+      "id": "f-structured-output",
+      "title": "Structured output with tool use and JSON schemas",
+      "estMinutes": 12,
+      "level": "core",
+      "taskStatementIds": [
+        "4.3"
+      ],
+      "eli5": "Asking for JSON in plain words is like asking someone to fill in a form from memory. Giving Claude a tool with a schema is handing them the actual form with boxes: the shape is always right, but you still have to check what they wrote in the boxes.",
+      "visualId": "structured-output",
+      "body": "## The problem with \"please reply in JSON\"\n\nIf you just ask for JSON in the prompt, most responses will parse, but some won't: a trailing comment, a missing bracket, a sentence before the opening brace. In a pipeline processing thousands of documents, \"most\" is not good enough.\n\nThe exam guide's answer is **tool use with a JSON schema**: the most reliable way to get schema-compliant output, and it **eliminates JSON syntax errors**.\n\n## How the pattern works\n\nYou define a tool that you never \"execute\". Its `input_schema` is simply the shape of the data you want. Claude \"calls\" the tool, and you read the structured data from the `tool_use` block's `input`.\n\n```python\ntools = [{\n  \"name\": \"extract_invoice\",\n  \"description\": \"Record the fields extracted from one invoice.\",\n  \"input_schema\": {\n    \"type\": \"object\",\n    \"properties\": {\n      \"vendor_name\":  {\"type\": \"string\"},\n      \"invoice_date\": {\"type\": [\"string\", \"null\"], \"description\": \"ISO 8601 date, or null if absent\"},\n      \"line_items\": {\"type\": \"array\", \"items\": {\n          \"type\": \"object\",\n          \"properties\": {\"description\": {\"type\": \"string\"}, \"amount\": {\"type\": \"number\"}},\n          \"required\": [\"description\", \"amount\"]}},\n      \"stated_total\": {\"type\": \"number\"}\n    },\n    \"required\": [\"vendor_name\", \"invoice_date\", \"line_items\", \"stated_total\"]\n  }\n}]\n\nresponse = client.messages.create(model=MODEL, max_tokens=1024, tools=tools,\n    tool_choice={\"type\": \"tool\", \"name\": \"extract_invoice\"},  # classic pattern; see version-drift note\n    messages=[{\"role\": \"user\", \"content\": invoice_text}])\n\ndata = next(b.input for b in response.content if b.type == \"tool_use\")\n```\n\n## tool_choice: auto, any, forced\n\n| Setting | Meaning | When to use it |\n|---|---|---|\n| `{\"type\": \"auto\"}` | Claude decides whether to call a tool **or reply in text**. Default when tools are provided. | Normal agents, where answering directly is sometimes right |\n| `{\"type\": \"any\"}` | Claude **must call a tool**, but picks which one | Several extraction schemas exist (invoice, receipt, contract) and the document type is unknown |\n| `{\"type\": \"tool\", \"name\": \"...\"}` | Claude **must call this specific tool** | One extraction must happen, or must happen first, e.g. force `extract_metadata` before enrichment steps |\n| `{\"type\": \"none\"}` | No tool calls | Default when no tools are provided |\n\nThe key distinction the exam tests: **`auto` allows a text reply**, so it does not guarantee structured output. `any` guarantees *a* tool call; forced guarantees *that* tool call. With `any` or a forced tool, the API prefills the assistant turn, so Claude emits no natural-language text before the `tool_use` block.\n\nA common pipeline: force `extract_metadata` on the first call, then in follow-up turns let Claude use enrichment tools with `auto`.\n\n## Syntax is guaranteed; meaning is not\n\nThis is the single most tested idea in the task statement. A schema-valid response can still be **semantically wrong**:\n\n- line items that don't add up to `stated_total`;\n- the shipping address placed in `billing_address`;\n- a plausible-looking date invented because the field was required;\n- a category value that is valid but wrong.\n\nThe schema guarantees the **shape**. Your application must still validate the **content**: cross-field arithmetic, business rules, ranges. That validation and the retry loop it feeds are covered in *f-validation-retry*.\n\n## Format rules belong in the prompt too\n\nA schema can say `invoice_date` is a string. It can't, on its own, tell Claude that \"3rd of March '25\", \"03/03/25\" and \"2025-03-03\" are the same value and should all become `2025-03-03`. Put **normalization rules** (date format, currency codes, units, how to treat \"N/A\") in the prompt alongside the schema, and use the field `description` for short per-field hints.\n\n## Current API features (version drift)\n\nThe exam guide describes the classic tool-use pattern. Today's docs add two related features that use **grammar-constrained sampling** so the output always matches the schema:\n\n- **Strict tool use**: `strict: true` on a tool definition, so tool inputs are guaranteed to validate against `input_schema`.\n- **JSON outputs**: `output_config.format` with a `json_schema` (the older `output_format` parameter is deprecated).\n\nThings to know about them: they still don't guarantee semantic correctness; JSON outputs (`output_config.format`) can't be combined with citations on your documents (the API returns 400); and enum casing isn't guaranteed, so compare case-insensitively. Also, on the newest models (Opus 5.5, Sonnet 5.5, Fable 5.1, Mythos 5.1) `tool_choice` `any` and forced `tool` return a 400 error; the docs recommend `auto` plus `strict: true`, or `output_config.format`. On the exam, answer with the guide's concepts (`auto` vs `any` vs forced) unless the question is explicitly about current-model behavior.\n\n## Edge cases to handle\n\n- `stop_reason: \"max_tokens\"`: the tool input may be truncated. Retry with a higher `max_tokens`.\n- `stop_reason: \"refusal\"`: the output may not match the schema. Handle it as its own case, not as a parse error.",
+      "keyTakeaways": [
+        "Tool use with a JSON schema is the most reliable way to get schema-compliant output; it eliminates syntax errors.",
+        "Read structured data from the tool_use block's input; the tool is a schema, not something you execute.",
+        "tool_choice auto may return text; any forces some tool call; {type: tool, name} forces a specific tool.",
+        "Use any when several schemas exist and the document type is unknown; force a tool to make one extraction run first.",
+        "Schemas don't prevent semantic errors (totals that don't add up, values in the wrong field); validate content in code.",
+        "Put normalization rules (dates, currency, units) in the prompt alongside the schema."
+      ],
+      "examTips": [
+        "\"Responses sometimes fail to parse\" points to tool use with a JSON schema (or structured outputs), not a stronger instruction or a regex cleanup step.",
+        "\"Schema-valid but the numbers don't add up\" points to app-side semantic validation; the schema already did its job.",
+        "Pick any when the stem says multiple document types and you must guarantee structured output; pick a forced tool when one specific step must run first.",
+        "auto is the distractor when the stem requires a guaranteed tool call.",
+        "Follow the exam guide's framing on tool_choice; current-model 400s are a docs caveat, not the usual exam answer."
+      ],
+      "commonTraps": [
+        "Believing a strict schema guarantees correct values.",
+        "Choosing tool_choice auto and expecting a guaranteed tool call.",
+        "Choosing a forced single tool when the document type (and so the schema) is unknown.",
+        "Combining JSON outputs (output_config.format) with citations (the API returns 400).",
+        "Relying on prefill to force JSON on Claude 4.6+ models."
+      ],
+      "resources": [
+        {
+          "title": "Define tools and tool_choice (Claude docs)",
+          "url": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools",
+          "type": "docs"
+        },
+        {
+          "title": "Strict tool use (Claude docs)",
+          "url": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/strict-tool-use",
+          "type": "docs"
+        },
+        {
+          "title": "Structured outputs (Claude docs)",
+          "url": "https://platform.claude.com/docs/en/build-with-claude/structured-outputs",
+          "type": "docs"
+        },
+        {
+          "title": "Handling stop reasons (Claude docs)",
+          "url": "https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons",
+          "type": "docs"
+        },
+        {
+          "title": "Claude cookbooks (GitHub)",
+          "url": "https://github.com/anthropics/claude-cookbooks",
+          "type": "repo"
+        }
+      ]
+    },
+    {
+      "id": "f-schema-design",
+      "title": "Schema design: required, nullable and enums",
+      "estMinutes": 9,
+      "level": "core",
+      "taskStatementIds": [
+        "4.3"
+      ],
+      "eli5": "If a form says \"Middle name: required\" and you don't have one, you'll be tempted to make one up. Good forms let you write \"none\", and good category lists include \"other: please specify\".",
+      "visualId": "structured-output",
+      "body": "## Required fields can cause fabrication\n\nA schema is a promise the model tries to keep. If a field is `required` and non-nullable, the model must put *something* there, even when the source document doesn't contain the information. That is how you get an invented PO number or a plausible-but-fake date.\n\nThe fix from the exam guide: **make a field optional or nullable when the source may not contain it**. Then \"not present\" has a legal answer.\n\n```json\n\"purchase_order_number\": {\n  \"type\": [\"string\", \"null\"],\n  \"description\": \"PO number exactly as printed. null if the document has no PO number. Never infer it.\"\n}\n```\n\nTwo ways to express \"may be missing\":\n\n| Approach | Schema | Effect |\n|---|---|---|\n| Optional | Field left out of `required` | The key may be absent |\n| Nullable | `\"type\": [\"string\", \"null\"]` and listed in `required` | The key is always present; the value may be `null` |\n\nNullable-but-required is often easier downstream: every record has the same keys, and `null` explicitly means \"looked, not found\". Either way, the description should say *when* to use null.\n\n## Enums with escape hatches\n\nEnums keep categorical fields clean, but a closed list forces the model to pick the nearest wrong value when reality doesn't fit. Two patterns fix this:\n\n- **`\"other\"` + a detail string** for categories that will grow:\n\n```json\n\"document_type\": {\"type\": \"string\",\n  \"enum\": [\"invoice\", \"receipt\", \"credit_note\", \"other\"]},\n\"document_type_detail\": {\"type\": [\"string\", \"null\"],\n  \"description\": \"If document_type is other, describe the type in a few words.\"}\n```\n\n- **`\"unclear\"`** for genuinely ambiguous inputs, so the model can say so instead of guessing:\n\n```json\n\"sentiment\": {\"type\": \"string\", \"enum\": [\"positive\", \"negative\", \"neutral\", \"unclear\"]}\n```\n\nThe `other_detail` values are also data: review them periodically, and when one value shows up a lot (say \"proforma invoice\"), promote it into the enum.\n\n## Normalization lives in the prompt\n\nThe schema fixes types; the prompt fixes conventions. Pair a strict schema with explicit rules:\n\n```text\n- Dates: output ISO 8601 (YYYY-MM-DD). If only month and year are given, use null for the date\n  and put the original text in date_raw.\n- Currency: ISO 4217 code (USD, EUR). Amounts as numbers without symbols or thousands separators.\n- Units: convert weights to kilograms.\n```\n\nWithout these rules, a schema-valid extraction can still mix `\"03/04/25\"` and `\"2025-04-03\"` in the same field.\n\n## Fields that help validation\n\nGood schemas also make validation possible. Two patterns that come up in task 4.4:\n\n- `stated_total` **and** `calculated_total` (the sum of extracted line items) so code can detect mismatches.\n- `conflict_detected: boolean` (with a note) when the source itself contradicts itself, e.g. two different dates for the same event.\n\n## Worked example: a contract extractor\n\nA legal-ops team extracts `renewal_date`, `termination_notice_days` and `governing_law` from vendor contracts. In testing, 15% of contracts have no explicit notice period, yet the output always has a number, usually 30.\n\nDiagnosis: the field is required and non-nullable, so the model fills it with a common value.\n\nFix:\n1. Make `termination_notice_days` nullable with the description \"null if no notice period is stated\".\n2. Add a short instruction: \"Do not infer values from industry norms.\"\n3. Add one few-shot example of a contract with no notice period, showing `null`.\n\nRetrying the old schema wouldn't help: the information isn't in the document, so retries just produce more guesses.\n\n## Current-docs details (deep)\n\nIf you use strict tool use or `output_config.format`:\n- **Required properties are emitted before optional ones**, whatever order the schema lists them in.\n- Strict mode **doesn't support numeric constraints** (`minimum`, `maximum`, `multipleOf`) or **string length constraints** (`minLength`, `maxLength`). The SDKs move them into descriptions; validate them in your own code.\n- `additionalProperties: false` is supported and is good practice for extraction schemas.",
+      "keyTakeaways": [
+        "Required, non-nullable fields push the model to invent values when the source lacks the information.",
+        "Make fields optional or nullable when the source may not contain them, and say in the description when to return null.",
+        "Use enum + \"other\" + a detail string for categories that will grow; add \"unclear\" for genuinely ambiguous inputs.",
+        "Put normalization rules (date format, currency, units) in the prompt alongside the schema.",
+        "Design fields that enable validation, such as calculated_total next to stated_total and a conflict_detected flag.",
+        "Strict mode doesn't enforce numeric or length constraints; validate those client-side."
+      ],
+      "examTips": [
+        "\"The model fills in plausible values for fields that aren't in the document\" points to nullable/optional fields, not a retry loop or a bigger model.",
+        "\"New categories keep appearing and get forced into the wrong bucket\" points to an \"other\" enum value with a detail string.",
+        "\"Dates come out in mixed formats\" points to normalization rules in the prompt (the schema type alone doesn't fix it).",
+        "Eliminate options that make more fields required to \"force completeness\"; they increase fabrication."
+      ],
+      "commonTraps": [
+        "Making every field required for \"data completeness\".",
+        "A closed enum with no other/unclear option.",
+        "Expecting the schema type alone to normalize formats.",
+        "Retrying extraction when the value is simply absent from the source."
+      ],
+      "resources": [
+        {
+          "title": "Structured outputs (Claude docs)",
+          "url": "https://platform.claude.com/docs/en/build-with-claude/structured-outputs",
+          "type": "docs"
+        },
+        {
+          "title": "Strict tool use (Claude docs)",
+          "url": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/strict-tool-use",
+          "type": "docs"
+        },
+        {
+          "title": "Define tools and tool_choice (Claude docs)",
+          "url": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools",
+          "type": "docs"
+        },
+        {
+          "title": "Reduce hallucinations (Claude docs)",
+          "url": "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-hallucinations",
+          "type": "docs"
+        }
+      ]
+    },
+    {
+      "id": "f-validation-retry",
+      "title": "Validation, retry and feedback loops",
+      "estMinutes": 11,
+      "level": "core",
+      "taskStatementIds": [
+        "4.4"
+      ],
+      "eli5": "When a student's sum is wrong, telling them \"try again\" helps less than \"your line items add to 120 but you wrote 150\". But if the receipt is missing a page, no amount of retrying will reveal the missing number.",
+      "visualId": "structured-output",
+      "body": "## The loop\n\nStructured output guarantees the *shape*. A validation loop checks the *content* and gives the model one or two chances to fix what it can fix.\n\n```text\nextract (tool use + schema)\n   -> validate in code (schema already OK; check business rules)\n   -> pass?  yes -> store\n             no  -> is the error fixable from the source?\n                      yes -> retry with specific error feedback (bounded)\n                      no  -> mark for human review / escalate\n```\n\n## Two kinds of errors\n\n| Error type | Examples | Caught by | Fixed by |\n|---|---|---|---|\n| Syntax / schema | Malformed JSON, missing key, wrong type | Already eliminated by tool use with a schema | Not needed |\n| Semantic | Line items don't sum to the total; vendor name in the address field; end date before start date | Your validation code | Retry with feedback, or human review |\n\nQuestions often hinge on this split: once you use tool use with a schema, remaining errors are **semantic**, and only application-level checks find them.\n\n## Retry with error feedback\n\nA blind retry (\"try again\") just samples another answer. An effective retry sends three things:\n\n1. **The original document**,\n2. **The failed extraction**, and\n3. **The specific validation errors**.\n\n```text\n<document>...original invoice text...</document>\n<previous_extraction>{\"line_items\":[...], \"stated_total\": 1250.00}</previous_extraction>\n<validation_errors>\n- Sum of line_items.amount is 1150.00 but stated_total is 1250.00.\n- invoice_date \"13/31/2025\" is not a valid date.\n</validation_errors>\nRe-extract the invoice. Check the line items against the document; if the document\nitself is inconsistent, keep the stated values and set conflict_detected to true.\n```\n\nSpecific feedback points the model at the exact problem, which is why it works for **format mismatches and structural mistakes** (a skipped line item, a misread date, a value in the wrong field).\n\n## When retries can't work\n\nRetries are ineffective when the **information isn't in the source**. If a field's value only exists in a separate document that wasn't provided (the master contract an invoice refers to, an appendix not attached), every retry is a new guess. The right moves are:\n\n- return `null` for that field (a nullable schema makes this legal),\n- flag the record for human review or fetch the missing document,\n- **cap the number of retries** (for example 1-2) and escalate instead of looping.\n\nA good exam heuristic: *Can the correct value be found in what the model was given?* If yes, retry with feedback. If no, stop retrying.\n\n## Self-correction fields\n\nYou can design the schema so mismatches surface on their own:\n\n- **`calculated_total` alongside `stated_total`**: the model extracts the printed total *and* sums the line items. Code compares them; a difference triggers a retry or review.\n- **`conflict_detected` boolean** (plus a note): set when the source contradicts itself, such as two different due dates. This separates \"the model made a mistake\" from \"the document is inconsistent\", which need different handling. A conflict in the source is not something a retry should \"fix\".\n\n## Feedback loops in review systems\n\nThe same idea applies to code review bots. Add a **`detected_pattern`** field to each finding (for example `\"unchecked-return-value\"`, `\"magic-number\"`). When developers dismiss findings, you can group dismissals by pattern and see exactly which constructs generate false positives. That data tells you which criteria to rewrite or which category to disable (see *f-explicit-criteria*). Without the field, you only know \"people dismiss a lot\", not why.\n\n## Worked example\n\nA pipeline extracts expense reports. Validation finds three failure groups:\n\n| Failure | Fixable from source? | Action |\n|---|---|---|\n| Dates in DD/MM vs MM/DD confusion | Yes | Add a normalization rule; retry with the specific error |\n| Total differs from sum of items by a skipped row | Yes | Retry with \"sum is X, stated is Y\" feedback |\n| Cost center missing; it lives in the HR system | No | Make it nullable; look it up via a tool or route to review |\n\nRetries fix the first two. The third would loop forever.\n\n## Validation tools\n\nUse a schema validator (Pydantic, JSON Schema) for structure, then plain code for business rules. Keep retry counts bounded and log every failure type: that log is the input for improving the prompt.",
+      "keyTakeaways": [
+        "Tool use with a schema eliminates syntax errors; remaining errors are semantic and need application-level validation.",
+        "Effective retries send the original document, the failed extraction and the specific validation errors.",
+        "Retries fix format and structural mistakes; they can't recover information that isn't in the source.",
+        "Bound the retries, then return null or escalate to human review.",
+        "Self-correction fields: calculated_total next to stated_total, and a conflict_detected flag for inconsistent sources.",
+        "A detected_pattern field on findings lets you analyze which patterns developers dismiss as false positives."
+      ],
+      "examTips": [
+        "Ask yourself: is the missing or wrong value present in the input? If not, the answer is not \"retry\".",
+        "Prefer a retry that includes the specific validation error over a generic \"try again\" or a larger model.",
+        "\"Developers keep dismissing findings and we don't know why\" points to adding detected_pattern and analyzing dismissals.",
+        "Options that keep retrying until validation passes (unbounded) are wrong; look for a cap plus escalation."
+      ],
+      "commonTraps": [
+        "Retrying when the information exists only in an external document that wasn't provided.",
+        "Sending only the error message without the original document and the failed output.",
+        "Treating a contradiction in the source as a model error to be retried away.",
+        "Thinking JSON syntax validation is still needed as the main check after adopting tool use."
+      ],
+      "resources": [
+        {
+          "title": "Structured outputs (Claude docs)",
+          "url": "https://platform.claude.com/docs/en/build-with-claude/structured-outputs",
+          "type": "docs"
+        },
+        {
+          "title": "Strict tool use (Claude docs)",
+          "url": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/strict-tool-use",
+          "type": "docs"
+        },
+        {
+          "title": "Reduce hallucinations (Claude docs)",
+          "url": "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-hallucinations",
+          "type": "docs"
+        },
+        {
+          "title": "Define success criteria and build evaluations (Claude docs)",
+          "url": "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests",
+          "type": "docs"
+        },
+        {
+          "title": "Claude cookbooks (GitHub)",
+          "url": "https://github.com/anthropics/claude-cookbooks",
+          "type": "repo"
+        }
+      ]
+    },
+    {
+      "id": "f-batch-processing",
+      "title": "Message Batches API vs synchronous calls",
+      "estMinutes": 11,
+      "level": "core",
+      "taskStatementIds": [
+        "4.5"
+      ],
+      "eli5": "Batch is like dropping laundry off for a cheaper overnight service: half price, but you might not get it back until tomorrow. Fine for the weekly wash, useless if you need a shirt for a meeting in ten minutes.",
+      "visualId": "batch-vs-realtime",
+      "body": "## What the Message Batches API is\n\nThe Message Batches API lets you submit many Messages requests in one batch for **asynchronous** processing. Each request is processed independently.\n\nKey facts (from the exam guide and current docs):\n\n| Property | Value |\n|---|---|\n| Cost | **50% discount** on input and output tokens |\n| Processing window | **Up to 24 hours**; batches that don't finish within 24 hours expire |\n| Latency guarantee | **None.** Most batches finish within about an hour, but you can't rely on it |\n| Matching results | Each request has a **`custom_id`**; results can come back **in any order**, so always match on `custom_id` |\n| Size limit | 100,000 requests or 256 MB per batch, whichever comes first |\n| Results retention | Downloadable for 29 days after creation |\n| Result types | `succeeded`, `errored`, `canceled`, `expired` (errored, canceled and expired requests aren't billed) |\n\n## The decision rule: who is waiting?\n\n| Workload | Someone or something blocked on the result? | API |\n|---|---|---|\n| Pre-merge PR check | Yes, the developer can't merge | **Synchronous** |\n| Live chat / support agent | Yes, the customer | **Synchronous** |\n| Overnight tech-debt report | No, read next morning | **Batch** |\n| Weekly security audit of all repos | No | **Batch** |\n| Nightly test generation | No | **Batch** |\n| Re-extracting 200k archived documents | No | **Batch** |\n\n\"Usually fast\" is not a latency guarantee. If a workflow **blocks** on the result, use synchronous calls, even though batch is cheaper. Splitting a mixed workload is common: batch for the latency-tolerant part, synchronous for the blocking part.\n\n## No mid-request tool loop\n\nA batch request is a single Messages call. Per the exam guide, the batch API **does not support multi-turn tool calling within a single request**: you can't run a tool mid-request and feed the result back while the batch item is processing. (A batch request *can* include your tool definitions, and Claude can return a `tool_use` block, but executing a client tool and continuing requires another request. Current docs add one nuance: Anthropic's *server* tools, such as web search, web fetch and code execution, do run their server-side loop inside a batch request, because no round-trip to your code is needed. The exam framing concerns tools you execute yourself.) Agentic workflows that need several tool round-trips belong in synchronous calls, or must be restructured into separate batch rounds.\n\n## SLA arithmetic\n\nThe guaranteed worst case for a batch result is **submission delay + processing window**. If documents arrive continuously and you submit a batch every *N* hours:\n\n- worst-case wait before submission = *N* hours (a document that arrives just after a submission),\n- worst-case processing = 24 hours,\n- guaranteed turnaround = *N* + 24 hours.\n\nSo to promise results within **30 hours**, submit at least every **6 hours**. The exam guide's example uses **4-hour** windows, which guarantees 28 hours and leaves margin under a 30-hour SLA. If the SLA is under 24 hours, batch can't *guarantee* it at all.\n\n## Handling failures\n\nBatch results report per request. When some fail:\n\n1. Identify the failed requests by **`custom_id`**.\n2. Fix the cause before resubmitting; don't just resend the same request. Example: documents that exceeded the context window should be **chunked** into smaller pieces.\n3. **Resubmit only the failed items** in a new batch. Re-running the whole batch wastes money and can duplicate results.\n\n```python\nfailed = [r.custom_id for r in results if r.result.type in (\"errored\", \"expired\")]\nretry_requests = [chunk_if_too_long(original[cid]) for cid in failed]\n```\n\n## Refine on a sample first\n\nA prompt bug in a 100,000-item batch costs you 100,000 bad results and a day of waiting. Before batching large volumes, run the prompt on a **representative sample** (synchronously or as a small batch), check the outputs, and refine. This raises the first-pass success rate and reduces costly resubmission.\n\n## Worked example\n\nA team runs two workflows on real-time calls: a blocking PR check, and an overnight report on test flakiness. A manager proposes moving both to batch for the 50% savings.\n\n- PR check: blocking, so keep it synchronous.\n- Overnight report: latency-tolerant, so move it to batch.\n- Rejected ideas: \"batch both and poll\" (no SLA for the blocking check); \"batch with a real-time fallback on timeout\" (complexity that the simple split avoids); \"keep both real-time because batch results come back out of order\" (`custom_id` solves ordering).\n\n## Related details (deep)\n\nBatch discounts stack with prompt caching, but because batch items run concurrently and in any order, cache hits are best-effort; the docs suggest the 1-hour cache duration for shared context. Streaming isn't supported in batches.",
+      "keyTakeaways": [
+        "Message Batches API: 50% cost savings, up to 24-hour processing, no latency SLA.",
+        "Use batch for non-blocking work (overnight reports, weekly audits, nightly test generation); use synchronous calls for blocking work (pre-merge checks, live chat).",
+        "Results can arrive in any order; correlate them with custom_id.",
+        "A batch request can't run a multi-turn tool loop mid-request.",
+        "Guaranteed turnaround = submission interval + 24 hours (e.g. 4-hour submissions keep you inside a 30-hour SLA).",
+        "On failure, resubmit only the failed custom_ids, with fixes such as chunking oversized documents; refine prompts on a sample first."
+      ],
+      "examTips": [
+        "Look for words like \"blocking\", \"must complete before merge\", \"customer waiting\": those rule out batch regardless of the savings.",
+        "When one option splits the workload (batch for the latency-tolerant part, sync for the blocking part), it is usually correct.",
+        "Options citing result ordering as a reason to avoid batch are wrong; custom_id handles correlation.",
+        "Timeout-fallback hybrids are typically over-engineered distractors when a simple split exists.",
+        "For SLA questions, add the submission interval to the 24-hour window."
+      ],
+      "commonTraps": [
+        "Treating \"most batches finish within an hour\" as a guarantee.",
+        "Resubmitting the entire batch after partial failure.",
+        "Resubmitting failed items unchanged when the failure was context overflow.",
+        "Assuming results come back in submission order.",
+        "Inventing flags like --batch for Claude Code; batching is an API feature."
+      ],
+      "resources": [
+        {
+          "title": "Batch processing / Message Batches API (Claude docs)",
+          "url": "https://platform.claude.com/docs/en/build-with-claude/batch-processing",
+          "type": "docs"
+        },
+        {
+          "title": "Official Foundations exam guide (PDF)",
+          "url": "https://everpath-course-content.s3-accelerate.amazonaws.com/instructor%2F6nizmqk8tpzpfjvt6qmmav7rh%2Fpublic%2F1783542750%2FClaude+Certified+Architect+%E2%80%93+Foundations+Exam+Guide.pdf",
+          "type": "docs"
+        },
+        {
+          "title": "Claude cookbooks (GitHub)",
+          "url": "https://github.com/anthropics/claude-cookbooks",
+          "type": "repo"
+        }
+      ]
+    },
+    {
+      "id": "f-multi-pass-review",
+      "title": "Independent and multi-pass review",
+      "estMinutes": 10,
+      "level": "core",
+      "taskStatementIds": [
+        "4.6"
+      ],
+      "eli5": "Proofreading your own essay right after writing it, you read what you meant, not what you wrote. A friend who never saw your draft catches more. And it's easier to check one chapter at a time, then read the whole book once for the big picture.",
+      "visualId": "workflow-patterns",
+      "body": "## Why self-review is weak\n\nWhen the same Claude session that wrote code is asked to review it, the review runs with the **generator's reasoning still in context**. The model already \"knows\" why each decision was made, so it is less likely to question those decisions. Adding \"now carefully review your work\" or turning on extended thinking in the same session doesn't remove that bias.\n\nThe exam guide's fix: an **independent review instance**, a separate Claude call or session that sees the artifact (code, extraction, document) and the review criteria, **but not the generator's reasoning or conversation**. It is more effective at catching subtle issues than self-review instructions or extended thinking.\n\n| Approach | Has generator's reasoning? | Effectiveness at catching subtle issues |\n|---|---|---|\n| \"Review your answer\" in the same session | Yes | Weak |\n| Extended thinking in the same session | Yes | Better reasoning, same blind spots |\n| Independent instance with only the artifact + criteria | **No** | **Strongest of the three** |\n\nIn CI this looks like: one job generates code or a fix; a separate `claude -p` invocation (a fresh session) reviews the diff against explicit criteria.\n\n## Attention dilution in large reviews\n\nReviewing many files in a single pass causes predictable symptoms:\n\n- deep feedback on some files, superficial comments on others;\n- obvious bugs missed;\n- **contradictory findings**: a pattern flagged in one file and approved in identical code elsewhere.\n\nThe cause is **attention dilution**: too much material competing for attention in one pass. A larger context window doesn't fix it, because fitting into the window isn't the same as getting attention.\n\n## Multi-pass architecture\n\nSplit the review into two kinds of passes:\n\n1. **Per-file local passes**: review each file (or small group) on its own for local issues: logic errors, null handling, security problems within the file. Each pass gets full attention and the same criteria, so depth and judgment are consistent.\n2. **Cross-file integration pass**: a separate pass focused on **data flow between files**: interface mismatches, a changed function signature with stale callers, a field renamed in one module but not another. Give this pass the interfaces and the summaries or findings from the local passes, not necessarily every line again.\n\n```text\nPR with 14 files\n  ├─ pass 1..14: one file each, local criteria   (can run in parallel)\n  └─ integration pass: cross-file data flow + consistency of local findings\n       -> merged, de-duplicated report\n```\n\nThe per-file passes are independent, so they can run in parallel (this is the *parallelization / sectioning* workflow pattern).\n\n## Confidence for routing, not filtering\n\nThe guide also mentions **verification passes where the model reports a confidence with each finding**. Used well, this helps **route** review effort: high-confidence findings go straight to the PR comment, low-confidence ones go to a human or a second check. It does not replace explicit criteria (see *f-explicit-criteria*), and it isn't a precision fix on its own.\n\n## Distractors to recognize\n\nFor \"a large single-pass review is inconsistent\", watch for these wrong answers:\n\n| Option | Why it's wrong |\n|---|---|\n| Make developers split PRs into 3-4 files | Shifts the burden to people; the system doesn't improve |\n| Use a bigger model / larger context window | Capacity isn't the problem; attention is |\n| Run the same full review 3 times and keep findings that appear in 2 of 3 | Suppresses real bugs that are only caught some of the time |\n| Ask the same session to double-check its findings | Self-review keeps the same blind spots |\n\n## Worked example\n\nA code-generation pipeline writes a migration script and a reviewer step in the **same conversation** approves it every time, yet production runs found two data-loss bugs.\n\nFix: move the review into a **separate instance** that receives only the script, the schema, and explicit criteria (\"flag any statement that drops or truncates data without a backup step\"). Because it doesn't share the generator's assumptions, it questions them. If the change spans several files, review them one by one, then run an integration pass on how the migration interacts with the model layer.",
+      "keyTakeaways": [
+        "Self-review in the same session is weak because the model keeps its generation reasoning and rarely questions it.",
+        "An independent instance without the generator's context catches more than self-review instructions or extended thinking.",
+        "Large single-pass reviews suffer attention dilution: uneven depth, missed bugs, contradictory findings.",
+        "Split into per-file local passes plus a separate cross-file integration pass for data flow.",
+        "Per-finding confidence helps route review effort; it doesn't replace explicit criteria."
+      ],
+      "examTips": [
+        "\"Inconsistent depth and contradictory findings across many files\" points to per-file passes + an integration pass.",
+        "\"The reviewer approves the generator's mistakes\" points to an independent review instance without the generator's context.",
+        "Eliminate: bigger context window, forcing smaller PRs, majority voting across runs, and \"ask it to double-check\" in the same session.",
+        "If an option adds extended thinking to the same session as the fix for self-review bias, it's a distractor."
+      ],
+      "commonTraps": [
+        "Equating a larger context window with better attention.",
+        "Consensus voting (2 of 3 runs) that filters out real but intermittent findings.",
+        "Passing the generator's full conversation to the reviewer, which recreates the bias.",
+        "Pushing the fix onto developers instead of fixing the review architecture."
+      ],
+      "resources": [
+        {
+          "title": "Building effective agents (Anthropic engineering)",
+          "url": "https://www.anthropic.com/engineering/building-effective-agents",
+          "type": "blog"
+        },
+        {
+          "title": "Claude Code best practices (Anthropic engineering)",
+          "url": "https://www.anthropic.com/engineering/claude-code-best-practices",
+          "type": "blog"
+        },
+        {
+          "title": "claude-code-action (GitHub Actions integration)",
+          "url": "https://github.com/anthropics/claude-code-action",
+          "type": "repo"
+        },
+        {
+          "title": "Official Foundations exam guide (PDF)",
+          "url": "https://everpath-course-content.s3-accelerate.amazonaws.com/instructor%2F6nizmqk8tpzpfjvt6qmmav7rh%2Fpublic%2F1783542750%2FClaude+Certified+Architect+%E2%80%93+Foundations+Exam+Guide.pdf",
+          "type": "docs"
+        }
+      ]
+    },
+    {
+      "id": "f-d4-scenario-drill",
+      "title": "Scenario drill: extraction and CI pipelines",
+      "estMinutes": 12,
+      "level": "core",
+      "taskStatementIds": [
+        "4.1",
+        "4.2",
+        "4.3",
+        "4.4",
+        "4.5",
+        "4.6"
+      ],
+      "eli5": "This is a practice run: we take two realistic jobs (reading thousands of invoices and reviewing code automatically) and walk through every decision, so on exam day each question feels like a step you've already taken.",
+      "visualId": "exam-strategy",
+      "body": "## How Domain 4 questions are built\n\nDomain 4 is about **20% of the Foundations exam (about 12 items)**, and it shows up mostly in the *Structured data extraction*, *Claude Code for CI/CD* and *Developer productivity* scenarios. Most questions describe a symptom and offer four fixes. Use this funnel:\n\n1. **Name the symptom precisely.** Parse failures? Wrong values? Noise? Inconsistent format? Latency? Missed bugs?\n2. **Map it to the root cause** with the table below.\n3. **Eliminate** options that add a bigger model, more vague instructions, unbounded retries, or extra infrastructure that doesn't touch the root cause.\n4. **Prefer the least machinery** that fixes the root cause.\n\n| Symptom | Root cause | Fix |\n|---|---|---|\n| Output sometimes isn't valid JSON | Free-text format request | Tool use + JSON schema (or structured outputs) |\n| Valid JSON, wrong numbers / wrong field | Semantic error | App-side validation + retry with specific errors |\n| Plausible values for data not in the source | Required non-nullable fields | Nullable/optional fields |\n| Right categories missing, forced into wrong ones | Closed enum | `other` + detail, `unclear` |\n| Too many false positives, developers ignore bot | Vague criteria | Explicit report/skip criteria; disable noisy category temporarily |\n| Format/judgment inconsistent despite clear instructions | No demonstrations | 2-4 targeted few-shot examples |\n| Null fields only for some document layouts | Examples don't cover layouts | Few-shot examples of each layout |\n| Retries never succeed for some field | Info absent from source | Stop retrying; null + human review |\n| Costs high on overnight jobs | Sync API for latency-tolerant work | Message Batches API |\n| Reviewer misses its own generator's bugs | Self-review bias | Independent instance |\n| Large PR review uneven/contradictory | Attention dilution | Per-file passes + integration pass |\n\n## Drill 1: invoice extraction at scale\n\n*A finance team must extract fields from 80,000 supplier invoices per month, mostly scanned text, with results due within 30 hours of receipt. Some invoices are credit notes or receipts, not invoices.*\n\nWalk through the decisions:\n\n- **Output shape**: define `extract_invoice`, `extract_credit_note`, `extract_receipt` tools. The type is unknown up front, so use `tool_choice: {\"type\": \"any\"}` (classic exam framing) to guarantee one of them is called.\n- **Schema**: `po_number` and `due_date` nullable (\"null if not printed\"); `document_type` enum with `other` + detail; `stated_total` plus `calculated_total`; `conflict_detected`.\n- **Prompt**: normalization rules (ISO dates, ISO 4217 currency, numbers without separators); 3 few-shot examples covering a standard invoice, a handwritten-amount invoice, and one where the PO number is missing (`null`).\n- **Validation**: code checks the totals and date logic. A mismatch triggers one retry with the document, the failed extraction and the specific error. Still failing, or `conflict_detected: true`: human review queue.\n- **Throughput and cost**: no one waits on an individual invoice, so use the **Message Batches API**. 30-hour SLA minus 24-hour processing leaves 6 hours, so submit at least every 6 hours (every 4 gives margin). Match results by `custom_id` (e.g. the invoice ID).\n- **Before scaling**: run the prompt on a sample of a few hundred invoices and fix the issues first.\n- **Partial failures**: resubmit only failed `custom_id`s; chunk any that exceeded the context window.\n\n## Drill 2: PR review bot in CI\n\n*A bot reviews every PR before merge. Developers complain it is noisy, and on big PRs it contradicts itself.*\n\n- **Blocking check**, so use **synchronous** calls (in Claude Code CI, `claude -p --output-format json --json-schema '...'`, reading the `structured_output` field). Not batch.\n- **Noise**: rewrite criteria as report/skip lists; define severity with a code example per level; temporarily disable the noisiest category (say, \"documentation quality\") until its criteria are fixed.\n- **Consistency**: few-shot examples showing the exact finding format (location, issue, severity, suggested fix) and one acceptable pattern that is *not* a finding.\n- **Big PRs**: per-file passes for local issues, then an integration pass for cross-file data flow.\n- **Generated fixes**: if the bot also proposes patches, review them with an **independent instance**, not the session that wrote them.\n- **Learning loop**: add `detected_pattern` to each finding; analyze which patterns developers dismiss.\n- **Separate workload**: a weekly tech-debt report across all repos is latency-tolerant, so it can move to **batch**.\n\n## Drill 3: spot the trap\n\nFor each proposal, decide quickly:\n\n| Proposal | Verdict |\n|---|---|\n| \"Tell the model to only report issues it's 90% sure about.\" | Vague confidence filter; prefer explicit criteria |\n| \"Retry up to 10 times until `contract_value` is filled.\" | Unbounded retry on absent data; make it nullable, escalate |\n| \"Move the pre-merge check to batch and poll every minute.\" | No latency SLA; keep sync |\n| \"Use a 1M-token model so all 40 files fit in one review.\" | Capacity isn't attention; split passes |\n| \"Make every schema field required so no data is missed.\" | Causes fabrication |\n| \"Since we use a strict schema, we can skip validation.\" | Schemas don't catch semantic errors |\n\n## Final checklist\n\n- Syntax: schema. Meaning: validation code.\n- Missing data: nullable, not retries.\n- Noise: criteria, then examples.\n- Waiting user: sync. Nobody waiting: batch.\n- Reviewer: fresh instance, focused passes.",
+      "keyTakeaways": [
+        "Diagnose the symptom first: parse errors, semantic errors, fabrication, noise, inconsistency, latency or missed bugs each have a different fix.",
+        "Extraction pipeline recipe: tool schemas (any when type unknown), nullable fields, other/unclear enums, normalization rules, few-shot for layouts, validation + bounded retry, batch with custom_id.",
+        "CI review recipe: synchronous for blocking checks, explicit criteria, severity examples, per-file + integration passes, independent reviewer, detected_pattern feedback.",
+        "SLA math for batch: submission interval + 24 hours must fit inside the SLA.",
+        "The right answer fixes the root cause with the least machinery."
+      ],
+      "examTips": [
+        "Read for buried qualifiers: \"before merge\", \"unknown document type\", \"not present in the document\", \"same session\". Each one eliminates at least one option.",
+        "When two options both work, choose the one that addresses the root cause directly and adds the least infrastructure.",
+        "Distractor families in this domain: vaguer or louder instructions, bigger model or context window, unbounded retries, self-review, consensus voting, batch for blocking work.",
+        "For \"choose two\" items, look for one structural fix (schema, architecture) and one prompt fix (criteria, examples) that together cover the scenario."
+      ],
+      "commonTraps": [
+        "Solving a semantic error with a stricter schema.",
+        "Solving missing source data with more retries.",
+        "Solving attention dilution with a bigger context window.",
+        "Choosing batch because it is cheaper even though a person or pipeline is blocked on the result."
+      ],
+      "resources": [
+        {
+          "title": "Official Foundations exam guide (PDF)",
+          "url": "https://everpath-course-content.s3-accelerate.amazonaws.com/instructor%2F6nizmqk8tpzpfjvt6qmmav7rh%2Fpublic%2F1783542750%2FClaude+Certified+Architect+%E2%80%93+Foundations+Exam+Guide.pdf",
+          "type": "docs"
+        },
+        {
+          "title": "Structured outputs (Claude docs)",
+          "url": "https://platform.claude.com/docs/en/build-with-claude/structured-outputs",
+          "type": "docs"
+        },
+        {
+          "title": "Batch processing / Message Batches API (Claude docs)",
+          "url": "https://platform.claude.com/docs/en/build-with-claude/batch-processing",
+          "type": "docs"
+        },
+        {
+          "title": "Prompting best practices (Claude docs)",
+          "url": "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices",
+          "type": "docs"
+        },
+        {
+          "title": "Define tools and tool_choice (Claude docs)",
+          "url": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools",
+          "type": "docs"
+        }
+      ]
+    }
+  ]
+}

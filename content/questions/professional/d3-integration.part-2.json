@@ -1,0 +1,644 @@
+{
+  "certId": "professional",
+  "domainId": "d3-integration",
+  "questions": [
+    {
+      "id": "p-d3-b2-001",
+      "taskStatementId": "3.2",
+      "stem": "A platform team is putting an MCP server in front of an internal payroll API. To ship quickly, the server takes the bearer token the MCP client sends, checks only that it has not expired, and forwards it unchanged in the Authorization header to the payroll API. The payroll API trusts any token from the company identity provider. In a security review, which finding identifies the MOST significant authorization gap?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Calls to the server are not rate limited, so a compromised client could send a burst of payroll queries before anyone notices."
+        },
+        {
+          "id": "B",
+          "text": "The server runs over HTTP rather than stdio, so any process on the network can reach it, which a local transport would prevent."
+        },
+        {
+          "id": "C",
+          "text": "The server accepts and forwards tokens that were never issued for it, so it cannot enforce its own audience, scope, or audit controls."
+        },
+        {
+          "id": "D",
+          "text": "The agent's system prompt does not tell Claude to refuse payroll requests from people outside the HR department."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "This is **token passthrough**, which the MCP specification explicitly forbids: an MCP server **must not accept tokens that were not issued for the MCP server**. Without audience validation the server cannot tell clients apart, cannot apply its own controls, and leaves downstream logs showing the wrong identity. A stolen token for any company app could be replayed through the server to reach payroll. The fix is to validate that each token's audience is this server, then call the payroll API with a separate credential issued for that downstream API and scoped to the user.",
+      "whyWrong": {
+        "A": "Rate limiting is a useful compensating control, but it only slows abuse. The real problem is that the server accepts tokens it has no basis to trust.",
+        "B": "A remote, multi-user server needs an HTTP transport. stdio suits local servers. Changing the transport doesn't fix which tokens the server accepts.",
+        "D": "A prompt instruction is not an authorization control. Access to payroll must be enforced deterministically where tokens are validated, not left to the model."
+      },
+      "difficulty": 3,
+      "mindset": "Every hop validates a token issued for itself. A credential that merely passes through is a gap, not a convenience.",
+      "tags": [
+        "mcp",
+        "oauth",
+        "token-passthrough",
+        "audience-validation",
+        "security"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-11-25/basic/security_best_practices",
+        "https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization"
+      ]
+    },
+    {
+      "id": "p-d3-b2-002",
+      "taskStatementId": "3.2",
+      "scenario": "An enterprise knowledge assistant answers employee questions over the company's document repository. The retrieval tool connects to the repository through one service account that can read every folder, including legal, HR investigations, and board materials.",
+      "stem": "A junior analyst asked the assistant about upcoming reorganizations and received excerpts from a restricted board memo. Leadership wants the fix that most reliably prevents users from seeing documents they could not open themselves. What should the architect do?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Make retrieval run with the requesting user's identity or ACLs, so only documents that user is entitled to can be returned."
+        },
+        {
+          "id": "B",
+          "text": "Add a system prompt rule that the assistant must never quote documents marked confidential or board-only."
+        },
+        {
+          "id": "C",
+          "text": "Put an output classifier after generation that flags responses containing confidential wording for review."
+        },
+        {
+          "id": "D",
+          "text": "Move to a more capable model that recognizes sensitive material more reliably and withholds it on its own."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The gap is **authorization**: the tool acts as a superuser rather than as the end user. The reliable fix enforces the user's entitlements before any content reaches the model, through delegated user credentials or by filtering retrieval results against the document ACLs. Content the user cannot access then never enters the context, so there is nothing for the model to leak. This is least privilege applied at the data layer (general security practice), and it echoes the MCP guidance that tokens and scopes should be bound to the authorized user rather than to a shared, over-privileged identity.",
+      "whyWrong": {
+        "B": "A prompt rule is probabilistic, and it fails silently on documents that are sensitive but not labeled as such. The restricted text has already been retrieved into context.",
+        "C": "An output classifier is a detective control that runs after the data has been retrieved and processed. It will miss paraphrases and doesn't remove the over-broad access.",
+        "D": "Model capability has nothing to do with authorization scope. A stronger model still receives data the user should never have been able to retrieve."
+      },
+      "difficulty": 2,
+      "mindset": "Agents act with the end user's permissions, not a superuser's. Enforce access before data reaches the model.",
+      "tags": [
+        "authorization",
+        "least-privilege",
+        "rag",
+        "acl",
+        "security"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-11-25/basic/security_best_practices",
+        "https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization"
+      ]
+    },
+    {
+      "id": "p-d3-b2-003",
+      "taskStatementId": "3.2",
+      "stem": "Your MCP server acts as a proxy to a third-party project-management API. It uses a single static OAuth client ID with the third-party authorization server, and it lets MCP clients register dynamically, each with their own redirect URI. The third-party server sets a consent cookie after a user's first approval. A pentester shows that a crafted link can deliver an authorization code to an attacker-controlled redirect URI without the user seeing any consent screen. Which TWO controls address this confused-deputy weakness? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Rely on the third-party authorization server's consent screen, because it already tells users which application is requesting access."
+        },
+        {
+          "id": "B",
+          "text": "Have the MCP server show its own per-client consent page and store approval per client_id before forwarding to the third-party server."
+        },
+        {
+          "id": "C",
+          "text": "Accept redirect URIs that match a registered domain pattern, so legitimate clients can use different subdomains without registering again."
+        },
+        {
+          "id": "D",
+          "text": "Add a system prompt instruction telling the agent to use the proxy only on behalf of the currently signed-in user."
+        },
+        {
+          "id": "E",
+          "text": "Validate that each authorization request's redirect_uri exactly matches the one registered for that client, and reject any change."
+        }
+      ],
+      "correct": [
+        "B",
+        "E"
+      ],
+      "explanation": "The MCP security best practices describe this exact pattern: a static client ID, dynamic client registration and a third-party consent cookie let an attacker skip consent. The required mitigations are **per-client consent enforced by the MCP proxy before the third-party flow starts**, and **exact string matching of redirect_uri** against the registered value. Supporting controls include a single-use `state` parameter, `__Host-` prefixed consent cookies, and anti-clickjacking headers.",
+      "whyWrong": {
+        "A": "That consent screen is the one the cookie bypasses. The third-party server sees the proxy's static client ID, so it cannot tell a malicious dynamically registered client from a legitimate one.",
+        "C": "Pattern or wildcard matching widens the attack surface. The guidance requires exact string matching with no wildcards.",
+        "D": "The attack happens in the OAuth redirect flow, outside the model's control. A prompt instruction cannot stop an authorization code from being delivered to the wrong URI."
+      },
+      "difficulty": 3,
+      "mindset": "When one server acts on behalf of many clients, consent and redirect checks must be bound to each client, not inherited.",
+      "tags": [
+        "mcp",
+        "oauth",
+        "confused-deputy",
+        "redirect-uri",
+        "consent",
+        "multi-select"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-11-25/basic/security_best_practices"
+      ]
+    },
+    {
+      "id": "p-d3-b2-004",
+      "taskStatementId": "3.2",
+      "stem": "A remote MCP server uses the streamable HTTP transport and runs as several stateless replicas behind a load balancer. After a user completes OAuth, the server issues a session ID. From then on it treats any request carrying a known session ID as authenticated and queues asynchronous events keyed only by session ID. With the least redesign, which change closes the gap this creates?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Lengthen session IDs and encode the user's email address in them, so they are harder to guess and easy to trace in logs."
+        },
+        {
+          "id": "B",
+          "text": "Pin each user to one replica with sticky load-balancer sessions, so queued events are always delivered by the server that created the session."
+        },
+        {
+          "id": "C",
+          "text": "Add instructions to the client agent to ignore tool-list changes or events that arrive without a matching request."
+        },
+        {
+          "id": "D",
+          "text": "Verify the access token on every inbound request instead of trusting the session, and key queued events by user ID plus a random session ID."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "MCP servers that implement authorization **must verify all inbound requests** and **must not use sessions for authentication**. Session IDs should be secure and non-deterministic, and should be bound to the authorized user (for example `<user_id>:<session_id>`, where the user ID comes from the validated token rather than from the client). This blocks both impersonation and the session-hijack event-injection path. It is a targeted change and needs no new architecture.",
+      "whyWrong": {
+        "A": "Adding an email address makes IDs more predictable, not less. The session would still be acting as the credential.",
+        "B": "Sticky sessions change routing, not trust. An attacker holding a session ID would still be treated as the user by whichever replica serves them.",
+        "C": "The model can't reliably detect injected events, and doing so is not an authentication control. This has to be enforced at the server."
+      },
+      "difficulty": 2,
+      "mindset": "A session identifier tracks state. It does not prove identity. Authenticate every request.",
+      "tags": [
+        "mcp",
+        "session-hijacking",
+        "streamable-http",
+        "authentication"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-11-25/basic/security_best_practices"
+      ]
+    },
+    {
+      "id": "p-d3-b2-005",
+      "taskStatementId": "3.2",
+      "stem": "An MCP server for a document platform advertises every scope it supports, including files:*, admin:* and billing:write. Clients request all of them at first connection so users are 'never interrupted again'. Most sessions only search and read documents. Which change BEST limits the blast radius of a leaked token, meaning what it can reach rather than for how long?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Keep the current scopes but shorten token lifetime to a few minutes, so a leaked token expires before it can be used."
+        },
+        {
+          "id": "B",
+          "text": "Grant a minimal read-only scope first, and step up through targeted scope challenges only when a privileged action is attempted."
+        },
+        {
+          "id": "C",
+          "text": "Show all requested scopes clearly on the consent screen, so users understand what they are granting before they approve."
+        },
+        {
+          "id": "D",
+          "text": "Keep the broad scopes and add detailed audit logging of every privileged call, so misuse can be traced afterwards."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "MCP guidance on **scope minimization** recommends a progressive, least-privilege model: begin with a baseline scope for low-risk discovery and reads, then elevate step by step through `WWW-Authenticate` scope challenges when a privileged operation is first attempted. A leaked token then carries only what the session actually needed. The guidance lists wildcard or omnibus scopes and bundling privileges to avoid future prompts as common mistakes.",
+      "whyWrong": {
+        "A": "Short-lived tokens are a good complementary control that the authorization spec also recommends, but they shrink the time window, not the reach. Within that window the token can still hit admin and billing.",
+        "C": "Transparency helps informed consent, but the token is still over-scoped. The guidance also notes that long scope lists lead users to abandon consent.",
+        "D": "Logging is detective. It records misuse after it happens rather than limiting what a stolen token can do."
+      },
+      "difficulty": 1,
+      "mindset": "Grant the least privilege now and elevate on demand. Pre-approving everything maximizes the blast radius.",
+      "tags": [
+        "mcp",
+        "oauth",
+        "scope-minimization",
+        "least-privilege"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-11-25/basic/security_best_practices",
+        "https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization"
+      ]
+    },
+    {
+      "id": "p-d3-b2-006",
+      "taskStatementId": "3.5",
+      "scenario": "A legal-operations team runs a RAG assistant over ~40,000 vendor contracts. Documents are split into fixed 300-token windows, embedded, and stored in a vector index; the top 5 chunks are passed to Claude.",
+      "stem": "Users report answers such as 'the termination fee is three months of fees' that are correct for some contract but not the one they asked about. Investigation shows that retrieved chunks often contain a clause without the contract name, party, or section heading. Which change MOST directly fixes the root cause?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Raise top-k from 5 to 50 so the right contract's clause is more likely to appear somewhere among the retrieved chunks."
+        },
+        {
+          "id": "B",
+          "text": "Add few-shot examples to the prompt showing Claude how to work out which contract a clause most likely comes from."
+        },
+        {
+          "id": "C",
+          "text": "Chunk along sections and clauses, and prepend each chunk with brief context (contract, party, section) before indexing."
+        },
+        {
+          "id": "D",
+          "text": "Switch the generation step to a larger model that is better at inferring missing context from partial passages."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Naive fixed-size chunking **destroys context**: a clause loses the information that identifies its contract. Anthropic's **Contextual Retrieval** approach prepends chunk-specific context before embedding and indexing, which substantially reduces retrieval failures. Splitting on clause and section boundaries, and keeping metadata such as contract ID, party and date with each chunk, also enables filtering and provenance. The fix belongs in the indexing stage, where the context was lost.",
+      "whyWrong": {
+        "A": "Retrieving more chunks can help recall (Anthropic's experiments found top-20 outperformed top-5), but it doesn't touch the root cause: the chunks still don't say which contract they belong to, so Claude simply sees more unattributed clauses to confuse.",
+        "B": "Few-shot examples can't recover information that is missing from the retrieved text. The model would be guessing, just more consistently.",
+        "D": "A bigger model can't reliably infer a contract name that isn't in its context. This is a retrieval and indexing defect, not a capability gap."
+      },
+      "difficulty": 2,
+      "mindset": "Fix retrieval defects where the information was lost, at chunking and indexing, not downstream in the prompt or model.",
+      "tags": [
+        "rag",
+        "chunking",
+        "contextual-retrieval",
+        "metadata"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/news/contextual-retrieval"
+      ]
+    },
+    {
+      "id": "p-d3-b2-007",
+      "taskStatementId": "3.5",
+      "stem": "A field-service assistant retrieves from equipment manuals with a pure embedding (vector) index. Questions like 'what torque spec applies to part XR-4471-B?' often return passages about similar-sounding parts, while conceptual questions work well. What is the MOST effective indexing change?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add a lexical (BM25-style) index next to the vector index and merge both result sets before passing passages to Claude."
+        },
+        {
+          "id": "B",
+          "text": "Increase the embedding model's output dimension so that small differences between part numbers are captured more precisely."
+        },
+        {
+          "id": "C",
+          "text": "Cut chunk size in half so that each part number takes up a larger share of the embedded text in its chunk."
+        },
+        {
+          "id": "D",
+          "text": "Tell Claude to rewrite every user question in more descriptive natural language before it is embedded."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Embeddings capture semantic similarity but can miss **exact matches** on identifiers, codes and rare terms. A lexical index such as BM25 handles those well. Anthropic's Contextual Retrieval work combines embeddings with BM25 for exactly this reason, and the combination lowered retrieval failure rates further than embeddings alone. Hybrid retrieval keeps the strong conceptual results and fixes the identifier lookups.",
+      "whyWrong": {
+        "B": "More dimensions don't make an embedding model treat 'XR-4471-B' and 'XR-4471-C' as meaningfully different tokens. The weakness lies in semantic matching itself.",
+        "C": "Smaller chunks lose surrounding context and still rely on semantic similarity for what is really an exact-match lookup.",
+        "D": "Rewording the question moves it further from the literal identifier. It adds latency without addressing the need for exact matching."
+      },
+      "difficulty": 1,
+      "mindset": "Match the index to the query: lexical for exact identifiers, semantic for meaning, hybrid when both occur.",
+      "tags": [
+        "rag",
+        "hybrid-search",
+        "bm25",
+        "indexing"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/news/contextual-retrieval"
+      ]
+    },
+    {
+      "id": "p-d3-b2-008",
+      "taskStatementId": "3.5",
+      "stem": "An HR team wants Claude to answer employee questions about a single benefits handbook of about 60,000 tokens that is revised twice a year. An engineer proposes a full RAG stack: chunking, an embedding model, a vector database, and a reranker. The team has one part-time engineer and wants the simplest design that keeps answer quality high and per-request cost reasonable. What should the architect recommend?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Build the proposed RAG stack, because sending only the relevant sections keeps per-request input tokens, and therefore cost, as low as possible."
+        },
+        {
+          "id": "B",
+          "text": "Fine-tune a model on the handbook, so the content is built into the model and no documents need to be sent with each request."
+        },
+        {
+          "id": "C",
+          "text": "Build the RAG stack without the reranker, keeping semantic retrieval but removing the component that adds the most latency."
+        },
+        {
+          "id": "D",
+          "text": "Put the whole handbook in a stable prompt prefix ahead of the user's question, and enable prompt caching for that prefix."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "Anthropic's guidance on Contextual Retrieval notes that a knowledge base under about **200,000 tokens** can often go **directly into the prompt** with no RAG pipeline, and that **prompt caching** makes this fast and cost-effective. A small corpus that changes rarely is the ideal case: no chunking errors, no index to keep fresh, and a single prefix that is reused on every request. The qualifier 'simplest design' with one part-time engineer rules out building infrastructure.",
+      "whyWrong": {
+        "A": "The cost argument weakens once the handbook is cached: cache reads are billed at a small fraction of normal input tokens. Meanwhile chunking and ranking can drop relevant passages, and the stack adds components a part-time engineer must maintain.",
+        "B": "Fine-tuning is costly, has to be redone whenever the handbook changes, and doesn't give verifiable grounding in the source text.",
+        "C": "This is still the over-engineered option, with chunking, embeddings and a database to run, for a corpus that fits comfortably in context."
+      },
+      "difficulty": 2,
+      "mindset": "Don't build retrieval for a corpus that fits in context. A cached static prefix is simpler and often better.",
+      "tags": [
+        "rag",
+        "prompt-caching",
+        "over-engineering",
+        "long-context"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/news/contextual-retrieval",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching"
+      ]
+    },
+    {
+      "id": "p-d3-b2-009",
+      "taskStatementId": "3.5",
+      "stem": "A team is building a RAG pipeline over about 15,000 engineering design documents and cannot agree on chunking. One engineer wants 256-token chunks for precise matching, another wants 1,024-token chunks so explanations stay intact, and a third wants to split on section headings with a small overlap. Each has a few example questions on which their option looks better. How should the architect settle the choice?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Choose 1,024-token chunks, because current context windows are large enough that bigger chunks carry no real retrieval cost."
+        },
+        {
+          "id": "B",
+          "text": "Label a set of representative questions with their relevant passages, index the corpus each way, and compare retrieval recall."
+        },
+        {
+          "id": "C",
+          "text": "Choose 256-token chunks, because smaller chunks always produce more focused embeddings and therefore better retrieval."
+        },
+        {
+          "id": "D",
+          "text": "Run a stakeholder demo with each strategy and keep the one whose final answers the audience liked best."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Chunk size, chunk boundaries and overlap all affect retrieval, and the best setting depends on the corpus and the questions people ask. Anthropic's Contextual Retrieval write-up makes the same point (\"always run evals\" on your own data) and measures retrieval directly, as the share of relevant passages missing from the top 20 results (1 minus recall@20). So the architect should turn the debate into a measurement: collect realistic questions, label the passages that answer them, build an index for each candidate strategy, and compare retrieval metrics. Measuring retrieval separately from answer generation shows whether the chunking itself is finding the right text.",
+      "whyWrong": {
+        "A": "Large chunks are not free. Each embedding then averages over more unrelated text, which can bury the relevant sentence, and every retrieved chunk takes more context. Whether that trade pays off is an empirical question.",
+        "C": "Small chunks can match precisely but often lose the surrounding context that makes a passage understandable or identifiable. 'Always better' is not supported. It depends on the documents and queries.",
+        "D": "A handful of demo answers is anecdotal, and it mixes retrieval quality with generation quality. It cannot show which chunking strategy actually retrieves the right passages across realistic queries."
+      },
+      "difficulty": 2,
+      "mindset": "Settle pipeline design debates with a retrieval eval on representative queries, not with intuition or demos.",
+      "tags": [
+        "rag",
+        "chunking",
+        "retrieval-evaluation",
+        "recall",
+        "design-decision"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/news/contextual-retrieval",
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests"
+      ]
+    },
+    {
+      "id": "p-d3-b2-010",
+      "taskStatementId": "3.5",
+      "stem": "A compliance RAG assistant must give answers that auditors can trace back to exact passages. Today it retrieves the top 5 chunks by vector similarity and asks Claude to 'quote your sources'. Auditors find that some quotes are slightly paraphrased and that the most relevant passage is sometimes ranked 12th. Which TWO changes MOST improve relevance and verifiable grounding? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Retrieve a larger candidate set, then use a reranking step to choose the few most relevant chunks to send to Claude."
+        },
+        {
+          "id": "B",
+          "text": "Turn on structured outputs together with citations so each answer comes back as schema-valid JSON with its citation locations."
+        },
+        {
+          "id": "C",
+          "text": "Enlarge chunks to about 4,000 tokens so each one holds a complete policy and the relevant text is never split."
+        },
+        {
+          "id": "D",
+          "text": "Pass the selected chunks as document content blocks with the Citations feature enabled, so cited text points to exact source locations."
+        },
+        {
+          "id": "E",
+          "text": "Ask Claude to give a confidence score for each quote and drop any answer whose score falls below a threshold."
+        }
+      ],
+      "correct": [
+        "A",
+        "D"
+      ],
+      "explanation": "**Reranking** fixes relevance: retrieve broadly, then score candidates and keep the best few. Anthropic's Contextual Retrieval experiments show that adding reranking lowers retrieval failures further. The **Citations** feature fixes verifiability: with citations enabled on document blocks, responses include `cited_text` with valid pointers into the supplied documents (character, page or content-block locations), which is more reliable than asking for quotes in the prompt.",
+      "whyWrong": {
+        "B": "Citations and structured outputs are incompatible. The API returns an error if both are enabled, so this design fails outright.",
+        "C": "Very large chunks dilute relevance scoring and fill the context with unrelated text. Precision drops even if splits become rarer.",
+        "E": "A self-reported confidence score isn't a calibrated or verifiable signal. It doesn't make quotes exact or rankings better."
+      },
+      "difficulty": 3,
+      "mindset": "Rerank for relevance and use the platform's citation mechanism for verifiable grounding, not prompt requests or self-rating.",
+      "tags": [
+        "rag",
+        "reranking",
+        "citations",
+        "grounding",
+        "multi-select"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/citations",
+        "https://www.anthropic.com/news/contextual-retrieval",
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs"
+      ]
+    },
+    {
+      "id": "p-d3-b2-011",
+      "taskStatementId": "3.8",
+      "stem": "An agent has about 120 tools from several MCP servers. To shrink its context, the team built an application-side pre-filter: before each request, an embedding match picks the 8 tools most similar to the latest user message and sends only those in the `tools` array. Context per request fell sharply, but two problems appeared in multi-turn conversations: prompt-cache hits dropped to near zero, raising cost, and the agent sometimes cannot call a tool it used a few turns earlier. Which change BEST keeps the context savings and fixes both problems?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Keep the pre-filter but sort the 8 selected tools alphabetically, so the tools block is serialized in a consistent order on every request."
+        },
+        {
+          "id": "B",
+          "text": "Drop the pre-filter and load all 120 tools up front with a cache breakpoint after them, since caching makes the size of the tool list irrelevant."
+        },
+        {
+          "id": "C",
+          "text": "Keep the pre-filter but raise it to 30 tools per request, so the selected set changes less often from one turn to the next."
+        },
+        {
+          "id": "D",
+          "text": "Send all tools on every request, with `defer_loading: true` on most and the tool search tool enabled, so tools load on demand."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "The cache prefix is built in the order `tools`, `system`, `messages`, and changing tool definitions invalidates the entire cache. A pre-filter that sends a different tool set each turn therefore misses the cache almost every time, and a tool that drops out of the filtered set can no longer be called. With **tool search**, you send every definition on every request and mark most of them `defer_loading: true`. Deferred tools are kept out of the cached prefix and stay out of context until Claude searches for them. Discovered tools are added inline in the conversation, so the prefix stays the same and caching keeps working, and Claude can reuse a discovered tool in later turns without searching again. The docs also recommend keeping the 3–5 most-used tools non-deferred.",
+      "whyWrong": {
+        "A": "A consistent order helps only when the set is the same. The 8 tools still change from turn to turn, so the tools block, and with it the whole cache, is still invalidated, and dropped tools still cannot be called.",
+        "B": "Caching lowers the cost of reprocessing a repeated prefix, but all 120 definitions still take up context, and the tool search docs note that tool-selection accuracy degrades past roughly 30–50 tools.",
+        "C": "A larger window makes cache misses somewhat less frequent but does not stop them, gives back much of the context saving, and still drops tools that fall outside the set."
+      },
+      "difficulty": 3,
+      "mindset": "Progressive discovery should leave the cached prefix stable. Load on demand without rewriting the tool list on every turn.",
+      "tags": [
+        "progressive-discovery",
+        "tool-search",
+        "defer-loading",
+        "prompt-caching",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching"
+      ]
+    },
+    {
+      "id": "p-d3-b2-012",
+      "taskStatementId": "3.8",
+      "stem": "A checkout-support agent has six small tools (look up order, check shipment, issue store credit, and so on). Together their definitions come to well under 2,000 tokens, and nearly every conversation uses most of them. Latency matters. A teammate proposes tool search with deferred loading 'because it's the modern pattern'. What should the architect decide?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Keep all six tools loaded up front with standard tool calling, because deferral saves almost nothing here and adds a search step."
+        },
+        {
+          "id": "B",
+          "text": "Adopt tool search and defer all six tools, so the agent's starting context is as small as it can be on every request."
+        },
+        {
+          "id": "C",
+          "text": "Adopt tool search but defer only the three least-used tools, as a compromise between latency and context size."
+        },
+        {
+          "id": "D",
+          "text": "Split the six tools across two subagents, so each one has a smaller toolset and selects tools more accurately."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Progressive discovery pays off when the catalog is large and mostly unused. The tool search docs say standard tool calling **fits better** with fewer than 10 tools, when every tool is used in every request, or when definitions are small. Here deferral would add a discovery round-trip and some complexity for a negligible token saving. Two of the three 'standard tool calling fits better' conditions hold (fewer than 10 tools, every tool used in nearly every request), and latency is the stated priority.",
+      "whyWrong": {
+        "B": "This is technically allowed as long as the search tool itself stays non-deferred, but it is the worst fit for the workload: tools used on almost every request would need a search round-trip on nearly every turn, adding latency for a saving of under 2,000 tokens.",
+        "C": "This is a half-measure that adds complexity for a few hundred tokens. The workload has no problem for deferral to solve.",
+        "D": "Six tools don't cause selection confusion. Subagents add coordination overhead and latency for no gain."
+      },
+      "difficulty": 2,
+      "mindset": "Pick context strategy by corpus size and usage pattern. Small, always-used content belongs up front.",
+      "tags": [
+        "progressive-discovery",
+        "tool-search",
+        "monolithic-context",
+        "over-engineering"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool"
+      ]
+    },
+    {
+      "id": "p-d3-b2-013",
+      "taskStatementId": "3.8",
+      "stem": "A company's 'payment-vendor-integration' skill guides Claude through connecting its billing system to one of three payment vendors. The workflow steps are the same for every vendor and are revised often. SKILL.md has grown to about 4,000 lines because it also holds the full API reference for all three vendors, although any one task involves only one vendor. Whenever the skill triggers, a large share of the context fills with material for vendors the task does not use. What is the BEST restructuring?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Create three copies of the skill, one per vendor, each holding the full shared workflow together with that vendor's API reference."
+        },
+        {
+          "id": "B",
+          "text": "Keep the shared workflow in a lean SKILL.md and put each vendor's API reference in its own linked file, read only when needed."
+        },
+        {
+          "id": "C",
+          "text": "Move all three API references into the agent's always-loaded instructions, so SKILL.md holds only the workflow and loads faster."
+        },
+        {
+          "id": "D",
+          "text": "Summarize the key endpoints of all three vendors in the skill's description field, so Claude has them before it decides to load the skill."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Skills load in stages. Only each skill's name and description are in context at startup, SKILL.md is read when the skill becomes relevant, and other bundled files are read only when needed, consuming no context until then. Anthropic's skill authoring guidance recommends keeping the SKILL.md body under 500 lines and organizing large reference material by domain in separate files linked directly from SKILL.md (one level deep). With one reference file per vendor, a task that involves one vendor loads the shared workflow plus that one file, and the workflow stays in a single place.",
+      "whyWrong": {
+        "A": "Three copies of a workflow that changes often have to be kept in sync by hand, and three skills with near-identical descriptions make it harder for Claude to pick the right one. Linked reference files give the same per-vendor loading without duplication.",
+        "C": "This is the monolithic option. All three references would sit in context for every task, including tasks that have nothing to do with payments.",
+        "D": "Descriptions are loaded for every skill on every session, so they must stay short (the field allows at most 1,024 characters) and should say what the skill does and when to use it. They are not a place for reference content."
+      },
+      "difficulty": 2,
+      "mindset": "Within a skill, keep the core instructions lean and put bulky reference material in files that load only when a task needs them.",
+      "tags": [
+        "progressive-discovery",
+        "skills",
+        "progressive-disclosure",
+        "context-budget"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices",
+        "https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview"
+      ]
+    },
+    {
+      "id": "p-d3-b2-014",
+      "taskStatementId": "3.8",
+      "stem": "An architect is choosing between loading reference content up front, as a static and cacheable prompt prefix, and discovering it progressively (on-demand retrieval, deferred tools, skills). Which TWO characteristics of the content most strongly favor loading it up front? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "The content is small, well within the context window, and rarely changes, so it can be reused as a cached prefix."
+        },
+        {
+          "id": "B",
+          "text": "The content is updated many times an hour from operational systems, and answers must reflect the latest values."
+        },
+        {
+          "id": "C",
+          "text": "Nearly every request needs most of the content, so deferred loading would retrieve almost all of it anyway."
+        },
+        {
+          "id": "D",
+          "text": "The catalog has hundreds of tools from several MCP servers, and each request needs only a few of them."
+        },
+        {
+          "id": "E",
+          "text": "Most of the content applies only to rare edge cases that come up in a small fraction of requests."
+        }
+      ],
+      "correct": [
+        "A",
+        "C"
+      ],
+      "explanation": "The decision depends on **corpus size, volatility, and how often the content is used**. Content that is small, stable and nearly always needed suits loading up front: it gives predictable behavior, has no discovery step, and caches well, because prompt caching rewards an identical prefix that is reused across requests. Large, volatile, or rarely needed content favors just-in-time discovery, which keeps context lean and avoids context rot.",
+      "whyWrong": {
+        "B": "Content that changes all the time is a poor fit for a static prefix. It would keep invalidating the cache and go stale, so just-in-time retrieval fits better.",
+        "D": "Large tool catalogs with sparse use are the main case for tool search and deferred loading, which is progressive discovery.",
+        "E": "Rarely needed content wastes context on most requests. Loading it on demand, for example as a skill or through retrieval, fits better."
+      },
+      "difficulty": 3,
+      "mindset": "Small, stable and always needed goes in the prefix. Large, volatile or rarely needed gets discovered on demand.",
+      "tags": [
+        "progressive-discovery",
+        "monolithic-context",
+        "prompt-caching",
+        "context-engineering",
+        "multi-select"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool"
+      ]
+    }
+  ]
+}

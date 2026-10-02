@@ -1,0 +1,739 @@
+{
+  "certId": "foundations",
+  "domainId": "d1-agentic",
+  "questions": [
+    {
+      "id": "f-d1-b4-001",
+      "taskStatementId": "1.4",
+      "scenario": "You are building a customer support resolution agent with the Claude Agent SDK. It handles ambiguous requests such as returns, billing disputes and account issues, and reaches backend systems through custom MCP tools: get_customer, lookup_order, process_refund and escalate_to_human. The target is 80%+ first-contact resolution while still escalating when it should.",
+      "stem": "Log review shows that in a small but steady share of conversations, the agent calls process_refund before get_customer has returned a verified customer ID, usually when the customer opens with an order number. The system prompt already says to verify identity first. Which change gives the MOST reliable guarantee with minimal changes to the rest of the agent?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Move the verification rule to the top of the system prompt and restate it directly above the tool list, where the model reads it just before choosing a tool."
+        },
+        {
+          "id": "B",
+          "text": "Add several few-shot conversations showing the agent calling get_customer before lookup_order and process_refund, including order-number openers."
+        },
+        {
+          "id": "C",
+          "text": "Add a PreToolUse hook that denies process_refund unless the session state already holds a customer ID that get_customer returned as verified."
+        },
+        {
+          "id": "D",
+          "text": "Add a routing classifier in front of the agent that sends refund-related messages to a separate refund-only agent with a narrower prompt."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Identity verification before money moves is a **deterministic** requirement. Prompt instructions, however emphatic, have a non-zero failure rate, and the logs prove that rate is already above zero. A PreToolUse hook (a programmatic prerequisite gate) runs in your code on every process_refund call and denies it until the verified-ID precondition holds, so the ordering is guaranteed regardless of how the conversation opens. It also leaves the prompt, tools and loop untouched.",
+      "whyWrong": {
+        "A": "Repositioning or restating the rule is still prompt guidance. It may lower the failure rate but cannot drive it to zero, which a financial control requires.",
+        "B": "Few-shot examples improve typical behavior but remain probabilistic. Unusual openers outside the examples can still slip through.",
+        "D": "Routing decides which agent or tools handle a message; it does not enforce call order inside that agent. The refund-only agent could still skip verification."
+      },
+      "difficulty": 2,
+      "mindset": "If a step must always happen before another, enforce it in code, not in the prompt.",
+      "tags": [
+        "prerequisite-gate",
+        "pretooluse",
+        "programmatic-enforcement",
+        "identity-verification"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/hooks",
+        "https://code.claude.com/docs/en/agent-sdk/permissions"
+      ]
+    },
+    {
+      "id": "f-d1-b4-002",
+      "taskStatementId": "1.4",
+      "scenario": "You are building a customer support resolution agent with the Claude Agent SDK. It handles ambiguous requests such as returns, billing disputes and account issues, and reaches backend systems through custom MCP tools: get_customer, lookup_order, process_refund and escalate_to_human. The target is 80%+ first-contact resolution while still escalating when it should.",
+      "stem": "Human support staff say that when the agent escalates, they almost always have to re-ask the customer for the account, the order and what has already been tried. Today escalate_to_human is called with a single string such as \"Customer needs help with a refund.\" The human console does not show the conversation transcript. What is the BEST fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Make escalate_to_human take a structured handoff: customer ID, order IDs, root cause so far, actions already taken, refund amount at stake and a recommended next action."
+        },
+        {
+          "id": "B",
+          "text": "Tell the agent in the system prompt to write longer, friendlier escalation messages that thank the customer and apologize for the inconvenience before handing over."
+        },
+        {
+          "id": "C",
+          "text": "Have the agent ask the customer to type a summary of their own problem just before the conversation is handed over, so the human hears it in the customer's words."
+        },
+        {
+          "id": "D",
+          "text": "Give the human console read access to the full conversation transcript, so staff can scroll back through it to find the account, the order and what was already tried."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The receiving human **lacks the transcript**, so everything they need must travel in the handoff itself. A structured handoff carrying customer ID, root cause, amounts, actions taken and a recommended action lets the human act immediately instead of restarting the case. Defining these as fields in the tool's input schema also makes the content consistent rather than dependent on how the model phrases a free-text note.",
+      "whyWrong": {
+        "B": "Tone does not fix missing facts. A longer message can still omit the customer ID or what was already done.",
+        "C": "This pushes the agent's job back onto the customer, hurts the experience, and still does not record what the agent investigated or did.",
+        "D": "Raw transcript access moves the work of reconstructing the case onto the human, who must read tool calls and dead ends to find the facts. A structured summary with a recommended action is faster to act on and consistent from case to case."
+      },
+      "difficulty": 1,
+      "mindset": "A handoff must be self-contained: the receiver cannot see what you saw.",
+      "tags": [
+        "handoff",
+        "escalation",
+        "structured-summary",
+        "human-in-the-loop"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools",
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "f-d1-b4-003",
+      "taskStatementId": "1.4",
+      "scenario": "You are building a customer support resolution agent with the Claude Agent SDK. It handles ambiguous requests such as returns, billing disputes and account issues, and reaches backend systems through custom MCP tools: get_customer, lookup_order, process_refund and escalate_to_human. The target is 80%+ first-contact resolution while still escalating when it should.",
+      "stem": "A customer writes in one message: \"I was charged twice for order 4471, my replacement for order 4380 never arrived, and I also need to update my email address.\" The current agent tends to fix the first problem and forget the rest, or blend them into one muddled reply. Which TWO design choices BEST handle requests like this? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Break the message into distinct concerns first, each tracked as its own item with its own order ID and status, before taking any action."
+        },
+        {
+          "id": "B",
+          "text": "Resolve only the first concern, then ask the customer to send the remaining issues as separate new conversations so each one stays simple."
+        },
+        {
+          "id": "C",
+          "text": "Spawn three fully isolated subagents that each start from scratch and verify the customer's identity again independently before working."
+        },
+        {
+          "id": "D",
+          "text": "Investigate the concerns in parallel against the same shared context (one verified customer ID), then combine the results into one unified reply."
+        },
+        {
+          "id": "E",
+          "text": "Route every message that mentions more than one issue straight to escalate_to_human, because multi-issue requests are too risky for the agent."
+        }
+      ],
+      "correct": [
+        "A",
+        "D"
+      ],
+      "explanation": "The pattern for multi-concern requests is **decompose, investigate in parallel with shared context, then synthesize**. Splitting the message into distinct items (each keyed by its explicit order ID) stops concerns from being dropped. Investigating them in parallel against one shared, already-verified customer context avoids repeated work, and a single synthesized reply resolves everything in one contact, which supports the first-contact resolution target.",
+      "whyWrong": {
+        "B": "Pushing work back to the customer lowers first-contact resolution and is a poor experience; the agent can handle all three.",
+        "C": "Full isolation throws away the shared context (the verified customer) and repeats identity checks for no benefit, which is over-engineered for a single customer's request.",
+        "E": "Multiple concerns are not an escalation trigger by themselves. Blanket escalation wrecks the resolution target when each concern is within the agent's ability."
+      },
+      "difficulty": 3,
+      "mindset": "Split multi-part requests into items, work them in parallel on shared context, answer once.",
+      "tags": [
+        "multi-concern",
+        "decomposition",
+        "parallel-investigation",
+        "synthesis"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/parallel-tool-use"
+      ]
+    },
+    {
+      "id": "f-d1-b4-004",
+      "taskStatementId": "1.4",
+      "scenario": "You are building a customer support resolution agent with the Claude Agent SDK. It handles ambiguous requests such as returns, billing disputes and account issues, and reaches backend systems through custom MCP tools: get_customer, lookup_order, process_refund and escalate_to_human. The target is 80%+ first-contact resolution while still escalating when it should.",
+      "stem": "Your PreToolUse gate already denies process_refund until get_customer has returned a verified customer ID. An audit then finds a refund issued on order 5512, which belongs to a different customer: the verified customer mistyped their order number, and the agent passed it straight to process_refund. The fix must be a guarantee, keep first-contact resolution high, and leave the rest of the agent unchanged. What should the architect do?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add a system-prompt rule that the agent must read the order number back to the customer and get a clear \"yes\" before it calls process_refund."
+        },
+        {
+          "id": "B",
+          "text": "Record in code the order IDs that lookup_order showed belong to the verified customer, and extend the gate to deny refunds on any other order ID."
+        },
+        {
+          "id": "C",
+          "text": "Add a required customer_name argument to process_refund, which the refund tool writes into the refund log so that auditors can spot mismatches later."
+        },
+        {
+          "id": "D",
+          "text": "Send every refund request where the customer typed the order number themselves to escalate_to_human, so that a person checks the order before any money moves."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "The existing gate proves **who** the customer is but not that the order is **theirs**. The missing precondition is ownership, and it can be checked from facts your code already sees: when lookup_order returns an order whose owner matches the verified customer ID, record that order ID in session state. The PreToolUse gate then denies process_refund for any order ID outside that set, and its deny reason tells the agent to confirm the order number with the customer and look it up again. That makes cross-customer refunds impossible while the conversation still recovers and resolves on first contact.",
+      "whyWrong": {
+        "A": "Still prompt guidance with a non-zero failure rate, and a customer can say \"yes\" to their own typo. Nothing in code stops the wrong order from being refunded.",
+        "C": "The name is supplied by the model and only logged, so this detects the problem after the money has moved instead of preventing it.",
+        "D": "A disproportionate response: most typed order numbers are correct, so blanket escalation wrecks the first-contact resolution target when a code check can settle ownership."
+      },
+      "difficulty": 2,
+      "mindset": "A prerequisite gate must check every precondition that matters, using facts your code observed, not just the first one.",
+      "tags": [
+        "prerequisite-gate",
+        "pretooluse",
+        "session-state",
+        "explicit-ids"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/hooks",
+        "https://code.claude.com/docs/en/agent-sdk/permissions"
+      ]
+    },
+    {
+      "id": "f-d1-b4-005",
+      "taskStatementId": "1.4",
+      "scenario": "You are building a customer support resolution agent with the Claude Agent SDK. It handles ambiguous requests such as returns, billing disputes and account issues, and reaches backend systems through custom MCP tools: get_customer, lookup_order, process_refund and escalate_to_human. The target is 80%+ first-contact resolution while still escalating when it should.",
+      "stem": "You are adding a programmatic gate so that process_refund is blocked until identity is verified. A teammate asks what the gate should check to decide that verification has happened. Which source of truth is MOST appropriate?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Whether the agent's latest reply to the customer contains a phrase such as \"I have verified your identity\" before the refund is attempted."
+        },
+        {
+          "id": "B",
+          "text": "A boolean verified=true argument that the agent must include in each process_refund call, which the refund tool then trusts and checks."
+        },
+        {
+          "id": "C",
+          "text": "A note in the system prompt reminding the agent that the gate exists, so it will remember to verify identity before calling process_refund."
+        },
+        {
+          "id": "D",
+          "text": "Session state that your application code records when get_customer actually returns a verified customer ID, read by the hook on each call."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "A gate is only as strong as the evidence it checks. It must rely on something the **model cannot simply assert**: the real result of the prerequisite tool, recorded by your code (for example by a PostToolUse hook or the tool handler) when get_customer returns a verified ID. The PreToolUse gate then reads that state. Anything the model writes itself, whether reply text or a tool argument, can be produced without the verification ever taking place.",
+      "whyWrong": {
+        "A": "Reply text is generated by the model and can claim verification that never happened. This turns a hard gate back into trust in the model.",
+        "B": "The model fills in tool arguments, so verified=true can be supplied without any check. It looks programmatic but is still model-asserted.",
+        "C": "A reminder is prompt guidance, not a check. It does nothing to decide whether the gate should allow the call."
+      },
+      "difficulty": 2,
+      "mindset": "Gate on facts your code observed, never on what the model says it did.",
+      "tags": [
+        "prerequisite-gate",
+        "session-state",
+        "trust-boundary"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/hooks",
+        "https://code.claude.com/docs/en/agent-sdk/permissions"
+      ]
+    },
+    {
+      "id": "f-d1-b4-006",
+      "taskStatementId": "1.4",
+      "stem": "A product manager asks why the team insists on code-level gates for \"verify identity before any refund\" when the system prompt already states the rule clearly and testing showed the agent follows it almost every time. Which explanation is MOST accurate?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Prompts are ignored after context compaction, so any rule written in the system prompt stops applying once a long conversation has been summarized."
+        },
+        {
+          "id": "B",
+          "text": "Prompt instructions guide behavior probabilistically, so they keep a small but real failure rate; a financial control needs a guarantee that only code provides."
+        },
+        {
+          "id": "C",
+          "text": "System prompts are length-limited, so business rules have to move into code once the prompt grows past a certain size to keep the agent responsive."
+        },
+        {
+          "id": "D",
+          "text": "Code-level gates make the model reason more carefully, which raises its accuracy on every other task in the conversation as well, not only on refunds."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "The core distinction is **probabilistic guidance versus deterministic enforcement**. A well-written prompt makes the right behavior very likely, but \"almost every time\" is not \"every time\". When a single miss means money leaves without verified identity, the rule belongs in a programmatic gate that cannot be skipped. Lower-stakes preferences can stay in the prompt.",
+      "whyWrong": {
+        "A": "The system prompt is not removed by compaction; it is sent with every request. The real issue is that following it is probabilistic even when it is fully present.",
+        "C": "Prompt length is not the reason. A short, clear rule still has a non-zero failure rate.",
+        "D": "A gate does not change how the model reasons. It only blocks a disallowed call; it does not raise accuracy elsewhere."
+      },
+      "difficulty": 1,
+      "mindset": "\"Almost always\" is not good enough when one failure costs money or trust.",
+      "tags": [
+        "programmatic-enforcement",
+        "prompt-guidance",
+        "non-zero-failure-rate"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/hooks",
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "f-d1-b4-007",
+      "taskStatementId": "1.4",
+      "scenario": "You are building a multi-agent research system with the Claude Agent SDK. A coordinator delegates to specialized subagents: a web searcher, a document analyst, a synthesizer and a report generator. The system produces comprehensive, cited reports.",
+      "stem": "The report-generator subagent should only run after the synthesizer has produced findings in which every claim carries at least one source citation. In about one run in thirty, the coordinator invokes the report generator early and the final report contains uncited claims. What is the MOST reliable fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "In the orchestration code, validate the synthesizer's structured output so every claim has a source, and only invoke the report generator after that check passes."
+        },
+        {
+          "id": "B",
+          "text": "Add a line to the coordinator's prompt stating that it must always wait for complete, fully cited synthesis before it calls the report generator subagent."
+        },
+        {
+          "id": "C",
+          "text": "Ask the report generator to check its own input for uncited claims and politely refuse to write the report whenever it finds any missing sources."
+        },
+        {
+          "id": "D",
+          "text": "Move the coordinator to a larger model with a bigger context window so that it can keep better track of which subagents have already finished their work."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "This is a **workflow-ordering requirement with a checkable precondition**, so it calls for a programmatic gate. Having the synthesizer return structured findings (claim plus source metadata) lets ordinary code verify the precondition and invoke the next stage only when it holds. That turns a 1-in-30 probabilistic failure into a deterministic guarantee and leaves the agents' prompts largely untouched.",
+      "whyWrong": {
+        "B": "This is prompt-based enforcement of order, the same mechanism that is already failing about once in thirty runs.",
+        "C": "Self-checking by the model is still probabilistic, and it fires late, after the coordinator already made the wrong call.",
+        "D": "The failure is not caused by context size. A bigger model is costlier and still gives no guarantee about ordering."
+      },
+      "difficulty": 2,
+      "mindset": "When a stage has a checkable precondition, check it in code before the stage runs.",
+      "tags": [
+        "prerequisite-gate",
+        "multi-agent",
+        "workflow-ordering",
+        "validation"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/multi-agent-research-system",
+        "https://www.anthropic.com/engineering/building-effective-agents",
+        "https://code.claude.com/docs/en/agent-sdk/subagents"
+      ]
+    },
+    {
+      "id": "f-d1-b4-008",
+      "taskStatementId": "1.4",
+      "scenario": "You are building a multi-agent research system with the Claude Agent SDK. A coordinator delegates to specialized subagents: a web searcher, a document analyst, a synthesizer and a report generator. The system produces comprehensive, cited reports.",
+      "stem": "Mid-run, the analysis subagent finds two authoritative sources that disagree on a key figure, and policy says a human editor must decide such conflicts. The editor works in a separate review tool and never sees the agents' conversation history. What should the handoff to the editor contain?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The complete raw transcripts of every subagent, attached unedited so that the editor can search through them for the disagreement and the sources."
+        },
+        {
+          "id": "B",
+          "text": "A one-line note saying \"Sources conflict, please review\", along with the name of the research topic, the current run identifier and a link to the run."
+        },
+        {
+          "id": "C",
+          "text": "Only the coordinator's final draft report, with the disputed figure highlighted in yellow so the editor can see exactly where the problem sits in context."
+        },
+        {
+          "id": "D",
+          "text": "The disputed claim, each source's value with URL, document and page, what the agents already checked, and a recommended resolution with its reasoning."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "A good mid-process handoff is a **structured, self-contained summary** for someone who has not seen the history: the exact issue, the evidence with attribution metadata (URL, document name, page), what has already been tried, and a recommended action. The editor can decide quickly and in context, without re-running the investigation.",
+      "whyWrong": {
+        "A": "Raw transcripts move the work onto the editor, who has to dig for the relevant part. Volume is not the same as a usable handoff.",
+        "B": "Too thin to act on. The editor would have to redo the research to find out what conflicts and where.",
+        "C": "The draft lacks the competing sources and what was checked, so the editor cannot judge which value is right."
+      },
+      "difficulty": 2,
+      "mindset": "Hand off the decision, the evidence and a recommendation, not the raw history.",
+      "tags": [
+        "handoff",
+        "escalation",
+        "attribution",
+        "multi-agent"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/multi-agent-research-system",
+        "https://code.claude.com/docs/en/agent-sdk/subagents"
+      ]
+    },
+    {
+      "id": "f-d1-b4-009",
+      "taskStatementId": "1.4",
+      "scenario": "You are building a developer productivity agent with the Claude Agent SDK. It helps engineers explore unfamiliar codebases, understand legacy systems, generate boilerplate and automate repetitive tasks using the built-in tools (Read, Write, Bash, Grep, Glob) plus several MCP servers.",
+      "stem": "Team rules say the agent must run the test suite successfully before any git commit. The agent has Bash access and occasionally commits right after editing, skipping the tests. An engineer proposes setting allowed_tools to a list that leaves out Bash commit commands. What should the architect do instead to guarantee the rule?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Accept the proposal, since tools that are absent from allowed_tools cannot be called by the agent at any point during the session, so no commit can slip through."
+        },
+        {
+          "id": "B",
+          "text": "Add the rule to the project's CLAUDE.md so it is loaded into every session, and add a reminder about it to the agent's system prompt as well for good measure."
+        },
+        {
+          "id": "C",
+          "text": "Record a passing test run from a PostToolUse hook, clear it on any later file edit, and have a PreToolUse hook on Bash deny git commit until a current record exists."
+        },
+        {
+          "id": "D",
+          "text": "Create a custom slash command that runs the tests and then commits, and tell engineers to ask the agent to use that command whenever it needs to commit."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Two hooks together form a **prerequisite gate**: PostToolUse observes the real outcome of the test command and records success, and PreToolUse inspects each Bash call and denies git commit until that record exists. Clearing the record whenever Edit or Write runs afterwards stops a stale pass from covering untested changes. The check happens in code on every call. Note that hook matchers match the tool name (Bash), so the callback itself has to inspect the command string.",
+      "whyWrong": {
+        "A": "allowed_tools is an auto-approve list, not a restriction. Tools left off it still exist and fall through to the permission mode and canUseTool. Removing a tool needs disallowed_tools, and even that cannot express \"allowed only after tests pass\".",
+        "B": "CLAUDE.md and system prompts are context, not enforcement, and the agent is already skipping the rule some of the time.",
+        "D": "A slash command is a convenience the agent or engineer may not use. Nothing stops a direct git commit through Bash."
+      },
+      "difficulty": 3,
+      "mindset": "allowed_tools approves, it does not restrict; ordering needs a gate that sees real results.",
+      "tags": [
+        "prerequisite-gate",
+        "pretooluse",
+        "posttooluse",
+        "allowed-tools-trap"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/permissions",
+        "https://code.claude.com/docs/en/agent-sdk/hooks"
+      ]
+    },
+    {
+      "id": "f-d1-b4-010",
+      "taskStatementId": "1.4",
+      "scenario": "You are integrating Claude Code into your CI/CD pipeline. It runs automated code reviews, generates test cases and posts feedback on pull requests. Feedback must be actionable and false positives kept low.",
+      "stem": "Claude Code runs headless in CI to generate unit tests for each pull request and then posts a PR comment saying the new tests are ready. Sometimes it posts the comment even though the generated tests fail. The prompt already says \"only report success if all tests pass.\" Which change is MOST reliable?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Ask Claude to re-run the tests a second time and double-check its own conclusion before writing the PR comment."
+        },
+        {
+          "id": "B",
+          "text": "Make the pipeline run the tests in its own step and post the comment only when that step exits with code 0."
+        },
+        {
+          "id": "C",
+          "text": "Add few-shot examples to the prompt that show Claude declining to post when the test output contains failures."
+        },
+        {
+          "id": "D",
+          "text": "Increase the maximum turn limit so Claude has more room to keep fixing tests until they pass before it reports."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Whether tests pass is something the pipeline can **check deterministically** from the exit code. Moving the success gate out of the model's judgment and into a pipeline step means a failing suite can never produce a \"ready\" comment, whatever Claude concludes. Claude still writes the tests; the pipeline decides whether the result gets reported.",
+      "whyWrong": {
+        "A": "Self-checking is still the model's judgment. It may reduce false reports but cannot guarantee none.",
+        "C": "Few-shot examples are prompt guidance with a non-zero failure rate.",
+        "D": "More turns may raise the pass rate, but it does not stop Claude from reporting success when the tests still fail."
+      },
+      "difficulty": 2,
+      "mindset": "If code can check the outcome, let code gate the next step.",
+      "tags": [
+        "ci-cd",
+        "deterministic-gate",
+        "headless",
+        "programmatic-enforcement"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/headless",
+        "https://code.claude.com/docs/en/hooks"
+      ]
+    },
+    {
+      "id": "f-d1-b4-011",
+      "taskStatementId": "1.4",
+      "scenario": "Your team uses Claude Code for code generation, refactoring, debugging and documentation, and is wiring it into the everyday development workflow with CLAUDE.md files, custom slash commands and project settings.",
+      "stem": "The team wants two guarantees whenever Claude Code edits files in the repository: every edited file is run through the project formatter, and nothing is ever written under the db/migrations/ directory, which only a release script may change. Which TWO configurations provide these guarantees? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add both rules to the project CLAUDE.md under a clearly labeled \"Mandatory\" heading so they are loaded at the start of every session."
+        },
+        {
+          "id": "B",
+          "text": "Configure a PostToolUse hook matching Edit|Write that runs the formatter on the file path given in the tool input after each change."
+        },
+        {
+          "id": "C",
+          "text": "Create a /format slash command and remind developers in the README to run it, along with a quick migrations check, before each commit."
+        },
+        {
+          "id": "D",
+          "text": "Start each session in plan mode so Claude has to describe its edits first and developers can catch migration changes before approving."
+        },
+        {
+          "id": "E",
+          "text": "Configure a PreToolUse hook matching Edit|Write that inspects the file path and blocks the call (exit code 2) when it is under db/migrations/."
+        }
+      ],
+      "correct": [
+        "B",
+        "E"
+      ],
+      "explanation": "Hooks are Claude Code's **deterministic** mechanism: they run on every matching tool call whatever the model decides. A PostToolUse hook on Edit|Write formats each file right after it changes. A PreToolUse hook blocks writes to protected paths before they happen; in command hooks, exit code 2 is the blocking signal. Because matchers match tool names, not paths, the path check lives inside the hook script. (A permissions deny rule such as `Edit(db/migrations/**)` in settings.json is an equally deterministic way to protect the path; among the options given, only the hook provides it.)",
+      "whyWrong": {
+        "A": "CLAUDE.md is context, not enforcement. Claude usually follows it but is not guaranteed to.",
+        "C": "This relies on people remembering. It guarantees neither formatting nor protection of migrations.",
+        "D": "Plan mode adds a review step that a human can miss, and once execution is approved it does not stop a later edit to migrations."
+      },
+      "difficulty": 2,
+      "mindset": "\"Every time\" and \"never\" are hook words, not CLAUDE.md words.",
+      "tags": [
+        "claude-code-hooks",
+        "posttooluse",
+        "pretooluse",
+        "exit-code-2"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/hooks"
+      ]
+    },
+    {
+      "id": "f-d1-b4-012",
+      "taskStatementId": "1.4",
+      "stem": "In an agent workflow, which of the following BEST describes a programmatic prerequisite gate?",
+      "options": [
+        {
+          "id": "A",
+          "text": "A system-prompt section that lists the required order of steps and asks the model to confirm each step aloud before moving on to the next."
+        },
+        {
+          "id": "B",
+          "text": "A separate reviewer model that reads the transcript after each run and reports any steps that the main agent carried out in the wrong order."
+        },
+        {
+          "id": "C",
+          "text": "A routing classifier that picks which specialized agent handles a request, based on the intent it detects in the user's opening message."
+        },
+        {
+          "id": "D",
+          "text": "Application code that blocks a downstream tool call until it confirms that a required earlier step has actually completed with a valid result."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "A prerequisite gate is **code that sits in the tool-call path** (for example a PreToolUse hook or a check in the tool handler) and refuses a downstream action until a required upstream step has really completed, such as blocking process_refund until get_customer returns a verified ID. Because it does not depend on the model choosing to comply, it gives deterministic ordering.",
+      "whyWrong": {
+        "A": "This is prompt-based guidance. Asking the model to confirm steps does not stop it from skipping one.",
+        "B": "After-the-fact review finds violations once they have happened. It does not prevent them.",
+        "C": "Routing decides who handles a request, not the order of steps within the workflow."
+      },
+      "difficulty": 1,
+      "mindset": "A gate prevents; a prompt requests; an audit detects.",
+      "tags": [
+        "prerequisite-gate",
+        "definitions",
+        "programmatic-enforcement"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/hooks",
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "f-d1-b4-013",
+      "taskStatementId": "1.4",
+      "stem": "An architect is reviewing how enforcement works in an Agent SDK application before signing off on a compliance-sensitive workflow. Which TWO statements are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Listing tools in allowed_tools restricts the agent to only those tools, so any tool not listed can never be invoked during the session."
+        },
+        {
+          "id": "B",
+          "text": "A PostToolUse hook can stop a tool from executing by returning a block decision, which makes it a good place for refund limits."
+        },
+        {
+          "id": "C",
+          "text": "A PreToolUse hook that denies a call still applies when the session runs with the bypassPermissions permission mode."
+        },
+        {
+          "id": "D",
+          "text": "Prompt instructions become fully deterministic once temperature is set to zero, so they are adequate for strict compliance rules."
+        },
+        {
+          "id": "E",
+          "text": "If several hooks respond to the same tool call with different decisions, a deny takes precedence over an allow."
+        }
+      ],
+      "correct": [
+        "C",
+        "E"
+      ],
+      "explanation": "In the SDK's permission flow, **hooks are evaluated first**, before deny rules, ask rules, the permission mode, allow rules and canUseTool, and a hook deny holds even in bypassPermissions. When multiple hooks return decisions, the most restrictive wins: deny takes precedence over defer, ask and allow. Together these make PreToolUse hooks a dependable place for compliance rules.",
+      "whyWrong": {
+        "A": "allowed_tools auto-approves the listed tools; it does not remove the others. Unlisted tools fall through to the permission mode and canUseTool. Use disallowed_tools to remove a tool.",
+        "B": "PostToolUse runs after the tool has already executed, so it cannot prevent the action. Its block feedback reaches Claude only after the fact. Limits belong in PreToolUse.",
+        "D": "Temperature zero does not turn instruction-following into a guarantee; the model can still misread or skip a rule. Compliance needs code."
+      },
+      "difficulty": 3,
+      "mindset": "Know where in the pipeline each control runs: before the call, after it, or only in the prompt.",
+      "tags": [
+        "pretooluse",
+        "permissions",
+        "allowed-tools-trap",
+        "hook-precedence"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/permissions",
+        "https://code.claude.com/docs/en/agent-sdk/hooks"
+      ]
+    },
+    {
+      "id": "f-d1-b4-014",
+      "taskStatementId": "1.4",
+      "stem": "A support agent's replies are sometimes long paragraphs, and the team would prefer short bulleted answers. One engineer proposes a Stop hook that rejects any final reply without bullet points and forces the agent to keep going until it complies. What is the BEST response?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Adopt the hook, since a deterministic check settles the format question for good and spares the team from tuning prompt wording."
+        },
+        {
+          "id": "B",
+          "text": "Adopt the hook and also validate each reply against a response schema, so the format is enforced both before and after the model answers."
+        },
+        {
+          "id": "C",
+          "text": "Put the style preference and an example reply in the system prompt; a stylistic choice with low cost of failure does not need a hard gate."
+        },
+        {
+          "id": "D",
+          "text": "Switch to a larger model that is better at following formatting instructions, and leave the existing prompt exactly as it is."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Match the **strength of the guarantee to the business risk**. Deterministic gates are for rules where one failure is costly, such as money, security or compliance. A formatting preference is cheap to get wrong now and then, so clear prompt guidance with an example is the proportionate fix. A blocking hook would add latency, extra turns and new failure modes for little benefit.",
+      "whyWrong": {
+        "A": "Over-applies enforcement. A Stop hook that refuses to let the agent finish can loop, add turns and cost, and block a perfectly good answer over its shape.",
+        "B": "Two enforcement layers for a style preference are over-engineered for the risk involved and add latency to every reply.",
+        "D": "A bigger model is a costly answer to a problem that a clearer prompt with an example handles well."
+      },
+      "difficulty": 2,
+      "mindset": "Gates for must-never-fail rules; prompts for preferences.",
+      "tags": [
+        "proportionality",
+        "prompt-guidance",
+        "over-engineering",
+        "stop-hook"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents",
+        "https://code.claude.com/docs/en/agent-sdk/hooks"
+      ]
+    },
+    {
+      "id": "f-d1-b4-015",
+      "taskStatementId": "1.4",
+      "scenario": "You are building a customer support resolution agent with the Claude Agent SDK. It handles ambiguous requests such as returns, billing disputes and account issues, and reaches backend systems through custom MCP tools: get_customer, lookup_order, process_refund and escalate_to_human. The target is 80%+ first-contact resolution while still escalating when it should.",
+      "stem": "Your new PreToolUse gate correctly blocks process_refund when no verified customer ID exists. In testing, though, the agent often stalls or apologizes vaguely after being blocked, because the denial gives no detail. How should the gate respond to a blocked call so the workflow recovers on its own?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Deny the call with a reason stating that get_customer must first return a verified customer ID, so the agent can take that step and retry."
+        },
+        {
+          "id": "B",
+          "text": "Deny the call and end the session immediately, telling the customer to contact support again later once their identity has been confirmed."
+        },
+        {
+          "id": "C",
+          "text": "Inside the hook, call get_customer with the name the customer mentioned, then silently allow the refund if any matching record comes back."
+        },
+        {
+          "id": "D",
+          "text": "Allow the call to proceed but add a warning to the tool result, so the agent can choose whether to reverse the refund later in the conversation."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "A good gate both **blocks and redirects**. Returning a deny with a clear reason (in the SDK, permissionDecisionReason) tells the model why the call failed and what prerequisite to satisfy, so it can call get_customer, get a verified ID and retry. Enforcement stays deterministic and the conversation still reaches resolution.",
+      "whyWrong": {
+        "B": "Ending the session turns a recoverable situation into a failed contact and works against first-contact resolution.",
+        "C": "Matching on a name can hit the wrong customer, and silently allowing the refund skips real verification, which defeats the gate.",
+        "D": "Letting the call through means the money moves before verification. A warning is not a gate."
+      },
+      "difficulty": 3,
+      "mindset": "A good block says what to do next, so enforcement guides rather than strands the agent.",
+      "tags": [
+        "pretooluse",
+        "deny-reason",
+        "recovery",
+        "prerequisite-gate"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/hooks",
+        "https://code.claude.com/docs/en/agent-sdk/permissions"
+      ]
+    },
+    {
+      "id": "f-d1-b4-016",
+      "taskStatementId": "1.4",
+      "scenario": "You are building a customer support resolution agent with the Claude Agent SDK. It handles ambiguous requests such as returns, billing disputes and account issues, and reaches backend systems through custom MCP tools: get_customer, lookup_order, process_refund and escalate_to_human. The target is 80%+ first-contact resolution while still escalating when it should.",
+      "stem": "The agent sometimes escalates partway through a case, for example after issuing one of two refunds. Human agents report two problems: handoff notes leave out key fields in an unpredictable way, and staff sometimes repeat refunds the agent had already issued. Which TWO changes BEST address these problems? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Let the model write a free-form paragraph for each escalation, since natural prose reads more easily for human agents than structured fields do."
+        },
+        {
+          "id": "B",
+          "text": "Define escalate_to_human with required input fields (customer ID, root cause, refund amount, recommended action) so incomplete handoffs are rejected."
+        },
+        {
+          "id": "C",
+          "text": "Pass along only the customer's most recent message, so the human agent starts with a clean view instead of the agent's interpretation."
+        },
+        {
+          "id": "D",
+          "text": "Include a list of actions already completed, such as refunds issued with amounts and transaction IDs, so the human does not repeat them."
+        },
+        {
+          "id": "E",
+          "text": "Have the agent hold off on escalating until it has tried every available tool at least once, so the handoff contains as much detail as possible."
+        }
+      ],
+      "correct": [
+        "B",
+        "D"
+      ],
+      "explanation": "Inconsistent handoffs come from relying on free text. Declaring the summary fields as **required in the tool's input schema**, with the tool handler rejecting any call that omits one (or strict tool use enforcing the schema), makes completeness a property of the tool contract rather than of prompt wording. Duplicate refunds come from the human not knowing the current state, so a mid-process handoff must record what was **already done**, with IDs, alongside root cause and the recommended next step.",
+      "whyWrong": {
+        "A": "Free-form prose is exactly what produces the unpredictable omissions. Structure is what makes the handoff reliable.",
+        "C": "The last message omits the investigation and the actions taken, which causes both reported problems.",
+        "E": "Running every tool regardless of need delays escalation and adds noise. Policy-driven escalation should happen when it is triggered."
+      },
+      "difficulty": 2,
+      "mindset": "Mid-process handoffs must carry both the facts and the state of what was already done.",
+      "tags": [
+        "handoff",
+        "schema",
+        "mid-process-escalation",
+        "state"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/strict-tool-use"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,543 @@
+{
+  "certId": "professional",
+  "domainId": "d1-solution-design",
+  "questions": [
+    {
+      "id": "p-d1-b2-001",
+      "taskStatementId": "1.2",
+      "stem": "An accounts-payable pipeline uses Claude with a strict JSON schema to extract invoice fields, and every response now parses cleanly. Finance reports that about 4% of extracted invoices still post with line items that do not add up to the stated invoice total, and nobody notices until month-end reconciliation. The team wants the most reliable way to catch these errors before posting, while improving the system over time. What should the architect add?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add a system prompt instruction telling Claude to re-add the line items, confirm they match the stated total, and flag any invoice where they differ before returning its JSON"
+        },
+        {
+          "id": "B",
+          "text": "Move the extraction step to the most capable Claude model with extended thinking enabled, since arithmetic consistency improves with reasoning depth, and track the error rate monthly"
+        },
+        {
+          "id": "C",
+          "text": "Add a code check that sums line items against the stated total, retries once with the specific mismatch, routes persistent failures to a reviewer, and saves them as eval cases"
+        },
+        {
+          "id": "D",
+          "text": "Add more few-shot examples of correctly extracted invoices whose line items sum to the stated total, including tricky cases with discounts and taxes, so the model learns the pattern"
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "A schema guarantees **syntax**, not **semantic** correctness. The totals rule is deterministic, so it belongs in code after the output stage. A complete end-to-end design closes the loop: validate → retry with the *specific* error → escalate what retries cannot fix → feed the failures back into the eval set so future prompt or model changes are tested against them.",
+      "whyWrong": {
+        "A": "A self-check instruction is still probabilistic; it lowers the error rate at best, and when the model's own check is wrong nothing downstream catches it.",
+        "B": "A more capable model with thinking may reduce errors but does not detect the ones that remain; a monthly error rate is a lagging metric, not a gate before posting.",
+        "D": "Few-shot examples shape format and style; they cannot guarantee an arithmetic invariant and provide no detection of the residual failures."
+      },
+      "difficulty": 3,
+      "mindset": "If a rule can be checked deterministically, check it in code and route failures; don't ask the model to promise it.",
+      "tags": [
+        "feedback-loop",
+        "validation",
+        "structured-output",
+        "human-in-the-loop",
+        "deterministic-control"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs",
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests"
+      ]
+    },
+    {
+      "id": "p-d1-b2-002",
+      "taskStatementId": "1.2",
+      "stem": "A sales team uses a Claude-based assistant that drafts follow-up emails inside the CRM. Reps edit each draft before sending it, and the CRM stores both Claude's draft and the version the rep actually sent. The tool's optional thumbs-up/down button is clicked on fewer than 2% of drafts. The team wants a feedback loop that shows where drafts fall short and turns that into measurable improvement. Which design is BEST?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Compare each draft with the version the rep sent, sample heavily edited drafts for review to label what went wrong, and add those cases to the eval set that tests prompt changes"
+        },
+        {
+          "id": "B",
+          "text": "Make the thumbs-up/down rating mandatory before a draft can be sent, and change the prompt whenever the weekly share of thumbs-down ratings rises above a set level"
+        },
+        {
+          "id": "C",
+          "text": "Ask Claude to score each of its own drafts for quality before showing it to the rep, and log the scores on a dashboard so that the team can track the trend over time"
+        },
+        {
+          "id": "D",
+          "text": "Send reps a quarterly survey about the assistant's drafts, and use the most common complaints to decide which parts of the system prompt to rewrite next"
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The richest and cheapest signal is already being captured: the **gap between what Claude drafted and what the rep actually sent**. This implicit feedback covers almost every draft without asking reps to do anything extra. Sampling the heavily edited drafts for human review explains *why* drafts miss, and adding those labeled cases to a versioned eval set means every later prompt or model change is tested against real failures before it is released.",
+      "whyWrong": {
+        "B": "Forced ratings add friction to every send and invite rushed clicks, and a thumbs-down does not say what was wrong. Editing the prompt whenever a ratio moves also ships changes without testing them.",
+        "C": "Self-scores are poorly calibrated, and they measure Claude's opinion of its own draft rather than what the rep actually needed to change.",
+        "D": "A quarterly survey is slow and relies on memory and anecdotes. It produces no test cases that could catch a regression before release."
+      },
+      "difficulty": 2,
+      "mindset": "Use the feedback your workflow already produces, such as user edits, and turn it into eval cases that gate changes.",
+      "tags": [
+        "feedback-loop",
+        "implicit-feedback",
+        "evals",
+        "human-in-the-loop"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests"
+      ]
+    },
+    {
+      "id": "p-d1-b2-003",
+      "taskStatementId": "1.2",
+      "stem": "A shared-services team uses Claude to route incoming support emails to one of ten queues. The right queue depends only on the customer's newest message, but most emails arrive with long quoted reply chains, legal disclaimers and signatures underneath it. Input-token costs are higher than planned, and some emails are routed according to an old issue mentioned further down the thread. Which change to the input stage is MOST appropriate?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Switch to a model with a larger context window so that even the longest reply chains fit comfortably in the request without being cut off"
+        },
+        {
+          "id": "B",
+          "text": "Add a system prompt instruction telling Claude to ignore quoted replies, disclaimers and signatures and to classify only the newest message"
+        },
+        {
+          "id": "C",
+          "text": "Add a first Claude call that summarizes each full email thread, then pass that summary to a second call that chooses the queue"
+        },
+        {
+          "id": "D",
+          "text": "Strip quoted replies, disclaimers and signatures in code before the call so only the newest message is sent, and store the raw email for audit"
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "Good context engineering means giving the model the **smallest set of high-signal tokens** the task needs. Here the relevant content is well defined (the newest message) and the noise follows predictable patterns, so **deterministic preprocessing** at the input stage removes it before Claude sees it. That one change cuts token cost and removes the misleading old issues, while the stored raw email keeps the full record for audit.",
+      "whyWrong": {
+        "A": "The emails already fit. The problem is irrelevant content, not truncation, so a larger window keeps paying for the noise and keeps the distracting old issues in view.",
+        "B": "The instruction might help routing a little, but every token of the reply chain is still sent and billed, and the old issues are still in the input to distract the model.",
+        "C": "A summarization call adds a second model call per email, which raises cost and latency, and the summary can still carry the old issues forward."
+      },
+      "difficulty": 1,
+      "mindset": "When noise in the input is predictable, remove it in code and send Claude only what the task needs.",
+      "tags": [
+        "architecture",
+        "input-stage",
+        "preprocessing",
+        "cost",
+        "context-engineering"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents"
+      ]
+    },
+    {
+      "id": "p-d1-b2-004",
+      "taskStatementId": "1.2",
+      "stem": "A team uses a coding agent to build an internal web app over dozens of sessions, and each session starts with a fresh context window. Three problems keep recurring: each new session spends a long time working out what earlier sessions did, sessions sometimes leave half-finished features that break the build for the next one, and one session announced the project complete while many required features were still missing. Which TWO harness changes BEST address these problems? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Keep a single session running for the whole project on the largest available context window, so that the agent never loses track of what it has already done"
+        },
+        {
+          "id": "B",
+          "text": "Have a setup session list every required feature, each marked as failing, and let later sessions mark one passing only after an end-to-end test"
+        },
+        {
+          "id": "C",
+          "text": "Add a system prompt instruction telling the agent to work carefully, finish whatever it starts, and never declare the project complete until everything works"
+        },
+        {
+          "id": "D",
+          "text": "Require each session to end by committing working code to git with a descriptive message and updating a progress notes file, and to start by reading both"
+        },
+        {
+          "id": "E",
+          "text": "Allow each session to rewrite the feature list so that it reflects the agent's current understanding of what the project really needs"
+        }
+      ],
+      "correct": [
+        "B",
+        "D"
+      ],
+      "explanation": "Work that spans many context windows needs **durable state outside the context**. A feature list written up front, with every item starting as failing, gives each session a fixed definition of done, so no session can declare victory early or try to build everything at once. Ending each session with a **git commit and a progress note**, and starting each one by reading them, lets a fresh session get its bearings quickly, leaves the code in a clean state, and makes it possible to revert a change that broke the build. This mirrors the harness Anthropic describes for long-running agents.",
+      "whyWrong": {
+        "A": "A build that spans dozens of sessions will outgrow any single context window, and nothing durable would record which features are verified as done. Progress needs to live in artifacts outside the context.",
+        "C": "An instruction does not tell the agent what 'everything' includes or what earlier sessions finished. It needs concrete artifacts to check against.",
+        "E": "Letting sessions edit the list removes the fixed definition of done. Anthropic's harness write-up treats removing or editing feature tests as unacceptable, because it can hide missing functionality."
+      },
+      "difficulty": 3,
+      "mindset": "Long-running agents need a fixed definition of done and progress recorded outside the context window.",
+      "tags": [
+        "long-running-agents",
+        "harness-design",
+        "state-management",
+        "multi-select"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents"
+      ]
+    },
+    {
+      "id": "p-d1-b2-005",
+      "taskStatementId": "1.2",
+      "stem": "A legal-ops team uses Claude to draft vendor contracts from approved templates. Lawyers cannot review every draft, but drafts with non-standard clauses or contract values above $250,000 must always be reviewed. The team also wants reviewer edits to improve the system over time. Which output-and-feedback design is MOST appropriate?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Ask Claude to output a confidence score with each draft, send drafts scoring below 0.8 to a lawyer, and auto-approve all of the drafts scoring above it"
+        },
+        {
+          "id": "B",
+          "text": "Route drafts to lawyers with deterministic checks on contract value and on clause differences from the template, and record lawyer edits as eval cases"
+        },
+        {
+          "id": "C",
+          "text": "Send every draft to a lawyer for full review before it is released, and keep the lawyers' edited versions in a shared folder as reference material"
+        },
+        {
+          "id": "D",
+          "text": "Run a second Claude instance that rates the risk level of each draft and auto-approves anything it classifies as low risk for the business"
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "The review triggers are **stated business rules** (a value threshold and template deviation), so they should be enforced with deterministic routing, not left to the model's judgment. Capturing reviewer corrections as eval cases closes the feedback loop and lets the team measure improvement.",
+      "whyWrong": {
+        "A": "Self-reported LLM confidence is poorly calibrated and could auto-approve a $1M contract that the policy says must be reviewed.",
+        "C": "Reviewing everything ignores the stated constraint on lawyer capacity, and a shared folder is not a measurable feedback loop.",
+        "D": "A second model's opinion is still probabilistic, so it cannot guarantee that the mandatory review rules are always applied."
+      },
+      "difficulty": 2,
+      "mindset": "Mandatory review criteria are rules: route them in code, and turn reviewer edits into evals.",
+      "tags": [
+        "human-in-the-loop",
+        "routing",
+        "feedback-loop",
+        "deterministic-control"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents",
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests"
+      ]
+    },
+    {
+      "id": "p-d1-b2-006",
+      "taskStatementId": "1.2",
+      "stem": "An agent that resolves IT tickets sometimes closes tickets incorrectly. Today the system logs only the final reply sent to the user, so engineers cannot tell whether a bad outcome came from retrieval, a tool call, or the prompt, and they cannot tell whether last week's prompt change helped. Which TWO additions to the architecture BEST address this? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Record a full trace for each ticket, covering every model turn, tool call, tool input and tool result, all linked by a single request ID"
+        },
+        {
+          "id": "B",
+          "text": "Ask the agent to append a short paragraph to each final reply explaining in its own words how it reached the decision it made"
+        },
+        {
+          "id": "C",
+          "text": "Re-run each closed ticket through the agent a second time and record whether both runs reached the same outcome, so unstable decisions are surfaced"
+        },
+        {
+          "id": "D",
+          "text": "Tag each trace and eval result with the prompt version and model version so that quality changes can be attributed to specific releases"
+        },
+        {
+          "id": "E",
+          "text": "Add a second agent that rewrites every final reply for clarity before it is sent back to the employee who filed the ticket"
+        }
+      ],
+      "correct": [
+        "A",
+        "D"
+      ],
+      "explanation": "You cannot improve what you cannot see. Step-level **tracing** shows *where* a failure started (retrieval, a tool, or reasoning). **Versioning** traces and eval results ties quality changes to specific prompt or model releases. Together they make the feedback loop diagnosable.",
+      "whyWrong": {
+        "B": "A self-written explanation is not a reliable record of what actually happened, and it gives no visibility into tool inputs and outputs.",
+        "C": "A consistency re-run doubles cost and only says that two runs disagreed; it still cannot show which stage went wrong or which release changed the behavior.",
+        "E": "A rewriting stage adds cost and latency and hides the original output, which makes diagnosis harder."
+      },
+      "difficulty": 2,
+      "mindset": "Make the system observable at each step and tie every change to a version you can compare against.",
+      "tags": [
+        "observability",
+        "tracing",
+        "feedback-loop",
+        "multi-select"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/multi-agent-research-system",
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests"
+      ]
+    },
+    {
+      "id": "p-d1-b2-007",
+      "taskStatementId": "1.5",
+      "stem": "A coordinator agent is asked to assess \"how the shift to remote work affects mid-sized cities.\" The final report covers only housing prices and rental demand. In the coordinator's logs, the three subtasks it created were residential prices, rental vacancies, and mortgage trends, and each subagent fully completed its assignment. What is the MOST effective fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Give the subagents broader web-search tools and longer search budgets so that each one can discover additional relevant topics by itself"
+        },
+        {
+          "id": "B",
+          "text": "Improve the coordinator's decomposition step so that it lists the topic's major dimensions and checks coverage before delegating any subtasks"
+        },
+        {
+          "id": "C",
+          "text": "Increase the number of subagents from three to eight so that the coordinator spreads the work across more parallel research streams"
+        },
+        {
+          "id": "D",
+          "text": "Instruct the synthesis step to identify missing areas such as transport and retail, and to fill those gaps from its own general knowledge"
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "The logs show that the subagents did exactly what they were assigned. The gap came from **decomposition that was too narrow** at the coordinator. Fix the cause where it starts: make the coordinator enumerate the dimensions (housing, transport, retail, tax base, labor) and check coverage before delegating.",
+      "whyWrong": {
+        "A": "The subagents were not the problem. Widening their scope invites overlap and still leaves coverage up to chance.",
+        "C": "More subagents built on the same narrow plan would just split housing into finer pieces.",
+        "D": "Filling gaps from unsourced model knowledge weakens the report's grounding and hides the real defect."
+      },
+      "difficulty": 2,
+      "mindset": "Trace a coverage gap to where the work was divided up, not to the agents that executed it.",
+      "tags": [
+        "decomposition",
+        "orchestrator-workers",
+        "root-cause",
+        "multi-agent"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/multi-agent-research-system",
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "p-d1-b2-008",
+      "taskStatementId": "1.5",
+      "stem": "A team asks Claude to review a pull request that touches 38 files in a single request. The reviews are uneven: detailed comments on the first few files, shallow notes on the rest, and missed bugs where a function's signature changed in one file but its callers in other files were not updated. Which approach should the architect recommend?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Repeat the same full single-request review three times and merge every comment that appears, so that issues missed on one run are caught on another"
+        },
+        {
+          "id": "B",
+          "text": "Add a strong instruction to the prompt telling Claude to give every file equal attention and to review each file as carefully as the first one"
+        },
+        {
+          "id": "C",
+          "text": "Switch to the model with the largest available context window so that all 38 files fit with plenty of room to spare for the review"
+        },
+        {
+          "id": "D",
+          "text": "Review each file in its own focused pass, then run a separate integration pass over the changed interfaces to catch the cross-file issues"
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "This is attention dilution. **Decompose** the work: per-file local passes give consistent depth, and a dedicated cross-file integration pass looks specifically for interface mismatches. This is prompt chaining applied to review.",
+      "whyWrong": {
+        "A": "Repeating the same diluted review gives correlated misses and noisier output. It does not add a cross-file check.",
+        "B": "An instruction does not remove the structural problem of one pass trying to cover everything at once.",
+        "C": "The files already fit in context. The problem is how attention is spread across them, not the window size."
+      },
+      "difficulty": 1,
+      "mindset": "When one pass spreads attention too thin, split into focused passes plus an integration pass.",
+      "tags": [
+        "decomposition",
+        "prompt-chaining",
+        "code-review"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "p-d1-b2-009",
+      "taskStatementId": "1.5",
+      "stem": "An engineering director asks an agent to \"standardize structured logging across our legacy monolith.\" The codebase has about 300 modules, several homegrown logging wrappers, and undocumented dependencies between them. Which decomposition strategy is MOST appropriate?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Map the codebase and its logging wrappers first, convert the highest-dependency modules first, and revise the plan as new dependencies are discovered"
+        },
+        {
+          "id": "B",
+          "text": "Build a complete ordered list of all 300 modules up front and convert them one at a time in a fixed chain, so that progress is predictable and easy to track"
+        },
+        {
+          "id": "C",
+          "text": "Spawn one subagent per module at the start and have each independently convert its module in parallel, then merge the results into a single change set"
+        },
+        {
+          "id": "D",
+          "text": "Give one agent the full task in a single session using the largest available context window, so it holds the whole codebase in view while converting every module"
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "This is an **open-ended task with unknown dependencies**, so it needs **dynamic, adaptive decomposition**. Explore first, then prioritize, then plan, and update the plan as discoveries come in. This is the orchestrator-workers style rather than a fixed chain.",
+      "whyWrong": {
+        "B": "A fixed chain suits predictable steps. A list built before the dependencies are known ignores the order that matters and cannot adapt when a shared wrapper turns up.",
+        "C": "Fully parallel conversion before anyone understands the shared wrappers creates conflicting changes to the same wrappers and wastes tokens.",
+        "D": "A bigger window does not make the task tractable: the session still accumulates 300 modules of history, loses track of progress, and cannot be resumed cleanly."
+      },
+      "difficulty": 2,
+      "mindset": "Open-ended work: explore, prioritize, plan, and adapt. Predictable work: a fixed chain.",
+      "tags": [
+        "decomposition",
+        "dynamic-planning",
+        "orchestrator-workers",
+        "claude-code"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "p-d1-b2-010",
+      "taskStatementId": "1.5",
+      "stem": "A drug-safety team wants Claude to screen patient-forum posts for possible reports of adverse drug reactions so that specialists can follow them up. Missing a genuine report is far more costly than sending specialists an extra post to check, and testing shows that a single model pass flags different posts from one run to the next. Which pattern BEST fits this requirement?",
+      "options": [
+        {
+          "id": "A",
+          "text": "An evaluator-optimizer loop in which Claude screens the post, critiques its own screening, and stops once it reports that nothing else could be a reaction report"
+        },
+        {
+          "id": "B",
+          "text": "Routing, in which a classifier sends each post to one specialized screening prompt chosen according to the class of drug that the post mentions"
+        },
+        {
+          "id": "C",
+          "text": "Parallelization by voting, in which several differently worded screening prompts check the same post and it is flagged if any one of them finds a possible report"
+        },
+        {
+          "id": "D",
+          "text": "Prompt chaining, in which one call summarizes the post and a second call screens only that summary to keep the check focused and less costly"
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "When individual runs vary and **false negatives are expensive**, run the **same task several times** with different prompts and combine the results with a sensitive threshold (flag if any run finds a possible report). This is the voting form of parallelization, and the threshold is chosen by weighing the cost of a miss against the cost of an extra review. Sectioning, by contrast, splits *different* subtasks across parallel calls.",
+      "whyWrong": {
+        "A": "The loop stops on the model's own judgment that nothing was missed, which is a self-check in disguise. It can stop early and miss reports.",
+        "B": "Routing still sends each post through a single, variable pass, so it does nothing about the recall problem.",
+        "D": "Screening a summary throws away detail such as symptoms and timing, which increases misses in a task where recall matters most."
+      },
+      "difficulty": 3,
+      "mindset": "Voting buys confidence on the same task; sectioning splits different tasks. Set the vote threshold by the cost of a miss.",
+      "tags": [
+        "parallelization",
+        "voting",
+        "workflow-patterns",
+        "recall"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "p-d1-b2-011",
+      "taskStatementId": "1.5",
+      "stem": "A consulting firm generates client proposals with a chain of 14 Claude calls: one for the title, one for each paragraph of the executive summary, one for each body section, and so on. Each call sees only the outline and its own instruction. Reviewers say the proposals read as disjointed, with points repeated and tone shifting between sections, and end-to-end time is well above target. Only two steps truly need a checkpoint: pricing must match the official price list, and the finished document must pass a legal-terms check. How should the architect restructure the workflow?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Merge the tightly linked writing steps into one drafting call that sees the whole outline, then check pricing in code and keep the legal-terms check as its own step"
+        },
+        {
+          "id": "B",
+          "text": "Split the chain further into about 30 smaller calls so that each instruction is simpler, and add a final call that smooths the transitions between the sections"
+        },
+        {
+          "id": "C",
+          "text": "Run all 14 calls in parallel instead of one after another to cut end-to-end time, then join their outputs in outline order to assemble the proposal"
+        },
+        {
+          "id": "D",
+          "text": "Replace the chain with an autonomous agent that decides for itself which section to write next and when the proposal is complete"
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Decomposition should follow the **real seams** in a task: points where a step needs a gate, a different capability or different input. Writing the narrative is one tightly coupled task, and splitting it into isolated calls is what caused the repetition and tone drift, while every extra call adds latency. Keep separate steps only where they earn their place: pricing checked deterministically against the price list, and the legal-terms review as its own step. **Over-decomposition** is as much a design error as under-decomposition.",
+      "whyWrong": {
+        "B": "More splits make the coherence problem worse and add latency. A smoothing call only patches the symptoms.",
+        "C": "Parallel calls cut the time, but each section is still written without seeing the others, so the repetition and tone shifts remain.",
+        "D": "The steps are known and few. Autonomy adds unpredictability and cost without fixing the coherence problem."
+      },
+      "difficulty": 2,
+      "mindset": "Decompose at the real seams (gates, different capabilities), not at every paragraph.",
+      "tags": [
+        "decomposition",
+        "prompt-chaining",
+        "over-decomposition",
+        "workflow-design"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "p-d1-b2-012",
+      "taskStatementId": "1.5",
+      "stem": "A research platform's lead agent delegates web research to subagents. Two problems appear in the logs. First, simple factual lookups, such as a company's founding year, trigger as many subagents and tool calls as complex comparative studies. Second, subagents open with long, highly specific search queries that return few results, so they miss the broader picture of which sources exist. Which TWO prompt changes are MOST effective? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Give every subagent the lead agent's full conversation history so that each one can judge for itself how much research the query deserves"
+        },
+        {
+          "id": "B",
+          "text": "Switch every subagent to the most capable model available so that each one picks better search queries without any further guidance"
+        },
+        {
+          "id": "C",
+          "text": "Tell subagents to begin with short, broad queries, see which sources are available, and then narrow the search step by step"
+        },
+        {
+          "id": "D",
+          "text": "Have the lead agent spawn a standing team of six subagents for every query, each with a fixed angle such as history, economics, policy and technology"
+        },
+        {
+          "id": "E",
+          "text": "Add effort-scaling rules that match the number of subagents and tool calls to the query's complexity, from a single agent up to many"
+        }
+      ],
+      "correct": [
+        "C",
+        "E"
+      ],
+      "explanation": "Both fixes are explicit guidance that the agents lacked. **Effort-scaling rules** in the lead agent's prompt match resources to the question: Anthropic's research system describes about one agent with a handful of tool calls for a simple fact, a few subagents for a direct comparison, and many more for complex research. A **start wide, then narrow** search instruction corrects the subagents' default of overly long, specific queries: short, broad queries first show what is available, and later queries can then focus.",
+      "whyWrong": {
+        "A": "Sharing the full history adds token cost to every subagent and still gives no rule for how much effort a query deserves or how to search.",
+        "B": "A more capable model can still default to narrow queries and over-investment. The behavior needs explicit guidance, not just more capability.",
+        "D": "A fixed team of six ignores query complexity, so a factual lookup would still get six subagents, and fixed angles do nothing about how each subagent searches."
+      },
+      "difficulty": 3,
+      "mindset": "Tell agents how much effort a task deserves and how to search; capability alone does not supply these heuristics.",
+      "tags": [
+        "decomposition",
+        "multi-agent",
+        "effort-scaling",
+        "search-strategy",
+        "multi-select"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/multi-agent-research-system"
+      ]
+    }
+  ]
+}

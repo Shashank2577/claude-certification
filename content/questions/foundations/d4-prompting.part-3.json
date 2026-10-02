@@ -1,0 +1,731 @@
+{
+  "certId": "foundations",
+  "domainId": "d4-prompting",
+  "questions": [
+    {
+      "id": "f-d4-b3-001",
+      "taskStatementId": "4.3",
+      "scenario": "Scenario: Structured Data Extraction. Your system uses Claude to pull fields out of unstructured business documents (invoices, receipts, contracts), validates the output against JSON schemas, and loads the results into a downstream finance system. Accuracy matters more than speed, and edge cases must be handled gracefully.",
+      "stem": "The prototype asks Claude to \"return the invoice fields as JSON\" in plain text, and the app calls a JSON parser on the reply. About 3% of replies fail to parse: a stray sentence before the object, a trailing comma, or a missing closing brace. The team wants the most reliable way to get schema-compliant output with the least custom parsing code. What should the architect do?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add three few-shot examples of correctly formatted invoice JSON to the prompt so the model copies the exact structure every time."
+        },
+        {
+          "id": "B",
+          "text": "Define an extraction tool whose input_schema describes the invoice fields, and read the structured data from the tool_use block's input."
+        },
+        {
+          "id": "C",
+          "text": "Keep the plain-text approach and wrap the parser in a retry loop that re-sends the request whenever the reply fails to parse."
+        },
+        {
+          "id": "D",
+          "text": "Move the job to a larger model and add an instruction saying to output only valid JSON with no extra text before or after it."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Tool use with a JSON schema is the most reliable way to get structured output. You define a tool whose `input_schema` is the shape you want, and Claude's reply comes back as a `tool_use` block whose `input` is an already-parsed JSON object built against that schema. This removes the class of JSON syntax errors (stray prose, trailing commas, unclosed braces) at the source instead of cleaning up after it. Adding `strict: true` to the tool definition goes further and guarantees the input conforms to the schema (correct types, required fields present).",
+      "whyWrong": {
+        "A": "Few-shot examples make the format more consistent, but they are still a prompt-level nudge. Some replies will still contain stray text or broken syntax, so the parser keeps failing at a lower rate.",
+        "C": "Retrying treats the symptom. It adds latency and cost on every failure and still gives no structural guarantee. Removing the cause is better than retrying around it.",
+        "D": "A bigger model plus a stricter instruction may reduce the error rate, but output that relies on following an instruction can still break. A schema-bound tool call is the deterministic control."
+      },
+      "difficulty": 1,
+      "mindset": "When output must be machine-readable, bind it to a schema through tool use instead of asking nicely in the prompt.",
+      "tags": [
+        "structured-output",
+        "tool-use",
+        "json-schema"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/strict-tool-use"
+      ]
+    },
+    {
+      "id": "f-d4-b3-002",
+      "taskStatementId": "4.3",
+      "scenario": "Scenario: Structured Data Extraction. Your system uses Claude to pull fields out of unstructured business documents (invoices, receipts, contracts), validates the output against JSON schemas, and loads the results into a downstream finance system. Accuracy matters more than speed, and edge cases must be handled gracefully.",
+      "stem": "The pipeline now receives invoices, receipts and contracts mixed together in one queue, and nothing upstream says which is which. You have defined three extraction tools, extract_invoice, extract_receipt and extract_contract, each with its own schema. With the default tool_choice, about 1 in 20 requests comes back as a prose summary with no tool call at all, which breaks the loader. Which change MOST directly guarantees structured output while still letting Claude pick the right schema?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Force tool_choice to extract_invoice, since invoices are the most common type, and route documents that fail validation to the other two tools."
+        },
+        {
+          "id": "B",
+          "text": "Merge the three tools into one extract_document tool whose schema makes every field from all three document types optional."
+        },
+        {
+          "id": "C",
+          "text": "Set tool_choice to \"any\" so Claude must call one of the provided tools but can still choose which extraction schema fits the document."
+        },
+        {
+          "id": "D",
+          "text": "Keep tool_choice at \"auto\" and add a system-prompt line stating that the model must always respond by calling one of the extraction tools."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "`tool_choice` has three main settings that matter here. `auto` (the default when tools are present) lets the model reply with text instead of calling a tool, which is what causes the prose summaries. `any` requires the model to call **some** tool but leaves the choice of tool to the model. Forcing a named tool requires that **specific** tool. When there are several schemas and the document type is unknown, `any` is the setting that both guarantees a tool call and keeps classification with the model.\n\n*Current-docs note:* the newest models (Claude Opus 5.5, Sonnet 5.5, Fable 5.1, Mythos 5.1) return a 400 error for `any`/forced `tool_choice`, and the docs recommend `auto` plus strict tool use, or structured outputs, instead. The exam tests the three-way distinction as described in the guide.",
+      "whyWrong": {
+        "A": "Forcing one specific tool makes receipts and contracts get squeezed into the invoice schema. You would generate bad extractions on purpose and then rely on validation to catch them.",
+        "B": "One giant all-optional schema throws away the type-specific structure and makes it easy to mix fields from different document types. It also does not stop text-only replies while tool_choice stays at auto.",
+        "D": "This is an instruction, not a control. With tool_choice at auto the API still allows a text reply, so the 1-in-20 failures shrink at best but are not removed."
+      },
+      "difficulty": 2,
+      "mindset": "Know what each tool_choice value guarantees: auto = may skip tools, any = must call some tool, forced = must call this tool.",
+      "tags": [
+        "tool_choice",
+        "structured-output",
+        "multiple-schemas"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools"
+      ]
+    },
+    {
+      "id": "f-d4-b3-003",
+      "taskStatementId": "4.3",
+      "stem": "An enrichment workflow has two steps. First, a metadata pass must pull the document's ID, date and counterparty using an extract_metadata tool. Only after that do later turns call lookup and enrichment tools that need those values. In testing, Claude sometimes skips straight to an enrichment tool on the first turn, and the enrichment then runs with missing keys. What is the MOST reliable way to guarantee the metadata extraction happens first?",
+      "options": [
+        {
+          "id": "A",
+          "text": "On the first request, force tool_choice to {\"type\": \"tool\", \"name\": \"extract_metadata\"}, then run enrichment in later turns with the other tools available."
+        },
+        {
+          "id": "B",
+          "text": "On the first request, set tool_choice to \"any\" so Claude has to call one of the provided tools before it can produce any text, then continue with the enrichment turns."
+        },
+        {
+          "id": "C",
+          "text": "Expand the extract_metadata description to state that it must be called before any other tool in the conversation, and repeat the rule in the system prompt."
+        },
+        {
+          "id": "D",
+          "text": "Add a numbered step list to the system prompt that puts metadata extraction as step one and enrichment as step two, with a reminder before each turn."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Forcing a specific tool with `tool_choice: {\"type\": \"tool\", \"name\": \"extract_metadata\"}` makes the API require that exact tool call on that request. This is a deterministic ordering control: the first turn cannot be anything except the metadata extraction. Later turns can then go back to a normal `tool_choice` so Claude can pick among the enrichment tools.\n\n*Current-docs note:* the newest models reject `any` and forced `tool_choice` (400 error) and the docs recommend `auto` with strict tools or structured outputs instead. The exam tests the forced-tool concept as the guide describes it.",
+      "whyWrong": {
+        "B": "`any` guarantees **a** tool call, not **which** one. Claude could still choose an enrichment tool first, which is the exact failure you are trying to prevent.",
+        "C": "Tool descriptions guide selection but do not enforce order. A stronger description lowers the miss rate without bringing it to zero.",
+        "D": "A prompt-level sequence is advisory. When one step must happen before another, use a mechanism the API enforces instead of an instruction the model usually follows."
+      },
+      "difficulty": 2,
+      "mindset": "When a step MUST come first, force it with an API control rather than describing the order in prose.",
+      "tags": [
+        "tool_choice",
+        "forced-tool",
+        "workflow-ordering"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools"
+      ]
+    },
+    {
+      "id": "f-d4-b3-004",
+      "taskStatementId": "4.3",
+      "scenario": "Scenario: Structured Data Extraction. Your system uses Claude to pull fields out of unstructured business documents (invoices, receipts, contracts), validates the output against JSON schemas, and loads the results into a downstream finance system. Accuracy matters more than speed, and edge cases must be handled gracefully.",
+      "stem": "The invoice schema marks purchase_order_number as a required string. Audits show that on invoices with no PO number, the extraction often returns plausible-looking values like \"PO-0000\" or a number copied from an unrelated reference field. The finance system then tries to match these fake POs. What is the BEST fix with the smallest change to the pipeline?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add an instruction to the prompt saying never to invent a purchase order number and to copy only values printed on the invoice."
+        },
+        {
+          "id": "B",
+          "text": "Add several few-shot examples of invoices that have no PO number, each paired with an output where the PO field is an empty string."
+        },
+        {
+          "id": "C",
+          "text": "Add a validation-retry loop that re-asks the model whenever the PO number fails a format check against your PO numbering pattern."
+        },
+        {
+          "id": "D",
+          "text": "Make purchase_order_number nullable (or optional) in the schema so the model can return null when the document does not contain one."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "A required field tells the model it **must** produce a value, so when the source document lacks that information the model fills the gap with something plausible. Making the field nullable or optional gives it a legitimate way to say \"not present\". This removes the pressure to fabricate at the schema level and lets the downstream system treat `null` as \"no PO\" explicitly.",
+      "whyWrong": {
+        "A": "The instruction conflicts with the schema, which still demands a value. Under that pressure the model will keep producing something, and you have only added a request it cannot reliably honor.",
+        "B": "An empty string is a sentinel that downstream systems can confuse with real data, and few-shot examples still don't change the schema forcing a value. Fix the contract, not the examples.",
+        "C": "Retries cannot recover information that is not in the document. A format check also misses fabricated values that happen to match the pattern, and the loop adds cost for no gain."
+      },
+      "difficulty": 2,
+      "mindset": "If the source may not contain a value, the schema must allow \"no value\"; required fields invite fabrication.",
+      "tags": [
+        "schema-design",
+        "nullable-fields",
+        "hallucination"
+      ],
+      "sourceRefs": [
+        "https://everpath-course-content.s3-accelerate.amazonaws.com/instructor%2F6nizmqk8tpzpfjvt6qmmav7rh%2Fpublic%2F1783542750%2FClaude+Certified+Architect+%E2%80%93+Foundations+Exam+Guide.pdf",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools",
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs"
+      ]
+    },
+    {
+      "id": "f-d4-b3-005",
+      "taskStatementId": "4.3",
+      "scenario": "Scenario: Structured Data Extraction. Your system uses Claude to pull fields out of unstructured business documents (invoices, receipts, contracts), validates the output against JSON schemas, and loads the results into a downstream finance system. Accuracy matters more than speed, and edge cases must be handled gracefully.",
+      "stem": "After moving to strict tool use, every extraction parses and matches the schema. But a sample review finds two kinds of problems: on about 4% of invoices the line items don't add up to the stated total, and on some invoices the tax amount sits in the shipping field. Which TWO actions BEST address these problems? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add a calculated_total field next to stated_total in the schema, and have application code compare them and flag any mismatch for follow-up."
+        },
+        {
+          "id": "B",
+          "text": "Turn on strict mode for the tool's input schema so the model is constrained to emit values that are consistent across related fields."
+        },
+        {
+          "id": "C",
+          "text": "Switch the extraction to a larger model, since schema-valid but wrong values point to a reasoning gap that more capability will close."
+        },
+        {
+          "id": "D",
+          "text": "When an app-side check fails, retry with the original document, the failed extraction and the specific validation error in the follow-up request."
+        },
+        {
+          "id": "E",
+          "text": "Add a closing instruction asking the model to double-check that its line items sum to the total before it calls the tool."
+        }
+      ],
+      "correct": [
+        "A",
+        "D"
+      ],
+      "explanation": "A schema guarantees **syntax and shape**, not **meaning**. Totals that don't add up and values in the wrong field are semantic errors, and the schema cannot catch them. The fix is (A) design the output so semantic checks are possible, for example extracting `calculated_total` next to `stated_total`, then check them in application code, and (D) when a check fails, send a targeted retry with the original document, the failed output and the exact error so the model can correct the specific mistake. Cap the retries and escalate cases that keep failing.",
+      "whyWrong": {
+        "B": "Strict mode is already in place. It guarantees the output matches the schema's types and structure but says nothing about whether two fields agree with each other.",
+        "C": "A bigger model may reduce the rate somewhat, but nothing checks the result, so errors that remain still flow downstream unnoticed.",
+        "E": "Asking the model to check itself is a soft control. It reviews its own reasoning and has no deterministic check, so it will still miss some mismatches."
+      },
+      "difficulty": 3,
+      "mindset": "Schemas fix syntax; semantic correctness needs explicit checks in code plus targeted feedback.",
+      "tags": [
+        "semantic-validation",
+        "structured-output",
+        "validation-retry",
+        "multi-select"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs",
+        "https://everpath-course-content.s3-accelerate.amazonaws.com/instructor%2F6nizmqk8tpzpfjvt6qmmav7rh%2Fpublic%2F1783542750%2FClaude+Certified+Architect+%E2%80%93+Foundations+Exam+Guide.pdf"
+      ]
+    },
+    {
+      "id": "f-d4-b3-006",
+      "taskStatementId": "4.3",
+      "stem": "An expense extractor classifies each receipt into a required enum field named category with the values travel, meals, software and office. Finance keeps adding new spend types. Today, receipts that don't fit are quietly forced into the nearest bucket, and receipts that are hard to read get a confident but arbitrary category. Downstream reporting depends on the category set staying controlled. Which TWO schema changes BEST address this? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Replace the enum with a free-text category string so the model can describe any spend type in its own words."
+        },
+        {
+          "id": "B",
+          "text": "Add an \"other\" enum value paired with a category_detail string the model fills in when it chooses \"other\"."
+        },
+        {
+          "id": "C",
+          "text": "Pre-emptively add twenty more enum values covering every spend type finance might plausibly introduce over the next year."
+        },
+        {
+          "id": "D",
+          "text": "Make the category field required and add a confidence number so downstream systems can drop low-confidence values."
+        },
+        {
+          "id": "E",
+          "text": "Add an \"unclear\" enum value the model can use when the receipt is too ambiguous to classify reliably."
+        }
+      ],
+      "correct": [
+        "B",
+        "E"
+      ],
+      "explanation": "Two well-known schema patterns fix this. **\"other\" + a detail string** keeps the category set controlled for downstream systems while giving new or unexpected types somewhere honest to go, and the detail text tells you when to promote a value to a real enum member. **\"unclear\"** gives the model a valid answer for ambiguous input, so it doesn't have to guess confidently. Both remove the pressure to force a wrong value into the existing buckets.",
+      "whyWrong": {
+        "A": "Free text loses the closed set that downstream reporting relies on. You get spelling variants and synonyms, and you have swapped a classification problem for a normalization problem.",
+        "C": "Guessing future categories is over-engineering. It makes the enum harder to choose from and still fails on the first type nobody predicted.",
+        "D": "The field is already required, and that pressure is part of the problem. A confidence number doesn't give the model a valid way to say \"none of these\" or \"can't tell\", so the forced guesses continue and you only learn to distrust some of them."
+      },
+      "difficulty": 2,
+      "mindset": "Give the schema honest exits (\"other\" + detail, \"unclear\") so the model never has to force a wrong value.",
+      "tags": [
+        "schema-design",
+        "enums",
+        "extensible-categories",
+        "multi-select"
+      ],
+      "sourceRefs": [
+        "https://everpath-course-content.s3-accelerate.amazonaws.com/instructor%2F6nizmqk8tpzpfjvt6qmmav7rh%2Fpublic%2F1783542750%2FClaude+Certified+Architect+%E2%80%93+Foundations+Exam+Guide.pdf",
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs"
+      ]
+    },
+    {
+      "id": "f-d4-b3-007",
+      "taskStatementId": "4.3",
+      "scenario": "Scenario: Structured Data Extraction. Your system uses Claude to pull fields out of unstructured business documents (invoices, receipts, contracts), validates the output against JSON schemas, and loads the results into a downstream finance system. Accuracy matters more than speed, and edge cases must be handled gracefully.",
+      "stem": "Invoices come from suppliers in the US, UK and Germany. The schema's invoice_date field is a string, and the extracted dates come back as \"03/04/25\", \"4 March 2025\" and \"2025-03-04\". The ERP needs ISO 8601 dates, and finance has confirmed that \"03/04/25\" means 3 April on UK and German invoices but 4 March on US invoices. The supplier's country appears only in the address block printed on the invoice itself; the queue carries no country metadata. Which approach MOST reliably produces correct, normalized dates?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Leave the extracted strings as they are and post-process them in application code with a general-purpose date parser that auto-detects the format of each value."
+        },
+        {
+          "id": "B",
+          "text": "Add a description to the field saying it must look like YYYY-MM-DD, set format to date, and rely on strict mode to enforce that shape on every extraction."
+        },
+        {
+          "id": "C",
+          "text": "Keep the strict schema and add normalization rules to the prompt: output ISO 8601, and read numeric dates by the convention of the country shown on the invoice."
+        },
+        {
+          "id": "D",
+          "text": "Add a second model pass that re-reads each extracted date, checks whether it looks correctly formatted, and rewrites any value that appears to be in the wrong format."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "A schema can constrain the **shape** of a value, but it cannot decide what an ambiguous source string **means**. Whether \"03/04/25\" is 3 April or 4 March depends on a business rule (the supplier's country) that is only visible inside the document the model is reading. Putting explicit normalization rules in the prompt alongside the strict schema tells the model how to interpret and format the value, while the schema keeps the output structurally valid. The exam guide calls this combination out directly: format normalization rules belong in the prompt next to the strict schema.",
+      "whyWrong": {
+        "A": "Code is deterministic, but a parser can only apply the day/month rule if something tells it the country, and nothing outside the document does. Auto-detection has to guess on \"03/04/25\", so one region is silently wrong. The model, which reads the address block, is the component that has the information.",
+        "B": "Even with the format enforced, a correctly shaped YYYY-MM-DD can still be the wrong date. Shape constraints don't settle day/month ambiguity, and strict mode never checks meaning.",
+        "D": "The second pass checks format, not interpretation. A value that is already YYYY-MM-DD looks fine even when day and month are swapped, and the pass has no rule telling it which convention applied."
+      },
+      "difficulty": 3,
+      "mindset": "Schemas enforce shape; prompts must carry the business rules that give ambiguous values their meaning, and the rule goes where the information is.",
+      "tags": [
+        "normalization",
+        "schema-design",
+        "prompt-plus-schema"
+      ],
+      "sourceRefs": [
+        "https://everpath-course-content.s3-accelerate.amazonaws.com/instructor%2F6nizmqk8tpzpfjvt6qmmav7rh%2Fpublic%2F1783542750%2FClaude+Certified+Architect+%E2%80%93+Foundations+Exam+Guide.pdf",
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs"
+      ]
+    },
+    {
+      "id": "f-d4-b3-008",
+      "taskStatementId": "4.3",
+      "stem": "A product manager new to Claude asks what defining extraction tools with JSON schemas actually guarantees. Which TWO statements are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Tool use with a JSON schema eliminates JSON syntax errors such as unbalanced braces or stray text mixed into the structured data."
+        },
+        {
+          "id": "B",
+          "text": "Marking a field as required ensures the source document actually contains that information before the model returns a value."
+        },
+        {
+          "id": "C",
+          "text": "With tool_choice set to \"auto\", the model may answer with plain text instead of calling the extraction tool at all."
+        },
+        {
+          "id": "D",
+          "text": "A strict schema guarantees that numeric fields are mutually consistent, for example that line items sum to the total."
+        },
+        {
+          "id": "E",
+          "text": "Forcing a specific tool guarantees that the extracted values are factually correct for that document."
+        }
+      ],
+      "correct": [
+        "A",
+        "C"
+      ],
+      "explanation": "With tool use, the `tool_use` block's `input` arrives as a parsed JSON object, so JSON syntax errors such as stray text or unbalanced braces are gone (A); full schema conformance (types, required fields) additionally needs `strict: true`. `tool_choice: \"auto\"` (the default when tools are provided) lets the model decide whether to call a tool, so it may reply in text (C). Use `any` or a forced tool when you need a tool call every time. Neither the schema nor tool_choice says anything about whether the values are true or consistent.",
+      "whyWrong": {
+        "B": "Required fields do the opposite of checking the source. They push the model to produce a value even when the document has none, which encourages fabrication.",
+        "D": "Cross-field arithmetic is a semantic rule. Schemas check types and structure, so consistency between values needs an application-side check.",
+        "E": "Forcing a tool guarantees **which tool is called**, not that its arguments are correct. Accuracy still needs validation."
+      },
+      "difficulty": 1,
+      "mindset": "Separate what a mechanism guarantees (shape, a tool call) from what it can't (truth, consistency).",
+      "tags": [
+        "structured-output",
+        "tool_choice",
+        "guarantees",
+        "multi-select"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools",
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs"
+      ]
+    },
+    {
+      "id": "f-d4-b3-009",
+      "taskStatementId": "4.6",
+      "scenario": "Scenario: Claude Code for Continuous Integration. Your team runs Claude Code in the CI/CD pipeline to review pull requests, generate tests and post feedback as PR comments. Engineers have said they will ignore the bot if its comments are noisy, so findings must be actionable with few false positives.",
+      "stem": "A CI job runs one headless Claude Code session that implements a ticket, writes tests and then, as its last step, reviews its own diff before opening the PR. Reviewers keep finding problems the bot's self-review missed, such as an unhandled null path and a race condition in a retry helper. What change will MOST effectively improve the review step?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add a review checklist covering null handling and concurrency to the session's final prompt and instruct it to be highly critical of the code it just generated."
+        },
+        {
+          "id": "B",
+          "text": "Raise the session's thinking effort for the review step so it reasons more carefully about each changed function before opening the PR."
+        },
+        {
+          "id": "C",
+          "text": "Have the same session run the self-review twice in a row with different wording and merge any issues found in either pass."
+        },
+        {
+          "id": "D",
+          "text": "Run the review in a separate Claude instance that receives the diff and the requirements but none of the generating session's context."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "A model reviewing its own work in the same session still carries the reasoning that produced the code, so it tends to agree with its earlier decisions. An independent instance with no prior generation context looks at the diff on its own terms and is more effective at catching subtle issues than self-review instructions or extra thinking. Claude Code's documentation recommends this Writer/Reviewer pattern.",
+      "whyWrong": {
+        "A": "A checklist and a \"be critical\" instruction don't remove the anchoring. The reviewer still has the reasoning that convinced it the code was correct.",
+        "B": "More thinking inside the same context reasons more carefully from the same assumptions. It doesn't give the fresh perspective that catches blind spots.",
+        "C": "Two passes in the same context repeat the same bias. You pay twice for a correlated second opinion."
+      },
+      "difficulty": 1,
+      "mindset": "The author is the weakest reviewer: get a second opinion from a context that didn't write the code.",
+      "tags": [
+        "independent-review",
+        "self-review-limits",
+        "ci-cd"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/best-practices",
+        "https://everpath-course-content.s3-accelerate.amazonaws.com/instructor%2F6nizmqk8tpzpfjvt6qmmav7rh%2Fpublic%2F1783542750%2FClaude+Certified+Architect+%E2%80%93+Foundations+Exam+Guide.pdf"
+      ]
+    },
+    {
+      "id": "f-d4-b3-010",
+      "taskStatementId": "4.6",
+      "scenario": "Scenario: Claude Code for Continuous Integration. Your team runs Claude Code in the CI/CD pipeline to review pull requests, generate tests and post feedback as PR comments. Engineers have said they will ignore the bot if its comments are noisy, so findings must be actionable with few false positives.",
+      "stem": "A refactor PR touches 28 files across the payments service. The single-pass CI review of the whole diff gives shallow comments on most files and contradicts itself: it flags a missing idempotency key in one handler and approves the same pattern in another. A bug where a renamed field is still read by a downstream consumer was missed entirely. What should the architect change?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Split the review into per-file passes for local issues, then run a separate integration pass that looks only at cross-file data flow and interfaces."
+        },
+        {
+          "id": "B",
+          "text": "Add a CI rule that rejects PRs touching more than 10 files, so developers must split large refactors into smaller PRs before the bot will review them."
+        },
+        {
+          "id": "C",
+          "text": "Move the review to a model with a larger context window so the whole 28-file diff fits comfortably, with the full files attached for cross-reference."
+        },
+        {
+          "id": "D",
+          "text": "Run the full-diff review three times with the same prompt and post only the findings that appear in at least two of the three runs, dropping the rest."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "When one pass covers too much, attention gets spread thin and the output gets worse: shallow comments, contradictory judgments, missed cross-file issues. Multi-pass review fixes this structurally. **Per-file passes** give each file focused attention for local issues, and a **separate integration pass** concentrates on how data and interfaces flow between files, where the renamed-field bug lives.",
+      "whyWrong": {
+        "B": "This pushes the problem onto developers and blocks legitimate large refactors. It works around the review design instead of fixing it.",
+        "C": "Fitting the diff in the window was never the issue. A bigger window doesn't stop attention from spreading thin across 28 files.",
+        "D": "Majority voting filters out real findings that only show up some of the time, and it does nothing about cross-file analysis that no run is doing well."
+      },
+      "difficulty": 2,
+      "mindset": "Too much in one pass dilutes attention; split by scope (local vs. integration) instead of adding size or votes.",
+      "tags": [
+        "multi-pass-review",
+        "attention-dilution",
+        "ci-cd"
+      ],
+      "sourceRefs": [
+        "https://everpath-course-content.s3-accelerate.amazonaws.com/instructor%2F6nizmqk8tpzpfjvt6qmmav7rh%2Fpublic%2F1783542750%2FClaude+Certified+Architect+%E2%80%93+Foundations+Exam+Guide.pdf",
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "f-d4-b3-011",
+      "taskStatementId": "4.6",
+      "stem": "You are designing an automated review for large, multi-module PRs produced by a code-generation agent. The goals are to catch bugs that cross module boundaries and to avoid rubber-stamping the generator's own assumptions. Which TWO design elements BEST meet these goals? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Review the full diff in one pass with an instruction to give every file equal attention and check cross-module calls."
+        },
+        {
+          "id": "B",
+          "text": "Run the review in an instance that did not generate the code and has none of the generator's reasoning in its context."
+        },
+        {
+          "id": "C",
+          "text": "Append a self-review step to the generating agent's final turn so it can catch issues while its context is still fresh."
+        },
+        {
+          "id": "D",
+          "text": "Add a dedicated integration pass, after the per-file passes, that traces data flow and contracts across module boundaries."
+        },
+        {
+          "id": "E",
+          "text": "Run the same review three times and keep only findings that a majority of runs agree on, to reduce noise."
+        }
+      ],
+      "correct": [
+        "B",
+        "D"
+      ],
+      "explanation": "Two separate failure modes need two separate fixes. **Independence (B)** handles the bias: a reviewer without the generator's context isn't anchored to the generator's decisions. **An integration pass (D)** handles cross-module bugs: once per-file passes have covered local issues, a pass dedicated to interfaces and data flow gives those boundary bugs focused attention instead of leaving them as an afterthought in one giant pass.",
+      "whyWrong": {
+        "A": "An \"equal attention\" instruction doesn't stop attention from being diluted. One pass over a large diff still produces shallow and inconsistent results.",
+        "C": "Having \"fresh\" context is exactly the problem. The generator keeps the reasoning that produced the code, so its self-review tends to confirm it.",
+        "E": "Majority voting suppresses real bugs that are only caught some of the time. It trades recall for a false sense of agreement."
+      },
+      "difficulty": 2,
+      "mindset": "Independence fixes bias; scope separation fixes attention. Use the right tool for each failure.",
+      "tags": [
+        "multi-pass-review",
+        "independent-review",
+        "multi-select"
+      ],
+      "sourceRefs": [
+        "https://everpath-course-content.s3-accelerate.amazonaws.com/instructor%2F6nizmqk8tpzpfjvt6qmmav7rh%2Fpublic%2F1783542750%2FClaude+Certified+Architect+%E2%80%93+Foundations+Exam+Guide.pdf",
+        "https://code.claude.com/docs/en/best-practices"
+      ]
+    },
+    {
+      "id": "f-d4-b3-012",
+      "taskStatementId": "4.6",
+      "scenario": "Scenario: Claude Code for Continuous Integration. Your team runs Claude Code in the CI/CD pipeline to review pull requests, generate tests and post feedback as PR comments. Engineers have said they will ignore the bot if its comments are noisy, so findings must be actionable with few false positives.",
+      "stem": "The independent CI reviewer now catches more real issues, but it also posts many speculative comments. Engineers have started ignoring all of them, and the two senior reviewers can only triage about 15 flagged items per day. You want to route each finding appropriately: post it, send it to a human or drop it. Which approach is MOST effective?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add an instruction telling the reviewer to be conservative, report only findings it is highly confident about, and stay silent otherwise."
+        },
+        {
+          "id": "B",
+          "text": "Add a verification pass that attaches a confidence score to each finding, then route by thresholds calibrated against labeled past findings."
+        },
+        {
+          "id": "C",
+          "text": "Run the reviewer three times per PR and post only findings that appear in all three runs, dropping everything else as probable noise."
+        },
+        {
+          "id": "D",
+          "text": "Send every finding to the senior reviewers in a daily digest, ordered by how many lines of code each finding touches."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Routing needs a signal per finding. A verification pass where the model reports confidence alongside each finding gives you that signal. **Calibrating** the thresholds against labeled historical findings (which ones engineers accepted versus dismissed) turns the raw score into a dependable rule: high-confidence findings get posted, a middle band goes to the limited human reviewers, and the low band is dropped or logged.",
+      "whyWrong": {
+        "A": "\"Be conservative\" and \"only report high-confidence issues\" are the classic instructions that do not improve precision. The model judges them with no calibration behind it, you lose control over the tradeoff, and you get no per-finding score to route on.",
+        "C": "Requiring agreement across every run removes real but intermittent findings and triples the cost. Agreement measures consistency, not correctness.",
+        "D": "Sending everything to humans ignores their capacity of about 15 a day, and lines of code has nothing to do with whether a finding is real or important."
+      },
+      "difficulty": 3,
+      "mindset": "Route on a per-item signal you have calibrated against ground truth, not on vague instructions or brute-force voting.",
+      "tags": [
+        "confidence-routing",
+        "calibration",
+        "false-positives",
+        "ci-cd"
+      ],
+      "sourceRefs": [
+        "https://everpath-course-content.s3-accelerate.amazonaws.com/instructor%2F6nizmqk8tpzpfjvt6qmmav7rh%2Fpublic%2F1783542750%2FClaude+Certified+Architect+%E2%80%93+Foundations+Exam+Guide.pdf"
+      ]
+    },
+    {
+      "id": "f-d4-b3-013",
+      "taskStatementId": "4.6",
+      "scenario": "Scenario: Multi-Agent Research System. A coordinator agent built on the Claude Agent SDK delegates to subagents that search the web, analyze documents, synthesize findings and generate cited reports.",
+      "stem": "The synthesis subagent writes the final report, and the same subagent is then asked to \"verify that every claim is supported by its cited source\" before handing the report back. Spot checks show about 1 in 10 claims cite a source that doesn't actually support them, and the verification step almost never catches these. What should the architect do?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Turn on a higher thinking effort for the synthesis subagent so it reasons more carefully while writing and while verifying claims."
+        },
+        {
+          "id": "B",
+          "text": "Add a stronger instruction to the synthesis prompt to double-check each citation against its source before finishing the report."
+        },
+        {
+          "id": "C",
+          "text": "Spawn a verifier subagent and pass it the synthesizer's full working transcript so it understands why each citation was chosen."
+        },
+        {
+          "id": "D",
+          "text": "Spawn a separate verifier subagent that receives only the draft report and the cited source excerpts, with no synthesis context."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "The synthesizer is checking work it just produced while still holding the reasoning that led to each citation. That anchoring is why its verification misses the bad citations. A separate verifier that sees only the report and the sources has to judge each claim against the evidence itself. This is the independent-instance pattern, and subagents make it easy because each runs in its own fresh context.",
+      "whyWrong": {
+        "A": "More thinking in the same context reasons more carefully from the same assumptions. It does not supply the outside perspective the verification needs.",
+        "B": "A stronger instruction is still self-review. The same anchoring that let the bad citations through will let most of them through again.",
+        "C": "Passing the full transcript brings the generator's reasoning into the verifier's context. That recreates the bias you were trying to escape, so the verifier is no longer independent."
+      },
+      "difficulty": 2,
+      "mindset": "Independence means keeping the generator's reasoning out of the reviewer's context, not only using a different instance.",
+      "tags": [
+        "independent-review",
+        "subagents",
+        "citation-verification"
+      ],
+      "sourceRefs": [
+        "https://everpath-course-content.s3-accelerate.amazonaws.com/instructor%2F6nizmqk8tpzpfjvt6qmmav7rh%2Fpublic%2F1783542750%2FClaude+Certified+Architect+%E2%80%93+Foundations+Exam+Guide.pdf",
+        "https://code.claude.com/docs/en/sub-agents",
+        "https://code.claude.com/docs/en/best-practices"
+      ]
+    },
+    {
+      "id": "f-d4-b3-014",
+      "taskStatementId": "4.6",
+      "stem": "A team lead asks why a second, independent Claude instance reviewing generated code tends to catch more subtle bugs than asking the generating session to think harder and review itself. Which explanation is MOST accurate?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The generating session still holds the reasoning that produced the code, which anchors it to its own decisions; an independent instance judges the code without that context."
+        },
+        {
+          "id": "B",
+          "text": "A second instance gets a larger effective context window, so it can hold more of the codebase and the test suite than the generating session can during its review."
+        },
+        {
+          "id": "C",
+          "text": "Extended thinking is turned off during review steps in the same session, so self-review always runs with less reasoning than a brand-new instance would use."
+        },
+        {
+          "id": "D",
+          "text": "Independent instances run at a higher sampling temperature by default, which makes them more likely to explore unusual failure paths the author never considered."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The mechanism is about **context**, not capacity or settings. The generating session still holds the chain of reasoning that convinced it the code was correct, so it is less likely to question those decisions. A reviewer without that context has to rebuild its understanding from the code, which exposes assumptions that don't hold. This is why independent instances beat both self-review instructions and extra thinking.",
+      "whyWrong": {
+        "B": "Both instances can use the same model and the same window size. The benefit comes from what is *not* in the reviewer's context, not from having more room.",
+        "C": "Nothing turns thinking off for self-review. The weakness is the anchoring to its own earlier reasoning, which remains even with more thinking.",
+        "D": "No default makes a new instance run at a different temperature. The explanation is about context isolation, not sampling randomness."
+      },
+      "difficulty": 2,
+      "mindset": "The value of an independent reviewer comes from what it doesn't know: the author's reasoning.",
+      "tags": [
+        "self-review-limits",
+        "independent-review",
+        "concepts"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/best-practices",
+        "https://everpath-course-content.s3-accelerate.amazonaws.com/instructor%2F6nizmqk8tpzpfjvt6qmmav7rh%2Fpublic%2F1783542750%2FClaude+Certified+Architect+%E2%80%93+Foundations+Exam+Guide.pdf"
+      ]
+    },
+    {
+      "id": "f-d4-b3-015",
+      "taskStatementId": "4.6",
+      "scenario": "Scenario: Code Generation with Claude Code. Your team uses Claude Code day to day for code generation, refactoring, debugging and documentation, and wants dependable habits for when to trust its output.",
+      "stem": "A developer spent a long Claude Code session building a database migration with several back-and-forth corrections. Before merging, they want Claude to review the migration for data-loss risks. They want the most effective review with minimal setup and no new infrastructure. What should they do?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Ask the same session to re-read the migration with a request to be harsh and assume the code contains at least one data-loss bug."
+        },
+        {
+          "id": "B",
+          "text": "Run /compact to shrink the history to its key decisions, then ask the same session to review the migration from its condensed context."
+        },
+        {
+          "id": "C",
+          "text": "Have a reviewer subagent or a fresh Claude Code session review the migration diff against the requirements, without the building session's history."
+        },
+        {
+          "id": "D",
+          "text": "Raise the thinking effort in the current session and ask it to walk through every statement in the migration step by step, looking for data loss."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "The building session's context is full of the reasoning, and the corrections, that shaped the code, so it is biased toward the result. A reviewer subagent or a new session starts with a clean context, sees only the diff and the criteria you give it, and judges the change on its own terms. Claude Code's best-practices guide recommends this pattern (a Writer/Reviewer split or an adversarial review subagent), and it needs no new infrastructure.",
+      "whyWrong": {
+        "A": "Telling the model to \"be harsh\" changes its tone, not its context. It is still the author reviewing its own decisions.",
+        "B": "/compact keeps a summary of the session's key decisions, so the reviewer still sees the author's reasoning, just in condensed form. That is not an independent review.",
+        "D": "More thinking in the authoring context reasons further from the same anchored assumptions. Independence matters more than effort for catching blind spots."
+      },
+      "difficulty": 3,
+      "mindset": "Compacting or re-prompting the author is still self-review; a clean context is what makes a reviewer independent.",
+      "tags": [
+        "independent-review",
+        "claude-code",
+        "subagents",
+        "compact"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/best-practices",
+        "https://code.claude.com/docs/en/sub-agents"
+      ]
+    },
+    {
+      "id": "f-d4-b3-016",
+      "taskStatementId": "4.6",
+      "scenario": "Scenario: Claude Code for Continuous Integration. Your team runs Claude Code in the CI/CD pipeline to review pull requests, generate tests and post feedback as PR comments. Engineers have said they will ignore the bot if its comments are noisy, so findings must be actionable with few false positives.",
+      "stem": "Most PRs in the repo touch 1 to 3 files, and a few each month touch 20 or more. A colleague proposes running five parallel reviewer instances on every PR, followed by an adjudicator agent that merges their findings by majority vote. You need a review design that catches real issues on both small and large PRs while staying proportionate in cost and complexity. Which design is BEST?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Use the five-reviewer ensemble with majority voting on every PR, since several independent opinions catch more than any single reviewer would."
+        },
+        {
+          "id": "B",
+          "text": "Use one independent reviewer instance on every PR, and add per-file plus integration passes only when a PR exceeds a size threshold."
+        },
+        {
+          "id": "C",
+          "text": "Let the generating session self-review small PRs to save cost, and reserve an independent reviewer only for PRs over the size threshold."
+        },
+        {
+          "id": "D",
+          "text": "Run per-file passes plus a separate integration pass on every PR regardless of size, so all PRs follow the same review path."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Match the architecture to the actual problem. An independent reviewer helps on every PR because the self-review bias exists no matter the size. Attention dilution only shows up on large diffs, so the per-file plus integration split pays off only above a size threshold. This catches real issues on both kinds of PR without a heavy pipeline on a 2-file change.",
+      "whyWrong": {
+        "A": "This is over-engineered. Five reviewers plus an adjudicator multiply cost on every small PR, and majority voting suppresses real findings that only some reviewers catch.",
+        "C": "Self-review is the weak point no matter the PR size. Saving cost here gives up the independence that makes review effective on small PRs too.",
+        "D": "The multi-pass split fixes attention dilution, which a 1 to 3 file PR doesn't have. Running it everywhere adds steps and latency for no benefit."
+      },
+      "difficulty": 3,
+      "mindset": "Use the simplest design that handles the real failure mode, and scale up only where that failure mode appears.",
+      "tags": [
+        "multi-pass-review",
+        "independent-review",
+        "proportionate-design",
+        "ci-cd"
+      ],
+      "sourceRefs": [
+        "https://everpath-course-content.s3-accelerate.amazonaws.com/instructor%2F6nizmqk8tpzpfjvt6qmmav7rh%2Fpublic%2F1783542750%2FClaude+Certified+Architect+%E2%80%93+Foundations+Exam+Guide.pdf",
+        "https://www.anthropic.com/engineering/building-effective-agents",
+        "https://code.claude.com/docs/en/best-practices"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,726 @@
+{
+  "certId": "foundations",
+  "domainId": "d1-agentic",
+  "questions": [
+    {
+      "id": "f-d1-b1-001",
+      "taskStatementId": "1.1",
+      "scenario": "Customer Support Resolution Agent: you are building a support agent on the Claude Agent SDK that handles returns, billing disputes and account issues through custom MCP tools (get_customer, lookup_order, process_refund, escalate_to_human). The target is 80%+ first-contact resolution while escalating when appropriate.",
+      "stem": "An early prototype of this agent still runs a hand-written tool-use loop against the Messages API instead of the SDK's managed loop. In testing it sometimes ends a conversation right after saying \"Let me pull up your order details\" without ever calling lookup_order. The loop breaks out as soon as the assistant response contains any text block. What is the MOST reliable fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add a system-prompt rule telling Claude never to write explanatory text in the same response as a tool call."
+        },
+        {
+          "id": "B",
+          "text": "Keep looping while stop_reason is \"tool_use\" and stop only on \"end_turn\", whether or not text is present."
+        },
+        {
+          "id": "C",
+          "text": "Keep the text check but also require the text to be longer than one sentence before the loop is allowed to end."
+        },
+        {
+          "id": "D",
+          "text": "Ask Claude to append the token TASK_COMPLETE to its final message and end the loop only when that token appears."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "A response can legitimately contain **both** a text block and one or more `tool_use` blocks. The API tells you explicitly what happened via `stop_reason`: `tool_use` means Claude wants tools executed and the loop must continue; `end_turn` means it finished. Checking for assistant text as a completion indicator is a named anti-pattern for agentic loops.",
+      "whyWrong": {
+        "A": "This tries to fix a control-flow bug with a prompt instruction. Mixing text with tool calls is normal and allowed; the loop should not depend on Claude avoiding it.",
+        "C": "Still uses text content as the completion signal, just with a different threshold. A long explanation can also accompany a tool call.",
+        "D": "Parsing natural-language markers to decide termination is unreliable (the model may forget or emit the token early). The structured stop_reason field already exists for this purpose."
+      },
+      "difficulty": 2,
+      "mindset": "Drive the loop on the structured stop_reason, never on what the text says.",
+      "tags": [
+        "agentic-loop",
+        "stop_reason",
+        "anti-pattern"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons",
+        "https://code.claude.com/docs/en/agent-sdk/agent-loop"
+      ]
+    },
+    {
+      "id": "f-d1-b1-002",
+      "taskStatementId": "1.1",
+      "scenario": "Multi-Agent Research System: a coordinator agent built on the Claude Agent SDK delegates to specialized subagents (web search, document analysis, synthesis, report generation) and produces comprehensive, cited research reports.",
+      "stem": "Some research runs keep searching far longer than needed, so a teammate proposes ending every run after exactly 6 turns, \"since most good reports finish by then.\" The team wants runs to finish when the work is actually complete while still protecting against runaway cost. Which approach BEST meets both goals?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Adopt the 6-turn cap as the stopping rule, and raise it to 10 later if reports start coming back incomplete."
+        },
+        {
+          "id": "B",
+          "text": "Remove all limits and rely on the coordinator's system prompt to tell it to stop when coverage is sufficient."
+        },
+        {
+          "id": "C",
+          "text": "Stop when two consecutive responses contain no new URLs, since that indicates the search has converged on its sources."
+        },
+        {
+          "id": "D",
+          "text": "Let the loop end naturally, keep max_turns as a safety net, and check the ResultMessage subtype for error_max_turns."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "The primary stop should be the model signalling it is done (`end_turn`, i.e. a response with no tool calls). An iteration cap is appropriate only as a **safety net**. In the Agent SDK, hitting it yields a `ResultMessage` with subtype `error_max_turns` (and `result` is only present on `success`), so the code must check the subtype rather than assume a finished report.",
+      "whyWrong": {
+        "A": "An arbitrary iteration cap as the primary stopping mechanism is a named anti-pattern: it cuts off complex topics mid-work and wastes turns on simple ones.",
+        "B": "Prompt guidance helps the model decide when it's done, but with no hard limit there is no protection against runaway cost, which the team explicitly needs.",
+        "C": "This invents a heuristic termination rule from content. Turns spent reading documents or synthesizing legitimately produce no new URLs, so it would stop too early."
+      },
+      "difficulty": 2,
+      "mindset": "Natural completion is the primary stop; caps are safety nets whose hits you detect and handle.",
+      "tags": [
+        "agentic-loop",
+        "max_turns",
+        "ResultMessage",
+        "anti-pattern"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/agent-loop",
+        "https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons"
+      ]
+    },
+    {
+      "id": "f-d1-b1-003",
+      "taskStatementId": "1.1",
+      "stem": "You are reviewing a teammate's hand-written tool-use loop against the Messages API. When a response arrives with stop_reason \"tool_use\", what should the loop do next?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Run each requested tool, reply with a user message of matching tool_result blocks, and call the API again with the same tools."
+        },
+        {
+          "id": "B",
+          "text": "Treat the response as final, show its text to the user, and wait for the user's next message before running any tools."
+        },
+        {
+          "id": "C",
+          "text": "Run the requested tools, then start a fresh request containing only the tool outputs so the context stays small."
+        },
+        {
+          "id": "D",
+          "text": "Retry the same request with a higher max_tokens value, because tool_use means the response was cut short before finishing."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "`tool_use` means Claude is asking your application to execute client tools. The loop executes them, appends a user message containing a `tool_result` for each `tool_use` (matched by `tool_use_id`) to the conversation history, and calls the API again with the same `tools` array so Claude can reason about the results and choose the next step.",
+      "whyWrong": {
+        "B": "tool_use is not a completion signal; the task is unfinished until Claude has the results and stops with end_turn.",
+        "C": "Dropping the history removes Claude's own tool_use request and prior context; each tool_result must follow the matching tool_use message in the same conversation.",
+        "D": "Truncation is signalled by stop_reason \"max_tokens\", not \"tool_use\"."
+      },
+      "difficulty": 1,
+      "mindset": "tool_use means 'your turn to act and report back', not 'done'.",
+      "tags": [
+        "agentic-loop",
+        "stop_reason",
+        "tool_result"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls",
+        "https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons"
+      ]
+    },
+    {
+      "id": "f-d1-b1-004",
+      "taskStatementId": "1.1",
+      "stem": "A support agent built directly on the Messages API occasionally gives customers half-finished answers. Logs show these responses have stop_reason \"max_tokens\", and in a few of them the last content block is an incomplete tool_use. The loop currently treats any stop_reason other than \"tool_use\" as finished. What should the architect change?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add an instruction to the system prompt asking Claude to keep every reply short enough to fit the token limit."
+        },
+        {
+          "id": "B",
+          "text": "Treat max_tokens the same as tool_use: execute the partial tool call and return its result so Claude can continue."
+        },
+        {
+          "id": "C",
+          "text": "Handle max_tokens as truncation: retry with a higher limit when a tool_use was cut off, otherwise continue the response."
+        },
+        {
+          "id": "D",
+          "text": "Switch to a model with a larger context window so that long support responses are no longer cut off at the limit."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "`max_tokens` means the output was **truncated**, not that Claude finished. The loop must branch on it explicitly. If the final block is an incomplete `tool_use`, its input is unusable, so the documented fix is to retry with a higher `max_tokens`; for truncated text you can raise the limit or ask Claude to continue.",
+      "whyWrong": {
+        "A": "A prompt instruction cannot guarantee output length, and the real bug is the loop misclassifying truncation as completion.",
+        "B": "An incomplete tool_use has partial, possibly invalid input; executing it risks wrong actions such as a malformed refund call.",
+        "D": "max_tokens is the output limit you set per request, not the context window. A bigger context window does not change it, and the loop would still mishandle the stop reason."
+      },
+      "difficulty": 3,
+      "mindset": "Every stop_reason has a meaning; 'not tool_use' is not the same as 'done'.",
+      "tags": [
+        "agentic-loop",
+        "stop_reason",
+        "max_tokens"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons"
+      ]
+    },
+    {
+      "id": "f-d1-b1-005",
+      "taskStatementId": "1.1",
+      "stem": "After a tool runs, your code sends Claude a user message whose content starts with a text block (\"Here are the results:\") followed by the tool_result block. The API rejects it with a 400 error saying tool_use ids were found without tool_result blocks immediately after. What is the correct fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Move the explanatory text into a separate assistant message placed between the tool call and the result."
+        },
+        {
+          "id": "B",
+          "text": "Put the tool_result blocks first in the user message and place any additional text after them."
+        },
+        {
+          "id": "C",
+          "text": "Remove the tool_use_id from the tool_result so the API matches it to the tool call by position instead."
+        },
+        {
+          "id": "D",
+          "text": "Send the tool output as plain text in the user message instead of using a tool_result block."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "When replying to a `tool_use`, the next user message must contain the `tool_result` blocks **first**, one per tool call and matched by `tool_use_id`. Any text must come after them. Text placed before the results triggers this 400 error.",
+      "whyWrong": {
+        "A": "The tool_result must immediately follow the assistant message that contains the tool_use; inserting another message breaks that requirement.",
+        "C": "tool_use_id is how each result is matched to its call; removing it makes the request invalid.",
+        "D": "The API still expects a tool_result for each outstanding tool_use, and plain text loses the structured link between call and result."
+      },
+      "difficulty": 1,
+      "mindset": "Know the message contract: results first, matched by id, right after the call.",
+      "tags": [
+        "tool_result",
+        "message-format",
+        "agentic-loop"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls"
+      ]
+    },
+    {
+      "id": "f-d1-b1-006",
+      "taskStatementId": "1.1",
+      "scenario": "Multi-Agent Research System: a coordinator agent built on the Claude Agent SDK delegates to specialized subagents (web search, document analysis, synthesis, report generation) and produces comprehensive, cited research reports.",
+      "stem": "The coordinator still runs a hand-written Messages API loop rather than the SDK's managed loop. Claude often returns several tool_use blocks in one response (for example, one web_search and two fetch_page calls). The loop runs them one at a time and appends a separate user message for each result. If one call fails, it skips the remaining calls and sends nothing for them. Over time Claude makes fewer parallel calls, and some requests are rejected with a 400 error. Which TWO changes fix both problems? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add a system-prompt rule telling Claude to request only one tool per response, so each result can go back in its own message."
+        },
+        {
+          "id": "B",
+          "text": "Return every tool_result for that response together in one user message, each matched to its call by tool_use_id."
+        },
+        {
+          "id": "C",
+          "text": "Order the tool_result blocks by when each tool finished, because the API matches each result to its call by position."
+        },
+        {
+          "id": "D",
+          "text": "Start the user message with a short text summary of the results, then add the tool_result blocks after it."
+        },
+        {
+          "id": "E",
+          "text": "For any call that failed or was skipped, still return a tool_result for it with is_error set to true and a short reason."
+        }
+      ],
+      "correct": [
+        "B",
+        "E"
+      ],
+      "explanation": "When one response contains several `tool_use` blocks, the documented pattern is to return **one `tool_result` per `tool_use`, all together in the next user message**, matched by `tool_use_id`, with any text placed after the results. Splitting results across separate user messages is the most common formatting mistake and effectively teaches Claude to stop making parallel calls. Every `tool_use` also needs a result: if you choose not to run a call (for example, because an earlier one failed), send a `tool_result` with `is_error: true` and a brief explanation. Leaving a call unanswered makes the API reject the next request.",
+      "whyWrong": {
+        "A": "This gives up parallelism, which saves latency on independent searches and fetches, to work around a formatting bug in the loop. It also does nothing about the unanswered calls.",
+        "C": "Results are matched by tool_use_id, not by position, so reordering them changes nothing. It also leaves the separate-message and missing-result problems in place.",
+        "D": "In a user message that carries tool results, every tool_result block must come before any text. Text placed first causes a 400 error."
+      },
+      "difficulty": 2,
+      "mindset": "Answer every tool call, in one message, matched by id, so the loop stays valid and Claude keeps calling tools in parallel.",
+      "tags": [
+        "agentic-loop",
+        "parallel-tool-use",
+        "tool_result",
+        "is_error",
+        "multi-select"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/parallel-tool-use",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls"
+      ]
+    },
+    {
+      "id": "f-d1-b1-007",
+      "taskStatementId": "1.1",
+      "stem": "A team is building an agent for open-ended operations questions. The right next step usually depends on what the previous tool returned (for example, a log search may point to a config file, which may point to a deployment record). One engineer proposes encoding every path as a fixed decision tree in code. What is the BEST design?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Build the full decision tree in code, since fixed tool sequences are easier to test and debug than model-chosen paths."
+        },
+        {
+          "id": "B",
+          "text": "Run every available tool on every request in parallel and give Claude all of the outputs together in a single prompt."
+        },
+        {
+          "id": "C",
+          "text": "Use an agentic loop where Claude picks the next tool from results so far, and enforce only must-hold rules in code."
+        },
+        {
+          "id": "D",
+          "text": "Split the work into one subagent per tool so that each tool has a dedicated agent deciding when it should be called."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "When the steps can't be predicted in advance, an **agent** (the model directs its own tool use based on results returned so far) fits better than a predefined **workflow**. Anthropic's guidance is to use the simplest pattern that works: fixed code paths suit predictable tasks, while open-ended problems benefit from model-driven decisions. Hard business rules can still be enforced deterministically with hooks or gates.",
+      "whyWrong": {
+        "A": "Fixed workflows suit well-defined, predictable tasks. Here the path depends on intermediate results, so a tree would be large, brittle and miss cases; testability does not outweigh that.",
+        "B": "Running everything wastes tokens and latency, floods context with irrelevant output, and still can't follow chains where one result determines the next query.",
+        "D": "Per-tool subagents are over-engineered; they add coordination cost and context isolation without solving the core need, which is choosing the next step from results."
+      },
+      "difficulty": 2,
+      "mindset": "Unpredictable paths call for model-driven loops; deterministic rules still go in code.",
+      "tags": [
+        "agentic-loop",
+        "workflows-vs-agents",
+        "model-driven"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents",
+        "https://code.claude.com/docs/en/agent-sdk/agent-loop"
+      ]
+    },
+    {
+      "id": "f-d1-b1-008",
+      "taskStatementId": "1.1",
+      "stem": "Your Messages API loop uses the server-side web search tool. A long query returns stop_reason \"pause_turn\" with partial assistant content. The current code treats this like tool_use and sends back a tool_result block, which fails. What should the loop do instead?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Append the assistant response unchanged to the conversation and call the API again with the same tools to continue."
+        },
+        {
+          "id": "B",
+          "text": "Treat pause_turn as completion and return the partial answer, since the server has already run the searches it needed."
+        },
+        {
+          "id": "C",
+          "text": "Execute the web searches locally and return their results as tool_result blocks matched to the server_tool_use ids."
+        },
+        {
+          "id": "D",
+          "text": "Retry the original request from scratch with a higher max_tokens value so that the turn completes in one call."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "`pause_turn` means a server-tool sampling loop hit its iteration limit mid-turn. The documented handling is to send the assistant content back **unchanged** in a follow-up request (keeping the same tools) so Claude resumes. You never answer it with `tool_result` blocks because Anthropic, not your code, executes server tools.",
+      "whyWrong": {
+        "B": "The turn was paused, not finished; returning now delivers an incomplete answer.",
+        "C": "Server tools run on Anthropic's side. Your code does not execute them or send tool_result blocks for them.",
+        "D": "pause_turn is unrelated to the output token limit, and restarting discards the work already done in the paused turn."
+      },
+      "difficulty": 3,
+      "mindset": "Client tools: you execute and return results. Server tools: you hand the paused turn back unchanged.",
+      "tags": [
+        "agentic-loop",
+        "stop_reason",
+        "pause_turn",
+        "server-tools"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons"
+      ]
+    },
+    {
+      "id": "f-d1-b1-009",
+      "taskStatementId": "1.5",
+      "scenario": "Customer Support Resolution Agent: you are building a support agent on the Claude Agent SDK that handles returns, billing disputes and account issues through custom MCP tools (get_customer, lookup_order, process_refund, escalate_to_human). The target is 80%+ first-contact resolution while escalating when appropriate.",
+      "stem": "Policy says refunds over $500 must go to a human. The system prompt states this clearly and includes examples, yet audit logs show about 3% of large refunds are still processed automatically. Leadership wants a guarantee with minimal changes to the rest of the agent. What should the architect do?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Strengthen the system prompt with capitalized warnings and add five more few-shot examples of correct escalations to a human."
+        },
+        {
+          "id": "B",
+          "text": "Add a step that asks Claude to double-check the refund amount against policy before every process_refund call."
+        },
+        {
+          "id": "C",
+          "text": "Add a routing classifier in front of the agent that sends all billing conversations straight to human agents."
+        },
+        {
+          "id": "D",
+          "text": "Add a PreToolUse hook on process_refund that denies amounts over $500, with a reason pointing to escalate_to_human."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "Prompt instructions give **probabilistic** compliance; a business rule with financial consequences needs **deterministic** enforcement. A `PreToolUse` hook matched to the refund tool inspects `tool_input`, returns `permissionDecision: \"deny\"` above the threshold, and uses `permissionDecisionReason` to tell Claude why so it escalates instead of retrying. Nothing else in the agent changes.",
+      "whyWrong": {
+        "A": "More emphatic wording and examples may reduce the failure rate but cannot eliminate it; the rule is already clearly stated.",
+        "B": "Self-checking is still the model policing itself, which is the same probabilistic mechanism that is already failing 3% of the time.",
+        "C": "Over-broad and over-engineered: it removes automation from all billing cases (hurting first-contact resolution) to fix one threshold rule."
+      },
+      "difficulty": 2,
+      "mindset": "When a rule must always hold, enforce it in code at the tool boundary, not in the prompt.",
+      "tags": [
+        "hooks",
+        "PreToolUse",
+        "enforcement",
+        "refund-limit"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/hooks",
+        "https://code.claude.com/docs/en/agent-sdk/permissions"
+      ]
+    },
+    {
+      "id": "f-d1-b1-010",
+      "taskStatementId": "1.5",
+      "scenario": "Customer Support Resolution Agent: you are building a support agent on the Claude Agent SDK that handles returns, billing disputes and account issues through custom MCP tools (get_customer, lookup_order, process_refund, escalate_to_human). The target is 80%+ first-contact resolution while escalating when appropriate.",
+      "stem": "The agent's MCP tools come from different backend teams. lookup_order returns dates as Unix timestamps, the billing tool returns ISO 8601 strings, and order status arrives as numeric codes (e.g., 3) in one tool but as words in another. Claude sometimes misreads which refund window applies. What is the MOST effective fix that does not require changing the backend services?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add a table to the system prompt that explains each timestamp format and lists the meaning of every numeric status code."
+        },
+        {
+          "id": "B",
+          "text": "Ask Claude to convert every date into a single format in its reasoning before it makes any refund decision."
+        },
+        {
+          "id": "C",
+          "text": "Switch to a larger model, which will be better at reconciling mixed formats across several tool results."
+        },
+        {
+          "id": "D",
+          "text": "Add a PostToolUse hook for these tools that rewrites dates and status codes into one format using updatedToolOutput."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "A `PostToolUse` hook runs in your code after the tool returns and **before** Claude sees the result. Using `updatedToolOutput` it can normalize heterogeneous data (timestamps, status codes) deterministically, so the model always reasons over consistent values, with no backend changes.",
+      "whyWrong": {
+        "A": "This adds tokens and still relies on the model converting correctly every time; it is guidance, not normalization.",
+        "B": "Model-side conversion is probabilistic and is exactly where errors are happening now.",
+        "C": "A bigger model may lower the error rate but doesn't remove the inconsistency; the deterministic fix is cheaper and reliable."
+      },
+      "difficulty": 2,
+      "mindset": "Normalize data in code before the model reads it, rather than asking the model to cope.",
+      "tags": [
+        "hooks",
+        "PostToolUse",
+        "data-normalization",
+        "updatedToolOutput"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/hooks"
+      ]
+    },
+    {
+      "id": "f-d1-b1-011",
+      "taskStatementId": "1.5",
+      "scenario": "Developer Productivity with Claude: you are building an internal agent on the Claude Agent SDK that helps engineers explore unfamiliar codebases, understand legacy systems and automate repetitive tasks, using the built-in tools (Read, Write, Bash, Grep, Glob) plus several MCP servers.",
+      "stem": "An engineer registers a PreToolUse hook with matcher \"src/legacy/.*\" so the agent cannot modify the frozen legacy directory. In testing, Claude edits files under src/legacy/ and the hook never fires. How should the hook be fixed?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Match on the tool name (e.g., \"Write|Edit\"), then check tool_input.file_path inside the callback and deny legacy paths."
+        },
+        {
+          "id": "B",
+          "text": "Escape the slashes in the pattern, because hook matchers need the file path written as a fully escaped regular expression."
+        },
+        {
+          "id": "C",
+          "text": "Move the hook to PostToolUse so it can inspect which file was changed and then block that change from being applied."
+        },
+        {
+          "id": "D",
+          "text": "Add a note to CLAUDE.md stating that src/legacy is frozen, since hooks are not able to filter on file paths at all."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Hook matchers match against the **tool name** (e.g. `Write`, `Edit`, `mcp__server__tool`), not file paths or other arguments. To filter by path, match the file-writing tools and inspect `tool_input.file_path` in the callback, returning `permissionDecision: \"deny\"` with a reason.",
+      "whyWrong": {
+        "B": "The problem isn't regex syntax; matchers are never tested against the file path, so no escaping makes this pattern fire.",
+        "C": "PostToolUse fires after the tool has already executed, so the edit has already happened; blocking belongs in PreToolUse.",
+        "D": "Hooks can enforce path rules by inspecting tool_input; a CLAUDE.md note downgrades a hard rule to guidance the model may not follow."
+      },
+      "difficulty": 2,
+      "mindset": "Matchers select which tools; the callback decides based on arguments.",
+      "tags": [
+        "hooks",
+        "matcher",
+        "PreToolUse"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/hooks"
+      ]
+    },
+    {
+      "id": "f-d1-b1-012",
+      "taskStatementId": "1.5",
+      "scenario": "Customer Support Resolution Agent: you are building a support agent on the Claude Agent SDK that handles returns, billing disputes and account issues through custom MCP tools (get_customer, lookup_order, process_refund, escalate_to_human). The target is 80%+ first-contact resolution while escalating when appropriate.",
+      "stem": "The team is deciding what to move from the support agent's system prompt into Agent SDK hooks. Which TWO requirements are BEST implemented as hooks? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "lookup_order and process_refund must never run until get_customer has returned a verified customer ID in this session."
+        },
+        {
+          "id": "B",
+          "text": "Replies should acknowledge the customer's frustration before explaining the resolution steps in plain language."
+        },
+        {
+          "id": "C",
+          "text": "Claude should prefer to resolve simple return requests itself rather than escalating them to a human right away."
+        },
+        {
+          "id": "D",
+          "text": "Full card numbers returned by the billing tool must be masked before Claude ever sees the tool result."
+        },
+        {
+          "id": "E",
+          "text": "Responses should be short and free of internal jargon so that customers can easily follow the next steps."
+        }
+      ],
+      "correct": [
+        "A",
+        "D"
+      ],
+      "explanation": "Hooks suit rules that must hold **every time** at a tool boundary. A `PreToolUse` hook can deny `lookup_order`/`process_refund` until a verified ID exists (a prerequisite gate), and a `PostToolUse` hook can redact sensitive values via `updatedToolOutput` before the model sees them. Tone, style and judgment calls are behavioral guidance that belongs in the prompt.",
+      "whyWrong": {
+        "B": "Tone is a stylistic judgment with no tool event to intercept; it belongs in prompt instructions and examples.",
+        "C": "Whether to resolve or escalate is a context-dependent judgment call for the model, guided by explicit criteria in the prompt.",
+        "E": "Writing style is not a deterministic rule tied to a tool call; prompt guidance is the right tool."
+      },
+      "difficulty": 2,
+      "mindset": "Hooks for guarantees at tool boundaries; prompts for judgment and style.",
+      "tags": [
+        "hooks",
+        "enforcement",
+        "prerequisite-gate",
+        "redaction",
+        "multi-select"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/hooks"
+      ]
+    },
+    {
+      "id": "f-d1-b1-013",
+      "taskStatementId": "1.5",
+      "scenario": "Customer Support Resolution Agent: you are building a support agent on the Claude Agent SDK that handles returns, billing disputes and account issues through custom MCP tools (get_customer, lookup_order, process_refund, escalate_to_human). The target is 80%+ first-contact resolution while escalating when appropriate.",
+      "stem": "Two teams register PreToolUse hooks on the support agent. The platform team's hook returns permissionDecision \"allow\" for every MCP tool to avoid permission prompts. The compliance team's hook returns \"deny\" for process_refund when the customer's account is flagged for fraud. An engineer worries that, depending on which hook finishes first, flagged refunds might still go through. What actually happens for a flagged refund?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The hook that finishes last wins, so the team must register the compliance hook after the platform hook."
+        },
+        {
+          "id": "B",
+          "text": "The allow decision wins because it was registered for a broader matcher that covers every MCP tool, not just one."
+        },
+        {
+          "id": "C",
+          "text": "The call is blocked: when several hooks answer, deny takes priority over ask and allow regardless of order."
+        },
+        {
+          "id": "D",
+          "text": "The SDK raises a configuration error at startup because two hooks return conflicting decisions for one tool."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Matching hooks run in parallel, and for permission decisions the most restrictive result applies: **deny > defer > ask > allow**. A single `deny` blocks the call no matter what other hooks return or which finishes first, so each hook should be written to act independently.",
+      "whyWrong": {
+        "A": "Completion order is non-deterministic and doesn't decide the outcome; precedence does.",
+        "B": "Matcher breadth doesn't affect precedence; a deny from any matching hook blocks the call.",
+        "D": "Conflicting decisions are expected and resolved by precedence at runtime; they don't cause a startup error."
+      },
+      "difficulty": 3,
+      "mindset": "Layered controls fail safe: the most restrictive decision wins.",
+      "tags": [
+        "hooks",
+        "PreToolUse",
+        "precedence",
+        "permissions"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/hooks"
+      ]
+    },
+    {
+      "id": "f-d1-b1-014",
+      "taskStatementId": "1.5",
+      "scenario": "Developer Productivity with Claude: you are building an internal agent on the Claude Agent SDK that helps engineers explore unfamiliar codebases, understand legacy systems and automate repetitive tasks, using the built-in tools (Read, Write, Bash, Grep, Glob) plus several MCP servers.",
+      "stem": "For safety during a pilot, every file the agent writes must land under ./sandbox instead of the path Claude chooses, while the agent otherwise keeps working without interruption. What is the BEST way to implement this?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add a PostToolUse hook on Write that replaces the tool output with the sandbox path so Claude believes it wrote there."
+        },
+        {
+          "id": "B",
+          "text": "Add a PreToolUse hook on Write that returns updatedInput with the path prefixed by ./sandbox plus permissionDecision allow."
+        },
+        {
+          "id": "C",
+          "text": "Add a system-prompt rule telling Claude to always prefix file paths with ./sandbox when it calls the Write tool."
+        },
+        {
+          "id": "D",
+          "text": "Remove the Write tool with disallowed_tools and have Claude print file contents for engineers to save manually in ./sandbox."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "A `PreToolUse` hook can **modify tool input** before execution: returning `updatedInput` (inside `hookSpecificOutput`) with the rewritten `file_path`, paired with `permissionDecision: \"allow\"`, redirects every write deterministically and lets the agent continue uninterrupted.",
+      "whyWrong": {
+        "A": "PostToolUse runs after the write already happened at the original path; changing the output only misleads Claude about where the file is.",
+        "C": "A prompt rule is probabilistic; a single missed prefix writes outside the sandbox, which the pilot can't allow.",
+        "D": "Removing Write breaks the requirement that the agent keeps working without interruption; it's disproportionate when input rewriting solves it."
+      },
+      "difficulty": 3,
+      "mindset": "Intercept and rewrite inputs before execution; outputs are too late to change side effects.",
+      "tags": [
+        "hooks",
+        "PreToolUse",
+        "updatedInput"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/hooks"
+      ]
+    },
+    {
+      "id": "f-d1-b1-015",
+      "taskStatementId": "1.5",
+      "stem": "A product manager asks why the team wants Agent SDK hooks instead of \"just writing better instructions.\" Which TWO statements about hooks are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "A hook that returns allow skips every deny rule, so hooks are mainly useful for loosening permissions."
+        },
+        {
+          "id": "B",
+          "text": "Hooks only work with MCP tools, so built-in tools like Bash and Write must be governed through the prompt."
+        },
+        {
+          "id": "C",
+          "text": "Hook callbacks run in your application's own process, so the checks they perform don't use up context-window tokens."
+        },
+        {
+          "id": "D",
+          "text": "A hook matcher can target a specific file path, which lets one hook apply to just a single directory."
+        },
+        {
+          "id": "E",
+          "text": "A hook runs every time its event fires, so a rule it enforces holds regardless of what the model decides to do."
+        }
+      ],
+      "correct": [
+        "C",
+        "E"
+      ],
+      "explanation": "Hooks are callbacks that run in your own process at defined lifecycle events (e.g. before or after a tool call). Because they fire deterministically on every matching event, they turn a rule into a guarantee rather than a request, and their logic doesn't consume context tokens.",
+      "whyWrong": {
+        "A": "False. A hook allow does not bypass deny or ask rules, and hooks are widely used to block or restrict operations.",
+        "B": "False. Hooks apply to built-in tools (Bash, Write, Edit, etc.) as well as MCP tools (named mcp__<server>__<tool>).",
+        "D": "False. Matchers match tool names (or other event-specific fields), not file paths; path checks go inside the callback."
+      },
+      "difficulty": 1,
+      "mindset": "Prompts request behavior; hooks guarantee it.",
+      "tags": [
+        "hooks",
+        "enforcement",
+        "fundamentals",
+        "multi-select"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/hooks",
+        "https://code.claude.com/docs/en/agent-sdk/permissions"
+      ]
+    },
+    {
+      "id": "f-d1-b1-016",
+      "taskStatementId": "1.5",
+      "scenario": "Multi-Agent Research System: a coordinator agent built on the Claude Agent SDK delegates to specialized subagents (web search, document analysis, synthesis, report generation) and produces comprehensive, cited research reports.",
+      "stem": "The web search subagent fetches full pages. The raw HTML (navigation menus, scripts, cookie banners) is filling the subagent's context, and the synthesis step also needs to know each source's retrieval date. Which TWO uses of a PostToolUse hook on the fetch tool are appropriate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Block fetches to domains that are not on the approved source list before any network request is made."
+        },
+        {
+          "id": "B",
+          "text": "Replace the raw page with extracted main text, title and URL via updatedToolOutput before the model reads it."
+        },
+        {
+          "id": "C",
+          "text": "Rewrite the URL argument to add a date-range filter so that only recent pages are fetched in the first place."
+        },
+        {
+          "id": "D",
+          "text": "Attach the retrieval date for each fetched page as additionalContext so the model can cite it in its findings."
+        },
+        {
+          "id": "E",
+          "text": "Skip running the fetch tool entirely when the same URL was already fetched earlier in the session."
+        }
+      ],
+      "correct": [
+        "B",
+        "D"
+      ],
+      "explanation": "`PostToolUse` fires after the tool returns and before Claude sees the result. It can **replace** the output with `updatedToolOutput` (e.g. strip boilerplate so only high-signal content enters context) and **append** information with `additionalContext`. Blocking, rewriting inputs or skipping execution must happen earlier, in `PreToolUse`.",
+      "whyWrong": {
+        "A": "Blocking a request before it is made requires a PreToolUse hook (permissionDecision deny); PostToolUse runs after the fetch.",
+        "C": "Changing tool arguments is done with updatedInput in a PreToolUse hook; by PostToolUse the request has already run.",
+        "E": "Preventing execution is a PreToolUse decision; a PostToolUse hook can't undo a call that already happened."
+      },
+      "difficulty": 3,
+      "mindset": "Pre = gate or rewrite the call; Post = clean or enrich the result.",
+      "tags": [
+        "hooks",
+        "PostToolUse",
+        "context-management",
+        "multi-select"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/hooks"
+      ]
+    }
+  ]
+}

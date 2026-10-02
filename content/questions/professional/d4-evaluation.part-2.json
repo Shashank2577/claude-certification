@@ -1,0 +1,812 @@
+{
+  "certId": "professional",
+  "domainId": "d4-evaluation",
+  "questions": [
+    {
+      "id": "p-d4-b2-001",
+      "taskStatementId": "4.2",
+      "scenario": "An insurance company is replacing a rules engine with a Claude-based classifier that routes incoming claim emails into one of 14 queues. The product team has already written 60 example emails by hand that they consider 'typical', and leadership wants a go/no-go decision in three weeks.",
+      "stem": "The architect must design the evaluation dataset that will drive the go/no-go decision and be rerun on every prompt change before the deadline. Which approach gives the MOST trustworthy, repeatable signal about how the classifier will behave in production?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Use the 60 hand-written emails as the test set, since the product team knows the domain and wrote clean, unambiguous examples for each queue."
+        },
+        {
+          "id": "B",
+          "text": "Ask Claude to generate 2,000 synthetic emails evenly split across the 14 queues, then grade the classifier against the labels it was asked to generate."
+        },
+        {
+          "id": "C",
+          "text": "Sample historical emails in proportion to real queue volumes, label them, add deliberate edge cases such as mixed-intent or empty emails, and grade labels automatically."
+        },
+        {
+          "id": "D",
+          "text": "Run the classifier in shadow mode on live traffic for two weeks and have the operations team manually review each routing decision, repeating the review after every prompt change."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Anthropic's eval guidance says test sets should be **task-specific and mirror the real-world distribution**, include **edge cases** (missing or irrelevant input, ambiguity, very long input, typos), and be **automated where possible**. Sampling real emails by actual queue volume tells you how the system will perform on the traffic it will really see, the edge cases probe the failure boundaries, and because the output is a categorical label it can be graded with fast, cheap exact-match code.",
+      "whyWrong": {
+        "A": "Hand-written 'typical' examples are clean by construction and skip the messy, ambiguous emails that cause real misroutes. Sixty items is also too few to get a stable accuracy estimate across 14 classes.",
+        "B": "Synthetic data can help add volume, but an even split hides the real class imbalance. Grading against labels the same model invented is circular, so the score says little about real traffic.",
+        "D": "Shadow mode on live traffic is a useful later stage, but hand-reviewing every decision is the slowest and costliest grading method, and Anthropic's guidance says to avoid human grading where automation is possible. It also produces no fixed, versioned test set, so each prompt change is judged on different traffic and results can't be compared or rerun before the deadline."
+      },
+      "difficulty": 2,
+      "mindset": "An eval set is only as good as its resemblance to production traffic plus the edge cases that break it.",
+      "tags": [
+        "eval-dataset",
+        "edge-cases",
+        "code-graded",
+        "distribution"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests"
+      ]
+    },
+    {
+      "id": "p-d4-b2-002",
+      "taskStatementId": "4.2",
+      "stem": "A support-triage system returns two things for each ticket: a `priority` field (one of P1–P4) and a three-sentence summary written for the on-call engineer. The team has 5,000 labeled historical tickets and wants an eval framework they can rerun on every prompt change at low cost. Which TWO grading methods should the architect combine? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Grade the `priority` field with a code-based exact-match check against the labeled value for each ticket."
+        },
+        {
+          "id": "B",
+          "text": "Grade the `priority` field with ROUGE-L similarity between the predicted and the labeled priority strings."
+        },
+        {
+          "id": "C",
+          "text": "Have the same model and prompt that produced each summary re-read it and score its own quality from 1 to 5."
+        },
+        {
+          "id": "D",
+          "text": "Grade summaries with an LLM judge that uses a written rubric, runs on a different model, and outputs only a score."
+        },
+        {
+          "id": "E",
+          "text": "Have senior engineers hand-grade all 5,000 summaries on every prompt change so the scores are fully reliable."
+        }
+      ],
+      "correct": [
+        "A",
+        "D"
+      ],
+      "explanation": "Mixed methodology means **matching the grader to the output type**. A categorical field like priority has one right answer, so **code-based exact match** is the fastest, cheapest and most reliable grader. A free-text summary is subjective, so an **LLM judge with a clear rubric** scales where humans don't. Anthropic's guidance recommends using a **different model** from the one being evaluated and constraining the judge's output (for example, 'output only the number').",
+      "whyWrong": {
+        "B": "Similarity metrics are meant for free text. For a four-value label, partial string overlap is meaningless: 'P1' and 'P2' look nearly identical as strings but differ completely in meaning.",
+        "C": "Self-grading by the same model and prompt shares the generator's blind spots and tends to rate its own output highly. It is the 'ask the model to self-check' trap, not an independent grader.",
+        "E": "Human grading is the slowest and most expensive method. Doing it on every change for 5,000 items breaks the 'rerun cheaply on every change' requirement. Humans are better used to calibrate the LLM judge on a small sample."
+      },
+      "difficulty": 2,
+      "mindset": "Pick the cheapest grader that can actually judge the output type: code for categories, a rubric-based judge for prose, humans for calibration.",
+      "tags": [
+        "mixed-grading",
+        "llm-judge",
+        "code-graded",
+        "multi-select"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests"
+      ]
+    },
+    {
+      "id": "p-d4-b2-003",
+      "taskStatementId": "4.2",
+      "stem": "A team uses an LLM judge to score a contract-summary feature for 'completeness' on a 1–10 scale. When they rerun the same eval on the same outputs, about 30% of items change by 3 or more points, so they can't tell whether a prompt change helped. The judge prompt currently says: 'Rate how complete this summary is.' A team member proposes switching the judge to the most capable model available. What should the architect do FIRST to make the eval usable?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Switch the judge to the most capable model available, because a stronger model will interpret 'completeness' more consistently across repeated runs."
+        },
+        {
+          "id": "B",
+          "text": "Rewrite the judge prompt as an explicit rubric listing required elements, constrain its output format, and check its agreement with a small human-labeled set."
+        },
+        {
+          "id": "C",
+          "text": "Average the judge's score over five runs per item, so that the random variation cancels out and the final completeness number becomes stable."
+        },
+        {
+          "id": "D",
+          "text": "Replace the LLM judge with ROUGE-L against a reference summary, since a deterministic metric cannot vary between runs on the same inputs."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "The root cause is an **underspecified rubric**: 'how complete' leaves the judge to invent its own criteria on each run. Anthropic's grading guidance calls for **detailed, clear rubrics**, an **empirical or specific output** (for example 'correct'/'incorrect' or a fixed 1–5 scale), a grader that reasons before scoring, and testing the LLM grader for reliability **before** scaling it. Listing the required elements (parties, term, termination, payment, liability caps, and so on) turns completeness into something the judge can check reliably, and comparing against a small human-labeled sample confirms the judge measures what you intend.",
+      "whyWrong": {
+        "A": "This is the 'use a bigger model' distractor. A stronger judge still has to guess what 'complete' means, so the vague criterion keeps causing variance. Fix the specification before paying for more capability.",
+        "C": "Averaging hides the noise without fixing it. It multiplies judging cost by five, and the averaged score still measures an undefined quality.",
+        "D": "ROUGE-L is deterministic but measures word overlap, not whether the required contract elements are present. A summary can score well while leaving out the liability cap. It gives you a stable number that doesn't measure the right thing."
+      },
+      "difficulty": 3,
+      "mindset": "Noisy LLM-judge scores are usually a rubric problem, not a model-size problem.",
+      "tags": [
+        "llm-judge",
+        "rubric",
+        "grader-consistency",
+        "bigger-model-trap"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests"
+      ]
+    },
+    {
+      "id": "p-d4-b2-004",
+      "taskStatementId": "4.2",
+      "stem": "A startup has a fixed budget for building the first eval set for a ticket-tagging feature. Option 1 is 40 tickets carefully hand-graded by domain experts with detailed notes. Option 2 is 600 tickets with labels from the existing support system, graded automatically by exact match. Following Anthropic's eval-design guidance, which is the BEST starting choice?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Option 1, because expert notes explain each failure in detail, and that depth matters more than coverage for a brand-new feature."
+        },
+        {
+          "id": "B",
+          "text": "Neither option yet. First write a detailed specification of every tag, then build the dataset only after the spec is signed off."
+        },
+        {
+          "id": "C",
+          "text": "Option 1 now, then scale up to Option 2 after launch, once production traffic shows which tags actually matter to users."
+        },
+        {
+          "id": "D",
+          "text": "Option 2, because a larger automatically graded set gives a more reliable signal than a small hand-graded one when budget is limited."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "Anthropic's guidance says to **prioritize volume over quality**: more test cases with automated grading, even slightly lower-signal grading, beat fewer cases graded by hand. Tags are categorical, so exact-match grading fits, and 600 cases give a far more stable estimate than 40.",
+      "whyWrong": {
+        "A": "Expert notes are valuable for diagnosis, but 40 items produce a noisy score. One or two flips swing accuracy by several points, so you can't reliably compare prompt versions.",
+        "B": "Clear success criteria matter, but delaying all measurement until a full spec is signed off is a disproportionate first step. The tag definitions already exist in the support system's labels.",
+        "C": "Shipping before you have a statistically useful eval set means launching without a baseline. Automated volume should come first, not after launch."
+      },
+      "difficulty": 1,
+      "mindset": "Automate and scale evals first. A big, automatically graded test set beats a small, perfectly graded one.",
+      "tags": [
+        "eval-dataset",
+        "volume-over-quality",
+        "automation"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests"
+      ]
+    },
+    {
+      "id": "p-d4-b2-005",
+      "taskStatementId": "4.2",
+      "scenario": "A consulting firm is building a multi-agent research assistant: a lead agent plans the work and spawns subagents that search internal and web sources, then a final step writes a cited report. The engineering lead says they won't evaluate anything until they have built a 2,000-question benchmark with gold-standard answers, which will take about two months.",
+      "stem": "The architect wants to find quality problems early without blocking development. Which approach is MOST appropriate at this stage?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Start now with about 20 real user queries, grade the final reports with a rubric-based LLM judge, and add human review to spot failures the judge misses."
+        },
+        {
+          "id": "B",
+          "text": "Skip evaluation until the 2,000-question benchmark exists, since results from a small set are statistically meaningless for a multi-agent system."
+        },
+        {
+          "id": "C",
+          "text": "Grade each run by checking that the agents called tools in the exact sequence an expert would have used, and flag any run that deviates from it."
+        },
+        {
+          "id": "D",
+          "text": "Ask the lead agent to score its own report from 1 to 10 at the end of each run, and track the average self-score as the main quality metric."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "In Anthropic's account of building its multi-agent research system, the team **started evaluating right away with about 20 queries** that represented real usage, because early changes have large effects that a small set can detect. They used an **LLM judge with a rubric** (factual accuracy, citation accuracy, completeness, source quality, tool efficiency) and added **human testing**, which caught problems the automated evals missed, such as a bias toward low-quality, SEO-optimized sources. For agents they recommend judging the **end result** rather than whether the agent followed one prescribed path.",
+      "whyWrong": {
+        "B": "Waiting two months throws away the period when changes have the biggest effect. Small sets are enough to detect large early effect sizes. You grow the set as the system improves.",
+        "C": "Agents can reach good results by many valid paths. Requiring one exact tool sequence penalizes correct but different strategies. Judge the outcome, and look at process separately when diagnosing.",
+        "D": "Self-rated confidence is unreliable and not independent. The same agent that made the mistakes is scoring itself, so this is the self-check trap."
+      },
+      "difficulty": 2,
+      "mindset": "Start evaluating small and early with real queries. Judge agents on outcomes, not on one prescribed path.",
+      "tags": [
+        "agent-evals",
+        "llm-judge",
+        "human-eval",
+        "start-small"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/multi-agent-research-system",
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests"
+      ]
+    },
+    {
+      "id": "p-d4-b2-006",
+      "taskStatementId": "4.2",
+      "stem": "A team has spent a month tuning the system prompt of an invoice-extraction service against a 400-document eval set, and scores rose from 81% to 96%. The eval was run by hand whenever someone remembered, and the last few prompt edits before release were never re-scored. Two weeks after release, accuracy on new vendors' invoices is around 84%, and nobody noticed until finance complained. The architect is redesigning the test framework so this doesn't happen again. Which TWO changes address the root causes? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add an instruction asking the model to double-check every extracted field before it returns its answer, and to say so if it is uncertain."
+        },
+        {
+          "id": "B",
+          "text": "Keep a held-out set of documents, including vendors never used during tuning, and report results on it separately before any release."
+        },
+        {
+          "id": "C",
+          "text": "Set temperature to 0 and assert that every output matches a stored golden JSON string exactly, so any change in behavior fails the build."
+        },
+        {
+          "id": "D",
+          "text": "Regenerate the eval set with Claude before each run so the documents are always new, and the prompt can never overfit to them."
+        },
+        {
+          "id": "E",
+          "text": "Version the eval set and prompt together, run the suite in CI on every prompt change, and block merges that drop below agreed thresholds."
+        }
+      ],
+      "correct": [
+        "B",
+        "E"
+      ],
+      "explanation": "Two failures happened. First, the prompt was **overfit** to the very set it was tuned on, so 96% was an optimistic in-sample number. A **held-out set**, ideally with unseen vendors, gives an honest estimate of generalization. Second, nothing ran the eval automatically or enforced a **quality gate**. Versioning prompt and data together and running the suite in CI with thresholds turns evaluation into a deterministic control instead of something people remember to do.",
+      "whyWrong": {
+        "A": "Self-check instructions don't fix overfitting or the missing gate. The model can't know the prompt was tuned to a narrow set of vendors.",
+        "C": "Temperature 0 doesn't make outputs fully deterministic, and exact string equality fails on harmless differences such as key order or whitespace. Field-level checks against labeled values are the right grader.",
+        "D": "A fresh synthetic set on every run makes scores impossible to compare across versions, and labels the model invents are not ground truth. A stable, versioned dataset plus a held-out split is what you need."
+      },
+      "difficulty": 3,
+      "mindset": "Tune on one set, judge on another, and make the eval a gate in the pipeline rather than a habit.",
+      "tags": [
+        "held-out-set",
+        "overfitting",
+        "ci-gate",
+        "regression-testing",
+        "multi-select"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests",
+        "https://platform.claude.com/docs/en/api/messages"
+      ]
+    },
+    {
+      "id": "p-d4-b2-007",
+      "taskStatementId": "4.4",
+      "scenario": "A freight forwarder extracts consignee, weights and line-item quantities from supplier shipping documents. Each PDF is first run through an open-source text-extraction library, and only the extracted text is sent to Claude. Field accuracy on the eval set is 95% overall. Error analysis shows that nearly all failures come from scanned packing lists with multi-column tables, while born-digital PDFs with the same table layouts score 99%. A team member proposes moving to a larger model.",
+      "stem": "What should the architect do FIRST to diagnose these failures?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Move to the larger model as proposed, since reading multi-column tables correctly needs stronger reasoning than the current model provides."
+        },
+        {
+          "id": "B",
+          "text": "Add few-shot examples of correctly extracted multi-column packing lists to the prompt, so the model learns the expected column mapping."
+        },
+        {
+          "id": "C",
+          "text": "Inspect the exact text the extraction library produces for several failing scanned pages, and compare it against the original documents."
+        },
+        {
+          "id": "D",
+          "text": "Add an instruction telling the model to read table columns carefully and to leave a field empty whenever its value is unclear."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "The failures cluster by **input type**, not by task difficulty. Born-digital PDFs with the **same table layouts** score 99%, which shows the model can already handle this kind of table, so a capability gap is unlikely. What differs is the path the scanned pages take before they reach the model. The disciplined first step is to **look at what the model actually received**: if the extraction step scrambles columns, merges cells or drops numbers on scanned pages, no prompt or model change can recover values that were never passed in. If that is confirmed, fix the input path. For example, send the PDF to Claude directly using the API's PDF support, which provides each page as both extracted text and an image so tables and layout can be read visually, or improve the OCR step. Then re-run the eval on the scanned subset.",
+      "whyWrong": {
+        "A": "The same layouts already score 99% when the text arrives intact, so the evidence doesn't point to model capability. A larger model given the same garbled text would still fail, at higher cost. This is the 'bigger model' trap.",
+        "B": "Examples teach a mapping, but they can't restore values that were jumbled or lost before the model saw the document. Changing the prompt before finding the cause also muddies the next eval run.",
+        "D": "An instruction can't recover information lost upstream. Leaving unclear fields empty may hide some wrong values, but it lowers completeness and still doesn't identify why scanned pages fail."
+      },
+      "difficulty": 2,
+      "mindset": "When failures cluster by input source rather than task difficulty, check what the model actually received before changing the model or the prompt.",
+      "tags": [
+        "diagnosis",
+        "input-pipeline",
+        "model-mismatch",
+        "pdf"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/pdf-support",
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests"
+      ]
+    },
+    {
+      "id": "p-d4-b2-008",
+      "taskStatementId": "4.4",
+      "stem": "A medical-billing extraction service sometimes returns JSON that ends partway through, with the last few line items missing, mostly on very long claims. A developer files the bug as 'model hallucinating an incomplete structure' and proposes adding few-shot examples of complete output. What should the architect check FIRST?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Whether the prompt's few-shot examples include claims long enough to show the model how a fully completed long claim should look."
+        },
+        {
+          "id": "B",
+          "text": "Whether the affected responses have a `stop_reason` of `max_tokens`, meaning output was cut off at the token limit rather than finished."
+        },
+        {
+          "id": "C",
+          "text": "Whether the HTTP status of the affected responses was a 5xx error, meaning the API failed partway through generating the output."
+        },
+        {
+          "id": "D",
+          "text": "Whether the model's temperature setting is too high, causing it to stop generating early on longer and more complex inputs."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Output that stops partway through, on long inputs, is the signature of **truncation**. The API returns `stop_reason: \"max_tokens\"` when generation hits the `max_tokens` limit. That is a successful HTTP 200 response, not an error, and the output isn't finished. The fix is to handle that stop reason: raise the limit, continue, or split the work. Checking `stop_reason` is a quick, deterministic diagnosis.",
+      "whyWrong": {
+        "A": "More examples don't raise a hard token cap. Longer examples also add input tokens without changing the output limit that is cutting the response short.",
+        "C": "A `max_tokens` cut-off comes back as HTTP 200 with a stop reason. A 5xx response wouldn't contain a usable partial JSON body that the pipeline then parses.",
+        "D": "Temperature affects randomness, not where generation is forced to stop. The pattern of failures on long inputs points to a length limit, not sampling."
+      },
+      "difficulty": 1,
+      "mindset": "Before blaming the model's behavior, read the `stop_reason`: the API often tells you why the output looks the way it does.",
+      "tags": [
+        "stop-reason",
+        "max-tokens",
+        "truncation",
+        "diagnosis"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons"
+      ]
+    },
+    {
+      "id": "p-d4-b2-009",
+      "taskStatementId": "4.4",
+      "scenario": "A legal-tech company uses a small, fast model to decide whether contract clauses conflict with a client's negotiation playbook. On the eval set it scores 97% on single-clause checks but 58% on cases that require reasoning across three or more interacting clauses. Over three weeks of prompt work (clearer criteria, examples, XML structure, step-by-step reasoning) the multi-clause score moved from 55% to 58% and has stalled.",
+      "stem": "What is the BEST next step to diagnose the multi-clause failures?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add another 25 few-shot examples of multi-clause conflicts to the prompt, because the prompt work so far hasn't yet covered enough of the patterns."
+        },
+        {
+          "id": "B",
+          "text": "Add a self-review step that asks the model to re-check its multi-clause verdicts and change any answer it is no longer confident about."
+        },
+        {
+          "id": "C",
+          "text": "Split the task into a five-agent pipeline, with one specialist agent for each clause category and a coordinator to merge their verdicts."
+        },
+        {
+          "id": "D",
+          "text": "Run the same eval with the identical prompt on a more capable model, isolating model capability as the only variable that changes."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "The evidence points to a **model mismatch**. The model does very well on simple cases, fails on cases that need complex multi-step reasoning, and solid prompt-engineering work has plateaued. The disciplined next step is a **controlled experiment**: same prompt, same eval set, change only the model. Anthropic's model-selection guidance says to decide whether to upgrade by testing your actual prompts and data across models on a benchmark specific to your use case. If the stronger model clears the bar, you have confirmed a capability gap. You can then route only the complex cases to the larger model and keep the fast model for simple checks, controlling cost.",
+      "whyWrong": {
+        "A": "More examples is the default prompt fix, but weeks of structured prompt work have already shown diminishing returns. Piling on examples treats a likely capability limit as a prompt problem.",
+        "B": "Self-review uses the same limited reasoning that produced the error, so it rarely fixes problems that come from capability limits. It's the self-check trap.",
+        "C": "This adds a lot of architecture and token cost before you have confirmed the cause. Interacting clauses also need a view across categories, which splitting by category may break."
+      },
+      "difficulty": 3,
+      "mindset": "Pass on simple cases, fail on complex ones, and prompt work has plateaued: test the model as a controlled variable before adding architecture.",
+      "tags": [
+        "model-mismatch",
+        "diagnosis",
+        "controlled-experiment",
+        "model-routing"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/about-claude/models/choosing-a-model",
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests"
+      ]
+    },
+    {
+      "id": "p-d4-b2-010",
+      "taskStatementId": "4.4",
+      "stem": "A pharmaceutical company's internal Q&A tool answers questions from approved product documents supplied in context. Reviewers find that about 6% of answers contain dosing details that appear in none of the supplied documents. The documents are correct and are reliably retrieved. Which TWO changes MOST directly reduce these unsupported claims? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Ask the model to state its confidence from 1 to 10 at the end of each answer, and hide any answer it rates below 7."
+        },
+        {
+          "id": "B",
+          "text": "Add several more few-shot examples of well-written answers so the model learns the expected tone and structure for dosing questions."
+        },
+        {
+          "id": "C",
+          "text": "Explicitly allow the model to say the documents don't contain the answer, and restrict it to using only the supplied documents."
+        },
+        {
+          "id": "D",
+          "text": "Load the entire product-document library into the context window on every request so the model never has to rely on its own memory."
+        },
+        {
+          "id": "E",
+          "text": "Require answers to be grounded in quoted or cited passages from the documents, and remove any claim that has no supporting source."
+        }
+      ],
+      "correct": [
+        "C",
+        "E"
+      ],
+      "explanation": "Retrieval is working, so the failure is the model **adding facts the documents don't contain**. That makes it a hallucination problem. Anthropic's reduce-hallucinations guidance lists, among others: **give the model permission to say 'I don't know'**, **restrict it to the provided documents**, and **ground the answer in direct quotes or citations**, retracting any claim with no supporting quote. The Citations feature provides verifiable pointers to source passages. These techniques reduce hallucinations but don't eliminate them, so high-stakes output such as dosing still needs validation.",
+      "whyWrong": {
+        "A": "Self-reported confidence is poorly calibrated. A model that has hallucinated a dosing detail can still state it confidently.",
+        "B": "Examples of tone and structure improve consistency, but they don't stop the model inventing facts and may encourage confident-sounding detail.",
+        "D": "The right documents are already in context. Adding the whole library increases cost and noise and can make grounding worse."
+      },
+      "difficulty": 2,
+      "mindset": "Allow 'I don't know' and require cited support for every claim. Don't rely on the model rating its own confidence.",
+      "tags": [
+        "hallucination",
+        "grounding",
+        "citations",
+        "multi-select"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-hallucinations",
+        "https://platform.claude.com/docs/en/build-with-claude/citations"
+      ]
+    },
+    {
+      "id": "p-d4-b2-011",
+      "taskStatementId": "4.4",
+      "stem": "An IT service desk uses Claude to label tickets as `incident` or `service_request`. The eval shows 94% accuracy overall, but on tickets like 'my laptop is slow since the update, can I get a new one?' the label flips between runs and between near-identical tickets. The system prompt defines the classes only as 'incidents are urgent problems; service requests are things users want.' The team wants the fix with the least added cost and latency. What should the architect do?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Rewrite the class definitions as explicit decision criteria, add a few labeled examples of mixed tickets explaining each choice, and re-run the eval."
+        },
+        {
+          "id": "B",
+          "text": "Move classification to a larger model, because instability on borderline tickets shows the current model lacks the reasoning needed for ambiguous cases."
+        },
+        {
+          "id": "C",
+          "text": "Run each ticket three times and take the majority label, which removes the run-to-run variation on the borderline tickets without changing the prompt."
+        },
+        {
+          "id": "D",
+          "text": "Add a second classifier that uses sentiment analysis to detect urgency, and use its output to break ties on tickets where the labels disagree."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "This is a **prompt failure**: the boundary between the classes is undefined, so the model guesses on mixed tickets. 'Urgent' and 'things users want' overlap. The cheapest fix that removes the root cause is **explicit decision criteria** (for example: anything describing broken or degraded existing service is an incident, even if the user also asks for something) plus a few **targeted examples of the ambiguous pattern** that explain the reasoning. Anthropic's guidance says well-crafted examples are one of the most reliable ways to improve accuracy and consistency, and constraining with examples is more effective than abstract instructions.",
+      "whyWrong": {
+        "B": "The model is fine on clear cases. The inconsistency comes from an undefined boundary that a larger model would still have to guess. It also adds cost, which conflicts with the stated constraint.",
+        "C": "Voting triples the cost and latency and only hides the symptom. The majority label on an undefined boundary is still arbitrary.",
+        "D": "This over-engineers the fix and answers a different question. Sentiment doesn't measure whether something is broken, and an extra model adds latency and cost."
+      },
+      "difficulty": 3,
+      "mindset": "Labels that flip on borderline inputs usually mean the criteria are undefined. Fix the definition before scaling the model or adding voting.",
+      "tags": [
+        "prompt-failure",
+        "explicit-criteria",
+        "few-shot",
+        "consistency"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices",
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/increase-consistency"
+      ]
+    },
+    {
+      "id": "p-d4-b2-012",
+      "taskStatementId": "4.4",
+      "stem": "A content-moderation assistant processes user-submitted posts. On-call engineers see a small but steady stream of responses that return HTTP 200 yet contain no usable moderation verdict. The current handler treats any response without a verdict as a transient API failure and retries it up to five times with backoff. Logs show these responses have `stop_reason: \"refusal\"`. What is the MOST appropriate change?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Increase the retry limit to ten attempts of the identical request with longer backoff, since the API will eventually return a verdict if retried long enough."
+        },
+        {
+          "id": "B",
+          "text": "Treat these responses as HTTP errors and raise an alert to the on-call engineer for every occurrence so the outage can be investigated quickly."
+        },
+        {
+          "id": "C",
+          "text": "Branch on `stop_reason`, handle refusals as their own outcome (log, route for review or a fallback), and stop retrying them as outages."
+        },
+        {
+          "id": "D",
+          "text": "Add a line to the system prompt telling the model it must always return a verdict for every post, regardless of what the content contains."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "`refusal` is a **stop reason on a successful response**, not a transport error. The model declined to continue, so retrying the same request won't reliably change the outcome and only adds cost and noise. Anthropic's stop-reason docs say to handle each stop reason explicitly. For refusals that means reading `stop_details`, logging them as their own category, and routing the item to a defined fallback, such as retrying on a fallback model as the docs suggest or sending it to human review. Keep them out of your outage metrics.",
+      "whyWrong": {
+        "A": "More retries of an identical request waste money and add latency. A refusal reflects how the model responded to the content, not a temporary service fault.",
+        "B": "These are HTTP 200 responses. Treating them as outages pages engineers for something that isn't an availability problem and buries real errors.",
+        "D": "A prompt instruction is not a reliable control over refusal behavior, and the system still needs code that handles the case when a refusal happens."
+      },
+      "difficulty": 1,
+      "mindset": "Stop reasons are signals to branch on. Don't treat them as errors to retry.",
+      "tags": [
+        "stop-reason",
+        "refusal",
+        "error-handling",
+        "diagnosis"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons"
+      ]
+    },
+    {
+      "id": "p-d4-b2-013",
+      "taskStatementId": "4.6",
+      "scenario": "A retailer's customer-service assistant handles chats in English, French and German across returns, billing and delivery. The production dashboard shows one line for daily resolution rate (about 88%) and one for average LLM-judge quality score, both flat for six weeks. Meanwhile, the German operations manager reports a sharp rise in escalations from German billing chats.",
+      "stem": "What monitoring change would MOST effectively catch this kind of problem going forward?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Raise the alert threshold on the overall resolution rate so that a drop of even one percentage point triggers a page to the on-call team."
+        },
+        {
+          "id": "B",
+          "text": "Break quality and resolution metrics down by language and intent, with per-segment baselines and alerts, alongside the aggregate view."
+        },
+        {
+          "id": "C",
+          "text": "Ask the assistant to add a self-assessed quality score to each chat transcript, and chart the daily average of that score for each region."
+        },
+        {
+          "id": "D",
+          "text": "Increase the share of chats graded by the LLM judge from 5% to 50% so the overall average quality score becomes more precise."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "**Aggregates hide segment failures.** A small, degraded segment such as German billing can collapse while the overall average barely moves, because larger healthy segments dominate it. Monitoring needs to be **segmented** along the dimensions where behavior can differ (language, intent, channel, customer tier), with baselines and alerts per segment, so a local regression shows up before customers raise it.",
+      "whyWrong": {
+        "A": "A tighter threshold on the aggregate still averages over the healthy segments. The German drop may never move the overall number by a full point.",
+        "C": "Self-assessed scores aren't an independent measure and tend to stay high even when the output is poor.",
+        "D": "A more precise aggregate is still an aggregate. Grading more traffic doesn't help if the results aren't broken down by segment."
+      },
+      "difficulty": 2,
+      "mindset": "Averages hide regressions. Monitor the segments where behavior can differ.",
+      "tags": [
+        "monitoring",
+        "segmentation",
+        "drift",
+        "observability"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests"
+      ]
+    },
+    {
+      "id": "p-d4-b2-014",
+      "taskStatementId": "4.6",
+      "stem": "A logistics company runs a coordinator agent that delegates to four subagents (inventory, carrier rates, customs, scheduling). About 4% of user requests end with a wrong shipment plan, but each service logs to its own file with its own format, and engineers spend days guessing which agent introduced the error. Which observability change BEST addresses this?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Have the coordinator write a natural-language summary at the end of each run explaining which subagent it thinks was most likely responsible for any errors."
+        },
+        {
+          "id": "B",
+          "text": "Increase log verbosity to debug level in all five services so that every internal detail is captured in each service's existing log file."
+        },
+        {
+          "id": "C",
+          "text": "Store only the final shipment plan and user feedback for each request, so the team can focus their debugging on the outcomes users actually saw."
+        },
+        {
+          "id": "D",
+          "text": "Emit structured trace events per step under a shared request trace ID, capturing delegations, tool inputs and outputs, stop reasons and token usage."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "Agent failures build up across steps, so you need **end-to-end tracing**: one trace ID that links the coordinator's delegation decisions, each subagent's tool calls and results, stop reasons and usage. Then you can follow a wrong plan back to the step where it went wrong. Anthropic's write-up of its multi-agent research system describes how adding **full production tracing** let the team diagnose why agents failed and fix problems systematically. Structured fields make traces queryable instead of something you read through by hand.",
+      "whyWrong": {
+        "A": "The coordinator's guess is an unverified model output, not evidence. It's the 'ask the model to self-diagnose' trap.",
+        "B": "More verbose but still separate, inconsistently formatted logs leave the real problem in place: nothing links one request across the five services.",
+        "C": "Outcome-only data tells you that a plan was wrong but not where it went wrong, and that is exactly what engineers can't currently work out."
+      },
+      "difficulty": 2,
+      "mindset": "In multi-agent systems, observability means tracing one request across every hop, not more logs in more places.",
+      "tags": [
+        "tracing",
+        "multi-agent",
+        "observability",
+        "structured-logging"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/multi-agent-research-system"
+      ]
+    },
+    {
+      "id": "p-d4-b2-015",
+      "taskStatementId": "4.6",
+      "stem": "A team is designing request logging for a Claude API integration. They want to be able to give Anthropic support a precise reference for any individual call that behaved unexpectedly in production. Which value should their logging capture for every API call?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The unique `request-id` returned in every API response header, also included as `request_id` in error response bodies."
+        },
+        {
+          "id": "B",
+          "text": "The API key used for the request, so that support staff can look up the account and find the matching call in their records."
+        },
+        {
+          "id": "C",
+          "text": "The full prompt text of each request, since support can find the matching call by searching for identical prompt content."
+        },
+        {
+          "id": "D",
+          "text": "The client-side timestamp of each request in milliseconds, which uniquely identifies a call when combined with the model name."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Every Claude API response carries a unique **`request-id` header** (the same value appears as `request_id` in error bodies). Anthropic's docs say to include this ID when contacting support about a specific request. The Python and TypeScript SDKs expose it as `_request_id` on response objects. Logging it alongside your own trace ID links your observability data to Anthropic's records.",
+      "whyWrong": {
+        "B": "API keys are secrets and must never be written to logs. A key also identifies a credential, not a single call.",
+        "C": "Logging full prompts can leak sensitive data and doesn't give a reliable unique reference. Identical prompts happen often.",
+        "D": "Timestamps aren't unique under concurrency and don't match up reliably across clock differences. The API already returns a purpose-built identifier."
+      },
+      "difficulty": 1,
+      "mindset": "Log the identifiers the platform gives you, and never log secrets.",
+      "tags": [
+        "logging",
+        "request-id",
+        "observability",
+        "support"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors"
+      ]
+    },
+    {
+      "id": "p-d4-b2-016",
+      "taskStatementId": "4.6",
+      "stem": "A finance team's analytics assistant sends a 30,000-token system prompt with `cache_control` on every request. Last month the bill nearly doubled while traffic stayed flat. A recent commit added a 'Trace: <per-request UUID>' debugging line near the top of the system prompt. The architect wants monitoring that would have caught this within hours and points to the cause. Which TWO actions should the architect take? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Alert whenever `input_tokens` per request falls, because a falling value means the cache is being bypassed and full prompts are reprocessed."
+        },
+        {
+          "id": "B",
+          "text": "Log each response's `cache_read_input_tokens` and `cache_creation_input_tokens`, and alert when the cache-read share of input drops."
+        },
+        {
+          "id": "C",
+          "text": "Ask the model to report at the end of each answer whether it reused cached context, and log that statement for each request."
+        },
+        {
+          "id": "D",
+          "text": "Add a check that compares the static prompt prefix between deploys and flags volatile content placed before the cache breakpoint."
+        },
+        {
+          "id": "E",
+          "text": "Track only the monthly invoice total and review it with finance at month end, since billing is the authoritative cost record."
+        }
+      ],
+      "correct": [
+        "B",
+        "D"
+      ],
+      "explanation": "Prompt caching matches on an **exact prefix**. A per-request trace ID near the top changes the prefix on every request, so every call writes a new cache entry and none reads one. The response `usage` object shows this directly: **`cache_read_input_tokens`** falls to about zero and **`cache_creation_input_tokens`** rises. Alerting on that ratio catches the regression within hours. A deploy-time check on prefix stability prevents the root cause: volatile content must go after the cached, static part.",
+      "whyWrong": {
+        "A": "`input_tokens` counts only the tokens after the last cache breakpoint. In this failure the 30,000-token prefix still sits before the breakpoint, so it is reported as `cache_creation_input_tokens` rather than `input_tokens`, and `input_tokens` barely changes. Watching it, in either direction, would miss the regression.",
+        "C": "The model has no visibility into cache hits. That information is in the API's usage fields, not in anything the model can report.",
+        "E": "A monthly invoice is a lagging, aggregate signal. It confirms the damage weeks later and doesn't show which change caused it."
+      },
+      "difficulty": 3,
+      "mindset": "Monitor the platform's own usage fields for cost regressions, and guard the cache prefix at deploy time.",
+      "tags": [
+        "prompt-caching",
+        "cost-monitoring",
+        "usage-fields",
+        "multi-select"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching"
+      ]
+    },
+    {
+      "id": "p-d4-b2-017",
+      "taskStatementId": "4.6",
+      "scenario": "An enterprise has rolled out Claude Code to 400 engineers. The platform team must give engineering leadership weekly visibility into token usage, cost, sessions and tool-permission decisions by team. Security has said that prompt text and code content must not leave developer machines unless it is explicitly approved.",
+      "stem": "What is the MOST appropriate way to collect this telemetry?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Ask each engineer to run `/usage` at the end of every session and paste the session cost block into a shared spreadsheet that leadership reviews weekly."
+        },
+        {
+          "id": "B",
+          "text": "Add an instruction to the shared CLAUDE.md telling Claude to append a usage summary for each session to a log file in the repository."
+        },
+        {
+          "id": "C",
+          "text": "Deploy a nightly script that copies every developer's local session transcript files to a central bucket, where a batch job parses usage from them."
+        },
+        {
+          "id": "D",
+          "text": "Enable Claude Code's built-in OpenTelemetry export through managed settings to a central collector, keeping prompt-content logging off by default."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "Claude Code has **built-in OpenTelemetry support**, enabled with `CLAUDE_CODE_ENABLE_TELEMETRY=1` plus standard OTel exporter settings. It exports metrics such as session count, token usage and cost, and events such as API requests and tool permission decisions. Administrators can set this centrally through the managed settings file, and `OTEL_RESOURCE_ATTRIBUTES` (for example `department=...,team.id=...`) allows breakdowns by team. **Prompt content is redacted by default** and is logged only if `OTEL_LOG_USER_PROMPTS` is explicitly enabled, which meets Security's requirement.",
+      "whyWrong": {
+        "A": "Manual self-reporting is incomplete, error-prone and doesn't capture tool-permission decisions. It isn't observability at the scale of 400 engineers.",
+        "B": "An instruction in CLAUDE.md is guidance to the model, not a guaranteed control. Usage summaries written by the model aren't reliable data, and the log files would end up in repositories.",
+        "C": "Copying full transcripts sends prompt and code content off developer machines, which directly breaks Security's constraint, and it is fragile to maintain."
+      },
+      "difficulty": 2,
+      "mindset": "Use the platform's built-in, privacy-preserving telemetry before building your own collection or relying on the model to report itself.",
+      "tags": [
+        "claude-code",
+        "opentelemetry",
+        "observability",
+        "privacy"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/monitoring-usage"
+      ]
+    },
+    {
+      "id": "p-d4-b2-018",
+      "taskStatementId": "4.6",
+      "stem": "A legal-research product runs an LLM judge over a stratified daily sample of production answers. This week it flagged a cluster of answers that cite repealed statutes as current law. An engineer has drafted a prompt fix and wants to deploy it straight to production that afternoon because 'the judge already found the issue.' What should the architect require?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add the flagged cases, with corrected expected outcomes, to the regression eval set, then confirm the fix passes them without lowering scores on the full suite before deploying."
+        },
+        {
+          "id": "B",
+          "text": "Deploy the fix immediately, since the judge has already identified the pattern, and monitor the next week's sampled scores to confirm that it worked in production."
+        },
+        {
+          "id": "C",
+          "text": "Raise the production sample from a daily stratified sample to human review of every answer until the team is satisfied the repealed-statute issue is gone."
+        },
+        {
+          "id": "D",
+          "text": "Switch the product to a newer model version in the same change, so the improved model and the prompt fix both address the repealed-statute problem together."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Production monitoring should **feed the eval set**. Turning the flagged failures into regression cases makes the fix verifiable now and protects against the same failure returning later. Running the full suite confirms the prompt change didn't break other behavior. This closes the loop between monitoring and evaluation instead of treating each finding as a one-off patch.",
+      "whyWrong": {
+        "B": "Shipping an untested prompt change risks new regressions elsewhere, and a week of sampled scores is a slow, noisy way to find out. You've already seen the failure, so test against it before shipping.",
+        "C": "Reviewing every answer by hand is costly and slow, and it doesn't verify the fix. It adds compensating labor instead of building a regression test.",
+        "D": "Changing the model and the prompt in one release confounds the result: you can't tell which change fixed or broke what. Change one variable at a time."
+      },
+      "difficulty": 2,
+      "mindset": "Every production failure becomes a regression test before the fix ships.",
+      "tags": [
+        "monitoring",
+        "regression-testing",
+        "feedback-loop",
+        "eval-dataset"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,363 @@
+{
+  "certId": "professional",
+  "domainId": "d1-solution-design",
+  "lessons": [
+    {
+      "id": "p-business-to-solution",
+      "title": "From business problem to Claude solution",
+      "estMinutes": 10,
+      "level": "core",
+      "taskStatementIds": [
+        "1.1"
+      ],
+      "eli5": "Before you buy a power tool, you ask what you are actually trying to build. An architect does the same with Claude: first pin down the business result, the budget, the deadline and what must never go wrong, and only then pick the smallest Claude setup that gets there. Sometimes the answer is a single well-written request, and sometimes it is no AI at all.",
+      "visualId": "workflow-patterns",
+      "body": "## Start from the outcome, not the model\n\nExam stems in this domain often open with a business request (\"we want an AI agent for claims\") and offer answers that jump straight to technology. The strongest answer usually does what a good architect does first: it restates the **business outcome** and the **constraints**, then picks the least complex design that meets them.\n\nUse this translation checklist:\n\n| Question | Why it matters | Example answer |\n|---|---|---|\n| What outcome changes, and how will we measure it? | Defines success and the eval you will build later | \"Cut average claim triage time from 2 days to 4 hours\" |\n| Who is the user and where does the output go? | Decides interactive vs background, human review, format | \"Adjusters read a triage summary inside the claims tool\" |\n| What are the latency and volume needs? | Synchronous API vs Batch, model tier, streaming | \"5,000 claims a day, no one is waiting live\" |\n| What is the cost ceiling per unit of work? | Model tier, caching, decomposition | \"Under $0.05 per claim\" |\n| What is the risk if the output is wrong? | Human-in-the-loop, hard gates, scope of tools | \"A wrong denial is a regulatory issue, so a human approves every denial\" |\n| What data is involved and where may it flow? | Compliance, retrieval design, least privilege | \"Claims contain health data, so it stays in an approved region\" |\n\n## Is an LLM even the right tool?\n\nNot every problem needs Claude. A deterministic rule (\"route invoices over $10,000 to finance\") is cheaper, faster and auditable as plain code. LLMs earn their place when the input is **unstructured or variable** (free text, documents, images, conversations) or when the task needs **judgement over language** (summarise, classify ambiguous text, draft, reason across sources).\n\nA practical split many teams use (general industry practice): let code do what code is good at (validation, arithmetic, routing on clean fields, enforcing rules), and let Claude do the language-shaped parts. Mixing them well is the core of good solution design.\n\n## The smallest Claude design that works\n\nAnthropic's \"Building Effective Agents\" guidance is to find the simplest solution possible and add complexity only when it is needed. Think of a ladder and climb only as far as the requirement forces you:\n\n1. **A single augmented LLM call.** One request to Claude, enhanced with retrieval, tools or memory as needed. Covers a surprising number of business problems: classify, extract, summarise, draft.\n2. **A workflow.** Several LLM calls on a predefined code path (chaining, routing, parallelization, orchestrator-workers, evaluator-optimizer).\n3. **An agent.** Claude directs its own steps and tool use in a loop, for open-ended problems where the steps cannot be predicted.\n4. **Multiple agents.** A lead agent with subagents, justified only when the task value covers a much higher token bill.\n\nEach rung adds cost, latency and new failure modes. The exam rewards the rung that meets the requirement, not the most impressive one.\n\n## Worked example: insurance claims triage\n\n**Business ask:** \"Use AI to speed up claims.\"\n\n**Translation:**\n- Outcome: triage summary plus a suggested queue for each new claim, so adjusters start with context.\n- Volume and latency: about 5,000 claims a day arrive by email; triage within a few hours is fine. Nobody waits live.\n- Risk: Claude may *suggest* a queue, but it may never approve or deny a claim. Denials require a human.\n- Data: claims include personal and health information, so retrieval only reaches the policy library and this claim's documents.\n\n**Design choice:** a two-step workflow, not an agent. Step 1 extracts structured fields from the claim documents into a schema. Step 2 retrieves the relevant policy sections and writes a short triage summary with a suggested queue. Plain code validates the fields and routes the claim. Because nobody waits live, the overnight backlog can go through the Message Batches API at a 50% discount. Approval stays a hard gate in the workflow, not an instruction in the prompt.\n\n**What we rejected and why:** a fully autonomous claims agent with write access to the claims system. The steps are predictable, so autonomy adds cost and risk and gives no extra value. Granting approval tools would also break least privilege.\n\n## Writing the requirement as an architect\n\nA good translation ends with a one-paragraph design brief that a stakeholder can sign off:\n\n```text\nGoal: triage summary + suggested queue for each new claim within 4h.\nPattern: 2-step workflow (extract -> retrieve + summarise), code routing.\nModel: mid-tier model for both steps; re-evaluate a smaller model for step 1.\nControls: no approve/deny tool; human approval gate; region-restricted data.\nSuccess metric: adjuster time-to-first-action, field extraction accuracy >= target on eval set.\n```\n\nThat brief ties every component to an outcome, a constraint or a risk, which is exactly what the exam asks you to defend.\n",
+      "keyTakeaways": [
+        "Begin with the business outcome and constraints (cost, latency, volume, risk, data) before choosing any technology.",
+        "Ask whether an LLM is needed at all: deterministic rules belong in code, language-shaped judgement belongs with Claude.",
+        "Climb the complexity ladder only as far as needed: single augmented LLM call, then workflow, then agent, then multi-agent.",
+        "The augmented LLM (an LLM plus retrieval, tools and memory) is the basic building block of every Claude design.",
+        "Hard business rules (approvals, limits) are enforced in the workflow or code, not requested in the prompt."
+      ],
+      "examTips": [
+        "When a stem describes a business goal, look for the option that defines success measurably and respects stated constraints before naming technology.",
+        "If the steps are predictable and the volume is high, prefer a workflow or a single call over an agent, even if the agent option sounds more capable.",
+        "Buried qualifiers such as 'no one waits for the result', 'regulated data' or 'must never' usually rule out one or two options. Reread the stem for them.",
+        "The minimally qualified candidate is expected to weigh cost, latency, performance, safety and maintainability together, so pick answers that name a trade-off rather than ignore one."
+      ],
+      "commonTraps": [
+        "Jumping to a multi-agent or fully autonomous design because the problem 'sounds big'.",
+        "Using Claude for rules that plain code can enforce more cheaply and reliably.",
+        "Choosing 'the most capable model' as the first move before the requirement and success metric are defined.",
+        "Putting a must-hold business rule into the system prompt instead of the workflow.",
+        "Treating 'add AI' as the requirement instead of the measurable business outcome behind it."
+      ],
+      "resources": [
+        {
+          "title": "Building Effective AI Agents (Anthropic Engineering)",
+          "url": "https://www.anthropic.com/engineering/building-effective-agents",
+          "type": "blog"
+        },
+        {
+          "title": "How We Build Effective Agents: Barry Zhang, Anthropic (AI Engineer talk)",
+          "url": "https://www.youtube.com/watch?v=D7_ipDqhtwk",
+          "type": "video"
+        },
+        {
+          "title": "Partner Academy: Claude Certified Architect – Professional prep path (Claude Platform & Solution Design course)",
+          "url": "https://anthropic-partners.skilljar.com/path/claude-certified-architect-professional",
+          "type": "course"
+        }
+      ]
+    },
+    {
+      "id": "p-e2e-architecture",
+      "title": "End-to-end architectures with feedback loops",
+      "estMinutes": 11,
+      "level": "core",
+      "taskStatementIds": [
+        "1.2"
+      ],
+      "eli5": "A good restaurant does not just cook and serve. It checks what comes back on the plates, reads reviews and adjusts the recipes. An AI system needs the same loop: take the input, process it, deliver the output, then measure how it went and feed that back into the next version.",
+      "visualId": "eval-loop",
+      "body": "## The four stages\n\nTask 1.2 names the shape explicitly: **input → processing → output → feedback loop**. Many weak designs stop at output. The Professional exam expects you to close the loop.\n\n| Stage | What you design | Typical Claude-side decisions |\n|---|---|---|\n| **Input** | Where requests come from, validation, normalisation, access control | Strip or reject malformed input in code; decide what context to retrieve; mark untrusted content (web pages, emails) as data, not instructions |\n| **Processing** | The pattern (single call, workflow, agent), prompts, tools, retrieval, model tier | Prompt and tool design, prompt caching for stable prefixes, structured output schemas, guardrails |\n| **Output** | Format, destination, who acts on it, gates before side effects | Schema validation in code, human approval for high-risk actions, citations for grounded answers |\n| **Feedback** | How you learn whether it worked and change the system | Evals on a fixed test set, production monitoring and tracing, user and reviewer feedback, error analysis that changes prompts, retrieval and tools |\n\n## What a feedback loop really contains\n\n\"Collect thumbs-up/down\" is not a feedback loop on its own. A real loop has four parts:\n\n1. **Signals.** Automated metrics (schema validity rate, latency, cost per task, tool error rate), human signals (reviewer edits, overrides, escalations, user ratings) and outcome data (was the ticket reopened, was the claim later reversed).\n2. **Traces.** Enough logging to see *why* an output happened: inputs, retrieved chunks, tool calls and results, model and prompt version.\n3. **An evaluation set.** Real examples with expected outcomes, rerun on every change so you can see regressions before users do.\n4. **A change path.** A clear owner and process that turns findings into new prompts, better retrieval, tool fixes or a different model, then reruns the evals.\n\n```text\nproduction traffic --> traces + metrics + reviewer edits\n        ^                         |\n        |                         v\n deploy new version  <-- eval set rerun <-- change prompt / retrieval / tools\n```\n\n## Reliability for long-running and stateful agents\n\nAnthropic's write-up of its multi-agent research system lists production lessons that apply to any agentic architecture:\n\n- **Errors compound.** In a stateful agent a small early mistake can derail a long run. Design for resuming from checkpoints rather than restarting from scratch, and let the agent adapt when a tool fails.\n- **Full tracing.** Agents make dynamic decisions, so the same input can take different paths. Without traces you cannot debug \"it worked yesterday\".\n- **Deploy without breaking running work.** Anthropic used **rainbow deployments**, gradually shifting traffic from old to new versions so agents already mid-run are not disrupted.\n\nFor long tasks that outgrow a single context window, persist progress outside the conversation (a plan file, a progress log, a database record) so a fresh session can pick up the state. Anthropic's harness guidance for long-running agents makes the same point.\n\n## Worked example: an internal policy Q&A assistant\n\n- **Input:** employee question from the intranet chat widget; authenticated user, so retrieval is filtered to documents that user may see.\n- **Processing:** augmented LLM with retrieval over the policy library; the static system prompt and policy preamble come first so prompt caching can reuse them.\n- **Output:** answer with citations to policy sections; if no relevant section is retrieved, the assistant says so and links the HR contact instead of guessing.\n- **Feedback:** every answer is traced with the retrieved chunk IDs. Weekly, the team samples low-rated answers and answers with no citation, labels the root cause (retrieval miss, stale document, prompt gap) and adds the cases to the eval set. A policy-library refresh triggers a re-index and an eval rerun **before** it reaches users.\n\nThat last step is the kind of detail the exam likes: a document refresh is a change to the system, so it goes through the same feedback loop as a prompt change.\n\n## Where to put controls\n\nA useful rule: **put guarantees in the pipeline stages, and put preferences in the prompt.** Validation, access control, approval gates and spending limits live in code around the model, at the input or output stage. Tone, style and reasoning guidance live in the prompt. The exam repeatedly rewards answers that move a must-hold rule out of the prompt and into the architecture.\n",
+      "keyTakeaways": [
+        "An end-to-end design covers input, processing, output and a feedback loop; stopping at output is incomplete.",
+        "A real feedback loop has signals, traces, a rerunnable eval set and an owned change path.",
+        "Stateful agents compound errors: plan for checkpoints, resumability, adaptation to tool failures and full tracing.",
+        "Rainbow deployments shift traffic gradually so agents that are mid-run are not disrupted by a release.",
+        "Guarantees (validation, access control, approvals) belong in pipeline stages; preferences belong in the prompt."
+      ],
+      "examTips": [
+        "If an option adds monitoring or evals that feed changes back into prompts, retrieval or tools, it usually beats an option that only adds a dashboard or logs.",
+        "When a system changes behaviour after a data or document refresh, the feedback loop should catch it: look for answers involving re-indexing plus eval reruns, not model swaps.",
+        "For long-running agent failures mid-task, prefer checkpoint-and-resume designs over 'restart the whole job' or 'raise the iteration cap'.",
+        "Distinguish detective controls (logging, alerts) from preventive controls (validation, gates). When the stem asks to prevent harm, pick the preventive one."
+      ],
+      "commonTraps": [
+        "Calling user ratings alone a feedback loop, with no eval set or change process behind them.",
+        "Logging outputs but not inputs, retrieved context and tool calls, so failures cannot be diagnosed.",
+        "Deploying a new agent version by cutting over all traffic at once while long-running sessions are active.",
+        "Treating a knowledge-base refresh as 'just data' that does not need evaluation.",
+        "Relying on prompt wording to enforce an output gate that should be enforced in code."
+      ],
+      "resources": [
+        {
+          "title": "How We Built Our Multi-Agent Research System (Anthropic Engineering)",
+          "url": "https://www.anthropic.com/engineering/multi-agent-research-system",
+          "type": "blog"
+        },
+        {
+          "title": "Effective harnesses for long-running agents (Anthropic Engineering)",
+          "url": "https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents",
+          "type": "blog"
+        },
+        {
+          "title": "Building Effective AI Agents (Anthropic Engineering)",
+          "url": "https://www.anthropic.com/engineering/building-effective-agents",
+          "type": "blog"
+        }
+      ]
+    },
+    {
+      "id": "p-pattern-selection",
+      "title": "Choosing workflow, agent or augmented LLM",
+      "estMinutes": 12,
+      "level": "core",
+      "taskStatementIds": [
+        "1.3"
+      ],
+      "eli5": "If you always drive the same route to work, you follow fixed directions, but if you are exploring a new city with no map, you need someone who can decide each turn as they go. Workflows are fixed directions written in code; agents decide their next step themselves. Use the fixed route whenever you can, because it is cheaper and more predictable.",
+      "visualId": "workflow-patterns",
+      "body": "## The three options in task 1.3\n\nAnthropic's \"Building Effective Agents\" draws the line that the exam uses:\n\n- **Augmented LLM:** an LLM enhanced with retrieval, tools and memory. It is the building block for everything else, and on its own it is often enough.\n- **Workflow:** LLMs and tools orchestrated through **predefined code paths**. Your code decides the order of steps.\n- **Agent:** an LLM that **dynamically directs its own process and tool usage**, looping until it decides the task is done.\n\n| | Augmented LLM | Workflow | Agent |\n|---|---|---|---|\n| Who controls the steps | Single call | Your code | The model |\n| Predictability | Highest | High | Lower |\n| Cost and latency | Lowest | Moderate | Higher, and variable |\n| Best for | One well-defined task | Decomposable tasks with known steps | Open-ended problems whose steps can't be predicted |\n| Main risks | Limited by one pass | Rigid if steps vary | Compounding errors, runaway cost, harder testing |\n\nAnthropic notes that agentic systems often **trade latency and cost for better task performance**, and that agents need extensive testing in sandboxed environments with guardrails. Its headline advice: find the simplest solution possible, and increase complexity only when needed.\n\n## The five workflow patterns\n\n| Pattern | Use it when | Example |\n|---|---|---|\n| **Prompt chaining** | The task splits cleanly into fixed sequential subtasks; trade some latency for accuracy | Draft a product description, check it against brand rules in code, then translate |\n| **Routing** | Inputs fall into distinct categories that are better handled separately | Send refund, technical and sales emails to different prompts, or easy queries to a smaller model |\n| **Parallelization** | Subtasks can run at once for speed (**sectioning**) or you want several attempts for confidence (**voting**) | Sectioning: check a contract's clauses separately. Voting: three independent reviews flag a risky change |\n| **Orchestrator-workers** | A complex task where you **can't predict the subtasks** in advance | A code change whose set of affected files is only known after inspection |\n| **Evaluator-optimizer** | You have **clear evaluation criteria** and iteration measurably improves results | Generate a translation, critique against a rubric, revise |\n\nOrchestrator-workers looks like parallelization, but the difference is tested: in parallelization **you** predefine the subtasks; in orchestrator-workers **the orchestrating LLM decides** them at run time.\n\n## A decision procedure\n\n1. Can one augmented LLM call meet the quality bar on your eval set? Stop there.\n2. Are the steps known in advance? Use a workflow, and pick the pattern from the table.\n3. Are the steps genuinely unpredictable, does the task need many tool calls guided by intermediate results, and is the business value high enough to absorb variable cost and latency? Use an agent, with guardrails, a budget cap and tracing.\n4. Is the work broad, parallelizable and high-value enough to justify many times the tokens? Only then consider multi-agent (next lesson).\n\n## Worked example: same domain, three answers\n\nA retailer has three requests.\n\n- **\"Tag every product review with sentiment and topic.\"** One augmented LLM call per review with a fixed schema, run through the Batch API. An agent would add nothing.\n- **\"Answer customer emails about orders, returns and warranties.\"** Routing workflow: classify the email, then use a specialised prompt and a narrow toolset per category. Refunds above a threshold go to a human through a gate in code.\n- **\"Investigate why conversion dropped last week across web, app and email.\"** The steps depend on what each query reveals, so this is agent territory: an analytics agent with read-only query tools, a spend cap and a traced run, plus a human reading the conclusions.\n\n## Transparency and the agent-computer interface\n\nAnthropic lists three principles for agents: keep the design **simple**, make it **transparent** by showing the agent's planning steps, and invest in the **agent-computer interface** through thorough tool documentation and testing. In exam terms, when an agent misbehaves the first fix is usually clearer tool descriptions or tighter tool scope, not a framework or a bigger model.\n",
+      "keyTakeaways": [
+        "Workflows follow predefined code paths; agents dynamically direct their own steps and tool use.",
+        "The augmented LLM (LLM plus retrieval, tools and memory) is the building block, and often sufficient alone.",
+        "Agents trade latency and cost for performance on open-ended problems, and need sandboxed testing and guardrails.",
+        "Know the five workflow patterns and their 'use when' conditions: chaining, routing, parallelization (sectioning or voting), orchestrator-workers, evaluator-optimizer.",
+        "Orchestrator-workers differs from parallelization because the orchestrator decides the subtasks at run time.",
+        "Start simple and add complexity only when evals show it helps."
+      ],
+      "examTips": [
+        "Look for words that signal predictability ('every invoice', 'same three steps', 'fixed format'): they point to a workflow or single call.",
+        "Words like 'unknown number of steps', 'depends on what it finds' or 'open-ended investigation' point to an agent or orchestrator-workers.",
+        "If evaluation criteria are clear and iteration helps, evaluator-optimizer is the intended answer; if criteria are vague, it is a distractor.",
+        "When two options both work, the exam usually prefers the simpler, cheaper, more predictable one unless the stem states a need it cannot meet."
+      ],
+      "commonTraps": [
+        "Choosing an autonomous agent where a fixed chain meets the requirement.",
+        "Confusing parallelization (predefined subtasks) with orchestrator-workers (dynamically decided subtasks).",
+        "Using voting when the subtasks are different (that is sectioning), or sectioning when you want confidence on one task (that is voting).",
+        "Adding an agent framework as the first fix instead of improving prompts, tool descriptions or tool scope.",
+        "Assuming an agent is always more accurate; without evals, extra autonomy can lower reliability."
+      ],
+      "resources": [
+        {
+          "title": "Building Effective AI Agents (Anthropic Engineering)",
+          "url": "https://www.anthropic.com/engineering/building-effective-agents",
+          "type": "blog"
+        },
+        {
+          "title": "How We Build Effective Agents: Barry Zhang, Anthropic (AI Engineer talk)",
+          "url": "https://www.youtube.com/watch?v=D7_ipDqhtwk",
+          "type": "video"
+        },
+        {
+          "title": "Writing Effective Tools for AI Agents (Anthropic Engineering)",
+          "url": "https://www.anthropic.com/engineering/writing-tools-for-agents",
+          "type": "blog"
+        }
+      ]
+    },
+    {
+      "id": "p-multi-agent",
+      "title": "Multi-agent systems and orchestration strategy",
+      "estMinutes": 12,
+      "level": "core",
+      "taskStatementIds": [
+        "1.4"
+      ],
+      "eli5": "A newsroom editor does not write every story. She hands clear assignments to several reporters who work at the same time, then puts their pieces together. A multi-agent system works the same way, but every extra reporter costs money, so you only hire a team when the story is big enough to be worth it.",
+      "visualId": "orchestrator-subagents",
+      "body": "## The orchestrator-subagent shape\n\nIn a multi-agent system a **lead (orchestrator) agent** plans the work, spawns **subagents** to explore parts of it, and synthesises their results. Each subagent runs in its **own context window**, so it can dig deep into one thread without filling the lead's context. Only its final result returns to the lead.\n\nAnthropic's research system used this pattern: a lead agent on Claude Opus 4 with Claude Sonnet 4 subagents **outperformed a single Claude Opus 4 agent by 90.2%** on its internal research eval.\n\n## The cost you must justify\n\nThe same write-up gives the numbers that drive the design decision:\n\n| Mode | Token use relative to a chat interaction |\n|---|---|\n| Single agent | about 4x |\n| Multi-agent system | about 15x |\n\nToken usage by itself explained **80% of the variance** in performance on their browsing eval, with the number of tool calls and model choice as the other explanatory factors. In other words, multi-agent systems win largely because they spend more tokens on parallel exploration, so they make economic sense only when **the value of the task is high enough** to pay for that.\n\nThey are a **poor fit** when all agents need to share the same context or when there are many dependencies between agents. Anthropic notes that most coding tasks involve fewer truly parallelizable pieces than research does.\n\n## Delegation: what the lead must tell each subagent\n\nA subagent starts with a fresh context. It does not see the lead's conversation. Vague delegation led Anthropic's subagents to duplicate work and leave gaps. Each delegation should state:\n\n- **Objective:** the specific question or piece of work.\n- **Output format:** what to return, ideally structured, with sources.\n- **Tool guidance:** which tools and sources to use or avoid.\n- **Boundaries:** what is out of scope so subagents do not overlap.\n\n```text\nObjective: find 2024-2026 regulatory actions on AI in EU consumer lending.\nReturn: JSON list {regulator, date, summary, source_url}; max 10 items.\nTools: web search + fetch; prefer regulator sites over news.\nOut of scope: US, UK, and general AI Act commentary (another agent covers it).\n```\n\nIn the Claude Agent SDK, subagents are spawned through a dedicated tool (the Foundations exam guide calls it the **Task tool**; current SDK docs show it as **Agent** in `tool_use` blocks, while the session's initial tools list still names it `Task`). Unless the subagent is a fork of the current conversation, the only channel into it is the prompt you pass it, so put the facts, file paths and decisions it needs directly in that prompt.\n\n## Effort scaling and parallelism\n\nAgents are poor at judging how much effort a task deserves, so Anthropic embedded **scaling rules** in the lead's prompt: simple fact-finding needs **1 agent with 3-10 tool calls**, direct comparisons **2-4 subagents with 10-15 calls each**, and complex research **more than 10 subagents**. Running subagents in parallel, and letting each subagent call tools in parallel, **cut research time by up to 90%** for complex queries.\n\n## Orchestration risks and mitigations\n\n| Risk | What happens | Mitigation |\n|---|---|---|\n| Synchronous bottleneck | The whole system blocks waiting for the slowest subagent | Accept it for simplicity, or move to asynchronous execution once coordination is solved |\n| Telephone game | Results lose fidelity as they pass through the lead | Let subagents write outputs to storage (for example the filesystem) and pass lightweight references back |\n| Compounding errors | A wrong early plan sends every subagent the wrong way | Trace runs, checkpoint, and evaluate the lead's decomposition, not just the final answer |\n| Over-narrow decomposition | Subagents do exactly what they were asked, but coverage has gaps | Fix the lead's planning prompt, not the subagents |\n| Runaway spend | Many agents times many tool calls | Budget caps, effort-scaling rules, smaller models for subagents |\n| Capability bloat | Every agent gets every tool | Give each role only the tools it needs |\n\n## Worked example: should this be multi-agent?\n\n**Case A:** a due-diligence report for an acquisition, covering financials, litigation, patents and market position, worth tens of thousands of dollars of analyst time. The four areas are independent and broad. A lead with four parallel subagents, each with scoped tools and a clear brief, is justified.\n\n**Case B:** answering \"what is our refund window?\" from a policy library. One augmented LLM call with retrieval answers it. A multi-agent design would spend many times the tokens for no gain.\n\n**Case C:** refactoring a tightly coupled module where every change depends on the previous one. The work is sequential and shares context, so a single agent (or a workflow) fits better than parallel subagents.\n",
+      "keyTakeaways": [
+        "A lead agent plans and delegates; subagents explore in isolated context windows and return only their results.",
+        "Anthropic's multi-agent research system beat a single Opus 4 agent by 90.2%, but multi-agent systems use about 15x the tokens of chat (single agents about 4x).",
+        "Token usage alone explained 80% of performance variance, so multi-agent is justified only for high-value, broad, parallelizable work.",
+        "Delegate with objective, output format, tool guidance and boundaries; subagents see only what you pass them.",
+        "Embed effort-scaling rules (1 agent and 3-10 calls for simple facts up to 10+ subagents for complex research).",
+        "Watch for the synchronous bottleneck, the telephone game, compounding errors and over-narrow decomposition."
+      ],
+      "examTips": [
+        "If the stem stresses shared context or tight dependencies between steps, multi-agent is likely the wrong answer.",
+        "If coverage is missing but each subagent did its assigned job, the fault is the orchestrator's decomposition: pick the option that fixes the lead's plan.",
+        "Expect the 15x token figure to be used as a cost argument: the right answer ties multi-agent to task value.",
+        "For parallel work, the coordinator should issue multiple subagent calls in one response rather than one per turn.",
+        "Exam wording may say 'Task tool' for spawning subagents; treat it as the same mechanism current docs call the Agent tool."
+      ],
+      "commonTraps": [
+        "Assuming subagents inherit the lead's conversation history or memory.",
+        "Blaming subagents (or swapping their model) when the lead decomposed the task too narrowly.",
+        "Choosing multi-agent for a simple lookup because it 'scales better'.",
+        "Giving every subagent the full toolset instead of role-scoped tools.",
+        "Routing all subagent output through the lead verbatim when it could be stored and referenced."
+      ],
+      "resources": [
+        {
+          "title": "How We Built Our Multi-Agent Research System (Anthropic Engineering)",
+          "url": "https://www.anthropic.com/engineering/multi-agent-research-system",
+          "type": "blog"
+        },
+        {
+          "title": "Subagents in the Claude Agent SDK",
+          "url": "https://code.claude.com/docs/en/agent-sdk/subagents",
+          "type": "docs"
+        },
+        {
+          "title": "Building Effective AI Agents (Anthropic Engineering)",
+          "url": "https://www.anthropic.com/engineering/building-effective-agents",
+          "type": "blog"
+        }
+      ]
+    },
+    {
+      "id": "p-decomposition",
+      "title": "Decomposition techniques for complex problems",
+      "estMinutes": 10,
+      "level": "core",
+      "taskStatementIds": [
+        "1.5"
+      ],
+      "eli5": "To clean a messy house you do not do everything at once. You either follow a fixed checklist room by room, or, if you have never seen the house, you walk through first, decide what matters most, and adjust as you go. Claude works better the same way: big jobs split into smaller, clearer pieces, with a final check that the pieces fit together.",
+      "visualId": "workflow-patterns",
+      "body": "## Why decompose\n\nA single prompt that asks Claude to do many things at once tends to give uneven results: some parts get careful attention, others get skimmed. Splitting the work gives each step a focused prompt, a smaller context and its own check. It also makes failures easier to locate, because you can evaluate each step separately.\n\nDecomposition has costs too: more calls, more latency and more integration work. The architect's job is to choose the **right kind** of split for the problem.\n\n## Fixed vs dynamic decomposition\n\n| | Fixed decomposition | Dynamic decomposition |\n|---|---|---|\n| Who defines the steps | You, in code, before run time | The model (an orchestrator or agent) at run time |\n| Matching pattern | Prompt chaining, sectioning | Orchestrator-workers, agent loops |\n| When it fits | The steps are known and stable | The steps depend on what earlier steps discover |\n| Strengths | Predictable, testable, cheap | Adapts to novel inputs |\n| Weaknesses | Breaks when inputs vary a lot | Costlier, harder to test, can plan badly |\n\n**Rule of thumb:** if you can write the steps on a whiteboard before seeing the input, use fixed decomposition.\n\n## Technique 1: chain with gates\n\nSplit a task into sequential steps and add **programmatic checks between them**. For example: extract fields, then validate the fields in code, then generate the letter only if validation passed. The gate stops a bad intermediate result from poisoning everything after it.\n\n## Technique 2: local passes plus an integration pass\n\nFor large inputs, analyse each unit separately and then run a dedicated pass over the combined results. Reviewing a 40-file pull request in one prompt dilutes attention; reviewing each file on its own catches local issues, and a final **cross-file integration pass** catches problems that only show up between files (a renamed function still called by its old name elsewhere, inconsistent data contracts). Neither pass alone is enough.\n\n## Technique 3: sectioning vs voting\n\nBoth are forms of parallelization:\n- **Sectioning** splits a task into **independent, different** subtasks run in parallel (review security, performance and style separately; or have one call answer the user while another screens for policy issues).\n- **Voting** runs the **same** task several times to get diverse outputs and more confidence (three independent checks for a vulnerability, flagging the item if any or most say yes).\n\n## Technique 4: map, prioritise, plan adaptively\n\nFor open-ended work (a codebase migration, a research question) a fixed plan will be wrong. A robust approach:\n1. **Map** the territory first: list files, sources or sub-questions without solving anything.\n2. **Prioritise** by impact and dependency.\n3. **Plan adaptively:** execute the top items, then revise the plan using what was learned.\n\nThis is how an orchestrator should work, and why Anthropic's research lead saved its plan to persistent memory: the plan is a living artifact.\n\n## Worked example: contract review for a legal team\n\n**Request:** \"Review this 120-page supplier contract against our standard positions and produce a risk memo.\"\n\n- Fixed decomposition fits because the structure is predictable. **Map:** split the contract into clauses by heading (code, not the model).\n- **Sectioning:** each clause category (liability, IP, termination, data protection) is checked against the matching playbook section in parallel calls.\n- **Voting** on the highest-stakes item only: the liability cap is assessed three times, and any disagreement goes to a lawyer.\n- **Integration pass:** one call reads all clause findings together to catch conflicts (a termination right that undercuts the data-return clause) and writes the memo.\n- **Gate:** the memo goes to a lawyer before the business sees it.\n\nIf the same team asked \"find every contract in our archive that could be affected by a new regulation\", the scope is unknown up front, so dynamic decomposition (an orchestrator mapping the archive, then delegating) would fit better.\n\n## Signs a decomposition is wrong\n\n- Steps keep needing information from each other: the split cuts across a dependency, so merge them or pass shared context explicitly.\n- Coverage gaps although every step succeeded: the plan was too narrow.\n- Latency and cost balloon for a simple input: the split is too fine; use routing to send easy inputs down a shorter path.\n",
+      "keyTakeaways": [
+        "Decomposition gives each step focused attention and testability, at the cost of more calls and integration work.",
+        "Fixed decomposition (chaining, sectioning) fits known steps; dynamic decomposition (orchestrator-workers, agents) fits steps that depend on discoveries.",
+        "Put programmatic gates between chained steps so bad intermediate results do not propagate.",
+        "For large inputs, combine per-unit local passes with a separate cross-unit integration pass.",
+        "Sectioning splits different subtasks; voting repeats the same task for confidence.",
+        "For open-ended work: map first, prioritise, then plan adaptively and update the plan as you learn."
+      ],
+      "examTips": [
+        "When a single large review misses issues inconsistently, the intended fix is usually per-unit passes plus an integration pass, not a bigger context window.",
+        "If the stem says the steps are always the same, eliminate options that introduce an orchestrator or agent.",
+        "Missing coverage with every step succeeding points to the decomposition plan, not to the workers.",
+        "Know which parallelization variant the scenario describes: different subtasks means sectioning, repeated identical task means voting."
+      ],
+      "commonTraps": [
+        "Believing a larger context window removes the need to decompose a large review.",
+        "Doing only per-file analysis and missing cross-file issues (or only a whole-input pass that misses local detail).",
+        "Using dynamic decomposition for a stable, repeatable process.",
+        "Splitting work along lines that create heavy dependencies between steps.",
+        "Running voting across different subtasks and calling it sectioning, or vice versa."
+      ],
+      "resources": [
+        {
+          "title": "Building Effective AI Agents (Anthropic Engineering)",
+          "url": "https://www.anthropic.com/engineering/building-effective-agents",
+          "type": "blog"
+        },
+        {
+          "title": "How We Built Our Multi-Agent Research System (Anthropic Engineering)",
+          "url": "https://www.anthropic.com/engineering/multi-agent-research-system",
+          "type": "blog"
+        },
+        {
+          "title": "Effective Context Engineering for AI Agents (Anthropic Engineering)",
+          "url": "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents",
+          "type": "blog"
+        }
+      ]
+    },
+    {
+      "id": "p-value-pillars",
+      "title": "Aligning to business value pillars and SLAs",
+      "estMinutes": 12,
+      "level": "core",
+      "taskStatementIds": [
+        "1.6"
+      ],
+      "eli5": "A business does not pay for 'AI'; it pays for something getting faster, cheaper, better or newly possible. A good architect links every design choice to one of those wins, sets a number for it, and checks that promises like 'answer within two seconds' can actually be kept.",
+      "visualId": "batch-vs-realtime",
+      "body": "## The pillars in task 1.6\n\n| Pillar | Question it answers | Example metric |\n|---|---|---|\n| **Efficiency** | Does the process take less time or effort? | Average handle time, backlog cleared per day |\n| **Productivity** | Can people do more or better work? | Tickets resolved per agent, time to first draft |\n| **Transformation** | Does it enable something that was not possible before? | New 24/7 service, coverage of documents never reviewed before |\n| **Cost** | Is total cost per outcome acceptable? | Cost per resolved ticket including tokens, review time and infrastructure |\n| **Performance SLAs** | Are promised service levels met? | p95 latency, time to first token, availability, turnaround window |\n\nThe exam frames this as **tying each design choice to a pillar and a measurable target**. \"It will be more efficient\" is weak. \"Cuts first-response time from 6 hours to under 2 minutes for 70% of tickets, at under $0.03 per ticket\" is strong.\n\n## Cost levers\n\nCurrent per-million-token (MTok) prices from Anthropic's pricing page:\n\n| Model | Input / MTok | Output / MTok |\n|---|---|---|\n| Claude Opus 5.5 | $4 | $20 |\n| Claude Sonnet 5.5 | $2 | $10 |\n| Claude Haiku 4.5 | $1 | $5 |\n\n- **Model tier:** match the model to the task; Anthropic's own advice is Haiku for simple tasks, Sonnet for most production workloads, Opus for the most complex reasoning. Routing easy inputs to a smaller model is a common cost pattern.\n- **Message Batches API:** **50% off** input and output tokens for asynchronous work. Most batches finish in under an hour, but there is **no latency guarantee**: the processing window is up to **24 hours**, and any request still unfinished at that point expires (unbilled) and must be resubmitted.\n- **Prompt caching:** a cache read costs **0.1x** the base input price on most models (0.05x on Opus 5.5); a 5-minute cache write costs 1.25x. Caching pays off after one read. Put stable content (system prompt, policies, tool definitions) first so it forms a reusable prefix.\n- **Fewer tokens:** trim retrieved context, constrain output length, avoid multi-agent designs unless value justifies them. Batch and caching discounts stack.\n\n### Worked cost example\n\nA nightly job summarises 50,000 documents, each about 4,000 input tokens and 500 output tokens, on Sonnet 5.5:\n- Input: 200 MTok x $2 = $400. Output: 25 MTok x $10 = $250. Total **$650** per night on the synchronous API.\n- Through the Batch API: **$325**. Nobody waits for the results overnight, so the 24-hour window is acceptable.\n\nA support assistant sends a 20,000-token policy prefix with every request, about 1,000 requests inside a busy window on Sonnet 5.5:\n- Without caching: 20 MTok x $2 = $40 for the prefix alone.\n- With caching: one write (20,000 x 1.25 x $2/MTok = $0.05) plus 999 reads (about 19.98 MTok x $0.20 = about $4.00), roughly **$4** in total, and lower latency too.\n\n## Latency levers and SLAs\n\nFrom Anthropic's latency guidance: get quality right first, then optimise. Distinguish **baseline latency** (time for the full response) from **time to first token (TTFT)**.\n\n| Lever | Effect |\n|---|---|\n| Smaller, faster model | Lower overall latency, if quality still meets the bar |\n| Streaming | Lower *perceived* latency: users see text immediately (improves TTFT experience, not total time) |\n| Prompt caching | Less prompt processing for repeated prefixes |\n| Shorter prompts and outputs | Less to process and generate; sentence or paragraph limits work better than word counts |\n| Fewer sequential calls | Each chained step adds a round trip; parallelize independent steps |\n\n**SLA rule:** an interactive path with a latency SLA cannot use the Batch API, because batch results may take up to 24 hours. Use Batch for overnight reports, backfills, evals and bulk classification.\n\n## Worked example: matching pillars to choices\n\nA bank wants Claude for two things:\n1. **Live chat assistant** with an SLA of the first visible text within 2 seconds. Pillar: performance SLA plus efficiency. Choices: synchronous API, streaming, cached system prompt, a mid-tier model, simple escalations routed to a human.\n2. **Monthly review of 300,000 historic complaints** to find recurring product issues. Pillar: transformation (that review was never feasible manually) and cost. Choices: Batch API, a smaller model for first-pass classification, a stronger model only for the clusters that matter.\n\nPresenting the business case: state the pillar, the baseline, the target, the cost per unit and the main risk. That is how you defend a design to a stakeholder, and how the exam expects you to reason.\n",
+      "keyTakeaways": [
+        "Value pillars: efficiency, productivity, transformation, cost and performance SLAs; tie every design choice to one with a measurable target.",
+        "Per-MTok input/output prices: Opus 5.5 $4/$20, Sonnet 5.5 $2/$10, Haiku 4.5 $1/$5.",
+        "Batch API gives 50% off but has no latency guarantee: the window is up to 24 hours and unfinished requests expire, so it never fits interactive latency SLAs.",
+        "Cache reads cost 0.1x base input on most models (0.05x on Opus 5.5); 5-minute writes cost 1.25x, so caching pays off after one read.",
+        "Latency levers: smaller model, streaming (perceived latency and TTFT), caching, shorter prompts and outputs, fewer sequential calls."
+      ],
+      "examTips": [
+        "Any stem with a user or process waiting on the result rules out the Batch API, however attractive the discount.",
+        "When cost and latency both matter and a large static prefix repeats, prompt caching with stable content first is the target answer.",
+        "Streaming improves perceived latency (time to first visible token); it does not lower total cost or total generation time.",
+        "Prefer answers that state a measurable target over answers with vague benefits like 'improves productivity'.",
+        "Switching to the smallest model 'regardless of task fit' is a distractor: cost savings must not break the quality bar."
+      ],
+      "commonTraps": [
+        "Using Batch for an interactive or blocking path because it is 50% cheaper.",
+        "Believing streaming reduces token cost.",
+        "Placing volatile content (timestamps, user message) before the static prefix, which defeats caching.",
+        "Measuring cost per call instead of cost per business outcome (including human review time).",
+        "Claiming 'transformation' without any measurable target or baseline."
+      ],
+      "resources": [
+        {
+          "title": "Claude API pricing",
+          "url": "https://platform.claude.com/docs/en/about-claude/pricing",
+          "type": "docs"
+        },
+        {
+          "title": "Batch processing (Message Batches API)",
+          "url": "https://platform.claude.com/docs/en/build-with-claude/batch-processing",
+          "type": "docs"
+        },
+        {
+          "title": "Reducing latency",
+          "url": "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-latency",
+          "type": "docs"
+        },
+        {
+          "title": "Prompt caching",
+          "url": "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
+          "type": "docs"
+        }
+      ]
+    },
+    {
+      "id": "p-d1-tradeoff-drill",
+      "title": "Trade-off drill: defend the design",
+      "estMinutes": 12,
+      "level": "core",
+      "taskStatementIds": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6"
+      ],
+      "eli5": "When a machine at a factory keeps jamming, the best fix is the one that stops it jamming, not a louder alarm or a bigger machine. This drill practises spotting that fix in AI designs: find what is causing the problem and change the design so it cannot happen.",
+      "visualId": "exam-strategy",
+      "body": "## How Professional design questions are shaped\n\nProfessional items are judgement-heavy, and third-party reports describe them as standalone rather than grouped under shared scenarios (the official guide publishes no scenario bank). A common shape: you are handed a system that is already failing, or about to, and asked which change is most defensible. The pattern behind the right answer is consistent:\n\n> The best answer **removes or prevents the root cause** with a structural change. Weaker answers **detect** the problem (logs, alerts), **compensate** for it (retries, confirmations, longer prompts) or **throw capacity** at it (bigger model, bigger context, more agents).\n\n## An elimination funnel\n\n1. **Find the requirement that is being violated.** Cost? Latency SLA? Accuracy? Safety? The stem usually buries it in one clause.\n2. **Name the root cause.** Wrong pattern? Wrong decomposition? Missing feedback loop? Wrong API mode?\n3. **Eliminate distractor families:**\n   - bigger model or bigger context window for a design problem;\n   - stronger prompt wording for a rule that must always hold;\n   - adding agents, routers or frameworks when a simpler pattern meets the need;\n   - detective-only fixes when the stem asks you to prevent the problem;\n   - valid ideas that ignore a stated constraint (Batch for a live path).\n4. **Pick the proportionate structural fix**, the smallest change that removes the cause.\n\n## Practice cases\n\n### Case 1: the over-built agent\nA team built an autonomous agent to convert scanned purchase orders into ERP records. Every order has the same fields. Costs are three times the budget and run times vary from 20 seconds to 4 minutes.\n- **Root cause:** an agent pattern for a predictable task.\n- **Defensible change:** replace it with a fixed workflow: extract to a schema, validate in code, write to the ERP. Consider Batch for the backlog.\n- **Distractors:** a cheaper model for the same agent (treats the symptom); an iteration cap (caps cost but leaves the wrong pattern).\n\n### Case 2: the gap nobody owned\nA multi-agent market research system returns polished reports, but they keep missing whole regions. Logs show every subagent completed its assigned query well.\n- **Root cause:** the lead agent's decomposition is too narrow.\n- **Defensible change:** fix the orchestrator's planning (explicit coverage requirements, boundaries per subagent, a check that the plan covers every region).\n- **Distractors:** stronger subagent models; more subagents without a better plan.\n\n### Case 3: the SLA that Batch broke\nTo save money, a team moved a customer-facing quote generator to the Message Batches API. Complaints follow: some quotes arrive hours later.\n- **Root cause:** a latency-sensitive path on an asynchronous API with a window of up to 24 hours.\n- **Defensible change:** return the live path to the synchronous API with streaming; reduce cost with prompt caching of the static pricing rules and a model tier that meets the quality bar. Keep Batch for overnight jobs.\n\n### Case 4: the silent regression\nA knowledge assistant started giving confident wrong answers after the policy library was reorganised. Nobody noticed for two weeks.\n- **Root cause:** no feedback loop covering data changes (the immediate fault is likely stale or broken retrieval).\n- **Defensible change:** re-index and verify retrieval now; add an eval set and require an eval rerun as part of every document refresh, with tracing of retrieved chunks.\n- **Distractors:** switching models; telling the model in the prompt to \"only answer when confident\".\n\n### Case 5: the expensive simple question\nA company routes every employee HR question through a lead agent with five research subagents. Most questions are like \"how many vacation days do I have?\"\n- **Root cause:** multi-agent spending (about 15x chat tokens) on low-value, simple lookups.\n- **Defensible change:** route simple questions to a single augmented LLM call with retrieval; reserve the agentic path, if at all, for complex cases.\n\n### Case 6: the rule that lived in the prompt\nA claims assistant is told in its system prompt \"never approve claims over $5,000\". An audit finds three approvals over the limit.\n- **Root cause:** a hard business rule enforced only by instruction.\n- **Defensible change:** remove the approval capability above the limit or put a programmatic gate in the workflow that routes those claims to a human.\n- **Distractors:** capital letters in the prompt; more few-shot examples; logging approvals for later review.\n\n## Defending a trade-off in one sentence\n\nPractise the format: *\"We chose X over Y because requirement R matters most here; the cost is C, which we accept/mitigate by M.\"* For example: \"We chose a routing workflow over a general agent because 90% of requests fall into three known categories; we give up flexibility on rare requests, which we mitigate by escalating unclassified emails to a human.\"\n",
+      "keyTakeaways": [
+        "The defensible answer removes or prevents the root cause; distractors detect, compensate or add capacity.",
+        "Locate the violated requirement in the stem first: cost, latency SLA, accuracy, safety or coverage.",
+        "Common root causes: wrong pattern, over-narrow decomposition, wrong API mode for the SLA, no feedback loop, rules enforced only in prompts.",
+        "Choose the proportionate structural fix, not the most elaborate architecture.",
+        "Defend a trade-off by naming the requirement it serves, the cost accepted and the mitigation."
+      ],
+      "examTips": [
+        "Eliminate 'bigger model' and 'bigger context window' options first when the problem is architectural.",
+        "When every worker did its job but results are incomplete, look at the orchestrator's plan.",
+        "When a must-hold rule is violated, the answer moves enforcement into code or removes the capability.",
+        "If two answers both fix the problem, choose the one that does so with less complexity and cost."
+      ],
+      "commonTraps": [
+        "Picking a detective control (logging, alerting, audit) when the question asks to prevent the failure.",
+        "Picking a compensating control (confirmation prompts, retries, stronger wording) for a structural flaw.",
+        "Picking a technically impressive redesign that ignores a stated budget or timeline.",
+        "Fixing the symptom in the component that failed last instead of the component that caused it."
+      ],
+      "resources": [
+        {
+          "title": "Building Effective AI Agents (Anthropic Engineering)",
+          "url": "https://www.anthropic.com/engineering/building-effective-agents",
+          "type": "blog"
+        },
+        {
+          "title": "How We Built Our Multi-Agent Research System (Anthropic Engineering)",
+          "url": "https://www.anthropic.com/engineering/multi-agent-research-system",
+          "type": "blog"
+        },
+        {
+          "title": "Claude API pricing",
+          "url": "https://platform.claude.com/docs/en/about-claude/pricing",
+          "type": "docs"
+        }
+      ]
+    }
+  ]
+}

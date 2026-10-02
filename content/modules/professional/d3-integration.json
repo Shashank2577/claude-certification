@@ -1,0 +1,496 @@
+{
+  "certId": "professional",
+  "domainId": "d3-integration",
+  "lessons": [
+    {
+      "id": "p-capability-bloat",
+      "title": "Capability bloat and least privilege",
+      "estMinutes": 12,
+      "level": "core",
+      "taskStatementIds": [
+        "3.1"
+      ],
+      "eli5": "If a new cashier only needs to ring up sales, you don't hand them the keys to the vault and the payroll system and then hope they never use them. You give them the till key and nothing else. Agents are the same: every extra tool is a key that can be misused, by mistake or by an attacker.",
+      "visualId": "security-guardrails",
+      "body": "## What \"capability bloat\" means\n\nCapability bloat is when an agent, subagent or Claude Code setup carries **more tools, scopes, servers or permissions than its job requires**. It creeps in quietly: someone connects a whole MCP server because one tool was useful, a subagent inherits every tool from its parent because nobody set a `tools` list, or a \"general\" service account is reused because it was convenient.\n\nBloat hurts in three separate ways, and the exam expects you to recognise all three:\n\n| Cost | What goes wrong | Example |\n|---|---|---|\n| **Security (blast radius)** | Any tool the agent holds can be triggered by a confused model or by prompt injection hidden in a document, email or web page | A ticket-summariser that can also call `issue_refund` gets tricked by a ticket that says \"refund this order\" |\n| **Reliability (tool selection)** | More, overlapping tools make the model pick the wrong one more often | Claude's tool search docs note selection accuracy degrades once you exceed roughly 30–50 available tools |\n| **Cost and latency (context)** | Every tool definition is tokens in every request | Anthropic's docs cite a five-server MCP setup consuming about 55k tokens of definitions before any work starts |\n\n## The core decision rule: remove, don't watch\n\nWhen a role does not need a capability, the defensible fix is to **take it away**. This is the preventive control. Compare the options an exam stem will typically offer for an over-powered agent:\n\n| Option | Control type | Verdict |\n|---|---|---|\n| Remove the unneeded tools from the agent's configuration | Preventive (eliminates the attack surface) | **Best** when the role never needs them |\n| Add audit logging on the dangerous tools | Detective (tells you after harm is done) | Useful in addition, not instead |\n| Add a \"please confirm\" step before dangerous actions | Compensating (relies on a human or the model behaving) | Weaker; confirmations get rubber-stamped |\n| Swap to a larger or \"smarter\" model | Not a control at all | Model size does not change what the agent is *authorised* to do |\n| Add a system-prompt line \"never use the delete tool\" | Guidance, not enforcement | Prompts are probabilistic; injection can override them |\n\nIf the role genuinely needs a risky capability sometimes, the answer shifts: keep it, but **gate it in code** (a permission rule, a hook, a human-approval step in the workflow) and scope it narrowly (for example, refunds only up to a limit, only for the ticket's own customer).\n\n## How to strip capabilities in Claude tooling\n\n**Claude Agent SDK.** Two fields look similar but behave very differently:\n\n```python\noptions = ClaudeAgentOptions(\n    allowed_tools=[\"Read\", \"Grep\"],        # AUTO-APPROVES these; does NOT hide other tools\n    disallowed_tools=[\"Bash\", \"Write\"],    # REMOVES these tool definitions entirely\n)\n```\n\n`allowed_tools` is an auto-approve list. Tools not on it still exist and fall through to the permission mode or your `can_use_tool` callback. To make a tool unavailable, use `disallowed_tools` (or pass an explicit `tools` list). A scoped deny such as `Bash(rm *)` is still enforced even under `bypassPermissions`.\n\n**Subagents.** In Claude Code, a subagent with no `tools` field inherits all available tools. Give each subagent an explicit, minimal `tools` list that matches its role. A research synthesiser does not need web fetch; a code reviewer does not need `Write`.\n\n**MCP servers and plugins.** Connect only the servers a role needs. Every enabled plugin, skill description and MCP server costs context on every turn. Where the server offers scopes, request the minimum.\n\n**Large toolsets you really do need.** If a platform genuinely requires hundreds of tools, do not load them all up front: the API's tool search tool lets you mark tools `defer_loading: true` so only the search tool and your most-used 3–5 tools are in context, and Claude discovers the rest on demand. This fixes the *context and selection* cost of bloat. It does **not** fix the *security* cost, because deferred tools are still callable. Least privilege and tool search solve different problems.\n\n## Worked example\n\nA bank deploys an internal \"operations assistant\" agent for branch staff. Its configuration includes: `lookup_account`, `view_transactions`, `draft_customer_letter`, `reverse_transaction`, `close_account`, plus a generic `http_request` tool \"for flexibility\". Staff only ever look up accounts and draft letters.\n\n1. **Map the role's actual tasks** (look up, view, draft).\n2. **Remove** `reverse_transaction`, `close_account` and the generic `http_request` (the generic fetch tool is also a data-exfiltration path for injected instructions).\n3. If a smaller group later needs reversals, build a **separate, narrowly scoped agent** for that role with a workflow-level approval gate, instead of widening the shared one.\n4. Then add logging for what remains, as defence in depth.\n\n## Spotting bloat in a review\n\n- Tools present that no documented task uses.\n- Generic \"do anything\" tools (`run_sql`, `http_request`, `execute_shell`) where a constrained tool (`get_order_by_id`, `load_document`) would do.\n- One service identity shared across agents with different needs.\n- Subagents without explicit tool lists.\n- Write or delete scopes on an agent whose job is read-only.\n",
+      "keyTakeaways": [
+        "Capability bloat raises three costs: security blast radius, worse tool selection, and more tokens/latency on every request.",
+        "The preventive fix for an unneeded capability is to remove it; logging is detective and confirmations are compensating controls.",
+        "Model size and system-prompt instructions do not change what an agent is authorised to do.",
+        "In the Agent SDK, allowed_tools only auto-approves; disallowed_tools (or an explicit tools list) removes tools.",
+        "Tool search (defer_loading) solves context and selection cost for big toolsets but does not reduce what the agent can call.",
+        "Replace generic do-anything tools with narrow, purpose-built tools, and give each subagent an explicit minimal tool list."
+      ],
+      "examTips": [
+        "When a stem says the role 'only ever needs' a subset of capabilities, pick the option that removes the rest. That is the root-cause fix.",
+        "Rank controls: remove/prevent > enforce in code (permission rules, hooks, workflow gates) > detect (logging, alerts) > ask nicely (prompt text). The highest-ranked option that still meets the business need wins.",
+        "If the capability is genuinely needed sometimes, the best answer usually narrows its scope and puts a hard gate in the workflow rather than deleting it.",
+        "Watch for answers that confuse 'fewer tools in context' (tool search) with 'fewer tools allowed' (least privilege)."
+      ],
+      "commonTraps": [
+        "'Add audit logging to the dangerous tools': sounds responsible but only detects misuse after the fact.",
+        "'Add a confirmation prompt before destructive actions': a compensating control that humans tend to rubber-stamp; not least privilege.",
+        "'Use a larger model that follows instructions better': irrelevant to authorisation scope.",
+        "'Set allowed_tools to the safe list': in the SDK this auto-approves; it does not block other tools.",
+        "'Enable tool search so the risky tools are deferred': deferred tools are still callable."
+      ],
+      "resources": [
+        {
+          "title": "Writing effective tools for agents (Anthropic Engineering)",
+          "url": "https://www.anthropic.com/engineering/writing-tools-for-agents",
+          "type": "blog"
+        },
+        {
+          "title": "Tool search tool (Claude API docs)",
+          "url": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool",
+          "type": "docs"
+        },
+        {
+          "title": "Agent SDK overview",
+          "url": "https://code.claude.com/docs/en/agent-sdk/overview",
+          "type": "docs"
+        },
+        {
+          "title": "Claude Code subagents",
+          "url": "https://code.claude.com/docs/en/sub-agents",
+          "type": "docs"
+        },
+        {
+          "title": "Claude Code permission modes",
+          "url": "https://code.claude.com/docs/en/permission-modes",
+          "type": "docs"
+        }
+      ]
+    },
+    {
+      "id": "p-authn-authz",
+      "title": "Finding authentication and authorization gaps",
+      "estMinutes": 14,
+      "level": "core",
+      "taskStatementIds": [
+        "3.2"
+      ],
+      "eli5": "Authentication is checking someone's ID at the door; authorization is checking which rooms their badge opens. An AI agent is like a helpful assistant carrying badges for other people. The danger is the assistant using a master key instead of the badge of the person who asked, or a stranger tricking the assistant into opening doors for them.",
+      "visualId": "security-guardrails",
+      "body": "## Two questions, asked at every hop\n\n- **Authentication (authn):** who is calling? (a user, a service, an MCP client)\n- **Authorization (authz):** what is this caller allowed to do, on which data?\n\nIn an agentic system there are several hops: user → your app → Claude → tool or MCP server → downstream API. A security gap usually appears where one hop **assumes** the previous hop already checked something. Your job on the exam is to find that assumption.\n\n## Gap 1: the agent acts as a superuser\n\nThe most common design flaw is wiring tools to a single powerful service account, so every user's request runs with admin rights. If a junior employee asks the HR assistant for \"everyone's salary\", the tool happily returns it, because the *tool's* credentials allow it.\n\n**Fix (general security practice):** the agent should act **on behalf of the end user**, carrying that user's identity and permissions down to the data layer (delegated tokens, row-level security, per-user API scopes). Authorization should be enforced by the system that owns the data, not by asking the model to \"only show data the user may see\". The model is not an access-control layer.\n\n## Gap 2: MCP-specific pitfalls\n\nThe MCP specification's security best practices name several attacks. Know what each is and its mitigation:\n\n| Risk | What it is | Mitigation (per MCP spec) |\n|---|---|---|\n| **Token passthrough** | An MCP server accepts a token that was issued for some *other* service and forwards it downstream | Forbidden: servers MUST NOT accept tokens not explicitly issued for the MCP server (validate the audience) |\n| **Confused deputy** | An MCP proxy with a static client ID plus dynamic client registration lets an attacker reuse a user's earlier consent cookie and steal an auth code | Per-client consent before forwarding to the third party, exact `redirect_uri` matching, secure single-use `state` |\n| **Session hijacking** | An attacker obtains or guesses a session ID and is treated as the user | Servers MUST NOT use sessions for authentication; verify every request; secure random IDs; bind sessions to the user (e.g. `user_id:session_id`) |\n| **SSRF during OAuth discovery** | A malicious server points the client at internal URLs such as cloud metadata endpoints | HTTPS only, block private and link-local ranges, validate redirects, use an egress proxy |\n| **Over-broad scopes** | A token with `files:*` or `admin:*` granted up front | Minimal initial scopes and progressive elevation via `WWW-Authenticate` scope challenges; no wildcard scopes |\n| **Local server compromise** | A one-click local server runs a malicious startup command | Show the exact command, require consent, sandbox, prefer stdio or restrict HTTP access |\n\nRemote MCP authorization is built on OAuth 2.1. Also remember that tool descriptions and annotations from a server you do not trust are themselves **untrusted input** (tool poisoning).\n\n## Gap 3: secrets in the wrong place\n\n- API keys hard-coded in `.mcp.json` or prompts end up in git and in logs. Claude Code's `.mcp.json` supports `${VAR}` and `${VAR:-default}` expansion so the file can be committed without secrets.\n- Secrets placed in the prompt are visible to the model and can be echoed back or exfiltrated through injection. Keep credentials in the tool layer, never in context.\n\n## Gap 4: injection crossing a trust boundary\n\nPrompt injection is an authorization problem in disguise: text from an email, web page or file tries to make the agent do something the *user* never asked for. Anthropic's guardrail guidance: deliver untrusted content only inside `tool_result` blocks and label its source, state in the system prompt that tool, document and search content is untrusted data that must never override instructions, JSON-encode untrusted strings, never put your own instructions inside a tool result, apply least privilege and sandboxing, and optionally screen tool output with a small classifier before Claude acts on it. Human approval for high-impact actions is a sound additional control (general practice). The structural defence is that an injected instruction cannot succeed if the agent lacks the capability or the user lacks the permission.\n\n## Worked example: review checklist\n\nA legal-research assistant connects to a document-management system through a remote MCP server. Review notes:\n\n1. The MCP server forwards the user's corporate SSO token straight to the DMS. **Gap: token passthrough.** The server should obtain its own token for the DMS, audience-bound to it.\n2. The DMS integration uses one service account with access to every matter. **Gap: superuser agent.** Use the requesting lawyer's delegated identity so ethical walls between matters still apply.\n3. The client requested every scope the server advertised. **Gap: scope inflation.** Start with read-only scopes and elevate only when a write is attempted.\n4. The streamable HTTP endpoint trusts `Mcp-Session-Id` as proof of identity. **Gap: session used as authentication.** Verify the bearer token on every request.\n5. The DMS API key is in `.mcp.json` in the repo. **Gap: committed secret.** Move it to an environment variable or secret store and reference it with `${DMS_KEY}`.\n\n## How to reason about a stem\n\nTrace the request from the human to the data and ask at each arrow: *Whose identity is this? Who checked it? Was the token issued for this hop? Could injected text reach a tool that can act?* The right answer closes the gap at the layer that owns the data or the token, not at the prompt.\n",
+      "keyTakeaways": [
+        "Authentication answers who is calling; authorization answers what they may do. Check both at every hop: user, app, model, tool/MCP server, downstream API.",
+        "Agents should act with the end user's delegated permissions, enforced by the data owner, not with a shared superuser account filtered by the prompt.",
+        "MCP spec: token passthrough is forbidden; validate that tokens were issued for your server (audience).",
+        "Sessions are not authentication; verify every request and bind session IDs to the user.",
+        "Confused-deputy defence for MCP proxies: per-client consent, exact redirect_uri matching, secure state.",
+        "Keep secrets out of prompts and committed config; use ${VAR} expansion and secret stores."
+      ],
+      "examTips": [
+        "If an option enforces access control in the system prompt ('only show the user their own records'), it is almost always a distractor; enforcement belongs in code or at the data source.",
+        "Look for the hop where identity is lost (a shared service account) or reused wrongly (a token forwarded to a service it wasn't issued for).",
+        "For injection scenarios, prefer answers that limit what a successful injection could do (least privilege, approval gates) over answers that only try to detect it.",
+        "Know the MCP attack names (token passthrough, confused deputy, session hijacking, SSRF, scope minimization) and match each to its mitigation."
+      ],
+      "commonTraps": [
+        "'Forward the user's existing access token to the downstream API for simplicity': this is token passthrough, explicitly forbidden by the MCP spec.",
+        "'The session ID proves who the client is': sessions must not be used for authentication.",
+        "'Request all scopes up front to avoid repeated consent prompts': scope inflation widens the blast radius.",
+        "'Tell Claude not to reveal other users' data': prompt guidance is not authorization.",
+        "'Treat tool annotations like readOnlyHint as a security guarantee': annotations from untrusted servers are untrusted."
+      ],
+      "resources": [
+        {
+          "title": "MCP Security Best Practices (specification)",
+          "url": "https://modelcontextprotocol.io/specification/2025-11-25/basic/security_best_practices",
+          "type": "docs"
+        },
+        {
+          "title": "MCP Authorization (specification)",
+          "url": "https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization",
+          "type": "docs"
+        },
+        {
+          "title": "Connect Claude Code to tools via MCP",
+          "url": "https://code.claude.com/docs/en/mcp",
+          "type": "docs"
+        },
+        {
+          "title": "Mitigate jailbreaks and prompt injections",
+          "url": "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/mitigate-jailbreaks",
+          "type": "docs"
+        }
+      ]
+    },
+    {
+      "id": "p-accuracy-latency",
+      "title": "Accuracy vs latency: justifying configuration",
+      "estMinutes": 12,
+      "level": "core",
+      "taskStatementIds": [
+        "3.3"
+      ],
+      "eli5": "A restaurant can make a dish slowly with care or quickly with shortcuts. The smart move is to first make it taste right, then find ways to serve it faster without changing the recipe: prep ingredients ahead (caching), bring the starter while the main cooks (streaming), and send simple orders to the fast cook (smaller model).",
+      "visualId": "batch-vs-realtime",
+      "body": "## The rule Anthropic gives first\n\nAnthropic's latency guidance is explicit about the order: **get quality right first, then optimise latency.** A fast wrong answer is not a success. On the exam, an option that buys speed by quietly sacrificing a requirement (dropping context, picking a model that can't do the task) is usually the trap.\n\nTwo latency numbers matter and they are different:\n\n- **Time to first token (TTFT):** how long before anything appears. Dominates *perceived* speed in chat UIs.\n- **Total latency:** how long until the full response is done. Dominates pipelines where a downstream step waits for the whole output.\n\n## The levers and what each really trades\n\n| Lever | Effect on latency | Effect on accuracy / cost | Use when |\n|---|---|---|---|\n| **Smaller model** (e.g. Haiku 4.5) | Faster | May lose quality on complex reasoning; cheaper | Classification, routing, screening, high volume, after evals show it is good enough |\n| **Lower `effort` (adaptive thinking, `output_config.effort`) or a smaller thinking budget** | Faster, fewer output tokens | Less deliberation on hard problems | Simple tasks; keep higher effort for hard reasoning |\n| **Streaming** | Cuts *perceived* latency (TTFT); total time unchanged | No quality effect | Any interactive UI |\n| **Prompt caching** | Cuts processing time for a repeated prefix; cache reads are billed at a fraction of base input price (0.1x on most models, lower still on the newest) | No quality effect | Large static system prompts, documents or tool definitions reused across requests |\n| **Shorter output** | Faster (output tokens dominate generation time) | Risk of omitting needed detail | Ask for sentence or paragraph limits; word counts are weak because the model counts tokens |\n| **`max_tokens` cap** | Hard stop | Blunt: truncates mid-thought | Safety net only |\n| **Parallel tool calls / parallel subagents** | Less wall-clock time | More tokens overall | Independent lookups |\n| **Fast mode** (`speed: \"fast\"`, research preview, supported Opus models only) | Up to 2.5x more output tokens per second at premium pricing; speeds up generation, not time to first token | Same model, same quality | Long outputs on latency-critical paths that can pay more; not available in Batch; switching speeds breaks the prompt cache |\n| **Message Batches API** | Asynchronous: most batches finish within an hour, but results are only guaranteed within 24 hours | 50% cheaper, same quality | Overnight, bulk, evals, backfills; never a user-facing or blocking path |\n| **Smaller retrieval context** | Fewer input tokens | Risk of missing the relevant chunk | After measuring recall |\n\n## Patterns that let you have both\n\n- **Cascade / routing:** a fast, cheap model handles the easy majority; hard or low-confidence cases go to a stronger model. This keeps median latency low while protecting accuracy on the tail. (Anthropic's \"routing\" workflow pattern.)\n- **Mixed fleet:** a stronger model orchestrates and smaller models do the high-volume subtasks.\n- **Move work off the hot path:** pre-compute summaries, embeddings or classifications in batch so the interactive request only does the last step.\n- **Stable prefix + caching:** static instructions and documents first, the changing user message last, with caching enabled. This improves both TTFT and cost without discarding context.\n\n## Justifying a configuration\n\nThe Professional exam rewards decisions you can **defend with measurements**, tied to a requirement:\n\n1. State the requirement in numbers: \"p95 TTFT under 1.5 s in the chat UI; accuracy at least 92% on our eval set\".\n2. Measure the baseline on a representative eval set (quality, TTFT, total latency, cost per request).\n3. Change **one lever at a time** and re-measure. Keep a lever only if quality stays above the bar.\n4. Record the decision: \"We moved intent classification to Haiku 4.5 (accuracy 96% vs 97% on Opus, p95 latency down 60%); kept answer drafting on the larger model because accuracy dropped 9 points with the smaller one.\"\n\n## Worked example\n\nAn insurance claims chatbot is too slow: users wait about 9 seconds before seeing anything. The system prompt plus policy manual is 12k tokens and identical on every request; answers average 600 tokens; the current model is the largest available; there is a quality bar from compliance.\n\n- **Turn on streaming:** fixes perceived latency immediately, no quality risk.\n- **Reorder for caching:** static policy first, user message last, cache breakpoint after the policy. Cuts TTFT and cost on every repeated request.\n- **Trim verbosity:** ask for \"at most 4 short paragraphs\" instead of letting answers sprawl.\n- **Evaluate a smaller model for the simple intents** (address changes, status checks) via a router; keep complex coverage questions on the larger model.\n- **Do not** truncate the policy manual to save tokens (loses required context), and **do not** push it to Batch (users are waiting).\n",
+      "keyTakeaways": [
+        "Get accuracy right first, then optimise latency, and change one lever at a time against an eval set.",
+        "Distinguish time to first token (perceived speed, fixed by streaming) from total latency (fixed by shorter output, smaller model, less thinking).",
+        "Prompt caching with a stable prefix improves both latency and cost without losing context.",
+        "Batch is 50% cheaper but asynchronous (up to 24 hours): never for interactive or blocking paths.",
+        "Routing or cascading to a smaller model for easy cases keeps median latency low while protecting accuracy on hard cases.",
+        "Justify every configuration choice with measured numbers tied to a stated requirement or SLA."
+      ],
+      "examTips": [
+        "If the complaint is 'users stare at a blank screen', streaming is usually the first, risk-free fix.",
+        "If the stem mentions a large, identical prefix on every call, look for 'static content first + prompt caching'.",
+        "Eliminate options that hit latency targets by violating another stated requirement (truncating required context, 'smallest model regardless of task fit').",
+        "When a stem gives a latency SLA for a user-facing path, Batch is wrong no matter how attractive the 50% discount looks."
+      ],
+      "commonTraps": [
+        "'Streaming makes the model generate faster': it only improves perceived latency (TTFT); total generation time is the same.",
+        "'Use a word limit to shorten answers': word counts are unreliable; sentence or paragraph limits work better.",
+        "'Set a low max_tokens to make responses faster': truncates answers mid-thought.",
+        "'Switch everything to the smallest model': ignores task fit and the accuracy bar.",
+        "'Use the Batch API to reduce latency': Batch reduces cost and increases latency."
+      ],
+      "resources": [
+        {
+          "title": "Reducing latency (Claude docs)",
+          "url": "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-latency",
+          "type": "docs"
+        },
+        {
+          "title": "Prompt caching",
+          "url": "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
+          "type": "docs"
+        },
+        {
+          "title": "Message Batches API",
+          "url": "https://platform.claude.com/docs/en/build-with-claude/batch-processing",
+          "type": "docs"
+        },
+        {
+          "title": "Thinking and the effort parameter",
+          "url": "https://platform.claude.com/docs/en/build-with-claude/effort",
+          "type": "docs"
+        },
+        {
+          "title": "Building effective agents",
+          "url": "https://www.anthropic.com/engineering/building-effective-agents",
+          "type": "blog"
+        }
+      ]
+    },
+    {
+      "id": "p-observability",
+      "title": "Observability and monitoring at scale",
+      "estMinutes": 13,
+      "level": "core",
+      "taskStatementIds": [
+        "3.4"
+      ],
+      "eli5": "A normal app is like a vending machine: same button, same snack, so you only watch whether it's switched on. An AI agent is more like a new employee making choices all day. To know if it's doing well you need a diary of every decision it made and why, not just a light that says 'on'.",
+      "visualId": "eval-loop",
+      "body": "## Why LLM systems are harder to observe\n\nClassic monitoring (uptime, error rate, CPU) is necessary but nowhere near sufficient for Claude-based systems:\n\n- **Success can look like failure and vice versa.** A request returns HTTP 200 with a fluent, confident, wrong answer. Status codes don't see quality.\n- **Non-determinism.** The same input can take different paths, especially in agents that choose their own tool calls.\n- **Long, branching traces.** One user request can fan out into dozens of model calls and tool calls across subagents. Without a shared trace ID, you can't reconstruct what happened.\n- **Silent degradation.** A failed MCP server doesn't throw in the Agent SDK; the agent may quietly fall back to weaker built-in tools. A stale index produces wrong-but-plausible answers.\n- **Cost is a reliability signal.** A runaway loop shows up first as token spend.\n- **Privacy constraints.** You want prompts and outputs for debugging, but they may contain personal data.\n\n## Three layers of monitoring\n\n| Layer | What to capture | Why |\n|---|---|---|\n| **Operational** | Latency (TTFT and total), HTTP status by code, retries, rate-limit headers, `request-id` | Availability and capacity |\n| **Behavioural / trace** | Every model call and tool call with inputs, outputs, `stop_reason`, chosen tool, subagent, timing, linked by a trace ID | Debugging agent decisions; finding loops and wrong tool choices |\n| **Quality and cost** | Sampled outputs scored by automated graders, LLM-judge or humans; user feedback; tokens and spend per feature/tenant | Detecting drift and regressions that return 200 |\n\n## Signals specific to the Claude API\n\n- **Usage fields** on each response: `input_tokens`, `output_tokens`, `cache_creation_input_tokens`, `cache_read_input_tokens`. A falling cache-read ratio after a deploy usually means someone changed the prefix (a timestamp in the system prompt, reordered tools).\n- **`stop_reason` distribution:** a spike in `max_tokens` means truncated answers; a rise in `refusal` or `pause_turn` deserves a look; an agent that never reaches `end_turn` is looping.\n- **Error classes:** **429** is *your* rate limit (honour `retry-after`); **529** `overloaded_error` is platform-wide load. Track them separately. A spend-cap 429 has **no** `retry-after` and will not clear by retrying.\n- **Streaming errors:** an `error` event can arrive mid-stream *after* an HTTP 200, so status-code-only monitoring misses it.\n- **`request-id`** header: log it so you can correlate with Anthropic support.\n\n## Signals for agents and Claude Code\n\n- **Hooks as an audit trail:** `PreToolUse` / `PostToolUse` hooks can log every tool call (and block disallowed ones) deterministically, independent of what the model decides.\n- **MCP server status:** in the SDK's init message, watch for `failed` or `needs-auth` (`pending` alone is not a failure).\n- **Claude Code fleet telemetry:** set `CLAUDE_CODE_ENABLE_TELEMETRY=1` and configure OpenTelemetry exporters (`OTEL_METRICS_EXPORTER`, `OTEL_LOGS_EXPORTER`, `OTEL_EXPORTER_OTLP_ENDPOINT`). Metrics include `claude_code.token.usage` and `claude_code.cost.usage`; events include `claude_code.tool_result` and `claude_code.api_error`. User prompt content is **not** logged unless you opt in with `OTEL_LOG_USER_PROMPTS=1`, which is the privacy-safe default.\n\n## Monitoring strategies at scale\n\n1. **Trace everything, sample the content.** Keep metadata for 100% of requests; store full prompts/outputs for a sample, with redaction for PII. Raise the sample rate for new releases or flagged tenants.\n2. **Online evaluation.** Run automated graders on a sample of production traffic (format validity, groundedness against retrieved sources, policy checks). Feed failures back into the offline eval set. This closes the feedback loop.\n3. **Alert on behaviour, not just errors:** tokens per task, tool-calls per task, loop depth, cache hit ratio, fallback-to-human rate, retrieval hit rate.\n4. **Segment:** by feature, model version, prompt version and tenant, so a regression in one slice isn't averaged away.\n5. **Version everything** (prompt, model ID, tool set, index build) and attach versions to each trace, so you can answer \"what changed?\"\n\n## Worked example\n\nAfter a release, a support agent's cost per conversation doubles but error rates are flat. Traces show `tool_calls_per_task` rising from 4 to 11 and most extra calls hitting `search_kb`. The `search_kb` MCP server shows `needs-auth` since a credential rotation; the agent fell back to a generic web search tool and kept retrying. Root cause found via trace and server-status monitoring, not via HTTP error rates, which never moved.\n",
+      "keyTakeaways": [
+        "HTTP 200 does not mean success for LLM systems; monitor quality, behaviour and cost as well as availability.",
+        "Use trace IDs to link every model call, tool call and subagent step for one user request.",
+        "Log usage fields (including cache read/creation tokens), stop_reason distributions and request-id.",
+        "Track 429 (your limits) separately from 529 (platform overloaded); a spend-cap 429 has no retry-after.",
+        "Streaming errors can arrive after a 200, and failed MCP servers can fail silently; monitor for both.",
+        "Trace 100% of metadata, sample and redact content, run online evals and feed failures back into offline eval sets."
+      ],
+      "examTips": [
+        "If the symptom is 'wrong answers but no errors', the answer involves quality monitoring or tracing, not more uptime checks.",
+        "If cost or latency spikes without errors, look for loops, falling cache hit rate, or fallback behaviour in traces.",
+        "Prefer answers that make monitoring deterministic (hooks, structured trace logging) over asking the model to report on itself.",
+        "Privacy-sensitive stems: the right answer captures metadata broadly and content selectively with redaction, not 'log every prompt in full'."
+      ],
+      "commonTraps": [
+        "'Alert on HTTP 5xx rate only': misses confident wrong answers, silent MCP failures and mid-stream errors.",
+        "'Retry all 429s with backoff': a spend-cap 429 has no retry-after and will not recover until the cap resets.",
+        "'Treat 429 and 529 as the same alert': one is your quota, the other is platform load; different responses.",
+        "'Have the agent summarise what it did at the end as the audit log': self-reports are not a trustworthy audit trail.",
+        "'Log full prompts for every request by default': privacy and cost problems; Claude Code telemetry does not log prompts unless opted in."
+      ],
+      "resources": [
+        {
+          "title": "Claude Code monitoring (OpenTelemetry)",
+          "url": "https://code.claude.com/docs/en/monitoring-usage",
+          "type": "docs"
+        },
+        {
+          "title": "API errors",
+          "url": "https://platform.claude.com/docs/en/api/errors",
+          "type": "docs"
+        },
+        {
+          "title": "Rate limits",
+          "url": "https://platform.claude.com/docs/en/api/rate-limits",
+          "type": "docs"
+        },
+        {
+          "title": "Streaming messages",
+          "url": "https://platform.claude.com/docs/en/build-with-claude/streaming",
+          "type": "docs"
+        },
+        {
+          "title": "Claude Code hooks reference",
+          "url": "https://code.claude.com/docs/en/hooks",
+          "type": "docs"
+        },
+        {
+          "title": "How we built our multi-agent research system",
+          "url": "https://www.anthropic.com/engineering/multi-agent-research-system",
+          "type": "blog"
+        }
+      ]
+    },
+    {
+      "id": "p-rag-pipeline",
+      "title": "Designing a RAG pipeline: chunking and indexing",
+      "estMinutes": 15,
+      "level": "core",
+      "taskStatementIds": [
+        "3.5"
+      ],
+      "eli5": "RAG is an open-book exam for Claude: before answering, it looks things up in your library. Chunking is how you cut the books into index cards; indexing is how you file the cards so the right ones can be found fast. Cut the cards badly or file them wrong, and Claude reads the wrong page and answers confidently anyway.",
+      "visualId": "rag-pipeline",
+      "body": "## First question: do you need RAG at all?\n\nAnthropic's contextual retrieval write-up gives a useful threshold: if the knowledge base is **under about 200,000 tokens** (roughly 500 pages), you can often skip retrieval and **put the whole thing in the prompt**, using prompt caching to keep it fast and cheap. RAG earns its complexity when the corpus is large, changes frequently, or needs per-user filtering.\n\n## The pipeline\n\n```\ningest -> clean/parse -> chunk -> (contextualise) -> embed + index -> retrieve -> rerank -> ground in prompt -> answer with citations\n```\n\nEach stage is a place where quality can be lost silently. A RAG system that gives \"confident but wrong\" answers after a document refresh, with model and latency unchanged, should be debugged at **ingestion and retrieval first**, not the model.\n\n## Chunking: the core trade-off\n\nThere are no official Anthropic chunk-size numbers; the guidance below is general industry practice, and Anthropic's own advice is to experiment with chunk size, boundaries and overlap for your domain.\n\n| Choice | Too small | Too large |\n|---|---|---|\n| Chunk size | Loses surrounding context (\"the company's revenue grew 3%\"... which company? which quarter?) | Dilutes relevance; embeddings average many topics; wastes context tokens |\n| Overlap | None: facts split across boundaries get lost | Heavy: duplicate content and index bloat |\n\n**Strategies, from simplest to richest:**\n\n| Strategy | How | Good for |\n|---|---|---|\n| Fixed-size with overlap | Every N tokens, small overlap | Uniform prose; quick baseline |\n| Structure-aware | Split on headings, sections, paragraphs, list items, table rows | Manuals, policies, wikis, contracts |\n| Semantic / content-type specific | Functions or classes for code; Q&A pairs for FAQs; one row or record per chunk for tables | Mixed corpora |\n| Hierarchical (parent-child) | Retrieve small chunks for precision, then pass the larger parent section for context | Long technical documents |\n| **Contextual chunks** | Prepend a short, LLM-generated description situating each chunk in its document before embedding and indexing | Any corpus where chunks lose meaning out of context |\n\n**Contextual Retrieval (Anthropic):** using Claude to prepend chunk-specific context before embedding cut retrieval failures by 35%; adding contextual BM25 (lexical) search made it 49%; adding a reranking step made it 67%. Prompt caching makes generating those per-chunk contexts affordable because the full document is cached while each chunk is processed.\n\n## Indexing: more than vectors\n\n- **Metadata on every chunk:** source ID, title, section path, version, effective date, access-control labels, language. Metadata enables filtering (\"only the 2026 policy\", \"only documents this user may see\") and gives you provenance for citations.\n- **Hybrid index:** a vector index for semantic similarity **plus** a lexical index (BM25) for exact terms such as error codes, SKUs and names. Anthropic's example: a query for an error code like \"TS-999\" is better served by BM25 than by embeddings.\n- **Embedding consistency:** queries and documents must use the same embedding model and preprocessing. Changing the model means **re-embedding the whole corpus**.\n- **Freshness:** a refresh pipeline that adds new versions, **removes or supersedes stale ones**, and re-indexes atomically. Stale duplicates are a classic cause of contradictory answers.\n- **Permissions at index time:** store ACLs with chunks and filter at query time, so retrieval never surfaces documents the user can't access.\n\n## Grounding and citing\n\n- Put retrieved documents **before** the question, wrapped in tags with their metadata (Anthropic's long-context advice: documents first, query last).\n- Allow \"I don't know\" when retrieved context doesn't contain the answer.\n- The **Citations** feature (`citations: {\"enabled\": true}` on document blocks) returns guaranteed-valid pointers into the provided documents (character ranges for text, page numbers for PDFs, block indices for custom content). It cannot be combined with structured outputs in the same request.\n- For very long sources, extract relevant quotes first, then answer from the quotes.\n\n## Worked example\n\nA pharma company's medical-information assistant answers clinicians from 40,000 product documents (labels, studies, FAQs), updated weekly.\n\n1. **Parse** PDFs keeping headings and tables; tables become one row per chunk with column headers repeated.\n2. **Chunk** by section, keeping each chunk within a size range tuned on an eval set; add a contextual prefix (\"From the 2026 EU label for Product X, section 4.2 Dosage...\").\n3. **Index** in both a vector store and BM25; metadata includes product, region, document type, version and effective date.\n4. **Refresh** weekly: new label versions supersede old ones; old chunks are tombstoned so they never surface.\n5. **Retrieve** with region and product filters, take a generous candidate set, **rerank**, and pass the top results to Claude with Citations enabled.\n6. **Evaluate** retrieval separately from generation (did the right chunk appear in the top results?), so you know which half broke.\n",
+      "keyTakeaways": [
+        "For knowledge bases under about 200k tokens, consider skipping RAG and placing everything in a cached prompt.",
+        "Chunk size is a trade-off: too small loses context, too large dilutes relevance; respect document structure and tune on evals.",
+        "Contextual Retrieval (contextual embeddings + BM25 + reranking) cut retrieval failures by 67% in Anthropic's tests.",
+        "Store metadata (source, version, date, ACL) with every chunk for filtering, freshness and citations.",
+        "Re-indexing and stale versions are a top failure point: confident wrong answers after a refresh point to retrieval first.",
+        "Evaluate retrieval separately from generation so you know which stage failed."
+      ],
+      "examTips": [
+        "Confident-but-wrong answers with model and latency unchanged: investigate indexing/retrieval first, not the model or temperature.",
+        "Exact identifiers (codes, part numbers, names) missed by vector search point to adding lexical/BM25 or hybrid search.",
+        "If the stem says the corpus is small and static, an answer that puts it all in a cached prompt may beat building a RAG pipeline.",
+        "Prefer answers that fix chunking or metadata at ingestion over answers that add more prompt instructions at generation time."
+      ],
+      "commonTraps": [
+        "'Use a bigger model to fix wrong answers from RAG': if the wrong chunks are retrieved, a bigger model just summarises the wrong context more fluently.",
+        "'Swap the embedding model for queries only': query and document embeddings must come from the same model; switching requires re-embedding the corpus.",
+        "'Smaller chunks are always more precise': they lose surrounding context and can make retrieval worse.",
+        "'Enable Citations and structured outputs together': they are incompatible in one request.",
+        "Quoting precise 'Anthropic-recommended chunk sizes': there are none; experiment and evaluate."
+      ],
+      "resources": [
+        {
+          "title": "Introducing Contextual Retrieval (Anthropic)",
+          "url": "https://www.anthropic.com/news/contextual-retrieval",
+          "type": "blog"
+        },
+        {
+          "title": "Citations",
+          "url": "https://platform.claude.com/docs/en/build-with-claude/citations",
+          "type": "docs"
+        },
+        {
+          "title": "Prompt caching",
+          "url": "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
+          "type": "docs"
+        },
+        {
+          "title": "Effective context engineering for AI agents",
+          "url": "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents",
+          "type": "blog"
+        }
+      ]
+    },
+    {
+      "id": "p-retrieval-strategy",
+      "title": "Matching retrieval to data shape and query pattern",
+      "estMinutes": 13,
+      "level": "core",
+      "taskStatementIds": [
+        "3.6"
+      ],
+      "eli5": "You don't look up a phone number by reading the whole phone book for 'vibes', and you don't find 'a cosy book about grief' by searching for an exact title. Different questions need different ways of searching: exact lookup, keyword search, meaning-based search, or just asking the database.",
+      "visualId": "rag-pipeline",
+      "body": "## The principle\n\nThere is no single \"best\" retrieval method. The right choice depends on two things:\n\n1. **Data shape:** structured tables and records, semi-structured documents, unstructured prose, code, or a catalogue of resources.\n2. **Query pattern:** exact lookups, aggregations, keyword/identifier searches, fuzzy \"what does it mean\" questions, or multi-step exploration.\n\nEmbedding everything into a vector store is a common anti-pattern. Vectors are excellent for meaning, poor for exactness and useless for arithmetic.\n\n## Decision table\n\n| Data shape | Query pattern | Strategy | Why |\n|---|---|---|---|\n| Relational / tabular (orders, inventory, finance) | Filters, joins, counts, sums (\"total refunds in Q2 by region\") | **Tool call to the system of record**: SQL or an API via a purpose-built tool | Exact, current, permission-aware; embeddings can't add numbers |\n| Records with IDs | \"Status of order 88-1043\" | **Direct key lookup** tool | Deterministic, cheapest |\n| Docs full of codes, part numbers, names, legal citations | Exact-term matching | **Lexical / BM25** (often within hybrid) | Embeddings blur near-identical identifiers |\n| Prose knowledge base | Paraphrased, conceptual questions (\"can I bring my dog on board?\") | **Vector / semantic search** | Matches meaning, not wording |\n| Mixed corpus, mixed queries | Both | **Hybrid** (vector + BM25) then **rerank** | Covers both failure modes; reranking fixes ordering |\n| Codebase | \"Where is the retry logic?\" | **Agentic search**: Grep, Glob, Read, iteratively | Code changes constantly; navigating like a developer stays fresh; Claude Code works this way |\n| Catalogue of items (doc trees, schemas, issue lists) | \"What's available?\" then drill in | **MCP resources** as a catalogue, then tools to fetch details | Cuts exploratory tool calls |\n| Small, static, high-traffic reference text | Every request needs it | **Put it in the cached prompt prefix** instead of retrieving | No retrieval miss possible; caching makes it cheap |\n| Fast-changing data (prices, stock, tickets) | \"Right now\" questions | **Live tool call at query time**, not a periodically built index | An index is stale by design |\n\nLexical vs semantic vs hybrid is general retrieval practice; Anthropic's Contextual Retrieval work shows the hybrid-plus-rerank combination performing best on their benchmarks, and gives the example of an error-code query that BM25 handles better than embeddings.\n\n## Query-side techniques\n\n- **Query rewriting / decomposition:** have Claude turn a vague or multi-part question into one or more targeted searches.\n- **Metadata filters first:** narrow by tenant, product, date or permission before similarity ranking.\n- **Retrieve wide, then rerank narrow:** Anthropic's experiments found passing 20 chunks beat 5 or 10 in their setup; treat that as a starting point to test, not a rule.\n- **Agentic (iterative) retrieval:** for exploratory research, let the agent search broadly, read, then refine, rather than a single top-k shot. Anthropic's multi-agent research system starts with broad queries then narrows.\n- **Just-in-time retrieval:** keep lightweight references (file paths, IDs, URLs) in context and load the content only when needed (from Anthropic's context-engineering guidance).\n\n## Worked example: one assistant, four strategies\n\nA retail operations assistant must answer:\n\n1. \"How many units of SKU 4471-B are in the Leeds warehouse?\" → **tool call** to the inventory API (live, exact).\n2. \"What's our policy if a courier loses a parcel?\" → **hybrid search** over policy docs, then rerank.\n3. \"Find the incident report mentioning error E-2207.\" → **lexical** match on the identifier.\n4. \"Summarise complaints trends this month\" → **SQL tool** for counts by category, then semantic search over a sample of complaint texts for themes.\n\nA single vector store for all four would miss the exact numbers in (1), blur E-2207 with E-2201 in (3), and be unable to count in (4).\n\n## Diagnosing a retrieval mismatch\n\n| Symptom | Likely mismatch | Fix |\n|---|---|---|\n| Wrong numbers or totals | Using embeddings for structured data | Query the database through a tool |\n| Misses exact codes or names | Pure vector search | Add BM25 / hybrid |\n| Misses paraphrased questions | Pure keyword search | Add vector search |\n| Right document, wrong passage near the top | No reranking | Add a reranker |\n| Answers out of date | Indexed snapshot of live data | Live tool call or faster refresh |\n| Agent makes many exploratory calls | No catalogue | Expose an MCP resource catalogue or index file |\n",
+      "keyTakeaways": [
+        "Choose retrieval by data shape and query pattern; one vector store for everything is an anti-pattern.",
+        "Structured data and aggregations: query the system of record through tools, not embeddings.",
+        "Exact identifiers favour lexical/BM25; paraphrased conceptual questions favour vector search; mixed workloads favour hybrid plus reranking.",
+        "Codebases are best searched agentically (Grep, Glob, Read) and just in time.",
+        "Fast-changing data needs a live tool call; small static high-use text belongs in a cached prompt.",
+        "MCP resources can expose catalogues so agents don't burn calls exploring."
+      ],
+      "examTips": [
+        "Look for the data-shape clue in the stem (table, IDs, prose, code, live prices) and match the strategy to it.",
+        "When an option says 'embed the database tables', eliminate it if the questions involve counts, sums or exact filters.",
+        "If answers miss exact product codes, the answer is lexical/hybrid search, not a bigger embedding model.",
+        "If a stem's data changes by the minute, eliminate answers that rely on a nightly index."
+      ],
+      "commonTraps": [
+        "'Put everything in one vector database for simplicity': fails on exact matches and aggregations.",
+        "'Increase top-k to fix wrong answers': more noise without reranking; may not fix a shape mismatch.",
+        "'Use semantic search for SKU lookups': identifiers that differ by one character embed almost identically.",
+        "'Index the live inventory nightly': stale for real-time questions.",
+        "'Retrieval is always better than putting content in the prompt': small, static, frequently used content is better cached in the prefix."
+      ],
+      "resources": [
+        {
+          "title": "Introducing Contextual Retrieval (Anthropic)",
+          "url": "https://www.anthropic.com/news/contextual-retrieval",
+          "type": "blog"
+        },
+        {
+          "title": "Effective context engineering for AI agents",
+          "url": "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents",
+          "type": "blog"
+        },
+        {
+          "title": "How we built our multi-agent research system",
+          "url": "https://www.anthropic.com/engineering/multi-agent-research-system",
+          "type": "blog"
+        },
+        {
+          "title": "Model Context Protocol: Introduction",
+          "url": "https://modelcontextprotocol.io/docs/getting-started/intro",
+          "type": "docs"
+        }
+      ]
+    },
+    {
+      "id": "p-integration-protocols",
+      "title": "Choosing MCP, API/CLI or agent-to-agent",
+      "estMinutes": 14,
+      "level": "core",
+      "taskStatementIds": [
+        "3.7"
+      ],
+      "eli5": "MCP is like a universal plug socket: build the plug once and any compatible appliance can use it. A direct API or CLI call is like hard-wiring one lamp into the wall: quick and simple when only one thing needs power. Agent-to-agent is like one manager handing a whole job to another team, rather than borrowing a single tool.",
+      "visualId": "mcp-architecture",
+      "body": "## Three ways to connect\n\n| Mechanism | What it is | Best when |\n|---|---|---|\n| **MCP (Model Context Protocol)** | An open standard: a **host** (Claude Code, Claude Desktop, your app) runs **clients**, each holding a 1:1 session with a **server** that exposes tools, resources and prompts | The same capability must be reused by **many hosts or agents**; you want a standard contract; the tool is owned by a different team or vendor |\n| **Direct API / function tools / CLI** | Your code defines tools in the Messages API, calls Claude via the SDK, or runs Claude Code headless with `claude -p` | **One application** owns the integration; tight control over latency, schemas and error handling; scripting and CI |\n| **Agent-to-agent (delegation)** | One agent hands a whole sub-task (goal, context, constraints) to another agent, which uses its own tools and returns a result | The sub-task needs its own reasoning loop, context isolation, or a different security boundary, model or owner |\n\nThe question is never \"which is modern?\" It is: **how many consumers, who owns the capability, where is the security boundary, and what latency can we afford?**\n\n## MCP essentials you need to know\n\n- **Primitives:** **tools** (model-controlled actions), **resources** (application-driven context such as files, schemas, catalogues), **prompts** (user-controlled templates). Client features include sampling (the server asks the *client's* model to generate) and elicitation (the server asks the user for input).\n- **Transports:** **stdio** for local servers run as a subprocess (logs must go to stderr; stdout is protocol only), and **Streamable HTTP** for remote servers. The older HTTP+SSE transport is **deprecated**.\n- **Reuse first:** prefer an existing, maintained community or vendor server (Jira, GitHub, Slack) over building your own; build custom servers for team-specific systems.\n- **In Claude Code:** team-shared servers go in project-scoped `.mcp.json` (committed, with `${VAR}` for secrets); personal ones in user scope.\n- **In the API:** the **MCP connector** lets the Messages API connect to remote MCP servers directly, without you writing an MCP client.\n\n## Direct API / CLI essentials\n\n- **Function tools in the Messages API:** you define `name`, `description` and `input_schema`, execute the call in your code and return `tool_result`. Maximum control; no protocol layer.\n- **Agent SDK:** the Claude Code agent loop as a library (Python/TypeScript), with built-in tools, hooks, subagents and MCP support.\n- **Headless CLI:** `claude -p \"...\" --output-format json` lets any language, shell script or CI system call Claude Code non-interactively (add `--json-schema` for schema-conforming output). The docs recommend `--bare` for CI and scripts so the run skips the host machine's hooks, plugins, MCP servers and CLAUDE.md and behaves the same everywhere.\n- **Plain CLIs as tools:** for developer agents, letting Claude run well-known CLIs (`git`, `gh`) through Bash is often simpler than wrapping each in an MCP server.\n\n## Agent-to-agent essentials\n\n- In Claude's ecosystem this is usually **orchestrator–subagent delegation** (the Agent/Task tool in Claude Code, `agents` in the SDK). The subagent has an isolated context and its own tool list, and returns a condensed result.\n- Delegate with an explicit objective, output format, tool guidance and boundaries; the subagent does not see the parent's conversation.\n- Cost: multi-agent systems use many more tokens (Anthropic's research system used about 15x a chat interaction), so delegation must be justified by task value or by the need for isolation.\n- Open protocols for interoperating agents across vendors exist (for example A2A). On the exam, focus on the architectural reason to delegate rather than protocol trivia.\n\n## Code execution with MCP\n\nAnthropic's engineering post on code execution with MCP shows a hybrid: present MCP tools as code APIs on a filesystem; the agent writes code that calls them and filters results in the execution environment. In their example this cut usage **from 150,000 to 2,000 tokens (98.7%)**, because tool definitions load on demand and large intermediate results never pass through the model. It also keeps sensitive data out of the model's context.\n\n## Decision walk-through\n\n| Scenario | Choice | Reason |\n|---|---|---|\n| Internal ticketing system must be usable from Claude Code, Claude Desktop and two internal agents | **MCP server** (remote, Streamable HTTP, OAuth) | Many consumers, one contract |\n| A single backend service classifies 10k emails per hour into fixed categories | **Direct Messages API** call with a tool/schema | One consumer, latency- and cost-sensitive; MCP adds nothing |\n| Nightly CI job reviews pull requests | **`claude -p` with JSON output** | Scriptable, non-interactive |\n| A contract-review agent needs deep financial analysis that requires its own tools and a different data-access boundary | **Agent-to-agent delegation** to a finance subagent | Separate reasoning loop and security boundary |\n| An agent must move a 2 MB spreadsheet's rows into a CRM | **Code execution calling the tools**, not passing rows through context | Avoids huge intermediate results in context |\n\n## Security lens\n\nEach mechanism moves the trust boundary: an MCP server is a separate process or service that needs its own authN/authZ (see the authentication lesson); a direct tool runs with your app's credentials; a subagent should get only the tools its sub-task needs.\n",
+      "keyTakeaways": [
+        "Choose by number of consumers, ownership of the capability, security boundary and latency budget.",
+        "MCP standardises tools, resources and prompts for reuse across many hosts; prefer existing servers before building custom ones.",
+        "MCP transports: stdio for local, Streamable HTTP for remote; HTTP+SSE is deprecated.",
+        "Direct API tools, the Agent SDK and claude -p --output-format json suit single-owner integrations, scripts and CI.",
+        "Agent-to-agent delegation fits sub-tasks needing their own loop, context isolation or a different boundary, at a significant token cost.",
+        "Code execution with MCP cut one example from 150,000 to 2,000 tokens by loading tools on demand and keeping intermediate data out of context."
+      ],
+      "examTips": [
+        "'Many hosts or teams need the same capability' points to MCP; 'one service, tight latency' points to a direct API integration.",
+        "CI or scripting stems point to claude -p with structured output, not an interactive session or a new MCP server.",
+        "Don't pick a multi-agent design when a single agent with the right tools meets the requirement; delegation must earn its token cost.",
+        "If an option uses SSE as the 'current' remote MCP transport, it is outdated."
+      ],
+      "commonTraps": [
+        "'Wrap every internal function in its own MCP server': adds protocol overhead and attack surface when only one app consumes it.",
+        "'Build a custom MCP server for GitHub/Jira': usually a maintained server already exists.",
+        "'Use agent-to-agent delegation to call a single API': a tool call is simpler, cheaper and faster.",
+        "'Resources are actions the model invokes': resources are application-driven context; tools are model-invoked actions.",
+        "'stdio servers can print debug output to stdout': stdout carries protocol messages only; log to stderr."
+      ],
+      "resources": [
+        {
+          "title": "Model Context Protocol: Introduction",
+          "url": "https://modelcontextprotocol.io/docs/getting-started/intro",
+          "type": "docs"
+        },
+        {
+          "title": "MCP connector (Messages API)",
+          "url": "https://platform.claude.com/docs/en/agents-and-tools/mcp-connector",
+          "type": "docs"
+        },
+        {
+          "title": "Connect Claude Code to tools via MCP",
+          "url": "https://code.claude.com/docs/en/mcp",
+          "type": "docs"
+        },
+        {
+          "title": "Run Claude Code programmatically (headless)",
+          "url": "https://code.claude.com/docs/en/headless",
+          "type": "docs"
+        },
+        {
+          "title": "Code execution with MCP (Anthropic Engineering)",
+          "url": "https://www.anthropic.com/engineering/code-execution-with-mcp",
+          "type": "blog"
+        },
+        {
+          "title": "Claude Code subagents",
+          "url": "https://code.claude.com/docs/en/sub-agents",
+          "type": "docs"
+        },
+        {
+          "title": "Introduction to Model Context Protocol (Anthropic Academy)",
+          "url": "https://anthropic.skilljar.com/introduction-to-model-context-protocol",
+          "type": "course"
+        }
+      ]
+    },
+    {
+      "id": "p-progressive-discovery",
+      "title": "Progressive discovery vs loading everything up front",
+      "estMinutes": 13,
+      "level": "core",
+      "taskStatementIds": [
+        "3.8"
+      ],
+      "eli5": "Imagine packing for a trip. 'Monolithic' is stuffing your entire wardrobe into the suitcase just in case: everything is there, but it's heavy and you can't find anything. 'Progressive discovery' is packing a list of what's in your wardrobe at home and having someone send you an item when you actually need it.",
+      "visualId": "context-window",
+      "body": "## The two strategies\n\n**Monolithic context** loads everything the model might need into the prompt up front: all instructions, all reference documents, every tool definition.\n\n**Progressive discovery** (also called progressive disclosure or just-in-time context) loads only a lightweight **index** up front, such as names, descriptions, file paths or IDs, and lets the agent pull in full content when it decides it needs it.\n\nAnthropic's context-engineering guidance frames context as a finite resource with diminishing returns: as tokens grow, recall and accuracy degrade (**context rot**), so curation beats capacity. A 1M-token window is room, not a recommendation.\n\n## Comparing them\n\n| Factor | Monolithic | Progressive discovery |\n|---|---|---|\n| Simplicity | Simple; no discovery logic | More moving parts; relies on good descriptions |\n| Latency | One call; no discovery round trips | Extra steps to search and load |\n| Caching | Excellent if the content is static: one big cached prefix | Small stable prefix caches well; discovered content varies |\n| Token cost per request | High if much of the content is unused | Pay mostly for what is used |\n| Accuracy | Degrades as irrelevant content piles up (context rot, worse tool selection) | Focused context; but a miss happens if the agent fails to discover something |\n| Scales to | What fits comfortably and stays relevant | Hundreds or thousands of tools, skills or documents |\n| Freshness | Must rebuild the prompt when content changes | Fetches current content at use time |\n\n## Progressive discovery mechanisms in Claude's ecosystem\n\n- **Agent Skills:** three levels of loading. Name and description are always in context; the body of `SKILL.md` loads when the skill is invoked; supporting files and scripts load only if needed. Keep `SKILL.md` under about 500 lines and push detail into referenced files.\n- **Tool search tool (API):** mark tools `defer_loading: true`; Claude searches (regex or BM25 variants) and the API expands only matching tools (5 per search by default). Docs suggest it when you have 10 or more tools or more than 10k tokens of tool definitions, and to keep your 3–5 most-used tools non-deferred. Deferred tools are excluded from the cached prefix, so caching is preserved.\n- **Claude Code MCP tool search:** on by default, it defers a server's tool schemas until they are needed; set `alwaysLoad: true` on a server in `.mcp.json` to load it up front.\n- **Path-scoped rules:** `.claude/rules/` files with `paths` globs load only when Claude works on matching files, whereas root `CLAUDE.md` always loads.\n- **MCP resources** as catalogues, and **just-in-time retrieval** (keep file paths, IDs or URLs; read the content when needed), the way Claude Code explores a repo with Glob, Grep and Read.\n- **Subagents** keep exploratory reading out of the main context and return condensed results.\n- **Code execution with MCP:** tools exposed as files the agent browses on demand (150,000 to 2,000 tokens in Anthropic's example).\n\n## When monolithic is the right answer\n\nProgressive discovery is not automatically better. Choose monolithic when:\n\n- The content is **small** and **used on nearly every request** (a 6k-token policy every answer must follow).\n- It is **static**, so a cached prefix makes repeated use cheap and fast.\n- **Missing it would be a serious error** (mandatory compliance rules should not depend on the agent choosing to look them up).\n- Latency budgets can't absorb discovery round trips.\n\nAnthropic's contextual-retrieval post makes the same point for knowledge bases: under about 200k tokens, consider just including it with caching instead of building retrieval.\n\n## Decision rule\n\nAsk two questions: **how big** is the material relative to what a typical request uses, and **how volatile** is it?\n\n| | Small relative to use | Large relative to use |\n|---|---|---|\n| **Static** | Monolithic + prompt caching | Progressive discovery with a cached index (skills, tool search, rules) |\n| **Volatile** | Monolithic, rebuilt per version | Just-in-time retrieval or live tools |\n\nHybrid is common: an always-loaded core (identity, mandatory rules, top tools) plus discoverable everything else.\n\n## Worked example\n\nAn enterprise IT assistant has 340 MCP tools across eight servers, 60 internal runbooks (about 900k tokens total) and a 4k-token security policy.\n\n- Security policy: **always loaded**, in the cached system prompt. It must apply to every action.\n- Tools: **tool search** with `defer_loading: true`; keep `search_tickets`, `get_user` and `reset_password` (the three most-used) loaded.\n- Runbooks: packaged as **skills** so only their descriptions are in context; the full runbook loads when relevant.\n- Result: a small, stable, cacheable prefix; better tool selection; lower cost. The risk to monitor is discovery misses, measured with evals on \"did the agent find the right tool/runbook?\"\n",
+      "keyTakeaways": [
+        "Context is a finite resource; more tokens can lower accuracy (context rot), so curate rather than maximise.",
+        "Progressive discovery loads an index first and full content on demand: Skills, tool search, deferred MCP schemas, path-scoped rules, MCP resources, just-in-time retrieval.",
+        "Tool search: defer_loading: true, 5 results per search by default, keep 3-5 most-used tools non-deferred; suggested at 10+ tools or 10k+ tokens of definitions.",
+        "Monolithic plus caching wins for small, static, always-needed content, especially mandatory rules.",
+        "Decide by size relative to per-request use and by volatility; hybrids (always-loaded core + discoverable rest) are common.",
+        "The main risk of progressive discovery is a discovery miss; evaluate it explicitly."
+      ],
+      "examTips": [
+        "Large or growing catalogues (hundreds of tools, many runbooks) point to progressive discovery; a small, static policy used every time points to monolithic plus caching.",
+        "If the content is a hard requirement on every action, don't make loading it optional.",
+        "Watch for 'just use the 1M context window' answers; capacity is not curation.",
+        "Skills = progressive disclosure (description always, body on invoke, files on demand); project-root CLAUDE.md and @imports = loaded at launch (only subdirectory CLAUDE.md files and path-scoped rules load on demand)."
+      ],
+      "commonTraps": [
+        "'Put all 300 tool definitions in every request so Claude always has them': hurts selection accuracy and cost.",
+        "'A bigger context window solves it': context rot still degrades quality.",
+        "'Defer every tool, including the search tool': the API requires at least one non-deferred tool.",
+        "'Move mandatory compliance rules into an on-demand skill to save tokens': they might not be loaded when needed.",
+        "'@import in CLAUDE.md loads content on demand': imports load at launch; path-scoped rules and skills are the on-demand mechanisms."
+      ],
+      "resources": [
+        {
+          "title": "Effective context engineering for AI agents",
+          "url": "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents",
+          "type": "blog"
+        },
+        {
+          "title": "Agent Skills overview",
+          "url": "https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview",
+          "type": "docs"
+        },
+        {
+          "title": "Equipping agents for the real world with Agent Skills",
+          "url": "https://www.anthropic.com/engineering/equipping-agents-for-the-real-world-with-agent-skills",
+          "type": "blog"
+        },
+        {
+          "title": "Tool search tool (Claude API docs)",
+          "url": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool",
+          "type": "docs"
+        },
+        {
+          "title": "Claude Code memory (CLAUDE.md and rules)",
+          "url": "https://code.claude.com/docs/en/memory",
+          "type": "docs"
+        },
+        {
+          "title": "Code execution with MCP (Anthropic Engineering)",
+          "url": "https://www.anthropic.com/engineering/code-execution-with-mcp",
+          "type": "blog"
+        },
+        {
+          "title": "Introducing Contextual Retrieval (Anthropic)",
+          "url": "https://www.anthropic.com/news/contextual-retrieval",
+          "type": "blog"
+        }
+      ]
+    }
+  ]
+}

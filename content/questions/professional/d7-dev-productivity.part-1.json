@@ -1,0 +1,550 @@
+{
+  "certId": "professional",
+  "domainId": "d7-dev-productivity",
+  "questions": [
+    {
+      "id": "p-d7-b1-001",
+      "taskStatementId": "7.1",
+      "stem": "A platform team is rolling Claude Code out to 300 engineers. Security requires that Claude Code's file tools be blocked from reading anything under a `secrets/` directory, in every repository on every managed laptop, including repositories engineers create next month. Engineers must not be able to get around the restriction by editing their own configuration or by switching to a mode that skips permission prompts. What should the architect configure?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Commit a `.claude/settings.json` with a `Read` deny rule for `secrets/` paths to each existing repository, and add a CI check that fails any new repository missing that file."
+        },
+        {
+          "id": "B",
+          "text": "Add a policy line to the managed CLAUDE.md telling Claude never to open anything under `secrets/`, and repeat the rule in each repository's project CLAUDE.md for emphasis."
+        },
+        {
+          "id": "C",
+          "text": "Deploy a managed settings file containing the `Read` deny rule for `secrets/` paths, and set `permissions.disableBypassPermissionsMode` to `\"disable\"` in that same file."
+        },
+        {
+          "id": "D",
+          "text": "Distribute a user-level `~/.claude/settings.json` with the deny rule through the onboarding script, and audit engineers' home directories each quarter for drift."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Managed settings sit at the top of the settings hierarchy (managed > command line > local > project > user) and cannot be overridden by engineers, so a `Read` deny rule there (for example `Read(secrets/**)`, which as a deny rule matches a `secrets` directory at any depth) covers every repository on every managed machine, including new ones. Deny rules block in every permission mode, including `bypassPermissions`, and `permissions.disableBypassPermissionsMode: \"disable\"` in managed settings stops anyone from enabling bypass mode at all. This is deterministic, organisation-wide enforcement rather than per-repo copies or instructions. The docs are explicit that CLAUDE.md is for behavioural guidance and managed `permissions.deny` is for blocking file paths.",
+      "whyWrong": {
+        "A": "Per-repository settings only cover repos that already have the file. A CI check catches the gap after the fact, and engineers can still edit or delete a committed file locally, so this is neither org-wide nor tamper-resistant.",
+        "B": "CLAUDE.md is context the model reads, not enforcement. Permission rules are enforced by Claude Code regardless of what the model decides; repeating an instruction does not make it a boundary.",
+        "D": "User settings have the lowest precedence and live in a file the engineer controls. Quarterly audits detect drift; they do not prevent it. Path anchoring is also easy to get wrong there: a single-slash rule such as `Read(/secrets/**)` in user settings resolves against `~/.claude`, not the project."
+      },
+      "difficulty": 2,
+      "mindset": "Org-wide guarantees belong in managed settings, which users cannot override, not in instructions or per-repo copies.",
+      "tags": [
+        "managed-settings",
+        "permissions",
+        "least-privilege",
+        "team-config"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/permissions",
+        "https://code.claude.com/docs/en/settings",
+        "https://code.claude.com/docs/en/permission-modes"
+      ]
+    },
+    {
+      "id": "p-d7-b1-002",
+      "taskStatementId": "7.1",
+      "stem": "A tech lead spent a week writing detailed coding conventions and test-fixture guidance for a service, saving them in `~/.claude/CLAUDE.md` on her laptop. Claude follows them perfectly for her. Two engineers who joined this sprint say Claude ignores the conventions entirely when they work in the same repository. What is the simplest fix that gives every current and future teammate the same guidance?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Move the guidance into the repository's project CLAUDE.md (`./CLAUDE.md` or `./.claude/CLAUDE.md`) and commit it."
+        },
+        {
+          "id": "B",
+          "text": "Ask each new engineer to copy the lead's `~/.claude/CLAUDE.md` into their own home directory as part of onboarding."
+        },
+        {
+          "id": "C",
+          "text": "Move the guidance into `CLAUDE.local.md` at the repository root so it sits next to the code it describes and loads with the project."
+        },
+        {
+          "id": "D",
+          "text": "Have each engineer add a shell alias that passes the guidance through `--append-system-prompt` on every launch."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "`~/.claude/CLAUDE.md` is user scope: it applies to that one person across their projects and never goes into version control. Project memory (`./CLAUDE.md` or `./.claude/CLAUDE.md`) is shared through git, so everyone who clones the repo, now or later, gets the same instructions with no extra steps.",
+      "whyWrong": {
+        "B": "Manual copying works once and then drifts. Every update has to be re-copied, and personal files are the wrong home for team standards.",
+        "C": "`CLAUDE.local.md` is the personal, gitignored project file. Teammates would still not receive it.",
+        "D": "It is fragile, per-person setup that duplicates what project CLAUDE.md already does, and it breaks as soon as someone launches Claude another way."
+      },
+      "difficulty": 1,
+      "mindset": "Team-shared guidance lives in version-controlled project scope; user scope is personal by design.",
+      "tags": [
+        "claude-md",
+        "memory-hierarchy",
+        "team-config",
+        "onboarding"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/memory"
+      ]
+    },
+    {
+      "id": "p-d7-b1-003",
+      "taskStatementId": "7.1",
+      "stem": "Every engineer on a team needs the same internal ticketing MCP server in Claude Code for one repository. The server authenticates with a per-user API token. The team wants new clones to pick the server up without manual setup steps, and the security team forbids credentials in git, even in private repositories. Which TWO actions together meet these requirements? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Define the server in a `.mcp.json` file at the repository root (project scope) and commit it so every clone picks it up."
+        },
+        {
+          "id": "B",
+          "text": "Have each engineer run `claude mcp add` with the default scope, so the server config lives in their own `~/.claude.json`."
+        },
+        {
+          "id": "C",
+          "text": "Put each engineer's token directly in `.mcp.json`, since only employees can read the private repository anyway."
+        },
+        {
+          "id": "D",
+          "text": "Reference the token in the config as an environment variable such as `${TICKETS_API_TOKEN}`, which each engineer sets in their own shell."
+        },
+        {
+          "id": "E",
+          "text": "Describe the server's URL and auth scheme in the project CLAUDE.md so Claude connects to it whenever a ticket is mentioned."
+        }
+      ],
+      "correct": [
+        "A",
+        "D"
+      ],
+      "explanation": "Project-scoped MCP servers live in a committed `.mcp.json`, so every clone gets the same definition (in interactive sessions Claude Code asks each user to approve project servers the first time). `.mcp.json` supports environment-variable expansion (`${VAR}` and `${VAR:-default}`) in `command`, `args`, `env`, `url` and `headers`, so the shared file holds only a placeholder and each engineer's token stays in their own environment. If the variable is unset, Claude Code loads the config and reports a missing-variable warning in `claude mcp list`.",
+      "whyWrong": {
+        "B": "The default scope is local, which is stored privately in each user's `~/.claude.json`. That is per-person manual setup, so it is exactly what the team wants to avoid.",
+        "C": "It breaks the explicit no-credentials-in-git rule. A private repository is not a secrets store, and one file cannot hold different tokens for different users anyway.",
+        "E": "CLAUDE.md is instructions. It cannot register or connect an MCP server; servers come from MCP configuration."
+      },
+      "difficulty": 2,
+      "mindset": "Share configuration through version control; keep secrets out of it with environment-variable expansion.",
+      "tags": [
+        "mcp",
+        "mcp-json",
+        "secrets",
+        "team-config"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/mcp"
+      ]
+    },
+    {
+      "id": "p-d7-b1-004",
+      "taskStatementId": "7.1",
+      "stem": "A regulated fintech lets Claude Code run shell commands, but outbound HTTP must reach only two internal API hosts. An engineer proposes the allow rule `Bash(curl https://api.internal.example.com/*)` plus a CLAUDE.md line saying \"only call approved hosts\". The security architect says the restriction must hold even if Claude tries a variation. Which approach is MOST reliable?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Keep the proposed curl allow rule, add several few-shot examples of correct and incorrect curl calls to CLAUDE.md, and require the model to confirm the host before each call."
+        },
+        {
+          "id": "B",
+          "text": "Deny `curl`, `wget` and similar network tools in Bash, allow `WebFetch(domain:...)` for the two hosts only, and enable the sandbox network allowlist so the limit holds at OS level."
+        },
+        {
+          "id": "C",
+          "text": "Add a PostToolUse hook that records the destination host of every Bash network call to the SIEM so the security team can review and escalate violations each day."
+        },
+        {
+          "id": "D",
+          "text": "Replace the rule with a broader `Bash(curl *)` allow rule and ask a second Claude instance to review each curl command for unapproved hosts before it runs."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "The permissions docs warn that Bash patterns trying to constrain arguments are fragile: options before the URL, a different scheme, redirects, variables or `sh -c` wrappers all slip past them. The recommended pattern is to deny the network tools in Bash, use `WebFetch(domain:...)` rules for the allowed hosts, and add the sandbox network allowlist where the restriction must hold. That is layered, deterministic enforcement rather than relying on the model.",
+      "whyWrong": {
+        "A": "Few-shot examples and self-confirmation are probabilistic. The underlying argument-matching rule is still fragile, so a variation can still get through.",
+        "C": "PostToolUse runs after the command has executed, so it can only detect a violation. The requirement is prevention.",
+        "D": "A broad curl allow plus a model reviewer replaces a deterministic control with a probabilistic one, and it adds cost and latency."
+      },
+      "difficulty": 3,
+      "mindset": "When a boundary must hold, use layered deterministic controls (deny rules, domain rules, sandbox), not argument-pattern tricks or model self-checks.",
+      "tags": [
+        "permissions",
+        "sandbox",
+        "bash-rules",
+        "security"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/permissions",
+        "https://code.claude.com/docs/en/sandboxing"
+      ]
+    },
+    {
+      "id": "p-d7-b1-005",
+      "taskStatementId": "7.1",
+      "stem": "An enablement team maintains a set of review skills, two subagents, a formatting hook and a docs MCP server, and they want all of it in about 40 repositories. Today they copy `.claude/` folders between repos by script, and versions have drifted. Leadership also wants to stop engineers from installing bundles from arbitrary public sources. What is the BEST way to distribute this with minimal ongoing maintenance?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Merge all of the skills' content into the managed CLAUDE.md so every session loads the guidance automatically, and drop the separate skills, subagents and hook."
+        },
+        {
+          "id": "B",
+          "text": "Keep the copy script but run it nightly from CI, opening a pull request in each repository whenever its `.claude/` folder differs from the template."
+        },
+        {
+          "id": "C",
+          "text": "Build a custom MCP server that exposes each skill and subagent as a tool, then register that server in every repository's `.mcp.json`."
+        },
+        {
+          "id": "D",
+          "text": "Package the components as a plugin in an internal marketplace, and use managed settings to restrict which marketplaces may be added and to enable the plugin."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "Plugins exist to bundle skills, agents, hooks and MCP servers into one versioned unit distributed through a marketplace. Managed settings govern the sources and the rollout: `strictKnownMarketplaces` allowlists (or `blockedMarketplaces` blocks) marketplace sources, `extraKnownMarketplaces` registers the internal marketplace on every machine, and `enabledPlugins` force-enables the plugin so users cannot turn it off at their own scope. Engineers then get one versioned source of truth instead of 40 drifting copies.",
+      "whyWrong": {
+        "A": "CLAUDE.md is always-loaded context. It cannot carry a hook or an MCP server, and stuffing every skill into it wastes context on every turn and loses on-demand loading.",
+        "B": "It automates the current drift problem instead of removing it. There are still 40 copies to reconcile, and it does nothing to stop installs from arbitrary sources.",
+        "C": "This is over-engineered. MCP tools do not replace skills, subagents or hooks, and it adds a service to build and run without solving governance."
+      },
+      "difficulty": 2,
+      "mindset": "Distribute shared tooling as one versioned package (plugin plus marketplace) and govern sources through managed settings.",
+      "tags": [
+        "plugins",
+        "marketplaces",
+        "managed-settings",
+        "team-config"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/plugins",
+        "https://code.claude.com/docs/en/plugins/org",
+        "https://code.claude.com/docs/en/settings"
+      ]
+    },
+    {
+      "id": "p-d7-b1-006",
+      "taskStatementId": "7.1",
+      "stem": "A team adds a `claude -p` step to its CI pipeline to fix lint errors. The runner is a long-lived shared build host, not a disposable container. The step must never hang waiting for an approval, and it must never run anything except the repository's lint and test commands, even if the model decides another command would help. Which configuration BEST meets both requirements?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Run with `--permission-mode bypassPermissions` so nothing prompts, and add deny rules for the most dangerous commands such as `rm` and `curl`."
+        },
+        {
+          "id": "B",
+          "text": "Run with `--permission-mode auto` so a classifier approves routine commands without prompting, and rely on it to refuse anything outside the lint and test workflow."
+        },
+        {
+          "id": "C",
+          "text": "Run with `--permission-mode dontAsk` and `--allowedTools` listing only the lint and test commands, so anything not pre-approved is denied automatically."
+        },
+        {
+          "id": "D",
+          "text": "Run with `--permission-mode acceptEdits` and state in the prompt that Claude must only run the lint and test commands."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "`dontAsk` mode automatically denies any action that would otherwise prompt, while actions covered by `--allowedTools` (permission-rule syntax such as `Bash(npm run lint)` and `Bash(npm test)`) and read-only actions still run. The session never waits for input, so the run cannot hang, and anything outside the allowlist fails closed. The docs name exactly this combination, `claude -p ... --permission-mode dontAsk --allowedTools ...`, as the pattern for running in CI with an exact allowlist.",
+      "whyWrong": {
+        "A": "`bypassPermissions` is meant for isolated containers or VMs, not a shared host. Allow rules have no effect in it, and a short deny list is a blocklist, so every command nobody thought of is still permitted.",
+        "B": "Auto mode replaces the prompt with a second model's judgment. That is a probabilistic reviewer, not an allowlist: it can approve a command outside lint and test, and it drops a bare `Bash` allow rule rather than enforcing a fixed set. The requirement is deterministic.",
+        "D": "`acceptEdits` auto-approves edits and common filesystem commands such as `mkdir`, `mv` and `cp`, and other shell commands would still prompt or be denied. A prompt instruction is guidance, not enforcement, so it does not limit which commands can run."
+      },
+      "difficulty": 3,
+      "mindset": "For unattended runs, pair non-interactive execution with an explicit allowlist that fails closed.",
+      "tags": [
+        "ci-cd",
+        "headless",
+        "permission-modes",
+        "least-privilege"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/headless",
+        "https://code.claude.com/docs/en/permission-modes"
+      ]
+    },
+    {
+      "id": "p-d7-b1-007",
+      "taskStatementId": "7.3",
+      "stem": "A developer adds a PreToolUse hook to the project's `.claude/settings.json` that should append every shell command Claude runs to an audit log. The hook entry uses `\"matcher\": \"bash\"`. `/hooks` lists the hook under PreToolUse, but after Claude runs several shell commands the audit log is still empty. Running the script by hand with sample hook input writes to the log correctly. What should the developer do?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Change the matcher to `\"Bash\"`, because matchers compare against tool names case-sensitively, then start a `claude --debug` session to confirm the hook now fires."
+        },
+        {
+          "id": "B",
+          "text": "Move the hook into a standalone `.claude/hooks.json` file, because hooks defined inside `settings.json` are only loaded for plugins."
+        },
+        {
+          "id": "C",
+          "text": "Restart Claude Code, because changes to `settings.json` only take effect when a new session starts."
+        },
+        {
+          "id": "D",
+          "text": "Register the script on PostToolUse instead, because a PreToolUse hook cannot see a Bash command until after it has run."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "`/hooks` showing the entry proves the hook loaded, and the script works when run by hand, so the matcher is the remaining suspect. Matching is case-sensitive and tool names are capitalised (`Bash`, `Edit`, `Write`, `Read`), so `\"bash\"` matches nothing and the hook fails silently. The docs' next step when a listed hook does not fire is to start a session with `claude --debug`: the debug log records each event, which matchers were checked, and the hook's exit code and output.",
+      "whyWrong": {
+        "B": "This is backwards. Project and user hooks go under the `\"hooks\"` key in a settings file; there is no standalone hooks file for them. Only plugins load a separate `hooks/hooks.json`.",
+        "C": "Edits to `settings.json` take effect in the running session after a short delay, and `/hooks` already shows the hook, so it has loaded. A restart would leave the same wrong matcher in place.",
+        "D": "PreToolUse hooks receive the tool input, including the Bash command, before the tool runs. That is what lets them block calls. Changing the event does not fix a matcher that matches nothing."
+      },
+      "difficulty": 2,
+      "mindset": "When a hook is loaded but never fires, check the matcher against the exact tool name, then confirm with debug logs instead of guessing.",
+      "tags": [
+        "hooks",
+        "debugging",
+        "matchers",
+        "configuration"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/debug-your-config",
+        "https://code.claude.com/docs/en/hooks"
+      ]
+    },
+    {
+      "id": "p-d7-b1-008",
+      "taskStatementId": "7.3",
+      "stem": "An engineer in a monorepo reports that Claude \"keeps ignoring\" the API-versioning rules the team documented. Teammates have suggested rewriting the rules in capital letters, switching to a larger model, or moving everything into one giant root CLAUDE.md. Before changing anything, the architect wants to establish what instructions Claude actually received in the engineer's session. Which TWO steps should come first? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Rewrite the versioning rules with \"IMPORTANT\" and \"MUST\" markers and run the same task again to see whether compliance improves."
+        },
+        {
+          "id": "B",
+          "text": "Run `/context` in the engineer's session and check the **Memory files** list to confirm which CLAUDE.md and rules files were actually loaded."
+        },
+        {
+          "id": "C",
+          "text": "Switch the session to the most capable model available, since a stronger model follows long instructions more reliably."
+        },
+        {
+          "id": "D",
+          "text": "Ask Claude to list every rule it is currently following and treat its answer as the record of what was loaded."
+        },
+        {
+          "id": "E",
+          "text": "Run `/memory` to list the CLAUDE.md and memory files at user and project scope, and open the relevant ones to read what the versioning rules actually say."
+        }
+      ],
+      "correct": [
+        "B",
+        "E"
+      ],
+      "explanation": "Diagnose before you change anything. The docs' own troubleshooting steps for \"Claude isn't following my CLAUDE.md\" are: run `/context` and check the **Memory files** list to confirm the file actually loaded, then use `/memory` to open the CLAUDE.md and memory files across scopes and look for vague or conflicting instructions. Common monorepo root causes include rules sitting in a file that never loaded (a subdirectory CLAUDE.md that only loads on demand, user scope on one laptop, or a path-scoped rule whose glob does not match) or two files that contradict each other, in which case Claude may follow either. Together the two commands give ground truth about what was in context and what it said.",
+      "whyWrong": {
+        "A": "This changes the input before the cause is known. If the file never loaded, emphasis markers change nothing.",
+        "C": "A bigger model cannot follow instructions that never reached its context. It is the classic \"throw a bigger model at it\" distractor.",
+        "D": "Model self-report is not a reliable record of loaded context. The tooling (`/context`, or an `InstructionsLoaded` hook for logging) shows the loaded files deterministically."
+      },
+      "difficulty": 2,
+      "mindset": "Debug with ground truth from the tooling (/context, /memory) before changing prompts or models.",
+      "tags": [
+        "debugging",
+        "claude-md",
+        "context",
+        "memory"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/memory",
+        "https://code.claude.com/docs/en/debug-your-config",
+        "https://code.claude.com/docs/en/context-window"
+      ]
+    },
+    {
+      "id": "p-d7-b1-009",
+      "taskStatementId": "7.3",
+      "stem": "After a teammate rotated credentials, an engineer notices that Claude Code no longer uses the team's issue-tracker MCP tools. When asked to look up a ticket, Claude says it cannot reach the tracker and offers to search the web instead. Nothing else in the project changed, and the server definition is still in the committed `.mcp.json`. What is the MOST effective first step?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Rewrite the MCP tools' names and descriptions to be more specific, so Claude is more likely to pick them over web search whenever a ticket comes up."
+        },
+        {
+          "id": "B",
+          "text": "Add a CLAUDE.md instruction telling Claude to always use the issue-tracker tools for any ticket lookup, and never to fall back to web search."
+        },
+        {
+          "id": "C",
+          "text": "Switch to a larger model, since it will be better at recognising when an MCP tool is the right choice for ticket lookups."
+        },
+        {
+          "id": "D",
+          "text": "Open `/mcp` to check the server's connection status, and re-authenticate or fix its configuration if it shows \"Needs authentication\" or \"Failed to connect\"."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "Claude not calling the tracker tools at all, and saying it cannot reach the tracker, points to a connection problem rather than a tool-selection problem. A server that fails to connect does not stop the session: Claude Code continues without that server's tools (with tool search on, which is the default, it also tells Claude which server failed), so Claude falls back to what it has. After a credential rotation, `/mcp` will typically show the server as \"Needs authentication\" or \"Failed to connect\", and `claude mcp list` appends the failure detail, such as an HTTP 401. The panel also lets you authenticate or reconnect. Fix the connection first; only then does tool selection matter.",
+      "whyWrong": {
+        "A": "Descriptions affect which tool gets chosen only when the tools are present. Here they are not loaded at all.",
+        "B": "An instruction cannot make a disconnected server's tools appear, so this treats a connectivity failure as a prompting problem.",
+        "C": "No model can call a tool that is not in its tool list. This is the bigger-model distractor."
+      },
+      "difficulty": 2,
+      "mindset": "Separate 'tool not available' from 'tool not chosen': check connection status before tuning prompts or descriptions.",
+      "tags": [
+        "mcp",
+        "debugging",
+        "authentication",
+        "operations"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/mcp"
+      ]
+    },
+    {
+      "id": "p-d7-b1-010",
+      "taskStatementId": "7.3",
+      "stem": "A nightly Claude API job that summarises support tickets has started failing intermittently. Logs show two distinct problems: bursts of HTTP 529 `overloaded_error` responses at peak hours, and, on the last three days of the month, HTTP 429 `rate_limit_error` responses whose message says the organisation has crossed its usage tier's monthly API usage threshold (`error_code: enforced_spend_limit_reached`), with no `retry-after` header. The on-call engineer wants a fix that is correct and avoids wasted retries. Which TWO actions are most appropriate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Treat both errors the same way by raising the SDK's `max_retries` to a very high value with long backoff, so the job eventually succeeds on its own overnight."
+        },
+        {
+          "id": "B",
+          "text": "Request a higher rate-limit tier to stop the 529 errors, since 529 means the organisation exceeded its own request quota."
+        },
+        {
+          "id": "C",
+          "text": "Retry the 529 responses with exponential backoff and jitter, since 529 signals temporary platform-wide load rather than the organisation's own limit."
+        },
+        {
+          "id": "D",
+          "text": "Keep retrying the spend-cap 429 every minute until requests succeed again, since every 429 is a rate-limit condition that clears as the token bucket refills."
+        },
+        {
+          "id": "E",
+          "text": "Stop retrying the spend-cap 429, alert the owning team, and have an admin request a higher limit or reschedule the work, because retries fail until access resumes."
+        }
+      ],
+      "correct": [
+        "C",
+        "E"
+      ],
+      "explanation": "The two codes mean different things. 529 `overloaded_error` means the API is temporarily overloaded across all users, so backing off with jitter and retrying is appropriate (the SDK does this automatically for transient failures). 429 means your own organisation's limits. A per-minute rate-limit 429 carries `retry-after` and recovers on its own, but the tier spend-cap 429 has no `retry-after`, carries `error_code: enforced_spend_limit_reached`, and keeps failing until 00:00 UTC on the first of next month or until a higher limit is granted. The docs say retrying, including the SDK's automatic retries, fails until access resumes. That calls for an alert and an admin action, not a loop. (A spend limit you set yourself below the tier cap returns a 400 instead; the stem's 429 with that error code is the tier cap.)",
+      "whyWrong": {
+        "A": "Unlimited retries waste requests on the spend-cap case, which will not recover by itself for days, and they hide the operational problem instead of surfacing it.",
+        "B": "This mixes up the two codes. 529 is platform-wide overload, not your org's quota, so a higher tier does not address it.",
+        "D": "A spend-cap 429 is not temporary and is deliberately sent without `retry-after`. Retrying every minute just burns requests until the cap resets or is raised."
+      },
+      "difficulty": 3,
+      "mindset": "Classify errors before choosing a recovery: transient load gets backoff; a hard limit gets escalation, not retries.",
+      "tags": [
+        "error-handling",
+        "rate-limits",
+        "operations",
+        "retries"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://platform.claude.com/docs/en/api/rate-limits"
+      ]
+    },
+    {
+      "id": "p-d7-b1-011",
+      "taskStatementId": "7.3",
+      "stem": "A project CLAUDE.md says that modules under `legacy/` are deprecated and must never be recommended as patterns for new code. In the main conversation Claude follows this. When Claude hands codebase research to the built-in Explore subagent, though, the subagent's findings repeatedly recommend `legacy/` modules as examples to copy. `/context` confirms the project CLAUDE.md is loaded in the main session. What explains this, and what is the BEST fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The project CLAUDE.md has grown too long for the subagent to attend to; split it into several `.claude/rules/` files so each rule gets more weight."
+        },
+        {
+          "id": "B",
+          "text": "The built-in Explore and Plan subagents skip CLAUDE.md by design; restate the convention in the delegation prompt, or use a custom research subagent, which loads CLAUDE.md like the main conversation."
+        },
+        {
+          "id": "C",
+          "text": "Subagents read only the user-level `~/.claude/CLAUDE.md`, so each engineer should copy the convention into their own user file."
+        },
+        {
+          "id": "D",
+          "text": "Set `omitClaudeMd: false` in the Explore subagent's frontmatter so that it starts loading the project CLAUDE.md."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "To keep research fast and cheap, the built-in Explore and Plan subagents skip CLAUDE.md files (and the git status snapshot). Every other built-in subagent, and any custom subagent, loads the same CLAUDE.md hierarchy as the main conversation unless its own definition opts out. The docs' fix for Explore or Plan is to restate the instruction in the delegating prompt; if the convention matters on every research task, a custom subagent that loads CLAUDE.md (or carries the rule in its own prompt) is the durable option.",
+      "whyWrong": {
+        "A": "Length is not the issue: Explore does not receive the project CLAUDE.md at all, so splitting it into rules files changes nothing for that subagent.",
+        "C": "This is false. Custom subagents load every level of the CLAUDE.md hierarchy, and Explore skips user-level CLAUDE.md as well, so copying the rule to personal files would not help.",
+        "D": "`omitClaudeMd` is a field for your own subagent definitions, and it only removes CLAUDE.md. Explore is built in, and skipping CLAUDE.md is how it is designed to work; there is no documented frontmatter to edit for it."
+      },
+      "difficulty": 2,
+      "mindset": "Know what context each agent actually receives; a subagent that never got the instructions cannot follow them.",
+      "tags": [
+        "subagents",
+        "claude-md",
+        "debugging",
+        "context"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/sub-agents",
+        "https://code.claude.com/docs/en/debug-your-config"
+      ]
+    },
+    {
+      "id": "p-d7-b1-012",
+      "taskStatementId": "7.3",
+      "stem": "A team's committed `.claude/settings.json` allows `Bash(git *)`. One engineer wants a personal rule, in every project on her laptop, that stops Claude from running `git push`. She opens `~/.claude.json`, adds a `permissions` block containing `\"deny\": [\"Bash(git push *)\"]`, and saves. In new sessions Claude still pushes, and `/permissions` does not list her rule. `/status` shows that no managed settings are in effect. What should she do?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Move the `permissions` block into `~/.claude/settings.json`; `~/.claude.json` is Claude Code's own state file (sign-in, MCP servers, per-project state), not where permissions, hooks or env are read from."
+        },
+        {
+          "id": "B",
+          "text": "Add the deny rule to `.claude/settings.local.json` in every repository instead, because a user-level rule can never override a project-level allow rule."
+        },
+        {
+          "id": "C",
+          "text": "Rewrite the rule as `Bash(git push)` without the wildcard, because patterns with a space and `*` are not supported in deny rules."
+        },
+        {
+          "id": "D",
+          "text": "Add \"never run git push\" to her user-level `~/.claude/CLAUDE.md`, since that file loads in every project."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "`~/.claude.json` and `~/.claude/settings.json` are two different files. `~/.claude.json` is written by Claude Code for its own state: the sign-in session, MCP server configurations, per-project state such as trust decisions, and global config keys. User-level `permissions`, `hooks` and `env` belong in `~/.claude/settings.json`. Once the rule is there it applies in every project, and it wins over the team's `Bash(git *)` allow, because deny rules from any scope are evaluated before allow rules. `/permissions` will then list it along with the file it came from.",
+      "whyWrong": {
+        "B": "The premise is wrong: a user-level deny blocks a project-level allow, because deny rules from every scope are evaluated before allow rules. Copying the rule into each repository is also per-project busywork that misses new repositories.",
+        "C": "`Bash(git push *)` is valid permission syntax. The rule is not loaded at all, which is why `/permissions` does not show it, so changing the pattern does not help.",
+        "D": "CLAUDE.md is guidance the model reads, not enforcement. It does not override an allow rule, and it cannot guarantee that a push never runs."
+      },
+      "difficulty": 2,
+      "mindset": "When a setting seems ignored, first confirm it is in a file Claude Code actually reads for that key.",
+      "tags": [
+        "settings",
+        "permissions",
+        "debugging",
+        "configuration"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/debug-your-config",
+        "https://code.claude.com/docs/en/settings",
+        "https://code.claude.com/docs/en/permissions"
+      ]
+    }
+  ]
+}
