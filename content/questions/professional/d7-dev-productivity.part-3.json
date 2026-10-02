@@ -1,0 +1,546 @@
+{
+  "certId": "professional",
+  "domainId": "d7-dev-productivity",
+  "questions": [
+    {
+      "id": "p-d7-x1-001",
+      "taskStatementId": "7.1",
+      "stem": "Engineering leadership wants dashboards showing Claude Code adoption across 300 engineers: session counts, token usage, cost, and lines of code changed, all sent to the company's internal OpenTelemetry collector. The works council will approve this only if the text of developers' prompts is never collected. The platform team's first attempt added the telemetry environment variables to the committed `.claude/settings.json` in every repository, and no data has arrived. Which TWO actions should the platform team take to meet both requirements most reliably? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Move `CLAUDE_CODE_ENABLE_TELEMETRY` and the OTLP exporter and endpoint variables into the `env` block of managed settings on all laptops."
+        },
+        {
+          "id": "B",
+          "text": "Ask each engineer to export the telemetry variables in their own shell profile, then confirm the step through an onboarding checklist entry."
+        },
+        {
+          "id": "C",
+          "text": "Add a Stop hook that uploads each finished session transcript to the collector, so the dashboards can derive every metric from transcripts."
+        },
+        {
+          "id": "D",
+          "text": "Leave `OTEL_LOG_USER_PROMPTS` and the other prompt-content switches unset, since prompt text is excluded from telemetry by default."
+        },
+        {
+          "id": "E",
+          "text": "Turn on `OTEL_LOG_RAW_API_BODIES` so token and cost figures are computed from full request and response payloads and are therefore exact."
+        }
+      ],
+      "correct": [
+        "A",
+        "D"
+      ],
+      "explanation": "Claude Code ignores the OpenTelemetry exporter variables (`CLAUDE_CODE_ENABLE_TELEMETRY`, the exporter selectors, the `OTEL_EXPORTER_OTLP_*` endpoint, header and protocol variables, and the content gates) when they come from a repository's `.claude/settings.json` or `.claude/settings.local.json`, so a repository cannot switch telemetry on or choose where it goes. The documented org-wide path is the `env` block of **managed settings**; developers' own shells or user settings also work, but are not enforced. Managed `OTEL_EXPORTER_OTLP_*` values also pin the destination: Claude Code removes conflicting developer-set endpoint variables at startup. Built-in metrics already cover session count, token usage, cost, lines of code, commits and pull requests. For privacy, prompt text appears as `<REDACTED>` unless `OTEL_LOG_USER_PROMPTS` is set, so leaving that option and the other content gates unset meets the works council's condition without building anything.",
+      "whyWrong": {
+        "B": "Shell exports are not enforced, can drift or be removed, can point at a different collector, and do not reliably reach background sessions; a checklist only records the step, it enforces nothing. Managed settings are the documented org-wide mechanism.",
+        "C": "This builds a bespoke pipeline for metrics Claude Code already emits, and uploading transcripts sends exactly the prompt text the works council prohibited.",
+        "E": "Raw API bodies contain the entire conversation, prompts included. Turning them on breaks the privacy requirement, and the standard token and cost metrics are already sufficient."
+      },
+      "difficulty": 2,
+      "mindset": "Org-wide observability belongs in managed configuration, and privacy-safe defaults should be kept rather than overridden.",
+      "tags": [
+        "telemetry",
+        "opentelemetry",
+        "managed-settings",
+        "privacy",
+        "rollout"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/monitoring-usage",
+        "https://code.claude.com/docs/en/settings-reference#variables-claude-code-ignores-in-env"
+      ]
+    },
+    {
+      "id": "p-d7-x1-002",
+      "taskStatementId": "7.1",
+      "stem": "For cost and data-handling reasons, finance and legal have approved only two model families for Claude Code. An administrator set the `model` key in managed settings to one of them. A month later, usage reports show that many engineers start sessions on unapproved models by using `/model` or the `--model` flag. What should the administrator do to enforce the policy with the least ongoing effort?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Commit a `model` key set to an approved model into every repository's `.claude/settings.json`, so each project starts sessions on an approved default."
+        },
+        {
+          "id": "B",
+          "text": "Add a rule to the managed CLAUDE.md telling Claude to refuse to continue working whenever the active session is running on an unapproved model."
+        },
+        {
+          "id": "C",
+          "text": "Write a PreToolUse hook that checks the active model before every tool call and blocks the call whenever the model is not on the approved list."
+        },
+        {
+          "id": "D",
+          "text": "Set `availableModels` to the two approved families and turn on `enforceAvailableModels` in managed settings, so no other model can be picked."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "The `model` setting is an initial selection, not enforcement: it sets the model a session **starts** on, and users can still switch with `/model`, `--model` or `ANTHROPIC_MODEL`. The documented lock is `availableModels`. When managed settings define it, that list alone applies: entries in user, project or local settings cannot extend it. A blocked `/model` switch is rejected with an error, a blocked `--model` flag or `model` setting is replaced at startup with a warning, and subagent and skill `model` fields are constrained too. On its own, though, the allowlist leaves the picker’s **Default** option on the account’s runtime default, which may be an unapproved model, so the docs pair it with `enforceAvailableModels: true` to keep Default inside the list. Two policy keys, deployed once, enforce the rule everywhere.",
+      "whyWrong": {
+        "A": "A project `model` is just another starting default. Managed `model` already outranks it, and in any case a default does not stop anyone switching with `/model` or `--model`.",
+        "B": "This is a prompt-only control over something the model does not decide. Model selection is a client setting, so a configuration lock is needed, not an instruction.",
+        "C": "Hooks fire on tool events and do not govern model selection. This is over-engineered, and it would block work mid-session rather than prevent the choice."
+      },
+      "difficulty": 2,
+      "mindset": "Know the difference between a default and a lock, and use the setting that constrains the choice itself.",
+      "tags": [
+        "managed-settings",
+        "model-governance",
+        "availableModels",
+        "cost-control"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/model-config",
+        "https://code.claude.com/docs/en/settings-reference#availablemodels"
+      ]
+    },
+    {
+      "id": "p-d7-x1-003",
+      "taskStatementId": "7.1",
+      "stem": "A security team has reviewed and approved twelve MCP servers for use with Claude Code. Different teams need different subsets, so engineers should be able to add whichever approved servers they need, at any scope. Any server not on the approved list must be blocked, including one an engineer adds to their own user configuration. Which configuration BEST meets these requirements?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Deploy a `managed-mcp.json` containing all twelve approved servers, so every engineer receives exactly that fixed set and cannot add or remove anything."
+        },
+        {
+          "id": "B",
+          "text": "Set `allowedMcpServers` to the twelve approved servers in managed settings and also set `allowManagedMcpServersOnly` to `true` there."
+        },
+        {
+          "id": "C",
+          "text": "Set `allowedMcpServers` to the twelve approved servers in managed settings and leave the remaining MCP policy keys at their defaults."
+        },
+        {
+          "id": "D",
+          "text": "List every server known to be risky in `deniedMcpServers` in managed settings, adding new entries as each security review turns one up."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "This is the documented **approved catalog** pattern: `allowedMcpServers` publishes the list, and `allowManagedMcpServersOnly: true` makes the managed allowlist the only one that applies, so allowlists in user, project or local settings are ignored and cannot widen it. Engineers add only the approved servers they need (at any scope), and anything else is blocked with a `not allowed by enterprise policy` message. For the allowlist to be a real security control, write the entries as `serverUrl` or `serverCommand` matches rather than `serverName`, because a name is just the label a user chose. The other choices are either too rigid (a fixed set), too soft (an allowlist users can broaden), or a denylist that cannot cover servers nobody has reviewed yet.",
+      "whyWrong": {
+        "A": "`managed-mcp.json` is an exclusive, fixed deployment: every engineer gets all twelve servers and cannot add or remove any, which removes the per-team choice the requirement asks for and forces servers on teams that do not need them.",
+        "C": "Without `allowManagedMcpServersOnly`, this is a soft allowlist that users can broaden in their own settings, so an unapproved server added at user scope is not reliably blocked.",
+        "D": "A denylist blocks only servers someone has already identified. Every new or unknown server is allowed by default, which is the reverse of the requirement."
+      },
+      "difficulty": 3,
+      "mindset": "Pick the narrowest control that still matches the business need: an allowlist users can't widen, not a fixed set or a denylist.",
+      "tags": [
+        "mcp",
+        "managed-settings",
+        "allowlist",
+        "governance"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/managed-mcp"
+      ]
+    },
+    {
+      "id": "p-d7-x1-004",
+      "taskStatementId": "7.1",
+      "stem": "A bank routes all outbound traffic through a TLS-inspecting HTTPS proxy. The proxy re-signs traffic with a private root CA that is not in the operating system trust store on developer laptops. Claude Code sessions fail with certificate errors. Some engineers fixed their own terminals with shell exports, but background agent sessions still fail for them. Which TWO actions will resolve this most reliably for the whole fleet without weakening security? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Set `NODE_TLS_REJECT_UNAUTHORIZED=0` in managed settings so that Claude Code accepts the proxy's re-signed certificates for every request with no other changes."
+        },
+        {
+          "id": "B",
+          "text": "Set `HTTPS_PROXY` and `NODE_EXTRA_CA_CERTS`, pointing at the corporate root CA, in the `env` block of managed settings rather than shell profiles."
+        },
+        {
+          "id": "C",
+          "text": "Move the developers to a SOCKS5 endpoint on the corporate proxy, which handles TLS interception more cleanly for command-line developer tools."
+        },
+        {
+          "id": "D",
+          "text": "Add the proxy address and CA details to the managed CLAUDE.md so that Claude routes all of its outgoing API requests through the proxy."
+        },
+        {
+          "id": "E",
+          "text": "Allowlist the Anthropic hosts that Claude Code needs, including `api.anthropic.com`, `claude.ai` and `platform.claude.com`, on the proxy and firewall."
+        }
+      ],
+      "correct": [
+        "B",
+        "E"
+      ],
+      "explanation": "Claude Code respects the standard proxy variables and trusts an extra CA through `NODE_EXTRA_CA_CERTS`. The docs warn that background agents run under a shared supervisor process that may not inherit a given shell's environment, so network variables should go in the `env` block of settings, ideally managed settings for a fleet. The proxy and firewall must also allow the hosts Claude Code needs, as listed in the network access requirements. Together these fix trust and reachability without turning off certificate checking.",
+      "whyWrong": {
+        "A": "Disabling TLS verification removes protection against interception for every request. It hides the symptom and opens a security hole, which a bank should never accept.",
+        "C": "Claude Code does not support SOCKS proxies, so moving to that endpoint breaks connectivity instead of fixing the certificate errors.",
+        "D": "CLAUDE.md is instruction text for the model. It has no effect on how the client process makes network connections, so this is a prompt-only fix for a transport problem."
+      },
+      "difficulty": 3,
+      "mindset": "Fix transport problems with transport configuration delivered centrally, never by disabling security checks or writing prompts.",
+      "tags": [
+        "network",
+        "proxy",
+        "certificates",
+        "managed-settings",
+        "enterprise-rollout"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/network-config"
+      ]
+    },
+    {
+      "id": "p-d7-x1-005",
+      "taskStatementId": "7.1",
+      "stem": "A company's secrets vault issues Anthropic API credentials that expire after 60 minutes. A command-line tool prints a fresh one on demand. Today, engineers paste a credential into `ANTHROPIC_API_KEY` each morning. About an hour later their Claude Code sessions start failing with 401 errors, and restarting loses their working context. What is the MOST effective way to fix this with minimal disruption to developers?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Ask the vault team for a long-lived static credential and commit it to the `env` block of each repository's shared `.claude/settings.json`."
+        },
+        {
+          "id": "B",
+          "text": "Schedule a job that rewrites every engineer's shell profile with a fresh credential every 50 minutes so that new terminals pick it up."
+        },
+        {
+          "id": "C",
+          "text": "Configure `apiKeyHelper` with a script that calls the vault tool, so Claude Code fetches its own credentials and refreshes them on expiry."
+        },
+        {
+          "id": "D",
+          "text": "Add a SessionStart hook that calls the vault tool and exports the fresh credential into the environment whenever a session begins."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "`apiKeyHelper` exists for dynamic or rotating credentials such as short-lived tokens fetched from a vault. Claude Code runs the command, caches the output, and reruns it after the cache lifetime (five minutes by default, or the interval set with `CLAUDE_CODE_API_KEY_HELPER_TTL_MS`), when a request fails with `401` or `403`, and when the cached output is a JWT that has expired. Running sessions therefore keep working across expiries without a restart, and no secret is written to a file. Delivering the `apiKeyHelper` setting through managed settings or each developer’s user settings rolls it out without anyone pasting keys.",
+      "whyWrong": {
+        "A": "This commits a long-lived secret to source control and defeats the whole point of short-lived credentials, a serious security regression.",
+        "B": "A running session reads its environment at startup, so a rewritten profile never reaches it. The job also writes secrets into dotfiles on a schedule.",
+        "D": "A hook that runs only at session start hands over one credential that still expires an hour later, so long sessions fail exactly as before. Refresh has to happen on expiry or on `401`/`403`, which is what the helper setting does."
+      },
+      "difficulty": 2,
+      "mindset": "Use the platform's built-in credential refresh mechanism; don't build workarounds that leak or freeze secrets.",
+      "tags": [
+        "authentication",
+        "apiKeyHelper",
+        "credentials",
+        "security"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/settings-reference#apikeyhelper",
+        "https://code.claude.com/docs/en/authentication#credential-management"
+      ]
+    },
+    {
+      "id": "p-d7-x1-006",
+      "taskStatementId": "7.1",
+      "stem": "A repository's committed `.claude/settings.json` allows the team's standard build and test commands. One engineer also runs a local profiling script several times a day, and Claude Code asks for permission every time. She wants to approve that script permanently for herself in this repository only, without pushing a change that teammates would inherit and without affecting her other projects. Where should the allow rule go?",
+      "options": [
+        {
+          "id": "A",
+          "text": "In `.claude/settings.local.json` in the repository, which Claude Code keeps out of git and applies on top of the committed project settings."
+        },
+        {
+          "id": "B",
+          "text": "In `~/.claude/settings.json`, because that is the only settings file that belongs to her rather than to the repository or the organization."
+        },
+        {
+          "id": "C",
+          "text": "In the committed `.claude/settings.json`, since allow rules merge across scopes and one extra entry does no harm to teammates who never run the script."
+        },
+        {
+          "id": "D",
+          "text": "In the project `CLAUDE.md`, as a note telling Claude that the profiling script is pre-approved and may be run without asking for permission."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "`.claude/settings.local.json` is the **project local** scope: it applies to one person in one project, and Claude Code applies it over the committed `.claude/settings.json`. It is also where Claude Code itself saves a \"Yes, and don't ask again\" approval. When Claude Code creates the file it adds `**/.claude/settings.local.json` to the global git excludes so it never reaches a commit; if she creates it by hand she adds it to `.gitignore` herself. Because the file is hers and untracked, its allow rules apply without the workspace-trust step that committed project rules go through.",
+      "whyWrong": {
+        "B": "User settings apply to every project on her machine, not just this repository, so a rule written for one repository's script would leak into all her other projects.",
+        "C": "Committing the rule grants the capability to every teammate and every clone, which is exactly what she wants to avoid. Personal exceptions belong in the local file precisely so that no commit is needed.",
+        "D": "CLAUDE.md is guidance for the model and has no effect on the permission system, so Claude would still be prompted before running the script."
+      },
+      "difficulty": 1,
+      "mindset": "Match the settings scope to who should be affected: one person in one project means project-local, not user or shared.",
+      "tags": [
+        "settings",
+        "settings-local",
+        "permissions",
+        "team-config"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/settings#keep-personal-settings-out-of-a-repository",
+        "https://code.claude.com/docs/en/permissions#when-your-local-settings-file-needs-trust"
+      ]
+    },
+    {
+      "id": "p-d7-x1-007",
+      "taskStatementId": "7.1",
+      "stem": "A repository's committed `.claude/settings.json` has allow rules for the team's test and lint commands, plus a deny rule that blocks reading `.env` files. New hires report that Claude Code keeps asking permission before running tests. The `.env` deny rule, however, is clearly in effect for them. Teammates propose several fixes. What is the BEST response?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Move the test and lint allow rules into the organization's managed settings so that they apply to every engineer regardless of folder setup."
+        },
+        {
+          "id": "B",
+          "text": "Have new hires start Claude Code with `--dangerously-skip-permissions` for their first week, until their settings files are confirmed to load."
+        },
+        {
+          "id": "C",
+          "text": "Rewrite the settings file from scratch, because a file that only partly applies usually means a JSON syntax error was silently skipped."
+        },
+        {
+          "id": "D",
+          "text": "Add accepting the repository's workspace trust prompt to onboarding, because project allow rules take effect only once the folder is trusted."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "Project `permissions.allow` rules and `permissions.additionalDirectories` **grant** capability, so Claude Code applies them only after the user accepts the workspace trust dialog for that folder (the dialog lists what the folder would grant). `deny` and `ask` rules only restrict, so they apply right away, and most `env` values also wait for trust. That explains this exact asymmetry: the restriction works for new hires while the grants do not. The fix is an onboarding step, not a configuration change.",
+      "whyWrong": {
+        "A": "This turns repository-specific allow rules into org-wide grants for every project on every machine, widening permissions far beyond the need, and it fixes the wrong problem.",
+        "B": "Bypass mode turns off every permission check, including protections the team relies on. It is a large safety regression to work around a trust prompt.",
+        "C": "Invalid JSON makes Claude Code skip the whole file, so the deny rule would fail too, and a single rejected entry is reported rather than silently dropping every allow rule at once. The pattern here (every grant held, every restriction applied) matches the trust gate, not a syntax error."
+      },
+      "difficulty": 2,
+      "mindset": "Diagnose from the asymmetry in the symptoms before changing configuration. Grants and restrictions are gated differently.",
+      "tags": [
+        "permissions",
+        "workspace-trust",
+        "onboarding",
+        "troubleshooting"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/permissions#project-allow-rules-and-workspace-trust",
+        "https://code.claude.com/docs/en/settings"
+      ]
+    },
+    {
+      "id": "p-d7-x1-008",
+      "taskStatementId": "7.1",
+      "stem": "A healthcare company's security policy says no one may run Claude Code on a managed laptop with permission checks turned off. That covers the `--dangerously-skip-permissions` flag and custom subagents that declare a bypass permission mode. CI runs in separate disposable containers with their own configuration. Which control BEST enforces the policy on laptops?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Commit `disableBypassPermissionsMode` to every repository's `.claude/settings.json`, and enforce its presence in each repository with a CI lint check."
+        },
+        {
+          "id": "B",
+          "text": "Set `permissions.disableBypassPermissionsMode` to `\"disable\"` in managed settings pushed to all managed laptops by the device management tool."
+        },
+        {
+          "id": "C",
+          "text": "Distribute a shell wrapper named `claude` that strips the bypass flag before launching the real binary, and place it first on every laptop's PATH."
+        },
+        {
+          "id": "D",
+          "text": "Add a rule to the managed CLAUDE.md saying that bypass mode is forbidden and that Claude must stop if it detects it is running in that mode."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "`permissions.disableBypassPermissionsMode: \"disable\"` makes Claude Code reject the `--dangerously-skip-permissions` flag and ignore an agent definition's `permissionMode: bypassPermissions`, so such a subagent runs with the parent session's mode instead. The key works from any settings file, but in managed settings it covers every session on the device and nothing a user or repository sets can override it. CI keeps its own container configuration, as the policy allows.",
+      "whyWrong": {
+        "A": "Per-repository settings miss new and personal repositories, and anyone with commit access can change them. The policy is device-wide, so it belongs in managed settings.",
+        "C": "Wrappers are easy to get around by calling the binary directly or by changing PATH, and they do not cover a subagent definition that requests bypass mode.",
+        "D": "The model does not control its own permission mode. This is a prompt-only control standing in for an available deterministic setting."
+      },
+      "difficulty": 2,
+      "mindset": "Enforce device-wide security policy in the highest-precedence configuration layer, not in repositories, wrappers or prompts.",
+      "tags": [
+        "managed-settings",
+        "permissions",
+        "bypass-mode",
+        "security-policy"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/settings-reference#permissions-disablebypasspermissionsmode",
+        "https://code.claude.com/docs/en/permissions#managed-settings"
+      ]
+    },
+    {
+      "id": "p-d7-x1-009",
+      "taskStatementId": "7.1",
+      "stem": "An open-source project keeps its contributor conventions in `AGENTS.md`, which several AI coding tools read. A maintainer recently added a short `CLAUDE.md` at the repository root with two Claude-specific tips. Since then, contributors who use Claude Code say it ignores the conventions in `AGENTS.md`. The maintainers want a single source of truth for the conventions. What should they do?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Copy the full contents of `AGENTS.md` into `CLAUDE.md` below the two tips, and ask reviewers to keep the two files in sync on every change."
+        },
+        {
+          "id": "B",
+          "text": "Add a sentence to `CLAUDE.md` asking Claude to also read and follow `AGENTS.md` whenever it finds the conventions relevant to its current task."
+        },
+        {
+          "id": "C",
+          "text": "Import `AGENTS.md` into `CLAUDE.md` with an `@AGENTS.md` line, and keep only the two Claude-specific tips as additional text alongside the imported file."
+        },
+        {
+          "id": "D",
+          "text": "Replace `CLAUDE.md` with a symbolic link pointing at `AGENTS.md`, and drop the two Claude-specific tips because the other tools do not need them."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "By default Claude Code reads `AGENTS.md` only when there is no `CLAUDE.md` (or `CLAUDE.local.md`) in the working directory or above it. Adding a root `CLAUDE.md` therefore switched Claude to reading `CLAUDE.md` only. The documented way to keep one shared file is to import it from `CLAUDE.md` with an `@AGENTS.md` line and put Claude-specific notes below it; Claude reads the imported file first, then the rest. A user can also set **Project instructions** to `claude-md-and-agents-md`, but that setting is read only from user or managed settings and is ignored in project files, so maintainers cannot fix it for every contributor that way. The import is the repository-level fix with one source of truth.",
+      "whyWrong": {
+        "A": "Duplicating the content creates two copies that will drift apart, which defeats the single-source requirement.",
+        "B": "A soft instruction means Claude may or may not open the file, while an import loads it into context every session.",
+        "D": "A symlink does load the shared content, but it discards the Claude-specific tips the maintainers wanted to keep. The import keeps both with no duplication."
+      },
+      "difficulty": 1,
+      "mindset": "Share instructions through imports, not copies, so there is one source of truth.",
+      "tags": [
+        "claude-md",
+        "agents-md",
+        "imports",
+        "team-config"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/memory#agents-md"
+      ]
+    },
+    {
+      "id": "p-d7-x1-010",
+      "taskStatementId": "7.2",
+      "stem": "A team keeps a `publish-package` skill in `.claude/skills/` that builds a library and pushes it to the company's internal registry. Twice in one week Claude invoked the skill on its own because a developer's message mentioned \"publishing\" while discussing release planning, and a half-finished build reached the registry. The team added \"Only run this when the user explicitly asks\" to the skill's description, but it happened again. Developers should keep running `/publish-package` themselves. What is the MOST reliable change?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add `disable-model-invocation: true` to the skill's frontmatter, so only a typed `/publish-package` runs it and Claude is never offered the skill."
+        },
+        {
+          "id": "B",
+          "text": "Set `user-invocable: false` in the skill's frontmatter, so the skill disappears from the `/` menu and Claude stops treating it as a skill it should run unprompted."
+        },
+        {
+          "id": "C",
+          "text": "Move the publish steps out of the skill and into the project `CLAUDE.md` under a heading stating that they run only on an explicit request."
+        },
+        {
+          "id": "D",
+          "text": "Remove `allowed-tools` from the skill's frontmatter, so every registry push requires a permission prompt and the developer gets a chance to refuse it."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Skill frontmatter decides **who** may invoke a skill. `disable-model-invocation: true` makes it user-only: Claude cannot load it automatically, the skill's description is not placed in context, and if Claude tries to run it anyway Claude Code blocks the call. The docs recommend exactly this for side-effect workflows such as deploy, commit or publish, so that Claude never decides to ship because the code looks ready. The same effect is available without editing the file by setting the skill to `\"user-invocable-only\"` in `skillOverrides`. Wording in the description is advisory and, as the team saw, not reliable.",
+      "whyWrong": {
+        "B": "This is the reverse control. `user-invocable: false` hides the skill from developers and leaves Claude as the only party that can invoke it, so the problem gets worse, not better.",
+        "C": "CLAUDE.md is advisory text loaded into every session, so the steps become more visible to Claude, not less, and the team loses the `/publish-package` command it wants to keep.",
+        "D": "Permission prompts do not stop Claude from starting the workflow, and in `acceptEdits` or auto mode they may never appear. The requirement is that the skill never starts unasked, not that someone can cancel it midway."
+      },
+      "difficulty": 3,
+      "mindset": "Control who can trigger a side-effecting workflow with a hard switch in configuration, not with advisory wording.",
+      "tags": [
+        "skills",
+        "disable-model-invocation",
+        "side-effects",
+        "developer-workflow"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/skills#control-who-invokes-a-skill"
+      ]
+    },
+    {
+      "id": "p-d7-x1-011",
+      "taskStatementId": "7.2",
+      "stem": "A 25-person team on GitHub wants every pull request to get a consistent first-pass review that applies the team's standards before a human reviewer looks at it. Today, a few developers paste diffs into a chat window when they remember, and the feedback varies widely. The team wants the simplest setup that runs automatically in their own GitHub Actions CI, lets them control the review prompt and triggers, and keeps the cost per PR predictable. Which approach is BEST?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Build an internal review service on the Agent SDK that listens for GitHub webhooks, stores review history, and posts its comments through the GitHub API."
+        },
+        {
+          "id": "B",
+          "text": "Ask every developer to run a shared review prompt in Claude Code before opening each PR and paste the resulting output into the PR description."
+        },
+        {
+          "id": "C",
+          "text": "Add the Claude Code GitHub Action on pull request events with a review prompt, keep the team's standards in a concise CLAUDE.md, and cap the turns in `claude_args`."
+        },
+        {
+          "id": "D",
+          "text": "Run a nightly batch job that reviews all pull requests opened that day and emails one combined report of findings to the whole team each morning."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "The Claude Code GitHub Action runs in automation mode on any GitHub event when a `prompt` input is supplied, so no one has to remember anything. Claude follows the standards in the repository's `CLAUDE.md`, which the docs recommend keeping concise because it is read on every run. Cost stays predictable with `--max-turns` passed through `claude_args`, plus workflow-level timeouts and concurrency controls. The docs position this workflow as the choice when a team wants to control the prompt, model and triggers itself; Anthropic's managed Code Review service is the alternative when the team would rather not maintain a workflow file at all. Either way, nothing custom has to be built or hosted.",
+      "whyWrong": {
+        "A": "This is over-engineered. It means building, hosting and securing a custom webhook service to get what a maintained Action already provides in a few lines of YAML.",
+        "B": "It still depends on each developer remembering to do it, which is exactly the inconsistency the team wants to remove.",
+        "D": "Next-day, batched feedback arrives after human reviewers have already started working. It does not give the per-PR first pass that was asked for."
+      },
+      "difficulty": 1,
+      "mindset": "Automate repeated team workflows with existing integrations before building custom infrastructure.",
+      "tags": [
+        "github-actions",
+        "code-review",
+        "ci",
+        "automation"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/github-actions#interactive-and-automation-modes",
+        "https://code.claude.com/docs/en/github-actions#manage-costs"
+      ]
+    },
+    {
+      "id": "p-d7-x1-012",
+      "taskStatementId": "7.2",
+      "stem": "A team uses Claude Code to extend a date-parsing library. Claude's changes look clean and pass code review, but users keep reporting edge-case bugs with time zones and leap years. Developers usually make requests like \"add support for ISO week dates\" and accept the result once Claude says the work is complete. Which TWO changes to the workflow would MOST improve correctness? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "End every request with \"think very carefully and double-check your work before answering\", so that Claude reviews its own finished output."
+        },
+        {
+          "id": "B",
+          "text": "Allow Claude to update existing tests whenever they fail after a change, so that the suite stays green and never blocks delivery of the work."
+        },
+        {
+          "id": "C",
+          "text": "Have Claude write tests for the expected behavior first, confirm that they fail, and then implement until they pass without ever changing the tests."
+        },
+        {
+          "id": "D",
+          "text": "Switch the team's default to the largest available model, since harder reasoning problems like calendar arithmetic need a stronger model."
+        },
+        {
+          "id": "E",
+          "text": "Include concrete input and output examples and named edge cases in each request, and ask Claude to show the test run as evidence."
+        }
+      ],
+      "correct": [
+        "C",
+        "E"
+      ],
+      "explanation": "Anthropic's Claude Code best practices emphasize giving Claude **a way to verify its own work**: tests, example input/output pairs, or other checks it can run. Writing the tests first and confirming they fail creates an objective target that Claude cannot quietly redefine. Stating examples and edge cases up front makes the requirement precise, and asking for the test output as evidence replaces \"done\" claims with something reviewers can check.",
+      "whyWrong": {
+        "A": "Self-checking without an external signal is the same model grading its own work. It does not reliably catch edge cases it never considered.",
+        "B": "Letting the implementer edit failing tests turns the tests into a record of what the code does, not what it should do. That hides exactly these bugs.",
+        "D": "A bigger model does not fix the missing verification target. Without tests and examples, edge cases still go unchecked."
+      },
+      "difficulty": 2,
+      "mindset": "Give the agent an objective, external check to work against, not more effort or a bigger model.",
+      "tags": [
+        "verification",
+        "tdd",
+        "prompting",
+        "developer-workflow"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/best-practices#give-claude-a-way-to-verify-its-work"
+      ]
+    }
+  ]
+}

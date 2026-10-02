@@ -1,0 +1,695 @@
+{
+  "certId": "developer",
+  "domainId": "d7-security-safety",
+  "questions": [
+    {
+      "id": "v-d7-g4-001",
+      "taskStatementId": "7.4",
+      "scenario": "A platform team standardizes MCP configuration for a repository that several Claude applications share. The project-scoped `.mcp.json` at the repo root defines an HTTP MCP server for an internal deployment service, and the server requires a bearer token in an Authorization header. The repository is private, but the team's security policy forbids credentials in version control, and the same file is consumed by developers' laptops and by the CI pipeline.",
+      "stem": "Which change best lets the team keep sharing the server configuration while ensuring the bearer token is never committed?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Commit the token directly in `.mcp.json` inside the `headers` block, since the repository is private and only employees can clone it."
+        },
+        {
+          "id": "B",
+          "text": "Commit `.mcp.json` with the header value written as `${DEPLOY_SERVICE_TOKEN}`, and provide that variable from each developer's environment and from CI secrets."
+        },
+        {
+          "id": "C",
+          "text": "Leave `.mcp.json` out of version control entirely and have each teammate hand-paste the server definition, token included, into their own `~/.claude.json`."
+        },
+        {
+          "id": "D",
+          "text": "Store the token in the project `CLAUDE.md` with a warning that it is confidential, so it travels with the repository but stays out of the machine-readable config."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "`.mcp.json` supports `${VAR}` (and `${VAR:-default}`) environment-variable expansion in `command`, `args`, `env`, `url`, and `headers` precisely so that shared configuration can be committed while each environment injects its own secret. The config is shared; the secret never is.",
+      "whyWrong": {
+        "A": "A private repo is not a secret store: clones, forks, CI logs, and departing employees all spread the token. Env-var expansion exists exactly to avoid committing credentials.",
+        "C": "Manual per-user copies abandon the team-sharing mechanism (project-scoped `.mcp.json`) and make rotation and drift nearly impossible to manage.",
+        "D": "CLAUDE.md is committed, model-visible context injected into the conversation; it is never an appropriate place for credentials, with or without a warning."
+      },
+      "difficulty": 2,
+      "mindset": "Share the config, never the secret — let each environment inject its own credential.",
+      "tags": [
+        "mcp",
+        "secrets",
+        "env-var-expansion",
+        "version-control"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/mcp"
+      ]
+    },
+    {
+      "id": "v-d7-g4-002",
+      "taskStatementId": "7.4",
+      "scenario": "During an audit, an engineer discovers that a script containing a production Anthropic API key with broad permissions was pushed to a public GitHub repository three days ago, and the repository has since been forked twice. Billing shows slightly higher-than-usual token consumption this week.",
+      "stem": "Which TWO actions should the team take immediately? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Revoke the exposed key right away and issue a replacement through the normal provisioning flow, updating dependent services afterward."
+        },
+        {
+          "id": "B",
+          "text": "Review Console usage and billing records for the exposed key to identify any unauthorized calls made since the push."
+        },
+        {
+          "id": "C",
+          "text": "Rewrite the repository's git history and force-push so the key no longer appears in any commit, then verify with a search."
+        },
+        {
+          "id": "D",
+          "text": "Lower the key's spend limit and watch usage for a week before deciding whether to revoke it."
+        },
+        {
+          "id": "E",
+          "text": "Ask everyone in the organization to confirm by email that they have not used the key before taking further action."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "A committed key must be treated as compromised the moment it leaves a trusted store, and history rewrites cannot un-share existing clones and forks. The correct sequence is revoke first, then use access records (Console usage/billing, spend monitoring) to scope the damage, then clean up and improve prevention.",
+      "whyWrong": {
+        "C": "Force-pushing does not invalidate the key or remove it from forks, clones, and caches; it creates a false sense of safety while the credential stays live.",
+        "D": "Capping spend bounds the bill but leaves a valid credential in attackers' hands; exposure calls for immediate revocation, not observation.",
+        "E": "A round-robin email is not a control and delays containment; detection belongs in the provider's usage records, not self-reporting."
+      },
+      "difficulty": 2,
+      "mindset": "Revoke first, investigate second — a leaked credential is compromised regardless of visible abuse.",
+      "tags": [
+        "incident-response",
+        "api-keys",
+        "revocation",
+        "monitoring"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/rate-limits",
+        "https://code.claude.com/docs/en/github-actions"
+      ]
+    },
+    {
+      "id": "v-d7-g4-003",
+      "taskStatementId": "7.4",
+      "scenario": "A startup ships a mobile app whose backend is nearly empty: the app calls the Claude Messages API directly, with the API key obfuscated inside the app bundle. The system prompt asks the model to refuse requests that 'do not originate from the official app'. This week the team's bill tripled, and they suspect the extracted key is being reused by a third party.",
+      "stem": "Which redesign most reliably stops the abuse while keeping the product working?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Move every Claude call behind their own backend service that holds the credential in a secrets manager, authenticate end users in the app, and authorize each request server-side against the user's identity."
+        },
+        {
+          "id": "B",
+          "text": "Apply stronger obfuscation and encrypt the key with a second key baked into the app, rotating the pair monthly."
+        },
+        {
+          "id": "C",
+          "text": "Strengthen the system prompt so the model rejects requests lacking a secret app header, and add few-shot examples of correct refusals."
+        },
+        {
+          "id": "D",
+          "text": "Create a second key with a low spend limit dedicated to the app and continue shipping it inside the bundle."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Anything shipped to a client device can be extracted; no client-side technique changes that. The durable fix removes the credential from the client entirely: the backend holds the Claude credential, the app authenticates users, and each call is authorized against a real identity so abuse can be attributed, throttled, and cut off.",
+      "whyWrong": {
+        "B": "Obfuscation and bundled encryption only delay extraction; the decryption material ships with the app.",
+        "C": "The model cannot reliably verify request origin, prompts are probabilistic guidance, and an attacker holding the key calls the API directly without the app anyway.",
+        "D": "A spend cap limits the bill but still publishes a live credential; attackers simply get a cheaper key."
+      },
+      "difficulty": 1,
+      "mindset": "If it runs on a user's device, it isn't a secret — hold credentials server-side and authorize per user.",
+      "tags": [
+        "client-side-keys",
+        "architecture",
+        "authentication",
+        "least-privilege"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/mitigate-jailbreaks"
+      ]
+    },
+    {
+      "id": "v-d7-g4-004",
+      "taskStatementId": "7.4",
+      "scenario": "A team configures a GitHub Actions workflow that runs Claude Code against pull requests. Some jobs reach Claude directly through the API; others route through the company's cloud provider. A new hire proposes several ways to supply credentials to the workflow.",
+      "stem": "Which TWO proposals follow Anthropic's supported credential-handling guidance for CI? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Reuse one senior developer's personal API key in the workflow so that no new credential has to be provisioned or reviewed."
+        },
+        {
+          "id": "B",
+          "text": "Store the credential as an encrypted GitHub Actions secret and pass it through the action's `anthropic_api_key` input, or use a `claude setup-token` OAuth token on subscription plans."
+        },
+        {
+          "id": "C",
+          "text": "Commit the key to the repository's `.claude/settings.json` so that every checkout, including CI, has it available locally."
+        },
+        {
+          "id": "D",
+          "text": "Print the credential at the start of each job to verify it was injected, then delete the run logs immediately after the workflow finishes."
+        },
+        {
+          "id": "E",
+          "text": "For jobs that reach Claude through a cloud provider, obtain short-lived credentials via workload identity federation (OIDC) instead of storing a long-lived provider access key."
+        }
+      ],
+      "correct": [
+        "B",
+        "E"
+      ],
+      "explanation": "CI credentials belong in the pipeline's secret store and are passed through the action's supported inputs; when Claude is reached through a cloud provider, OIDC-based workload identity federation avoids long-lived provider keys entirely. Personal keys are for personal development, never for shared workloads.",
+      "whyWrong": {
+        "A": "Personal keys must not be shared across a team or pipeline: they blur attribution, defeat access reviews, and couple CI uptime to one person's account.",
+        "C": "Committed configuration is version control, not a secret store — every clone and the full history retain the key.",
+        "D": "Echoing credentials into logs exposes them to anyone with log access, and deleting logs also destroys the audit trail needed for access monitoring."
+      },
+      "difficulty": 2,
+      "mindset": "CI gets its own short-lived or secret-store credentials; never a person's key and never the repo.",
+      "tags": [
+        "ci",
+        "github-actions",
+        "workload-identity-federation",
+        "secrets"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/github-actions",
+        "https://code.claude.com/docs/en/headless"
+      ]
+    },
+    {
+      "id": "v-d7-g4-005",
+      "taskStatementId": "7.4",
+      "scenario": "A multi-tenant support product gives its Claude agent a `get_orders` tool backed by the shared orders database. In a demo, a user typed 'my customer ID is 8842' (another tenant's ID) and the agent duly returned that tenant's orders. The team's candidate fixes differ widely in cost and reliability.",
+      "stem": "Which fix most reliably prevents cross-tenant data exposure?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add a system-prompt rule that the agent may only query the customer ID belonging to the signed-in user, with few-shot examples of correct refusals."
+        },
+        {
+          "id": "B",
+          "text": "Have the model state which customer ID it is about to query, and validate that the ID is well-formed before executing the tool call."
+        },
+        {
+          "id": "C",
+          "text": "Require users to confirm their customer ID at the start of each conversation and carry it in the conversation context for later tool calls."
+        },
+        {
+          "id": "D",
+          "text": "Derive the tenant from the authenticated session inside the backend, enforce the tenant filter within the tool's query code, and ignore any customer ID supplied through the prompt."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "Authorization belongs in code, not in the model. The tool resolves the tenant from the verified session identity and enforces the filter at the data layer, so a pasted or injected customer ID — whatever its source — cannot widen the query. Prompt-level rules and user-asserted IDs are probabilistic and spoofable.",
+      "whyWrong": {
+        "A": "Prompt rules are guidance, not enforcement; injection or persuasion can override them, and the data layer still trusts model behavior.",
+        "B": "Format validation checks shape, not permission — a perfectly well-formed foreign tenant ID still passes.",
+        "C": "A user-confirmed ID is self-asserted, not authenticated; it is exactly the spoofing vector the demo exposed."
+      },
+      "difficulty": 2,
+      "mindset": "Tenant scoping is an authorization decision — resolve identity server-side and enforce it in the query, not the prompt.",
+      "tags": [
+        "authorization",
+        "multi-tenant",
+        "tool-code",
+        "injection"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-06-18/server/tools",
+        "https://modelcontextprotocol.io/specification/2025-06-18/basic/security_best_practices"
+      ]
+    },
+    {
+      "id": "v-d7-g4-006",
+      "taskStatementId": "7.4",
+      "scenario": "A payments team built an Agent SDK application whose `process_refund` tool must only run for users with an elevated approval level. They implemented the check in a `canUseTool` callback that queries the approval service, and also added `process_refund` to `allowed_tools` so demos run smoothly. QA reports that most refund calls succeed without ever hitting the approval service.",
+      "stem": "With minimal disruption, what should they change so that every `process_refund` call is verified?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Make the `canUseTool` callback synchronous, since the async callback is occasionally losing the race with tool execution."
+        },
+        {
+          "id": "B",
+          "text": "Keep the callback and additionally instruct the agent in its system prompt to obtain human confirmation before submitting any refund."
+        },
+        {
+          "id": "C",
+          "text": "Remove `process_refund` from `allowed_tools`, since auto-approved tools never reach `canUseTool`, and enforce the approval check in a PreToolUse hook, which runs on every call and takes precedence over allow rules."
+        },
+        {
+          "id": "D",
+          "text": "Drop the tool entirely and have the model emit refund requests as JSON that a separate human-approval service validates and executes."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "`allowed_tools` is an auto-approve list, not a restriction, and auto-approved calls never reach the `canUseTool` callback — which is exactly why QA saw unverified refunds. Checks that must run on every call belong in a PreToolUse hook, which is evaluated before permission modes and allow rules and can deny deterministically.",
+      "whyWrong": {
+        "A": "There is no race: the callback is simply bypassed for auto-approved tools, so making it synchronous changes nothing.",
+        "B": "A prompt instruction is probabilistic guidance and cannot restore a deterministic check the harness has already skipped.",
+        "D": "Replacing the tool with an out-of-band JSON workflow is a disproportionate redesign when the harness already provides a per-call enforcement point."
+      },
+      "difficulty": 3,
+      "mindset": "Auto-approved tools skip the permission callback — guarantees belong in a PreToolUse hook.",
+      "tags": [
+        "agent-sdk",
+        "allowed-tools",
+        "canusetool",
+        "pretooluse",
+        "access-approval"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/permissions"
+      ]
+    },
+    {
+      "id": "v-d7-g4-007",
+      "taskStatementId": "7.4",
+      "scenario": "An internal HTTP MCP server for the release-management system authenticates clients with OAuth bearer tokens. It works on developers' laptops, where each person completes the interactive login once. In the nightly Agent SDK CI run, the server shows status `needs-auth` and its tools never become available; no human watches the pipeline.",
+      "stem": "What is the most appropriate way to authenticate the CI run to this MCP server?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Switch the server definition from HTTP to stdio in CI, since stdio servers require no authentication."
+        },
+        {
+          "id": "B",
+          "text": "Add a CI step that runs `claude mcp login` against the server; the interactive browser prompt is skipped automatically for trusted internal servers."
+        },
+        {
+          "id": "C",
+          "text": "Mark the server as auth-exempt in settings so that the `needs-auth` status is ignored for servers on the internal network."
+        },
+        {
+          "id": "D",
+          "text": "Obtain a machine-to-machine token from the identity provider, store it as a CI secret, and configure the server with the token passed in its `headers`, since the SDK does not run an interactive OAuth flow itself."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "The Agent SDK does not perform an interactive OAuth login on your behalf; unattended environments must bring their own credential. Passing a pre-obtained machine token in the server's `headers`, sourced from the CI secret store, is the supported pattern — and `needs-auth` is the status that signals exactly this situation.",
+      "whyWrong": {
+        "A": "Transport choice is orthogonal to authentication; a local subprocess still needs credentials to reach protected resources, and this changes the deployment model for no security gain.",
+        "B": "`claude mcp login` is an interactive flow for humans; a headless pipeline has no browser or user to complete the consent step.",
+        "C": "No such exemption exists — `needs-auth` is actionable status information about the connection, not a toggle to suppress."
+      },
+      "difficulty": 2,
+      "mindset": "Unattended agents can't complete interactive OAuth — provision a machine token and pass it in headers.",
+      "tags": [
+        "mcp",
+        "oauth",
+        "ci",
+        "agent-sdk"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/mcp"
+      ]
+    },
+    {
+      "id": "v-d7-g4-008",
+      "taskStatementId": "7.4",
+      "scenario": "A team operates an MCP server that fronts several internal services. To 'keep things simple', they propose that clients send the same bearer token they already use for the company web app, and that the MCP server forward that token unchanged to each upstream service so upstream audits show the original caller.",
+      "stem": "Which assessment of this design is correct?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The design is acceptable provided the token travels only over TLS and is redacted from all logs."
+        },
+        {
+          "id": "B",
+          "text": "It violates token audience rules: the server should accept only tokens issued for the MCP server itself, validate that audience on every request, and use separately scoped credentials for upstream calls."
+        },
+        {
+          "id": "C",
+          "text": "Forwarding the original token is best practice because it preserves end-user identity in upstream audit trails."
+        },
+        {
+          "id": "D",
+          "text": "Drop authentication on the server and bind it to 127.0.0.1 instead, since only the company application ever connects to it."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "MCP security guidance forbids token passthrough: a server must not accept tokens that were not issued for that server (audience validation), and confused-deputy risk grows when one token unlocks several audiences. The server validates its own audience and presents distinct, least-privilege credentials to upstream services.",
+      "whyWrong": {
+        "A": "Transport security and log hygiene are baseline hygiene, not substitutes for audience validation.",
+        "C": "Passthrough is explicitly forbidden; identity propagation must happen through deliberate, scoped federation rather than reusing another audience's token.",
+        "D": "Local binding narrows exposure, but remote-capable MCP servers are still expected to authenticate, and localhost binding is not an authorization model."
+      },
+      "difficulty": 3,
+      "mindset": "One token, one audience — validate what a token was issued for; never pass it through.",
+      "tags": [
+        "mcp",
+        "token-passthrough",
+        "audience-validation",
+        "oauth"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-06-18/basic/security_best_practices",
+        "https://modelcontextprotocol.io/specification/2025-06-18/basic/transports"
+      ]
+    },
+    {
+      "id": "v-d7-g4-009",
+      "taskStatementId": "7.4",
+      "scenario": "A company runs a Claude-powered internal assistant for 4,000 employees. Security wants to detect a stolen or misused credential quickly and to attribute abnormal usage to an individual, without compromising employee privacy.",
+      "stem": "Which TWO practices best meet both goals? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Send an opaque, non-reversible end-user identifier in the request's `metadata.user_id` so that usage in Console logs and reporting attributes to a person without exposing PII."
+        },
+        {
+          "id": "B",
+          "text": "Have each employee include their employee ID and team name in every prompt so that problematic conversations can be traced later."
+        },
+        {
+          "id": "C",
+          "text": "Maintain a shared, company-wide spreadsheet of raw prompts and completions that the security team reviews each Friday."
+        },
+        {
+          "id": "D",
+          "text": "Configure spend alerts and monitor consumption through the Console and usage/cost reporting so that anomalous patterns surface within hours."
+        },
+        {
+          "id": "E",
+          "text": "Instruct the assistant in its system prompt to refuse more than twenty requests per user per day so that runaway usage is capped."
+        }
+      ],
+      "correct": [
+        "A",
+        "D"
+      ],
+      "explanation": "Per-user attribution and fast anomaly detection are monitoring problems, not prompting problems: an opaque `metadata.user_id` ties usage to a person without putting PII into prompts, and spend alerts plus usage reporting surface credential abuse or runaway agents quickly.",
+      "whyWrong": {
+        "B": "Self-reported IDs in prompts are unreliable, leak PII into model context, and only help after the fact.",
+        "C": "Bulk-logging raw conversations into a shared spreadsheet creates a privacy and retention problem far worse than the one it solves.",
+        "E": "The model cannot enforce quotas; rate and spend limits are enforced by infrastructure, not by instructions."
+      },
+      "difficulty": 2,
+      "mindset": "Attribute with opaque identifiers, detect with spend alerts and usage reporting — never with prompts.",
+      "tags": [
+        "monitoring",
+        "user-identifiers",
+        "spend-alerts",
+        "privacy"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/rate-limits"
+      ]
+    },
+    {
+      "id": "v-d7-g4-010",
+      "taskStatementId": "7.4",
+      "scenario": "A company's Claude integration grew organically: development, staging, and production all share the single API key created at signup, kept in one secrets-manager entry. Last month an experimental agent in development exhausted the shared rate limits during a production incident postmortem, and an auditor flagged that anyone deploying to development can also see production usage under that key.",
+      "stem": "Which change best addresses both the blast-radius and the access-scoping problems?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Keep the single key but set a much lower `max_tokens` on development requests so that experiments consume fewer tokens."
+        },
+        {
+          "id": "B",
+          "text": "Create three additional keys under the same account, named dev/staging/prod, and distribute one to each environment."
+        },
+        {
+          "id": "C",
+          "text": "Separate the environments into distinct workspaces, each with its own scoped keys, spend and rate limits, and least-privilege role assignments, reviewed on a regular cadence."
+        },
+        {
+          "id": "D",
+          "text": "Route all three environments through one shared service credential kept solely in the secrets manager, treating the manager itself as the security boundary."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Environments are isolated by giving each its own workspace boundary: keys scoped to that workspace, spend and rate limits that cannot starve the other environments, and roles mapped to the people who actually need each environment — with periodic access reviews to remove stale grants.",
+      "whyWrong": {
+        "A": "`max_tokens` caps output length per request; it does not isolate rate limits, spend, or access between environments.",
+        "B": "Differently named keys in the same account share the same trust boundary, limits, and visibility — naming is not separation.",
+        "D": "A secrets manager protects the credential at rest; it does not create isolation between environments once the key is issued."
+      },
+      "difficulty": 2,
+      "mindset": "Separate environments get separate boundaries — scoped keys and per-environment limits — not separate names.",
+      "tags": [
+        "workspaces",
+        "environment-isolation",
+        "least-privilege",
+        "access-reviews"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/rate-limits"
+      ]
+    },
+    {
+      "id": "v-d7-g4-011",
+      "taskStatementId": "7.4",
+      "scenario": "Reviewing a repository, a security engineer finds a project CLAUDE.md containing an internal inventory-service token, added 'so Claude can call the API when engineers ask about stock levels'. The token is valid, widely scoped, and now sits in every teammate's checkout and in the full git history.",
+      "stem": "What is the best remediation?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Leave the token in CLAUDE.md but add an instruction that Claude must never reveal or copy it."
+        },
+        {
+          "id": "B",
+          "text": "Revoke the exposed token, then expose inventory access through a tool or MCP server whose process reads the credential from an environment variable at runtime, keeping it out of CLAUDE.md entirely."
+        },
+        {
+          "id": "C",
+          "text": "Move the token into a file under `.claude/rules/` with a `paths:` filter so that it is only loaded when inventory files are touched."
+        },
+        {
+          "id": "D",
+          "text": "Base64-encode the token in CLAUDE.md so that it is no longer stored in plaintext."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "CLAUDE.md is committed, model-visible context — never a secret store — and the token is already in history, so it must be revoked, not merely relocated. The durable pattern is a tool or MCP server that holds the credential itself (read from the environment) and exposes scoped operations to Claude.",
+      "whyWrong": {
+        "A": "An instruction inside model context is not a control; anyone (or any injected text) can ask for the file's contents.",
+        "C": "Rules files are also model-visible context; changing when they load changes nothing about secrecy.",
+        "D": "Encoding is reversible and provides zero secrecy; the token still ships to every clone."
+      },
+      "difficulty": 1,
+      "mindset": "CLAUDE.md is context, not a vault — credentials live in the environment behind a tool boundary.",
+      "tags": [
+        "claude-md",
+        "secrets",
+        "tools",
+        "remediation"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/memory",
+        "https://code.claude.com/docs/en/mcp"
+      ]
+    },
+    {
+      "id": "v-d7-g4-012",
+      "taskStatementId": "7.4",
+      "scenario": "A team's MCP gateway issues each client a session id at initialization. To cut latency, a proposal argues that once a session is established, presenting a valid session id should count as proof of who is calling, so per-request token verification can be skipped for the session's lifetime. Traffic includes requests arriving from shared office networks.",
+      "stem": "Which response to this proposal is correct?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Agree — a live session id was issued by the gateway, so it already proves the caller's identity."
+        },
+        {
+          "id": "B",
+          "text": "Keep the skip but make session ids shorter and rotate them every 24 hours to shrink the window of misuse."
+        },
+        {
+          "id": "C",
+          "text": "Embed the user's display name in the session id so that upstream services can independently verify the caller."
+        },
+        {
+          "id": "D",
+          "text": "Reject the skip: authenticate every request independently, bind each session to a verified user identifier (for example `user_id:session_id`), and generate session ids with cryptographically secure randomness."
+        }
+      ],
+      "whyWrong": {
+        "A": "Session establishment is not login; a leaked or guessed session id would then impersonate its owner indefinitely.",
+        "B": "Rotation shrinks but does not remove the window, and shorter ids are easier to guess — the request still isn't authenticated.",
+        "C": "A self-describing session id is trivially spoofable and leaks PII into every request."
+      },
+      "explanation": "Sessions are state, not authentication. MCP guidance is explicit that possessing a session id does not prove identity: verify every request, bind sessions to an authenticated user, and use cryptographically secure ids so sessions cannot be guessed or hijacked.",
+      "correct": [
+        "D"
+      ],
+      "difficulty": 3,
+      "mindset": "A session id is state, not identity — authenticate every request and bind sessions to verified users.",
+      "tags": [
+        "mcp",
+        "sessions",
+        "authentication",
+        "session-hijacking"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-06-18/basic/security_best_practices"
+      ]
+    },
+    {
+      "id": "v-d7-g4-013",
+      "taskStatementId": "7.4",
+      "scenario": "A quarterly security review of a Claude-powered product finds eleven API keys of uncertain ownership, three unused for months, one shared across four services, and none on a scheduled rotation. The reviewer must recommend a credential lifecycle policy.",
+      "stem": "Which policy best reflects sound key-management practice?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Rotate keys on a fixed schedule, remove unused keys in recurring access reviews, keep one least-privilege credential per service, and revoke immediately on suspected exposure."
+        },
+        {
+          "id": "B",
+          "text": "Leave working keys in place until compromise is suspected, since rotating healthy keys risks breaking production integrations."
+        },
+        {
+          "id": "C",
+          "text": "Rotate all keys every Monday morning and distribute the new values to service owners over the team's chat channel for convenience."
+        },
+        {
+          "id": "D",
+          "text": "Consolidate to a single admin-level key stored in the secrets manager so that there is only one credential to govern and audit annually."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "A sound lifecycle combines scheduled rotation (exposure usually goes undetected), recurring access reviews that remove stale grants, one least-privilege credential per workload for attribution and blast-radius control, and immediate revocation on suspected exposure.",
+      "whyWrong": {
+        "B": "Waiting for suspected compromise assumes you will notice; rotation exists because exposure is typically invisible.",
+        "C": "Chat-channel distribution undermines rotation — the secret now lives in message history — and weekly churn adds breakage without adding safety.",
+        "D": "One powerful shared key maximizes blast radius and destroys per-service attribution; least privilege points the other way."
+      },
+      "difficulty": 1,
+      "mindset": "Rotate on a schedule, review access regularly, scope per workload, revoke on suspicion.",
+      "tags": [
+        "key-rotation",
+        "access-reviews",
+        "least-privilege",
+        "lifecycle"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/github-actions",
+        "https://platform.claude.com/docs/en/api/rate-limits"
+      ]
+    },
+    {
+      "id": "v-d7-g4-014",
+      "taskStatementId": "7.4",
+      "scenario": "A platform team is hardening how Claude Code agents run on developer laptops and in CI. Agents currently receive long-lived cloud credentials in their environment so they can call internal services, and a recent incident involved an agent echoing a credential into a log file.",
+      "stem": "Which TWO changes most reduce credential risk? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add a centrally managed CLAUDE.md rule instructing agents never to print, copy, or export credentials."
+        },
+        {
+          "id": "B",
+          "text": "Consolidate all agent credentials into one long-lived admin key stored in the secrets manager, reducing the number of places credentials appear."
+        },
+        {
+          "id": "C",
+          "text": "Route internal service calls through a credential proxy so that agents never hold raw keys; the proxy injects credentials, enforces per-service allowlists, and logs traffic."
+        },
+        {
+          "id": "D",
+          "text": "Turn off request logging for all agent traffic so that credentials can no longer appear in logs."
+        },
+        {
+          "id": "E",
+          "text": "Give each person and each workload its own distinct identity with least-privilege scopes, so that every action is attributable and a single leak has minimal reach."
+        }
+      ],
+      "correct": [
+        "C",
+        "E"
+      ],
+      "explanation": "The two structural controls are removing credentials from the agent entirely (the proxy holds them, enforces allowlists, and keeps an audit log) and eliminating shared identities (distinct least-privilege identities bound to a person or workload). Both remain effective even when the model misbehaves.",
+      "whyWrong": {
+        "A": "CLAUDE.md is probabilistic guidance; a rule about not printing secrets does not stop an agent that already holds the secret.",
+        "B": "One shared admin key maximizes blast radius and destroys attribution — the opposite of least privilege.",
+        "D": "Disabling logging removes the authorized-access monitoring that detects misuse; the credential exposure itself is unchanged."
+      },
+      "difficulty": 2,
+      "mindset": "Agents shouldn't hold keys, and no two principals should share one — structural beats instructive.",
+      "tags": [
+        "credential-proxy",
+        "least-privilege",
+        "identity",
+        "monitoring"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/mitigate-jailbreaks",
+        "https://code.claude.com/docs/en/managed-settings"
+      ]
+    },
+    {
+      "id": "v-d7-g4-015",
+      "taskStatementId": "7.4",
+      "scenario": "A staff engineer is setting up Claude credentials for three contexts: (a) her own daily prototyping on her laptop, (b) a shared staging service the whole team deploys to, and (c) a GitHub Actions pipeline that reaches Claude through the company's cloud provider. She wants each context to use the most appropriate credential type.",
+      "stem": "Which assignment is correct?",
+      "options": [
+        {
+          "id": "A",
+          "text": "A personal key for her own prototyping, a dedicated service-account credential scoped to the staging workload, and short-lived federated credentials for the pipeline."
+        },
+        {
+          "id": "B",
+          "text": "The team's shared workspace key for all three contexts, so that accounting and reviews only ever involve one credential."
+        },
+        {
+          "id": "C",
+          "text": "Her personal admin key for staging and CI 'because she owns those systems', with a separate personal key for prototyping."
+        },
+        {
+          "id": "D",
+          "text": "Workload identity federation on her laptop, her personal key committed to the pipeline's config, and an anonymous local mode for staging."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Match the credential to the principal: personal keys for personal development, dedicated service-account credentials for shared workloads (for attribution and scoping), and federated short-lived credentials for CI reaching cloud providers — no long-lived provider keys sitting in the pipeline.",
+      "whyWrong": {
+        "B": "One shared key for everything collapses attribution, blocks least-privilege scoping, and gives every context every permission.",
+        "C": "Personal credentials must not back shared systems; owning a system does not transfer a personal key's identity or limits.",
+        "D": "Federation fits machine pipelines, not interactive laptops; personal keys never belong in committed config; anonymous mode does not exist."
+      },
+      "difficulty": 3,
+      "mindset": "One principal, one credential type: personal for you, service account for shared workloads, federation for CI.",
+      "tags": [
+        "credential-selection",
+        "workload-identity-federation",
+        "service-accounts",
+        "ci"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/github-actions",
+        "https://code.claude.com/docs/en/headless"
+      ]
+    }
+  ]
+}

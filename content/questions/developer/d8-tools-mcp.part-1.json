@@ -1,0 +1,707 @@
+{
+  "certId": "developer",
+  "domainId": "d8-tools-mcp",
+  "questions": [
+    {
+      "id": "v-d8-g1-001",
+      "taskStatementId": "8.1",
+      "scenario": "A customer-support agent has two client tools: `get_customer` (returns profile and contact data) and `get_order_details` (returns order status and line items). Each description is a single line such as \"Retrieves customer information.\" When users ask \"Where is my order?\", Claude repeatedly calls `get_customer` and finishes without ever calling `get_order_details`.",
+      "stem": "Which fix is MOST likely to resolve the misrouting with minimal changes?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add a system-prompt table mapping common user questions to the correct tool, so selection is driven by the mapping rather than by the descriptions."
+        },
+        {
+          "id": "B",
+          "text": "Expand each tool's description to state what it returns, when to use it and when not to (naming the sibling tool), expected inputs, and key limits."
+        },
+        {
+          "id": "C",
+          "text": "Add few-shot examples of correct conversations to the system prompt that show the right tool being selected for order questions."
+        },
+        {
+          "id": "D",
+          "text": "Replace both tools with a single combined tool that returns the customer profile and all order data in one call."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Tool descriptions are the primary mechanism Claude uses to select tools — the docs call them \"by far the most important factor\" in tool performance. Thin one-line descriptions cause exactly this kind of sibling-tool confusion. The fix is to make each description state what the tool does, when to use it and when *not* to (naming the similar tool), parameter formats, outputs, and limits.",
+      "whyWrong": {
+        "A": "A prompt-level mapping can mask the symptom, but the model still selects tools from their description text; leaving the descriptions thin keeps selection fragile, and the mapping can drift as questions change.",
+        "C": "Few-shot examples add token cost on every request and are a secondary fix aimed at format consistency; they teach tool boundaries far less directly than the descriptions themselves.",
+        "D": "Consolidation is a legitimate lever for overlapping wrappers of a single workflow, but these are two distinct lookups; merging them changes the API surface far more than the \"minimal changes\" qualifier allows."
+      },
+      "difficulty": 2,
+      "mindset": "The model chooses tools from description text alone — make the descriptions do the routing.",
+      "tags": [
+        "tool-descriptions",
+        "tool-selection",
+        "misrouting",
+        "d8"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools"
+      ]
+    },
+    {
+      "id": "v-d8-g1-002",
+      "taskStatementId": "8.1",
+      "scenario": "A team extracts invoice data through a tool whose `input_schema` requires `invoice_id` (string), `total` (number), `currency` (enum), and a `line_items` array, with strict tool use enabled (`strict: true`). In production, a small share of calls pass schema validation yet contain impossible values — for example, a `total` that does not equal the sum of the submitted `line_items` amounts.",
+      "stem": "What does this behavior tell the team about strict mode, and what should they add?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Strict mode is failing intermittently; they should treat it as a bug and keep retrying failed extractions until the output validates."
+        },
+        {
+          "id": "B",
+          "text": "Strict mode only guarantees schema-valid input when a tool call occurs, so they should move the summation check into the prompt and have the model compute the total correctly."
+        },
+        {
+          "id": "C",
+          "text": "Strict mode guarantees schema-conforming arguments (types, required fields, valid enums), not business correctness; keep it and add handler-side validation that rejects mismatches and feeds the error back for a bounded retry."
+        },
+        {
+          "id": "D",
+          "text": "Strict mode only takes effect when `tool_choice` is `\"any\"`, so they should force the tool call to make validation apply."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "`strict: true` uses grammar-constrained sampling to guarantee that tool arguments conform to the schema — nothing more. Cross-field business rules such as \"total must equal the sum of line items\" are semantic and outside the schema's guarantee, so they must be enforced in the application, with a bounded validation-retry loop that returns the error to the model.",
+      "whyWrong": {
+        "A": "Strict mode is working: the arguments match the schema. The failures are semantic, which this schema does not and cannot encode; unbounded retries of the same call are not a fix.",
+        "B": "Moving arithmetic into the prompt makes correctness less reliable, not more; deterministic checks belong in code, not in model instructions.",
+        "D": "`strict` is a property of the tool definition and applies whenever the tool is called, including under `auto`; forcing the call adds nothing semantically."
+      },
+      "difficulty": 2,
+      "mindset": "Schemas guarantee shape; handlers guarantee business rules.",
+      "tags": [
+        "strict-tool-use",
+        "validation",
+        "structured-output",
+        "d8"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/strict-tool-use"
+      ]
+    },
+    {
+      "id": "v-d8-g1-003",
+      "taskStatementId": "8.1",
+      "scenario": "A triage assistant must classify every incoming support ticket by calling the `classify_ticket` tool. Product now wants each reply to include a one-sentence justification *before* the classification is recorded. The developer keeps `tool_choice: {\"type\": \"tool\", \"name\": \"classify_ticket\"}`, but every response contains only the tool call — no justification text.",
+      "stem": "Why does this happen, and what is the BEST fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "With forced selection the API prefills the assistant turn, so no natural-language text can precede the tool call; switch to `tool_choice: \"auto\"` and instruct the model to justify briefly, then call the tool."
+        },
+        {
+          "id": "B",
+          "text": "The model is deprioritizing the justification; move the requirement into the tool's description so it is honored on every call."
+        },
+        {
+          "id": "C",
+          "text": "The justification text is being stripped during streaming; disable streaming to recover the missing sentences."
+        },
+        {
+          "id": "D",
+          "text": "The response is being truncated by the output limit; raise `max_tokens` so there is room for text before the tool call."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Forced selection (`tool_choice` of `any` or `tool`) prefills the assistant message, so no free-text preamble appears before the `tool_use` block — by design. When you want an explanation *and* a tool call in the same turn, use `auto` with an explicit instruction telling the model what to say before calling.",
+      "whyWrong": {
+        "B": "Tool descriptions shape when and how tools are called; the missing text is caused by the prefilled assistant turn under forced selection, not by weak instructions.",
+        "C": "Streaming does not remove content blocks; the text is never generated under forced tool choice.",
+        "D": "Truncation would surface as `stop_reason: \"max_tokens\"`; here nothing is cut off, the preamble is suppressed by `tool_choice` semantics."
+      },
+      "difficulty": 2,
+      "mindset": "Forced tool choice buys guarantees at the cost of preamble text.",
+      "tags": [
+        "tool-choice",
+        "forced-tool-use",
+        "tool-use",
+        "d8"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools"
+      ]
+    },
+    {
+      "id": "v-d8-g1-004",
+      "taskStatementId": "8.1",
+      "scenario": "An agent calls the client tool `charge_card`. The payment provider responds with HTTP 429 and indicates the request can be retried in roughly 60 seconds.",
+      "stem": "What should the harness return to Claude for this call?",
+      "options": [
+        {
+          "id": "A",
+          "text": "An empty successful result so the conversation can continue without confusing the model about the payment state."
+        },
+        {
+          "id": "B",
+          "text": "A `tool_result` with `is_error: true` and a message stating the call was rate-limited and can be retried after 60 seconds."
+        },
+        {
+          "id": "C",
+          "text": "A `tool_result` with `is_error: true` containing the raw stack trace and provider error code for debugging."
+        },
+        {
+          "id": "D",
+          "text": "No `tool_result`; raise an exception that terminates the agent loop and surfaces the failure to the user."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "A failed tool call should be returned as a `tool_result` with `is_error: true` and an actionable message: what went wrong, whether it can be retried, and what to do instead (the docs' example is literally \"Rate limit exceeded. Retry after 60 seconds.\"). This lets the model choose a sensible next step instead of guessing.",
+      "whyWrong": {
+        "A": "Marking a failure as success invites the model to report the charge went through; disguising failed lookups as empty successes suppresses recovery.",
+        "C": "Stack traces and opaque internal codes are not actionable for the model; error results should say what to try next, not dump internals.",
+        "D": "A transient rate limit is recoverable; terminating the loop throws away the model's ability to adapt and abandons the in-flight turn."
+      },
+      "difficulty": 1,
+      "mindset": "Errors are data: tell the model what failed and what to do next.",
+      "tags": [
+        "tool-errors",
+        "is_error",
+        "error-handling",
+        "d8"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls"
+      ]
+    },
+    {
+      "id": "v-d8-g1-005",
+      "taskStatementId": "8.1",
+      "scenario": "A shipping agent's `lookup_rates` client tool calls a carrier API that intermittently times out; re-issuing the identical call a second later usually succeeds. Today every timeout is returned to the model as `is_error`, and the agent wastes turns apologizing and re-invoking the tool itself.",
+      "stem": "What is the BEST way to handle these transient failures?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add a system-prompt rule telling the agent to call the tool again whenever it sees a timeout error."
+        },
+        {
+          "id": "B",
+          "text": "Increase `max_turns` so the model's retry loop can always run to completion without hitting the turn cap."
+        },
+        {
+          "id": "C",
+          "text": "Return an empty rate list without `is_error` so the model proceeds using default published estimates."
+        },
+        {
+          "id": "D",
+          "text": "Retry with backoff inside the tool handler for transient errors, and only return an error to the model when retries are exhausted or it must choose a different path."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "Routine transient retries are deterministic work that belongs in code: the handler should retry with bounded backoff and only escalate an error to the model when a decision is genuinely needed (choose another route, ask the user, give up). This saves turns, tokens, and latency compared to prompt-driven retry.",
+      "whyWrong": {
+        "A": "Prompt rules are probabilistic and still burn a full model turn per retry; identical-call retries are exactly what code should absorb.",
+        "B": "A higher turn cap accommodates the symptom without fixing it — every retry still costs a round trip, tokens, and latency.",
+        "C": "Proceeding with fallback estimates can be legitimate degradation, but only if the failure is surfaced; an unmarked empty list suppresses the error state and invites confident answers built on stale data."
+      },
+      "difficulty": 1,
+      "mindset": "Retry what is deterministic in code; escalate to the model only what needs judgment.",
+      "tags": [
+        "error-handling",
+        "transient-errors",
+        "retries",
+        "harness",
+        "d8"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls",
+        "https://www.anthropic.com/engineering/writing-tools-for-agents"
+      ]
+    },
+    {
+      "id": "v-d8-g1-006",
+      "taskStatementId": "8.1",
+      "scenario": "In one assistant turn, Claude emits three `tool_use` blocks: `get_customer`, `get_order_details`, and `issue_refund`. The harness executes the calls, but `get_order_details` fails (the order is locked for editing) and `issue_refund` depends on its output, so the team's code deliberately skips the refund. Their current implementation sends back only the customer result.",
+      "stem": "What must the harness do to keep the conversation valid and informative?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Return exactly one `tool_result` per `tool_use`, all together in the next single user message with results before any text — the failed lookup as an error, and the skipped refund as `is_error: true` with a note that it was not executed and why."
+        },
+        {
+          "id": "B",
+          "text": "Return the successful result now, and send the remaining results in separate follow-up user messages as each becomes available."
+        },
+        {
+          "id": "C",
+          "text": "Return the successful result plus a text note explaining the refund was skipped, omitting its `tool_result` block entirely."
+        },
+        {
+          "id": "D",
+          "text": "Execute `issue_refund` anyway so that every `tool_use` has a matching result, then report the outcome to the model."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Every `tool_use` block must be answered with one `tool_result`, matched by `tool_use_id`, all in the next single user message, with results before any text. If you deliberately skip a call after an earlier failure, you still return a `tool_result` with `is_error: true` saying it was not executed and why (the docs' \"Not executed: ...\" pattern) — this keeps the protocol valid and tells the model the true state.",
+      "whyWrong": {
+        "B": "Splitting results across multiple user messages breaks the expectation that results immediately follow the `tool_use` blocks, and it degrades the model's future parallel tool behavior.",
+        "C": "A text note is not a `tool_result`; unanswered `tool_use` ids make the next request fail with a 400 about missing `tool_result` blocks.",
+        "D": "Executing a dependent write action whose input never arrived defeats the purpose of the skip logic; validity is restored by an `is_error` result, not by running the call."
+      },
+      "difficulty": 2,
+      "mindset": "One tool_result per tool_use, in one message, results first — even for calls you skip.",
+      "tags": [
+        "parallel-tool-use",
+        "tool-result",
+        "harness-dispatch",
+        "protocol",
+        "d8"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/parallel-tool-use"
+      ]
+    },
+    {
+      "id": "v-d8-g1-007",
+      "taskStatementId": "8.1",
+      "scenario": "An agent uses a server-side tool chain (web search followed by fetches). Mid-task, a response arrives with HTTP 200 and `stop_reason: \"pause_turn\"`, with no client `tool_use` blocks for the harness to execute.",
+      "stem": "What should the harness do?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Synthesize an empty `tool_result` block for the last server tool and send it back so the server-side loop can resume."
+        },
+        {
+          "id": "B",
+          "text": "Treat the response as truncation and retry the original request with a higher `max_tokens`."
+        },
+        {
+          "id": "C",
+          "text": "Send the assistant message back to the API unchanged, keeping the same tools, and let the server-side loop continue."
+        },
+        {
+          "id": "D",
+          "text": "Convert the remaining research steps into client-side tools and re-issue the original request against them."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "`pause_turn` means the server-tool sampling loop hit its iteration limit. The defined continuation is to send the assistant response back **as-is** — never answered with `tool_result` blocks — with the same tools, and the loop picks up where it paused. It is an HTTP 200 outcome, not an error.",
+      "whyWrong": {
+        "A": "Answering `pause_turn` with `tool_result` blocks is explicitly wrong; the assistant content itself must be returned unchanged.",
+        "B": "`pause_turn` is not truncation (that is `max_tokens`); raising the output limit does nothing for a paused server-side loop.",
+        "D": "Redesigning the tool chain is unnecessary; the protocol provides a defined, zero-cost way to continue."
+      },
+      "difficulty": 3,
+      "mindset": "Server tools pause, they don't hand off — resend the assistant turn unchanged.",
+      "tags": [
+        "server-tools",
+        "pause_turn",
+        "stop-reasons",
+        "tool-use",
+        "d8"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons"
+      ]
+    },
+    {
+      "id": "v-d8-g1-008",
+      "taskStatementId": "8.1",
+      "scenario": "A developer defines an internal `query_warehouse` tool. To make it \"flexible\", they add optional string parameters `api_endpoint`, `auth_token`, and `timeout_ms` to the `input_schema` so Claude can fill them per call. Security review objects: the token must not leak and the endpoint must never be overridden by the model.",
+      "stem": "Which change BEST addresses the reviewers' concerns?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Keep the parameters but document safe defaults in their descriptions so the model usually leaves them unchanged."
+        },
+        {
+          "id": "B",
+          "text": "Enable `strict: true` on the tool so the token format and endpoint URL are validated before each call is made."
+        },
+        {
+          "id": "C",
+          "text": "Move the current token into the tool's description so it is available on every call without a parameter."
+        },
+        {
+          "id": "D",
+          "text": "Remove infrastructure parameters from the schema; keep credentials, endpoints, and timeouts in harness configuration, exposing only task-level inputs to the model."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "Credentials, endpoints, and timeouts belong in harness configuration — never in the model-facing schema. The schema should expose only the task-level inputs the model genuinely decides (product, warehouse, quantity). Model-supplied endpoints and tokens are an injection and misuse vector, and tool arguments travel through the conversation history and logs where secrets do not belong.",
+      "whyWrong": {
+        "A": "\"Usually\" is not a control: an optional parameter can still be set by the model or by injected instructions, and the secret leaks whenever it is passed.",
+        "B": "`strict` guarantees schema-conforming arguments, not secrecy or legitimacy of values; a well-formed leaked token is still a leaked token.",
+        "C": "The description is model-visible context included in every request and log — an even worse place for a secret."
+      },
+      "difficulty": 2,
+      "mindset": "The schema carries decisions; the harness carries infrastructure and secrets.",
+      "tags": [
+        "tool-schema",
+        "secrets",
+        "harness",
+        "security",
+        "d8"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools",
+        "https://www.anthropic.com/engineering/writing-tools-for-agents"
+      ]
+    },
+    {
+      "id": "v-d8-g1-009",
+      "taskStatementId": "8.1",
+      "scenario": "A support agent can call `process_refund` against a payments backend. Policy: refunds up to $500 may execute automatically; anything above $500 requires human approval before execution; refunds to fraud-flagged accounts must never be issued. The team must guarantee the policy holds on every call.",
+      "stem": "Where should the refund rules be enforced?",
+      "options": [
+        {
+          "id": "A",
+          "text": "In the system prompt, with explicit policy statements and few-shot examples of each case so the model applies them reliably."
+        },
+        {
+          "id": "B",
+          "text": "In code: a programmatic gate (harness check or PreToolUse hook) that inspects the tool input, blocks or defers out-of-policy calls, and routes them to human approval."
+        },
+        {
+          "id": "C",
+          "text": "In the tool's `input_schema`, by constraining the amount parameter so out-of-policy refunds cannot be submitted."
+        },
+        {
+          "id": "D",
+          "text": "In a second reviewer model that re-reads each refund request and vetoes it when the request violates policy."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Must-always and must-never rules need deterministic enforcement. Prompt instructions — however well written — are probabilistic, so thresholds, human-confirmation gates, and fraud blocks belong in programmatic checks that inspect the tool input before execution and route out-of-policy calls to a human. This is the classic pattern of enforcing business limits with a gate rather than wording.",
+      "whyWrong": {
+        "A": "Prompts are probabilistic; the stem requires a guarantee, and even excellent prompt policy plus examples can miss on any given turn.",
+        "C": "Schemas express shape and enums, not dynamic policy: numeric constraints are not enforced by strict mode, and the rule depends on backend state (fraud flags) and on routing to a human — neither expressible in a schema.",
+        "D": "A second model is still probabilistic and adds latency and cost; it can advise, but it cannot guarantee enforcement."
+      },
+      "difficulty": 3,
+      "mindset": "Guarantees live in code, not in prompts.",
+      "tags": [
+        "approval-patterns",
+        "guardrails",
+        "hooks",
+        "deterministic-enforcement",
+        "d8"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls",
+        "https://code.claude.com/docs/en/agent-sdk/hooks"
+      ]
+    },
+    {
+      "id": "v-d8-g1-010",
+      "taskStatementId": "8.1",
+      "scenario": "A team wrapped an internal project-management REST API one endpoint per tool — 18 tools such as `list_users`, `list_events`, `create_event`, `update_event`, and `delete_event`. Since the count grew, the agent picks the wrong tool more often and conversations run long. They want the most effective restructuring.",
+      "stem": "Which approach BEST follows tool-set construction guidance?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Keep all 18 tools but rewrite every description to be maximally detailed so the model can distinguish them."
+        },
+        {
+          "id": "B",
+          "text": "Keep the tools but set `tool_choice: \"any\"` each turn so the model always commits to one of them quickly."
+        },
+        {
+          "id": "C",
+          "text": "Consolidate related operations into a few workflow-oriented tools (for example, a single scheduling tool with an action parameter), with namespaced names and high-signal, paginated results."
+        },
+        {
+          "id": "D",
+          "text": "Split the tools across a second helper agent and have the main agent relay requests to it."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Guidance is a few thoughtful tools targeting high-impact workflows rather than 1:1 endpoint wrappers — the canonical example is replacing list_users + list_events + create_event with one `schedule_event`-style tool. Selection reliability drops as tool count grows (large sets measurably degrade choice), so consolidation, namespacing, and token-efficient (paginated, high-signal) returns are the proportionate fix.",
+      "whyWrong": {
+        "A": "Better descriptions help individual tools, but the size of the set is the problem here — 18 overlapping tools still degrade selection and bloat context.",
+        "B": "Forcing a tool call changes *whether* a call happens, not *which* tool is right, and it suppresses clarifying text; it is the wrong lever for selection accuracy.",
+        "D": "Adding an agent hop increases latency and loses fidelity relaying context, without fixing the underlying tool design."
+      },
+      "difficulty": 2,
+      "mindset": "Design tools around workflows, not endpoints; fewer, better tools select more reliably.",
+      "tags": [
+        "tool-set-design",
+        "consolidation",
+        "namespacing",
+        "tool-selection",
+        "d8"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools",
+        "https://www.anthropic.com/engineering/writing-tools-for-agents"
+      ]
+    },
+    {
+      "id": "v-d8-g1-011",
+      "taskStatementId": "8.1",
+      "scenario": "In the Claude Agent SDK, a developer configures `allowed_tools=[\"Read\", \"Grep\", \"Glob\"]`, intending to restrict the agent to read-only tools. During the run the agent requests `Edit`; the normal permission prompt appears, the operator approves it, and a file is modified.",
+      "stem": "Why did this happen, and what is the correct way to prevent it?",
+      "options": [
+        {
+          "id": "A",
+          "text": "`allowed_tools` is an auto-approve list, not a restriction — unlisted tools still exist and fall through to the normal permission checks; to remove a capability entirely, set `disallowed_tools` (a bare tool name removes the tool definition) or gate it with permission rules, modes, or hooks."
+        },
+        {
+          "id": "B",
+          "text": "`allowed_tools` restricts tools only in `default` permission mode; the session ran in `acceptEdits`, which lifts the restriction — rerun in `default` mode."
+        },
+        {
+          "id": "C",
+          "text": "The `Edit` call happened inside a subagent that ignores the parent's `allowed_tools`; disable subagents to restore the restriction."
+        },
+        {
+          "id": "D",
+          "text": "`allowed_tools` matches exact names only and `Edit` slipped through a wildcard expansion of the list, so the allow list silently approved it."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "In the Agent SDK, `allowed_tools` **auto-approves** the listed tools; it does not restrict the agent to them. Tools not on the list still exist and simply go through the normal permission flow — which is exactly what the scenario shows: `Edit` prompted, was approved, and ran. To actually remove a capability, use `disallowed_tools` (a bare tool name removes the tool definition entirely), permission modes, a `can_use_tool` callback, or PreToolUse hooks.",
+      "whyWrong": {
+        "B": "Permission mode changes how approvals happen, but `allowed_tools` never acts as a restriction in any mode — even in `default`, an unlisted tool simply prompts and can still be approved.",
+        "C": "Subagents run in the parent's permission mode rather than ignoring it, and nothing in the scenario places the call in a subagent; the premise misdiagnoses the semantics.",
+        "D": "There is no wildcard mechanism silently approving unlisted tools; `Edit` was never in the list, so nothing in the list approved it at all."
+      },
+      "difficulty": 3,
+      "mindset": "Allow lists approve; deny lists and hooks restrict.",
+      "tags": [
+        "agent-sdk",
+        "allowed_tools",
+        "permissions",
+        "approval",
+        "d8"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/permissions"
+      ]
+    },
+    {
+      "id": "v-d8-g1-012",
+      "taskStatementId": "8.1",
+      "scenario": "A booking agent's client tools wrap several backend services. The team is standardizing error reporting around a taxonomy of transient, validation, business-rule, and permission errors, and wants every failed `tool_result` to give Claude what it needs to choose its next move.",
+      "stem": "Which TWO pieces of information should every error result include? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "The full stack trace from the failing service so the model can perform root-cause analysis."
+        },
+        {
+          "id": "B",
+          "text": "Whether the failure is retryable, and if so, roughly when to retry (for example, \"rate limited — retry after 60 seconds\")."
+        },
+        {
+          "id": "C",
+          "text": "The model's own confidence score that its original tool arguments were correct."
+        },
+        {
+          "id": "D",
+          "text": "The error category (transient, validation, business rule, permission) in a machine-readable field."
+        },
+        {
+          "id": "E",
+          "text": "The complete original request payload so the model can re-derive the correct arguments itself."
+        }
+      ],
+      "correct": [
+        "B",
+        "D"
+      ],
+      "explanation": "An actionable error result tells the model what to do next. Retryability (with timing) plus a machine-readable category map directly onto recovery paths: transient → wait and retry, validation → fix the arguments, permission or business rule → take a different path or escalate. This is the `errorCategory` + `isRetryable` + human-readable message pattern.",
+      "whyWrong": {
+        "A": "Stack traces and internal codes are debugging artifacts, not actionable guidance; the docs call for messages that say what to try instead, not opaque output.",
+        "C": "Self-reported model confidence is not a property of the error and is poorly calibrated; it adds noise, not a recovery signal.",
+        "E": "The arguments are already in the conversation history; resending the payload wastes context and can echo sensitive data."
+      },
+      "difficulty": 2,
+      "mindset": "Structure errors so each category implies a recovery path.",
+      "tags": [
+        "tool-errors",
+        "error-taxonomy",
+        "is_error",
+        "recovery",
+        "d8"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls",
+        "https://www.anthropic.com/engineering/writing-tools-for-agents"
+      ]
+    },
+    {
+      "id": "v-d8-g1-013",
+      "taskStatementId": "8.1",
+      "scenario": "A research assistant has grown to 25 tools spanning web access, file operations, and internal-data lookups. Context usage is bloated, and the model increasingly selects a rarely used tool when a common one would fit the request.",
+      "stem": "Which TWO practices directly address this problem? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Write longer, fully detailed descriptions for all 25 tools so every tool is completely explained on every turn."
+        },
+        {
+          "id": "B",
+          "text": "Set `tool_choice: \"any\"` for open-ended user questions so a tool is always selected without hesitation."
+        },
+        {
+          "id": "C",
+          "text": "Scope the tool set to what the assistant's role actually needs, removing tools outside its job."
+        },
+        {
+          "id": "D",
+          "text": "Merge the web tools into one generic `search` tool with no namespace prefix to reduce the count."
+        },
+        {
+          "id": "E",
+          "text": "Defer rarely used tools so their schemas are not loaded into context until they are needed (for example via tool search or `defer_loading`)."
+        }
+      ],
+      "correct": [
+        "C",
+        "E"
+      ],
+      "explanation": "Two levers fix an oversized tool set: scope tools to the agent's role (out-of-role tools get misused and add noise), and defer rarely used tools so their definitions stay out of context until needed. Both reduce context bloat and measurably improve selection accuracy — large tool sets are a known cause of misrouting.",
+      "whyWrong": {
+        "A": "25 longer descriptions make context bloat worse, not better; description quality is a per-tool lever, not a fix for set size.",
+        "B": "Forcing a tool call changes whether a call happens, not which tool is chosen, and prevents legitimate no-tool answers.",
+        "D": "Generic, un-namespaced names increase confusion between similar tools; guidance is distinct purposes per tool with namespacing, not vaguer names."
+      },
+      "difficulty": 1,
+      "mindset": "Curate the tool set: fewer in context means better choices.",
+      "tags": [
+        "tool-set-design",
+        "defer-loading",
+        "context-economy",
+        "tool-selection",
+        "d8"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools",
+        "https://www.anthropic.com/engineering/writing-tools-for-agents"
+      ]
+    },
+    {
+      "id": "v-d8-g1-014",
+      "taskStatementId": "8.1",
+      "scenario": "A document-research pipeline uses the server-side web search tool plus a custom client tool `query_internal_docs`. The new maintainer is unsure which behaviors belong to the harness and which are handled elsewhere.",
+      "stem": "Which TWO statements correctly describe how these tools behave? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "For `query_internal_docs`, the harness sees `stop_reason: \"tool_use\"`, executes the lookup itself, and returns a `tool_result` before the loop continues."
+        },
+        {
+          "id": "B",
+          "text": "Server tool calls must also be answered with client-generated `tool_result` blocks, otherwise the next request fails with a 400."
+        },
+        {
+          "id": "C",
+          "text": "Client tool failures are retried automatically by the API, so the handler can safely return an empty success on error."
+        },
+        {
+          "id": "D",
+          "text": "Server tools run on Anthropic's side; if that loop pauses with `stop_reason: \"pause_turn\"`, the harness continues by sending the assistant message back unchanged."
+        },
+        {
+          "id": "E",
+          "text": "Client tools are inherently more reliable than server tools because they bypass the model's tool selection entirely."
+        }
+      ],
+      "correct": [
+        "A",
+        "D"
+      ],
+      "explanation": "Client tools are executed by your code: `stop_reason: \"tool_use\"` hands you the calls, and you return `tool_result` blocks. Server tools (such as web search) are executed by Anthropic's infrastructure — you never fabricate results for them; if their internal loop pauses (`pause_turn`), you continue by resending the assistant content unchanged.",
+      "whyWrong": {
+        "B": "You do not generate `tool_result` blocks for server tools; they execute server-side, and `pause_turn` is continued by returning the assistant message as-is.",
+        "C": "Client tool execution is entirely the harness's responsibility; nothing auto-retries your handler, and returning empty success disguises failure.",
+        "E": "Both tool kinds are selected by the model from context; execution location affects where code runs, not whether selection happens."
+      },
+      "difficulty": 3,
+      "mindset": "Know who executes the tool: you for client tools, Anthropic for server tools.",
+      "tags": [
+        "client-tools",
+        "server-tools",
+        "pause_turn",
+        "harness",
+        "d8"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls"
+      ]
+    },
+    {
+      "id": "v-d8-g1-015",
+      "taskStatementId": "8.1",
+      "scenario": "A team is adding Jira and Asana access to a planning agent by wrapping each service's REST API with custom tools. Both services expose search, item retrieval, and comment endpoints with similarly named concepts.",
+      "stem": "Which TWO practices follow tool-writing guidance? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Namespace tool names per service (for example `jira_search_issues`, `asana_search_tasks`) so similar tools remain distinguishable."
+        },
+        {
+          "id": "B",
+          "text": "Return raw UUIDs for all referenced records because they are compact and unambiguous."
+        },
+        {
+          "id": "C",
+          "text": "Expose one shared `search` tool for both services and let the model infer the target service from the query text."
+        },
+        {
+          "id": "D",
+          "text": "Include every field the APIs can return so the model can decide what matters in each case."
+        },
+        {
+          "id": "E",
+          "text": "Return only high-signal fields with human-meaningful identifiers, and support pagination or range limits to keep results small."
+        }
+      ],
+      "correct": [
+        "A",
+        "E"
+      ],
+      "explanation": "The tool-writing guidance names both practices explicitly: namespace tool names by service so parallel tools stay distinct, and return only high-signal information — semantic identifiers over UUIDs — with token-efficiency mechanisms like pagination, range selection, and filtering so results stay small.",
+      "whyWrong": {
+        "B": "Semantic identifiers (keys, slugs, titles) outperform opaque UUIDs for model comprehension and downstream reasoning.",
+        "C": "A single ambiguous tool forces the model to guess intent; each tool should have a distinct purpose with an unambiguous name.",
+        "D": "Returning everything bloats context on every call; curate the response to what is decision-relevant, with sensible defaults."
+      },
+      "difficulty": 2,
+      "mindset": "Names distinguish parallel tools; payloads respect the context budget.",
+      "tags": [
+        "namespacing",
+        "high-signal-results",
+        "token-efficiency",
+        "tool-design",
+        "d8"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/writing-tools-for-agents",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools"
+      ]
+    }
+  ]
+}

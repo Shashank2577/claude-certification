@@ -1,0 +1,689 @@
+{
+  "certId": "developer",
+  "domainId": "d4-eval-debugging",
+  "questions": [
+    {
+      "id": "v-d4-g1-001",
+      "taskStatementId": "4.1",
+      "scenario": "A team's request helper retries any non-200 response up to five times with exponential backoff. One code path builds message history incorrectly, so the API returns HTTP 400 invalid_request_error (\"tool_use ids were found without tool_result blocks immediately after\"). All five attempts fail with the identical error, adding several seconds of latency before the user ever sees the failure.",
+      "stem": "What should the team change first?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Raise the backoff ceiling so the final attempt is spaced further from the first, giving the validation condition time to clear."
+        },
+        {
+          "id": "B",
+          "text": "Exclude non-429 4xx errors from the retry helper and fix the request construction so each tool_use is immediately followed by its tool_result."
+        },
+        {
+          "id": "C",
+          "text": "Route the retries to a fallback model, since a different model may be more tolerant of the malformed message history."
+        },
+        {
+          "id": "D",
+          "text": "Add jitter to the backoff schedule so repeated attempts are less likely to hit the same server-side validation state."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "HTTP 4xx errors other than 429 are **deterministic client errors**: the same request will fail the same way every time, so retrying only adds latency and risk. The origin is the integration layer - here, message history where a `tool_use` is not immediately followed by its `tool_result`. Retry loops must exclude deterministic status codes and trigger a request fix instead.",
+      "whyWrong": {
+        "A": "Backoff cannot 'clear' a deterministic validation error; spacing the attempts just delays the same guaranteed failure.",
+        "C": "Request validation happens before generation; any model receiving the malformed history returns the same 400.",
+        "D": "Jitter reduces collision on transient errors; it does nothing for a request that always fails validation the same way."
+      },
+      "difficulty": 2,
+      "mindset": "Classify before acting: deterministic errors get a code fix, not a retry.",
+      "tags": [
+        "error-identification",
+        "http-status",
+        "retry-strategy",
+        "integration-layer"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls"
+      ]
+    },
+    {
+      "id": "v-d4-g1-002",
+      "taskStatementId": "4.1",
+      "scenario": "A production chatbot begins failing with HTTP 429 responses that carry no retry-after header. The response body includes the error code indicating the account's monthly spend cap has been reached. The on-call engineer configures aggressive exponential backoff, expecting the limit to replenish like a rate limit.",
+      "stem": "Which assessment of the situation is correct?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The 429 is a token-bucket limit that replenishes continuously, so persistent backoff retries will start succeeding within minutes."
+        },
+        {
+          "id": "B",
+          "text": "A circuit breaker that retries once per minute for the next 24 hours is the most resource-efficient recovery path."
+        },
+        {
+          "id": "C",
+          "text": "This is a spend-limit stop, not a replenishing rate limit: retries keep failing until the billing period resets, so the right move is to stop retrying, alert the owner, and address the limit or the usage."
+        },
+        {
+          "id": "D",
+          "text": "The absence of retry-after means the platform is not asking the client to wait, so requests should be retried immediately without delay."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "A 429 caused by the enforced spend cap is fundamentally different from a rate-limit 429: it carries **no retry-after** and will not clear by retrying, because the condition persists until the billing period rolls over. The correct strategy is escalation (alert the budget owner, adjust the limit or usage), not backoff.",
+      "whyWrong": {
+        "A": "Token-bucket replenishment describes request/token rate limits, which include retry-after; the spend cap does not replenish mid-period.",
+        "B": "This still retries a condition that retrying cannot fix; it just hides the real action behind a timer.",
+        "D": "The missing retry-after here signals a spend cap, not permission to send more traffic immediately."
+      },
+      "difficulty": 2,
+      "mindset": "A 429 without retry-after is a different animal: escalate, don't back off.",
+      "tags": [
+        "rate-limits",
+        "spend-cap",
+        "escalation",
+        "error-identification"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/rate-limits"
+      ]
+    },
+    {
+      "id": "v-d4-g1-003",
+      "taskStatementId": "4.1",
+      "scenario": "A streaming assistant occasionally starts delivering text deltas normally, then stops mid-response and the UI hangs showing partial text. Server logs record HTTP 200 for these requests, the status-code error handler never fires, and the incidents cluster during periods of known platform load.",
+      "stem": "Which change addresses the root cause?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Handle error events delivered inside the event stream itself: after a 200, a stream can still surface an error such as overloaded_error, so treat it as a failed request and trigger recovery."
+        },
+        {
+          "id": "B",
+          "text": "Increase max_tokens on streaming requests so responses have room to complete instead of stalling partway through."
+        },
+        {
+          "id": "C",
+          "text": "Abandon streaming and switch the client to non-streaming requests, where the HTTP status code is the only failure signal the handler needs."
+        },
+        {
+          "id": "D",
+          "text": "Start a fresh session and resend the entire conversation whenever message_stop has not arrived within 60 seconds."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "With `stream: true`, an error (for example `overloaded_error`) can arrive **as an event after a successful HTTP 200**. Status-code handling alone cannot catch it, which matches the symptom: deltas, then silence, with 200 logged. The stream consumer must treat in-stream error events as request failures and run its recovery path.",
+      "whyWrong": {
+        "B": "Truncation ends a stream cleanly with `stop_reason: max_tokens` on the final message; it does not produce a silent stall with no terminal event.",
+        "C": "Switching transports just moves the failure: overload arrives as an HTTP 5xx status in non-streaming mode, and the team gives up streaming's latency benefits to avoid handling a documented event type rather than fixing the handler.",
+        "D": "A blanket timeout resends work and masks the symptom without handling the actual error event."
+      },
+      "difficulty": 2,
+      "mindset": "In streaming, failure reporting moves into the event stream - handle error events, not just status codes.",
+      "tags": [
+        "streaming",
+        "error-events",
+        "mid-stream-failure",
+        "recovery-strategy"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/streaming",
+        "https://platform.claude.com/docs/en/api/errors"
+      ]
+    },
+    {
+      "id": "v-d4-g1-004",
+      "taskStatementId": "4.1",
+      "scenario": "A JSON extraction service runs with a small fixed max_tokens. Some responses arrive cut off mid-string, and the downstream parser throws an unhandled exception. Logs show those responses ended with stop_reason max_tokens.",
+      "stem": "What is the most reliable way to detect this condition before parsing?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Adopt a stricter JSON parser that rejects truncated documents with a clearer exception message."
+        },
+        {
+          "id": "B",
+          "text": "Add a system-prompt instruction telling Claude to always finish the JSON within the token limit."
+        },
+        {
+          "id": "C",
+          "text": "Retry the identical request a second time, since non-determinism sometimes yields a shorter, complete answer."
+        },
+        {
+          "id": "D",
+          "text": "Check stop_reason before parsing: when it is max_tokens the output is truncated, so handle it explicitly - raise the limit or continue - instead of parsing it."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "`stop_reason: max_tokens` means the output was **truncated by the token limit**; the text may look almost-valid and still be unparseable. The API already reports this on every response, so branching on stop_reason before parsing is the deterministic detection. The fix is mechanical (raise max_tokens or continue), not prompt-based.",
+      "whyWrong": {
+        "A": "A clearer parser error is better diagnostics, not detection or handling of the truncation itself.",
+        "B": "A prompt cannot overcome a hard generation limit; the model physically cannot emit tokens beyond max_tokens.",
+        "C": "Retrying hopes for luck, costs a call, and may truncate again; the next response's stop_reason still has to be checked."
+      },
+      "difficulty": 1,
+      "mindset": "The response tells you how it ended - read stop_reason before you trust the content.",
+      "tags": [
+        "stop-reasons",
+        "truncation",
+        "output-validation",
+        "error-handling"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons"
+      ]
+    },
+    {
+      "id": "v-d4-g1-005",
+      "taskStatementId": "4.1",
+      "scenario": "An agent uses server-side tools. Occasionally an assistant message ends with stop_reason pause_turn because the server-side tool loop hit its iteration limit. The developer's loop assumes every non-end_turn result is a client tool_use and replies with a user message containing tool_result blocks; the API rejects that reply with a 400 error.",
+      "stem": "How should the loop handle pause_turn?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Emit an empty tool_result for each pending tool_use so the server can resume the paused operation where it stopped."
+        },
+        {
+          "id": "B",
+          "text": "Send the assistant's pause_turn message back unaltered as the next request, keeping the same tools, so the server-side loop continues - rather than fabricating tool_result blocks."
+        },
+        {
+          "id": "C",
+          "text": "Drop the paused turn from the conversation history and resend the original user message to restart the task from the beginning."
+        },
+        {
+          "id": "D",
+          "text": "Force tool_choice to a specific tool on the next request to convert the paused turn into an explicit client tool call."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "`pause_turn` means a **server-side** tool loop paused and expects the client to send the assistant message back **as-is** to let it continue. There are no client tool_use blocks to answer, so replying with tool_result blocks is invalid - exactly the 400 the team sees. Never answer pause_turn with tool results; resend the assistant content unchanged with the same tools.",
+      "whyWrong": {
+        "A": "There are no pending client tool_use blocks; supplying tool_results for them is the exact mistake that triggers the 400.",
+        "C": "Restarting discards the partial progress and can repeat side effects, when the turn is explicitly resumable.",
+        "D": "Forced tool choice changes the model's behavior mid-flow and does not resume a server-side loop."
+      },
+      "difficulty": 3,
+      "mindset": "Each stop_reason has its own protocol - pause_turn is resumed by echoing, never by tool results.",
+      "tags": [
+        "stop-reasons",
+        "pause-turn",
+        "server-tools",
+        "agent-loop"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons"
+      ]
+    },
+    {
+      "id": "v-d4-g1-006",
+      "taskStatementId": "4.1",
+      "scenario": "Users of a multi-turn chat product report that Claude \"forgets\" what they said earlier in the conversation and re-asks questions they already answered. Pasting the entire conversation into a single fresh API playground call works perfectly.",
+      "stem": "What is the best first debugging step?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add a system-prompt instruction reminding Claude to keep track of everything the user has said in this conversation."
+        },
+        {
+          "id": "B",
+          "text": "Persist sessions server-side and extend the cache TTL so the conversation history survives between requests."
+        },
+        {
+          "id": "C",
+          "text": "Log the complete request payload each turn and verify the messages array actually contains the prior turns: the Messages API is stateless and only knows what each request resends."
+        },
+        {
+          "id": "D",
+          "text": "Move to a model with a larger context window so earlier turns stop being dropped."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "The Messages API is **stateless**: every request contains only the messages you send, so \"forgetting\" almost always means the integration layer is not resending the history. The playground result (full conversation works) supports this. Capturing the actual per-turn request payload confirms within minutes whether prior turns are present, before anyone touches prompts or models.",
+      "whyWrong": {
+        "A": "If the turns are not being sent, no instruction can make the model recall content it never received.",
+        "B": "Prompt caching is a cost optimization over identical prefixes, not a persistence mechanism; history must still be sent in every request.",
+        "D": "A bigger window cannot fix a plumbing bug that omits the messages entirely, and it's an expensive guess before diagnosis."
+      },
+      "difficulty": 2,
+      "mindset": "Before blaming the model, verify what the model was actually sent.",
+      "tags": [
+        "origin-isolation",
+        "statelessness",
+        "integration-layer",
+        "trace-analysis"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/agent-loop",
+        "https://platform.claude.com/docs/en/build-with-claude/context-windows"
+      ]
+    },
+    {
+      "id": "v-d4-g1-007",
+      "taskStatementId": "4.1",
+      "scenario": "After a release, nightly batch costs jump sharply. The trace for each request shows high cache_creation_input_tokens on every call and cache_read_input_tokens at zero, even though everything after the first line of the system prompt is identical across requests. The release prepended a line like \"Current time: 14:32:07\" to the top of the system prompt so responses could be timestamped.",
+      "stem": "What does the trace indicate, and what is the fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The changing timestamp breaks prefix identity at the system-prompt level, so the cache never gets a read and every request pays a full write; move volatile content out of the cached prefix, after the cache breakpoint."
+        },
+        {
+          "id": "B",
+          "text": "The requests now fall below the model's minimum cacheable length, so caching is silently skipped; lengthen the system prompt to cross the threshold."
+        },
+        {
+          "id": "C",
+          "text": "The model is producing longer outputs that push input costs up; cap the output length and the input figures will follow."
+        },
+        {
+          "id": "D",
+          "text": "Cache entries are being evicted between requests by rate limiting; request a limit increase so entries survive longer."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Cache hits require a **100% identical prefix** through the breakpoint. A per-request timestamp at the top of the system prompt changes the prefix every call: the trace's signature - writes on every request (`cache_creation_input_tokens`), zero reads - is exactly what a permanently invalidated prefix looks like. Moving volatile content below the cached breakpoint restores reads.",
+      "whyWrong": {
+        "B": "The trace shows cache writes happening, so the minimum cacheable length is met (below it, both creation and read would be zero); the problem is the absence of reads, not skipped caching.",
+        "C": "The cited usage fields are all input-side; output length does not drive cache_creation_input_tokens.",
+        "D": "Rate limits do not evict cache entries; entries expire by TTL (refreshed on hits) or are invalidated by prefix changes like this one."
+      },
+      "difficulty": 3,
+      "mindset": "Usage fields are a trace's vital signs - zero reads with constant writes means the prefix keeps changing.",
+      "tags": [
+        "trace-analysis",
+        "usage-fields",
+        "prompt-caching",
+        "cost-debugging"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching"
+      ]
+    },
+    {
+      "id": "v-d4-g1-008",
+      "taskStatementId": "4.1",
+      "scenario": "An orchestration layer re-runs an agent turn from the beginning whenever any API call inside the turn ultimately fails. In one incident, the model called a \"send confirmation email\" tool, the tool succeeded, and a later API call in the same turn failed with a 529; the retry re-executed the turn and the customer received a second email. The team wants to prevent duplicates without giving up retries.",
+      "stem": "Which change is most effective?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Disable retries for any turn that contains a side-effecting tool call and accept occasional dropped turns."
+        },
+        {
+          "id": "B",
+          "text": "Instruct the model in the system prompt to verify with the user before sending a second email."
+        },
+        {
+          "id": "C",
+          "text": "Reduce the retry count to one so the window in which a duplicate can occur is smaller."
+        },
+        {
+          "id": "D",
+          "text": "Make the side-effecting tool idempotent, for example by passing a deduplication key derived from the order ID so a repeated execution is recognized and skipped."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "Retries are the correct strategy for transient failures like 529, but a retried execution cannot tell that the real-world action already happened. The durable fix is **idempotency on side-effecting tools**: a stable key lets the tool detect and skip a repeat execution, so retries stay safe no matter how the retry policy changes.",
+      "whyWrong": {
+        "A": "Sacrifices resilience for every failure type to avoid one class of bug, and silently drops work.",
+        "B": "The model cannot know the first email was sent during the failed attempt, and prompts are probabilistic - this is an execution guarantee, not a generation problem.",
+        "C": "Shrinks the race window but a single retry can still double-execute; it doesn't remove the cause."
+      },
+      "difficulty": 2,
+      "mindset": "Retries and real-world side effects mix badly - make the side effect idempotent, not the retry weaker.",
+      "tags": [
+        "retry-strategy",
+        "idempotency",
+        "side-effects",
+        "tool-errors"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls"
+      ]
+    },
+    {
+      "id": "v-d4-g1-009",
+      "taskStatementId": "4.1",
+      "scenario": "A research agent's knowledge-base tool wraps the upstream call in a try/catch; on timeout it returns an empty array. The model never sees a failure, and final reports assert confidently that \"no matching records were found.\" Traces show the timeouts clearly in the wrapper's own log, correlated with the wrong conclusions.",
+      "stem": "What is the most effective fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Increase the upstream timeout and add one retry inside the wrapper so timeouts stop reaching the model."
+        },
+        {
+          "id": "B",
+          "text": "Surface failures to the model as tool_result with is_error: true plus context - what failed and what was attempted - and distinguish an access failure from a genuine empty result so synthesis can annotate the gap."
+        },
+        {
+          "id": "C",
+          "text": "Add a system-prompt instruction to treat empty tool outputs skeptically and to mention the possibility of missing data in every report."
+        },
+        {
+          "id": "D",
+          "text": "Remove the try/catch so the exception propagates, crashes the agent loop, and forces the orchestrator to restart the whole task."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "A hidden tool error is a classic integration-layer failure mode: the tool \"succeeded\" with a masking empty result, so the model reasons confidently from false evidence. The fix is to return failures as `tool_result` with `is_error: true` and actionable context, and to keep **access failures distinct from valid empty results** - only then can the agent adapt or flag the coverage gap instead of asserting a falsehood.",
+      "whyWrong": {
+        "A": "Reduces frequency but a final timeout still returns a confident empty array; the failure mode survives, just less often.",
+        "C": "Prompt-only and blunt: the model would hedge even on true empty results, and it still cannot know a timeout occurred.",
+        "D": "Converts a partially recoverable failure into a full crash and discards all completed work in the turn."
+      },
+      "difficulty": 3,
+      "mindset": "If the tool hides its failures, the model will build confident conclusions on top of them.",
+      "tags": [
+        "tool-errors",
+        "is-error",
+        "failure-modes",
+        "trace-analysis"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls"
+      ]
+    },
+    {
+      "id": "v-d4-g1-010",
+      "taskStatementId": "4.1",
+      "scenario": "A moderation pipeline logs every API call that returns HTTP 200 as a success. Some of those responses end with stop_reason refusal and contain little or no text; downstream consumers receive an empty \"answer\" and process it as a valid result.",
+      "stem": "How should the handler treat these responses?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Resend the identical request a few times, since refusals, like 529s, are transient conditions."
+        },
+        {
+          "id": "B",
+          "text": "Log them as model-quality defects and queue them for a weekly manual review batch."
+        },
+        {
+          "id": "C",
+          "text": "Branch on refusal: read the stop details, adjust the request or route to a fallback model, and never record a refusal as a successful empty answer."
+        },
+        {
+          "id": "D",
+          "text": "Raise max_tokens, because refusal indicates the model exhausted its output budget."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "A refusal is a **successful HTTP 200 call** that ended via `stop_reason: refusal` - it is not an error status, so status-code-based success logging misses it. The handler must branch on the stop reason: inspect the stop details, change the request or fall back to another model, and treat the output as not-usable rather than empty-but-valid. Resending the identical request unchanged is explicitly the wrong move.",
+      "whyWrong": {
+        "A": "Refusals are not transient load conditions; the same request will typically refuse again.",
+        "B": "Defers a handling gap to humans instead of implementing the documented branch; meanwhile downstream keeps consuming empty answers.",
+        "D": "Refusal is unrelated to output budget; max_tokens truncation has its own distinct stop_reason."
+      },
+      "difficulty": 1,
+      "mindset": "HTTP 200 does not mean 'usable output' - stop_reason is part of success handling.",
+      "tags": [
+        "stop-reasons",
+        "refusal",
+        "error-handling"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons"
+      ]
+    },
+    {
+      "id": "v-d4-g1-011",
+      "taskStatementId": "4.1",
+      "scenario": "An invoice-classification service occasionally mislabels invoices as refunds, roughly 1 run in 50. Engineers cannot reproduce it with hand-built test requests in their local harness. Full production traces - model, parameters, and the exact messages array - are available for every incident.",
+      "stem": "Which step best isolates whether the origin is the integration layer or model output?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Replay the exact captured request - same model, parameters, and messages - outside the application, repeatedly: reproduction in isolation points to model output; production-only occurrence points to the integration layer."
+        },
+        {
+          "id": "B",
+          "text": "Add few-shot examples of correct labels to the system prompt and watch the next production incident to see whether it recurs."
+        },
+        {
+          "id": "C",
+          "text": "Switch production traffic to a larger model and compare mislabeling rates over the following month."
+        },
+        {
+          "id": "D",
+          "text": "Add response-side logging to capture more detail about what the model produced in each run."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The cleanest isolation technique is to **replay the exact captured request outside the app, repeatedly** - at a 1-in-50 rate, one or two runs proves nothing. If the verbatim request mislabels in isolation, the origin is model output and the fix is prompt, context, or model, measured with evals. If it never reproduces outside production, the integration layer is transforming the request before it hits the wire or mishandling the response. Hand-built local requests are different inputs, so they isolate nothing.",
+      "whyWrong": {
+        "B": "Applies a fix before diagnosing; if the origin is integration, prompt changes do nothing and the signal stays noisy.",
+        "C": "An expensive month-long experiment that changes the system under test and still doesn't isolate the origin.",
+        "D": "The wrong outputs are already captured in the traces; more response-side logging adds no new evidence about where the wrong output originates."
+      },
+      "difficulty": 3,
+      "mindset": "Isolate origin by replaying the real request, not by approximating it or patching blind.",
+      "tags": [
+        "origin-isolation",
+        "replay",
+        "non-determinism",
+        "trace-analysis"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests",
+        "https://code.claude.com/docs/en/agent-sdk/agent-loop"
+      ]
+    },
+    {
+      "id": "v-d4-g1-012",
+      "taskStatementId": "4.1",
+      "scenario": "After several retry-related incidents, a platform team is writing a single retry standard for every service that calls the Claude API.",
+      "stem": "Which two practices belong in the standard? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Retry every non-200 response a fixed number of times, since most API failures are transient."
+        },
+        {
+          "id": "B",
+          "text": "Retry only transient conditions, using exponential backoff with jitter, honoring retry-after when present, and capping both attempts and total time."
+        },
+        {
+          "id": "C",
+          "text": "Wrap SDK calls in an additional outer retry loop so no possible failure can slip through."
+        },
+        {
+          "id": "D",
+          "text": "Retry spend-limit 429 responses immediately and without delay, since they carry no retry-after header."
+        },
+        {
+          "id": "E",
+          "text": "Make side-effecting tool executions idempotent so a retried call cannot repeat a real-world action."
+        }
+      ],
+      "correct": [
+        "B",
+        "E"
+      ],
+      "explanation": "Two principles make retries safe. First, **retry only transient conditions** (connection errors, 429 rate limits, 5xx) with exponential backoff plus jitter, honoring `retry-after`, and bounded by attempt and time caps. Second, because retries can re-execute work, **side-effecting tools must be idempotent** so a repeated call cannot fire a second real-world action.",
+      "whyWrong": {
+        "A": "4xx errors other than 429 are deterministic; blanket retries add latency and duplicate-execution risk with zero benefit.",
+        "C": "The SDKs already auto-retry connection errors, 429 and 5xx (twice by default); stacking an outer loop multiplies attempts far beyond what anyone intended.",
+        "D": "A spend-limit 429 has no retry-after precisely because retrying cannot fix it; the response calls for escalation, not speed."
+      },
+      "difficulty": 2,
+      "mindset": "A retry standard has two jobs: only retry what's transient, and make re-execution harmless.",
+      "tags": [
+        "retry-strategy",
+        "backoff",
+        "idempotency",
+        "standards"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://platform.claude.com/docs/en/api/rate-limits"
+      ]
+    },
+    {
+      "id": "v-d4-g1-013",
+      "taskStatementId": "4.1",
+      "scenario": "A service owner is classifying observed failures to decide which ones the client may retry automatically with exponential backoff.",
+      "stem": "Which two failures are transient and safe to retry automatically? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "HTTP 529 overloaded_error returned during a period of platform-wide high traffic."
+        },
+        {
+          "id": "B",
+          "text": "HTTP 400 invalid_request_error caused by a malformed messages array."
+        },
+        {
+          "id": "C",
+          "text": "HTTP 401 authentication_error caused by a revoked API key."
+        },
+        {
+          "id": "D",
+          "text": "A connection error raised by the SDK before any HTTP response arrived."
+        },
+        {
+          "id": "E",
+          "text": "HTTP 429 with a spend-limit error code and no retry-after header."
+        }
+      ],
+      "correct": [
+        "A",
+        "D"
+      ],
+      "explanation": "Automatic retry is for **transient** conditions: 529 means the platform is overloaded across users (distinct from your own limits) and typically clears; connection errors that never produced a response are safe to retry because no side effects were recorded server-side. The SDKs themselves auto-retry exactly these classes (connection errors, 429, 5xx) with backoff.",
+      "whyWrong": {
+        "B": "Deterministic request bug; the identical retry fails identically forever.",
+        "C": "A credential problem; retrying cannot restore access, only fixing the key does.",
+        "E": "A spend cap persists until the billing period resets; retrying burns calls without any chance of success."
+      },
+      "difficulty": 1,
+      "mindset": "Ask 'will time change the outcome?' - only transient failures deserve retries.",
+      "tags": [
+        "error-identification",
+        "transient-vs-deterministic",
+        "retry-strategy"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors"
+      ]
+    },
+    {
+      "id": "v-d4-g1-014",
+      "taskStatementId": "4.1",
+      "scenario": "A team is building the SSE consumer for a streaming, tool-calling agent. In early testing they saw partially parsed tool arguments being executed, and some failures that no status-code handler ever caught.",
+      "stem": "Which two rules must the consumer implement? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Read stop_reason from the message_start event, because it is emitted before any content and gives the earliest signal."
+        },
+        {
+          "id": "B",
+          "text": "Start executing a tool as soon as the first input_json_delta arrives, to minimize end-to-end latency."
+        },
+        {
+          "id": "C",
+          "text": "Treat an error event arriving mid-stream as a failed request even though the HTTP status was 200."
+        },
+        {
+          "id": "D",
+          "text": "Assume that a 200 status guarantees the stream will run through to message_stop."
+        },
+        {
+          "id": "E",
+          "text": "Parse each tool_use input only after its content_block_stop event, since the input JSON arrives incrementally across deltas."
+        }
+      ],
+      "correct": [
+        "C",
+        "E"
+      ],
+      "explanation": "Two streaming rules prevent both observed bugs. Tool arguments arrive as **incremental `input_json_delta` fragments**, so input is only complete at `content_block_stop` - parsing and executing earlier acts on malformed JSON. And after a 200, failures surface as **in-stream error events** (e.g. overloaded_error), so the consumer must treat them as request failures; status-code handling alone will never see them.",
+      "whyWrong": {
+        "A": "stop_reason arrives on the message_delta event near the end of the stream, not on message_start.",
+        "B": "Executing on the first delta guarantees acting on a truncated, unparsable argument string.",
+        "D": "This is the exact assumption the mid-stream error event violates; a 200 only means the stream started."
+      },
+      "difficulty": 3,
+      "mindset": "Streaming shifts failure and completeness signals into the event sequence itself.",
+      "tags": [
+        "streaming",
+        "tool-input-parsing",
+        "error-events",
+        "agent-loop"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/streaming"
+      ]
+    },
+    {
+      "id": "v-d4-g1-015",
+      "taskStatementId": "4.1",
+      "scenario": "A two-week debugging effort traced a production failure to application code that dropped older turns from the messages array. The patch is written, reviewed, and the incident appears resolved.",
+      "stem": "Which two steps keep this failure from silently returning? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Turn the captured failing input and its expected behavior into a permanent eval case that runs automatically from now on."
+        },
+        {
+          "id": "B",
+          "text": "Monitor for the next production incident to confirm the fix holds before changing anything else."
+        },
+        {
+          "id": "C",
+          "text": "Rerun the full eval suite after this change, and again after any later prompt, code, or model change."
+        },
+        {
+          "id": "D",
+          "text": "Record the incident in the runbook and treat it as closed once the patch merges."
+        },
+        {
+          "id": "E",
+          "text": "Raise log verbosity for one week to watch for recurrences, then revert it."
+        }
+      ],
+      "correct": [
+        "A",
+        "C"
+      ],
+      "explanation": "A fixed production failure is only truly fixed when it **cannot silently regress**. That means (1) converting the failing case into a permanent, automatically run eval/test case, and (2) rerunning the full suite after this change - and after every subsequent prompt, code, or model change, since any of them can reintroduce the behavior. Debugging ends at the eval set, not at the merge.",
+      "whyWrong": {
+        "B": "Reactive: the next incident is precisely the regression you failed to prevent.",
+        "D": "Documentation does not execute; nothing ever re-tests the code path.",
+        "E": "A temporary observation window is not a repeatable check, and it expires exactly when vigilance should be permanent."
+      },
+      "difficulty": 2,
+      "mindset": "A bug isn't closed until it lives in the eval set as a permanent test.",
+      "tags": [
+        "evals",
+        "regression-prevention",
+        "debugging-discipline"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests"
+      ]
+    }
+  ]
+}

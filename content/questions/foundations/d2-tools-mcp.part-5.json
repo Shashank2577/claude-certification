@@ -1,0 +1,729 @@
+{
+  "certId": "foundations",
+  "domainId": "d2-tools-mcp",
+  "questions": [
+    {
+      "id": "f-d2-x2-001",
+      "taskStatementId": "2.4",
+      "scenario": "Customer Support Resolution Agent: the agent is built with the Claude Agent SDK. A `support` MCP server is passed in `mcpServers` and exposes `get_customer`, `lookup_order`, `process_refund` and `escalate_to_human`. To cut down on prompts, the team set `permissionMode: \"acceptEdits\"`. In test runs, the init message lists all four `mcp__support__*` tools, but Claude never manages to call them, and every conversation ends with a generic apology.",
+      "stem": "What is the MOST appropriate change to let the agent use these tools while keeping access as narrow as possible?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Switch `permissionMode` to `bypassPermissions` so that every MCP tool call is approved automatically without prompting."
+        },
+        {
+          "id": "B",
+          "text": "Rewrite each tool's description to say clearly when it should be used, so Claude stops avoiding the support tools."
+        },
+        {
+          "id": "C",
+          "text": "Add the specific `mcp__support__...` tool names (or `mcp__support__*`) to `allowedTools` in the agent's options."
+        },
+        {
+          "id": "D",
+          "text": "Add a system prompt line telling Claude it has full permission to call any tool from the support server."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "In the Agent SDK, an MCP tool that Claude can *see* is not yet one it may *call*: MCP tools need an explicit grant. `acceptEdits` covers file edits and everyday filesystem commands in the working directory; it says nothing about MCP tools, which is why every call was blocked and the agent gave up. Adding the tool names to `allowedTools` (one by one, or with a server wildcard such as `mcp__support__*`) grants exactly the support server and nothing else. Listing them individually also lets the team keep a sensitive tool like `process_refund` behind a separate approval path.",
+      "whyWrong": {
+        "A": "`bypassPermissions` does approve MCP tools, but it also switches off most other safety prompts. That's far broader than the problem needs.",
+        "B": "Tool selection isn't the problem: the tools are listed, but calls aren't permitted. A better description doesn't grant permission.",
+        "D": "Permissions are enforced by the runtime, not by the prompt. Telling Claude it may call tools doesn't change what the SDK allows."
+      },
+      "difficulty": 2,
+      "mindset": "Seeing a tool is not the same as being allowed to call it: grant MCP access with narrow allow rules, not a broad mode.",
+      "tags": [
+        "agent-sdk",
+        "mcp-permissions",
+        "allowedTools",
+        "least-privilege"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/mcp"
+      ]
+    },
+    {
+      "id": "f-d2-x2-002",
+      "taskStatementId": "2.4",
+      "scenario": "Developer Productivity with Claude: a nightly Agent SDK job writes \"codebase health\" reports. It relies on an internal `code-index` MCP server for cross-repository reference data and also has the built-in tools. Some mornings the reports are clearly weaker: they miss cross-repo callers and look like they were built from plain text search. The job's logs show no exceptions, and every run ends with a `success` result.",
+      "stem": "What is the MOST reliable way to stop weak reports from being published without anyone noticing?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Check each server's `status` in the init message (re-polling if still `pending`), and fail or retry the run when `code-index` is `failed` or `needs-auth`."
+        },
+        {
+          "id": "B",
+          "text": "Wrap the `query()` call in a try/except block and mark the run as failed whenever an exception about an MCP server connection is raised during the run."
+        },
+        {
+          "id": "C",
+          "text": "Add to the system prompt: \"If the code-index tools are unavailable, say so clearly at the top of the report so that a reviewer knows to discard it.\""
+        },
+        {
+          "id": "D",
+          "text": "Remove Grep and Bash from the agent so that it cannot fall back to plain text search whenever the index server happens to be unavailable."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "An MCP server that fails to connect **does not throw**. The run continues without that server's tools, and Claude quietly falls back to whatever is left, here Grep and Bash. The SDK reports each server's connection state in the `system` init message (`connected`, `pending`, `failed`, `needs-auth`, `disabled`). Checking that status in code is a deterministic gate: when `code-index` is `failed` or `needs-auth`, the job retries or stops instead of publishing a degraded report. A server still `pending` at init isn't a failure on its own (it may connect later or be served from a cached tool list), so the job rechecks it with the SDK's status method before trusting the result.",
+      "whyWrong": {
+        "B": "MCP connection failures don't raise exceptions, so this handler would never fire for the failure seen here.",
+        "C": "This relies on the model noticing and reporting a missing tool. Code that checks the status is more reliable than a prompt instruction.",
+        "D": "Removing the fallback tools doesn't detect the outage. The agent would still finish, just with even less evidence, and nothing flags the run."
+      },
+      "difficulty": 3,
+      "mindset": "Detect integration failures in code from status signals; don't count on exceptions or on the model to report them.",
+      "tags": [
+        "agent-sdk",
+        "mcp-status",
+        "silent-failure",
+        "reliability"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/mcp"
+      ]
+    },
+    {
+      "id": "f-d2-x2-003",
+      "taskStatementId": "2.4",
+      "stem": "A tech lead connected the team's ticket-tracker MCP server by running `claude mcp add --transport http tracker <url>` in the repository, with no other flags. It works for them. A new teammate clones the same repository, and Claude Code shows no tracker tools at all. What should the lead do so that everyone who clones the repo gets the server?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Ask the teammate to run `/mcp` and refresh the server list, since new clones often need a manual reconnect first."
+        },
+        {
+          "id": "B",
+          "text": "Add the tracker's URL and usage notes to the project CLAUDE.md so Claude Code connects to the server for each user."
+        },
+        {
+          "id": "C",
+          "text": "Copy the lead's `~/.claude.json` into the repository root and commit it, so everyone shares the same MCP setup."
+        },
+        {
+          "id": "D",
+          "text": "Re-add the server with `--scope project` so it's written to `.mcp.json`, then commit that file to the repository."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "With no `--scope` flag, `claude mcp add` uses **local scope**. That stores the server in the lead's own `~/.claude.json` under this project's path, so it's private to the lead. Shared team tooling belongs at **project scope**: `--scope project` writes it to `.mcp.json` at the repository root, which is committed and picked up by everyone who clones (each person approves it the first time).",
+      "whyWrong": {
+        "A": "Nothing is wrong with the connection. The teammate's configuration doesn't include the server at all, so refreshing has nothing to load.",
+        "B": "CLAUDE.md gives Claude instructions and context. It doesn't configure or connect MCP servers.",
+        "C": "`~/.claude.json` is a personal file that holds other settings and possibly credentials. Claude Code reads team MCP servers from `.mcp.json`, not from a copy of that file."
+      },
+      "difficulty": 1,
+      "mindset": "The default scope is private to you; team tooling has to be written to the committed .mcp.json.",
+      "tags": [
+        "mcp-config",
+        "local-scope",
+        "project-scope",
+        "onboarding"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/mcp"
+      ]
+    },
+    {
+      "id": "f-d2-x2-004",
+      "taskStatementId": "2.4",
+      "stem": "A team's committed `.mcp.json` points an HTTP MCP server at their production feature-flag service. Most engineers should use production, but three engineers on the platform team need to point the same server at a staging endpoint while they test changes. The team wants one shared file, no per-person edits to it, and the fewest moving parts. What should they do?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Commit two entries, `flags-prod` and `flags-staging`, and tell engineers in CLAUDE.md which one of the two they should use."
+        },
+        {
+          "id": "B",
+          "text": "Set the server's `url` to `${FLAGS_MCP_URL:-<production URL>}` so it uses production unless an engineer sets the variable."
+        },
+        {
+          "id": "C",
+          "text": "Keep production in `.mcp.json` and ask the three engineers to edit the URL locally, being careful never to commit the change."
+        },
+        {
+          "id": "D",
+          "text": "Remove the server from `.mcp.json` and have every engineer add their own copy at user scope with the URL they need."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Claude Code expands `${VAR:-default}` in `.mcp.json`, including in the `url` field. A default value gives everyone production with no setup. The platform engineers just export `FLAGS_MCP_URL` in their own shell to point at staging. The shared file never changes, and there's no duplicate server.",
+      "whyWrong": {
+        "A": "Two servers put two near-identical sets of tools in front of Claude in every session. That invites wrong choices and depends on a prose instruction being followed.",
+        "C": "Relying on people not to commit a modified shared file is fragile. It's exactly the kind of local edit the team wanted to avoid.",
+        "D": "This throws away the shared, versioned config for everyone just to suit three people, and the per-person setups will drift apart."
+      },
+      "difficulty": 2,
+      "mindset": "Use environment-variable defaults to make one shared config adapt per person, rather than forking the config.",
+      "tags": [
+        "mcp-config",
+        "env-var-expansion",
+        "defaults",
+        "project-scope"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/mcp"
+      ]
+    },
+    {
+      "id": "f-d2-x2-005",
+      "taskStatementId": "2.4",
+      "stem": "An engineer wrote a small internal MCP server that Claude Code launches over stdio. It worked until they added `print()` statements to trace incoming requests while debugging. Since then, Claude Code reports that the server failed to connect, though the server runs without errors when started by hand. What is the BEST fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Switch the server to the SSE transport, which keeps logging separate from protocol messages over HTTP."
+        },
+        {
+          "id": "B",
+          "text": "Raise the `MCP_TIMEOUT` setting, since the extra logging is slowing startup past the connection deadline."
+        },
+        {
+          "id": "C",
+          "text": "Send the debug output to stderr (or a log file) so that stdout carries only MCP protocol messages."
+        },
+        {
+          "id": "D",
+          "text": "Format each debug line as a JSON object, so that the client can parse it alongside the protocol messages."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "With the **stdio transport**, the client reads JSON-RPC messages from the server's stdout. The spec says the server **must not write anything to stdout that isn't a valid MCP message**. Logging should go to stderr. The `print()` calls inject text into the protocol stream, so the client can't parse it. Redirecting them to stderr or a log file fixes the problem without changing anything else.",
+      "whyWrong": {
+        "A": "Changing transports is a big redesign for a logging mistake, and HTTP+SSE is deprecated in favour of Streamable HTTP anyway.",
+        "B": "The failure comes from corrupted output, not slowness. More time doesn't make stray text on stdout parseable.",
+        "D": "Debug lines in JSON still aren't valid JSON-RPC messages, so they still break the stream. They belong on stderr."
+      },
+      "difficulty": 2,
+      "mindset": "Over stdio, stdout belongs only to the protocol; logs go to stderr.",
+      "tags": [
+        "mcp-transport",
+        "stdio",
+        "debugging",
+        "custom-server"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-06-18/basic/transports"
+      ]
+    },
+    {
+      "id": "f-d2-x2-006",
+      "taskStatementId": "2.4",
+      "stem": "A company is publishing a central, remotely hosted MCP server for its internal knowledge base. Every engineer will connect from Claude Code. The server supports Streamable HTTP and SSE, and it signs users in with OAuth so results respect each person's document permissions. Which TWO steps should the setup guide recommend? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Connect with `--transport sse`, since knowledge-base answers stream back and SSE is the transport intended for that."
+        },
+        {
+          "id": "B",
+          "text": "Add the server with `--transport http`, since HTTP is the recommended transport for remote MCP servers."
+        },
+        {
+          "id": "C",
+          "text": "Put one shared service-account token in the committed `.mcp.json` headers so nobody has to sign in."
+        },
+        {
+          "id": "D",
+          "text": "After adding it, have each engineer run `/mcp` in Claude Code and finish the OAuth sign-in in the browser."
+        },
+        {
+          "id": "E",
+          "text": "Have each engineer run the server locally over stdio, so their credentials never leave their own laptop."
+        }
+      ],
+      "correct": [
+        "B",
+        "D"
+      ],
+      "explanation": "Claude Code docs recommend the **HTTP (Streamable HTTP) transport** for remote servers. The SSE transport is deprecated. For servers that use OAuth, each user adds the server and then runs **`/mcp`** to complete the browser sign-in (or uses `claude mcp login <name>`). Each person gets their own token, so results respect their individual permissions.",
+      "whyWrong": {
+        "A": "SSE is deprecated in favour of HTTP. Streamable HTTP can stream responses itself, so the streaming requirement doesn't call for SSE.",
+        "C": "A shared token puts a secret in git and replaces per-user permissions with one identity, which defeats the purpose of OAuth.",
+        "E": "The server is central and hosted remotely. Running local copies over stdio throws that away and adds installation and drift for every engineer."
+      },
+      "difficulty": 3,
+      "mindset": "Remote server: HTTP transport plus per-user OAuth via /mcp. Never a shared secret in the repo.",
+      "tags": [
+        "mcp-transport",
+        "oauth",
+        "remote-server",
+        "multi-select"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/mcp"
+      ]
+    },
+    {
+      "id": "f-d2-x2-007",
+      "taskStatementId": "2.4",
+      "scenario": "Developer Productivity with Claude: a nightly Agent SDK job uses a vendor's `compliance-scan` MCP server. Its `get_scan_report` tool takes a scan ID and returns the complete findings report, typically 35,000 to 40,000 tokens, and has no filtering or paging parameters. The summary the agent writes must cover every finding. Each run's log shows the tool result replaced by a message naming a saved file, after which the agent spends several turns reading that file back in pieces. The team cannot change the vendor's server.",
+      "stem": "Which change is the MOST appropriate way to let the agent receive the whole report as a single tool result?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Set `MAX_MCP_OUTPUT_TOKENS` above the report size in the job's environment, since the full output is needed and that limit triggers the hand-off."
+        },
+        {
+          "id": "B",
+          "text": "Move the job to a model with a larger context window, since the MCP output limit is derived from the model's window and grows along with it."
+        },
+        {
+          "id": "C",
+          "text": "Add a system prompt instruction telling Claude to ask `get_scan_report` for a shorter report and to request the remaining findings afterwards."
+        },
+        {
+          "id": "D",
+          "text": "Raise `MCP_TOOL_TIMEOUT` for the job so that the server has enough time to return the complete report before the tool call is cut off."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Claude Code (and the Agent SDK with it) caps the size of an MCP tool result. When a text result goes over the limit, the result is **saved to a file** and replaced by a message naming the path, and the agent reads it back in portions. That is exactly the behaviour in the logs. The limit is a fixed default (25,000 tokens) controlled by the `MAX_MCP_OUTPUT_TOKENS` environment variable, not something the model or the transport decides. A server can also declare a higher limit for one of its tools with the `anthropic/maxResultSizeChars` annotation, but that requires a server change. Here the whole report is legitimately needed, the tool offers no way to narrow it, and the server isn't the team's to change, so raising the limit for this job is the right knob. (When you *do* own the tool, the better fix is to make it return less, as the tool-design questions cover.)",
+      "whyWrong": {
+        "B": "The MCP output limit is a fixed default set by an environment variable. It doesn't scale with the model's context window, so a bigger model still triggers the file hand-off.",
+        "C": "The tool has no parameter for a shorter or partial report, so no prompt can make Claude request one. This asks the model to work around a constraint it can't influence.",
+        "D": "The server is returning the report fine. The result arrives and is then handed off to a file because of its size, not because the call ran out of time."
+      },
+      "difficulty": 2,
+      "mindset": "Know which control actually produces the symptom: an output-size limit is fixed by configuration, not by the model you pick.",
+      "tags": [
+        "mcp-output-limits",
+        "MAX_MCP_OUTPUT_TOKENS",
+        "agent-sdk",
+        "configuration"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/mcp",
+        "https://code.claude.com/docs/en/agent-sdk/mcp"
+      ]
+    },
+    {
+      "id": "f-d2-x2-008",
+      "taskStatementId": "2.4",
+      "stem": "A developer has two MCP servers in Claude Code: a project-scoped `jira` server and a user-scoped `confluence` server. Each exposes a tool named `search`. They're worried about the name clash, and they also want Claude to use any `confluence` tool without being asked for permission each time. Which TWO statements are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "The tools are exposed as `mcp__jira__search` and `mcp__confluence__search`, so both are callable in the same session."
+        },
+        {
+          "id": "B",
+          "text": "Only one `search` tool can load in a session, so whichever server connects last silently replaces the other server's tool."
+        },
+        {
+          "id": "C",
+          "text": "The developer must rename one server's `search` tool in its source code before Claude Code will connect to both servers."
+        },
+        {
+          "id": "D",
+          "text": "Project-scoped servers take priority, so the `confluence` tools stay hidden while the repository's `.mcp.json` is present."
+        },
+        {
+          "id": "E",
+          "text": "A permission rule such as `mcp__confluence__*` can allow every tool from the `confluence` server without listing each one."
+        }
+      ],
+      "correct": [
+        "A",
+        "E"
+      ],
+      "explanation": "Claude Code discovers tools from **every configured server** and makes them available together. Each tool's name is namespaced as `mcp__<server>__<tool>`, so `mcp__jira__search` and `mcp__confluence__search` don't collide. The same names are used in permission rules, and a rule like `mcp__confluence__*` covers every tool from that one server.",
+      "whyWrong": {
+        "B": "Tools aren't replaced. Namespacing by server name keeps both `search` tools separate and usable.",
+        "C": "No source change is needed. Claude Code namespaces each tool by its server name automatically.",
+        "D": "Servers with different names don't hide each other, whatever their scopes. Scope precedence only decides which definition wins when the *same* server name appears in more than one scope."
+      },
+      "difficulty": 2,
+      "mindset": "MCP tools are namespaced by server, so many servers can coexist and be permissioned server by server.",
+      "tags": [
+        "mcp-tool-naming",
+        "permissions",
+        "multiple-servers",
+        "multi-select"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/mcp",
+        "https://code.claude.com/docs/en/permissions"
+      ]
+    },
+    {
+      "id": "f-d2-x2-009",
+      "taskStatementId": "2.5",
+      "scenario": "Developer Productivity with Claude: the agent read a 900-line Python module early in a long session. Many turns later, it tries to change a validation check inside one method. Its Edit call keeps failing because the `old_string` isn't found. The engineer can see the target code in the file, and the snippet appears in only one place.",
+      "stem": "What should the agent do NEXT to make the edit succeed with the least risk?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Rewrite the whole module with Write, using its memory of the file from earlier, with the new check in place."
+        },
+        {
+          "id": "B",
+          "text": "Run `sed -i` through Bash with a loose regular expression that tolerates small whitespace differences."
+        },
+        {
+          "id": "C",
+          "text": "Retry the same Edit with `replace_all: true` so the tool stops requiring that the match be unique."
+        },
+        {
+          "id": "D",
+          "text": "Read the lines around the method again and copy the exact text, including indentation, into `old_string`."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "Edit does **exact string replacement**. One character of whitespace or indentation difference (tabs vs. spaces, a trailing space, a reflowed line) is enough to miss. The snippet is unique, so uniqueness isn't the problem: the agent's recalled text doesn't match the file exactly. Re-reading the relevant lines gives the exact current text, and the Edit then applies to exactly one place.",
+      "whyWrong": {
+        "A": "Rewriting 900 lines from memory risks silently dropping or changing code. The memory is already wrong, as the failed match shows.",
+        "B": "A loose regex through Bash gives up Edit's exact-match safety and could change lines the agent didn't mean to touch.",
+        "C": "`replace_all` deals with multiple matches, not zero matches. The `old_string` still doesn't exist in the file."
+      },
+      "difficulty": 2,
+      "mindset": "When an exact-match edit misses, refresh what you know about the file before trying something more drastic.",
+      "tags": [
+        "edit-tool",
+        "exact-match",
+        "whitespace",
+        "failure-recovery"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/tools-reference"
+      ]
+    },
+    {
+      "id": "f-d2-x2-010",
+      "taskStatementId": "2.5",
+      "stem": "Inside one 400-line TypeScript file, a local variable named `tmpTotal` appears 14 times. The engineer wants all 14 renamed to `subtotalCents`. The name doesn't appear in any other file. Which approach is BEST, with the fewest tool calls and no risk to other files?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Make 14 separate Edit calls, each with enough surrounding lines to make that particular occurrence unique."
+        },
+        {
+          "id": "B",
+          "text": "Make a single Edit call on that file with `old_string` `tmpTotal`, `new_string` `subtotalCents` and `replace_all: true`."
+        },
+        {
+          "id": "C",
+          "text": "Read the whole file, then Write it back in full with every occurrence of the variable renamed by hand."
+        },
+        {
+          "id": "D",
+          "text": "Run a recursive `sed` through Bash across the repository to replace `tmpTotal` everywhere it occurs."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Edit requires `old_string` to be unique **unless** you set `replace_all: true`, which replaces every occurrence in that one file. That fits exactly: every occurrence should change, and only in this file. It takes one call and leaves no chance of missing an occurrence.",
+      "whyWrong": {
+        "A": "This works, but it takes 14 calls, each a chance to pick the wrong context. `replace_all` is the intended tool for \"change every occurrence\".",
+        "C": "Regenerating the whole file to rename one variable risks accidental changes elsewhere in the 400 lines. It's the fallback for when Edit can't be used, not the first choice.",
+        "D": "A repository-wide `sed` reaches beyond the target file, which is exactly the risk the engineer wants to avoid."
+      },
+      "difficulty": 1,
+      "mindset": "Pick the narrowest tool that matches the intent: every occurrence, one file, so use Edit with replace_all.",
+      "tags": [
+        "edit-tool",
+        "replace_all",
+        "rename"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/tools-reference"
+      ]
+    },
+    {
+      "id": "f-d2-x2-011",
+      "taskStatementId": "2.5",
+      "scenario": "Developer Productivity with Claude: an engineer asks the agent to remove a retired feature flag, `enable_legacy_checkout`, from a 6,000-file monorepo. The flag key may appear in Python, TypeScript and YAML files. The agent's context window is already about half full from earlier work.",
+      "stem": "Which FIRST step BEST finds what needs changing while keeping context usage low?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Grep for `enable_legacy_checkout` with output that lists only the matching file paths, then Read just those files."
+        },
+        {
+          "id": "B",
+          "text": "Grep for `enable_legacy_checkout` with full line content and surrounding context lines for every match in the repo."
+        },
+        {
+          "id": "C",
+          "text": "Glob for `**/*legacy*checkout*` to find the files that are about the legacy checkout flow, then Read them."
+        },
+        {
+          "id": "D",
+          "text": "Use Bash to `cat` every Python, TypeScript and YAML file into the session, then scan the output for the key."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The flag key is **file content**, so Grep is the right tool. Its default `files_with_matches` mode returns file paths only, which costs very little context even across thousands of files. The agent can then Read only the files that matter, which keeps the investigation incremental and the context lean.",
+      "whyWrong": {
+        "B": "Content mode with context lines across a whole monorepo can pour hundreds of lines into an already half-full context before the agent knows which files matter.",
+        "C": "Glob matches file names. A file that uses the flag doesn't have to be named after it, so this misses most usages.",
+        "D": "Dumping every file into context is the most expensive option and would likely overflow the window long before the scan finished."
+      },
+      "difficulty": 2,
+      "mindset": "Search content with Grep, start with file paths only, and read just what the search points to.",
+      "tags": [
+        "grep-tool",
+        "output-mode",
+        "context-budget",
+        "incremental-exploration"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/tools-reference"
+      ]
+    },
+    {
+      "id": "f-d2-x2-012",
+      "taskStatementId": "2.5",
+      "scenario": "Code Generation with Claude Code: a developer asks Claude to explain why a code generator produces a broken enum. Grep for the enum's name finds its definition at line 18,240 of a 31,000-line generated schema file. The rest of the file is unrelated.",
+      "stem": "What is the BEST way for Claude to inspect the definition?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Read the whole schema file from the beginning so Claude has full context before reasoning about the enum definition."
+        },
+        {
+          "id": "B",
+          "text": "Write a trimmed copy of the schema that keeps only the enum section, then Read that smaller copy of the file."
+        },
+        {
+          "id": "C",
+          "text": "Read the schema file with an offset and limit covering a window of lines around line 18,240."
+        },
+        {
+          "id": "D",
+          "text": "Run `cat` on the schema file through Bash and rely on the output being cut short near the relevant section."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Read supports **`offset` and `limit`** to load a range of lines. Grep has already found the location, so reading a window around line 18,240 gives Claude exactly the definition and its neighbours without spending context on 30,000 unrelated lines. This is the \"Grep to locate, Read to inspect\" pattern applied to a large file.",
+      "whyWrong": {
+        "A": "A 31,000-line file will exceed Read's token limit and come back as a partial first page that doesn't reach line 18,240. Even if it fit, it would crowd out the context.",
+        "B": "Making a trimmed copy adds a file write and an extra step just to do what Read's line range already does.",
+        "D": "Bash output over the inline limit is handed off to a file with only a short preview of the start, so a 31,000-line dump never shows line 18,240 inline. It also wastes a round trip when Read can target the range directly."
+      },
+      "difficulty": 2,
+      "mindset": "Once you've found the spot, read only the slice you need.",
+      "tags": [
+        "read-tool",
+        "line-range",
+        "large-files",
+        "context-budget"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/tools-reference"
+      ]
+    },
+    {
+      "id": "f-d2-x2-013",
+      "taskStatementId": "2.5",
+      "stem": "Before a risky deployment, an engineer asks Claude to list every SQL migration under `db/migrations/` that contains `DROP COLUMN`. The repository also has `.sql` fixture files elsewhere that must not be included. Which TWO approaches find the right files reliably without opening files one at a time? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Use Glob with the pattern `db/migrations/**/*DROP*COLUMN*.sql` to find the migration files that drop a column from a table."
+        },
+        {
+          "id": "B",
+          "text": "Use Grep for `DROP COLUMN`, scoped to `db/migrations/` with a `*.sql` file filter, returning matching paths."
+        },
+        {
+          "id": "C",
+          "text": "Use Glob `db/migrations/**/*.sql` to see how the migrations are laid out, then Grep `DROP COLUMN` with `path` set to that directory."
+        },
+        {
+          "id": "D",
+          "text": "Use Grep for `DROP COLUMN` across the whole repository and assume every file it returns is a migration."
+        },
+        {
+          "id": "E",
+          "text": "Use Read on every file in `db/migrations/` one at a time and note which ones mention dropping a column."
+        }
+      ],
+      "correct": [
+        "B",
+        "C"
+      ],
+      "explanation": "`DROP COLUMN` is **file content**, so Grep has to do the matching. Scoping it to `db/migrations/` with a `*.sql` filter (Grep's `path` and `glob` parameters) returns exactly the right files in one call. Glob-then-Grep also works: Glob lists files by **name and path**, and a Grep scoped to that directory finds the content. Both keep the fixtures out and avoid reading every migration.",
+      "whyWrong": {
+        "A": "Glob matches file names and paths, not contents. Migration file names don't contain the SQL they run.",
+        "D": "An unscoped search also matches the fixture files the engineer wants excluded, so the result can't be trusted as-is.",
+        "E": "This gets there eventually, but it loads every migration in full when one scoped content search returns the same list."
+      },
+      "difficulty": 2,
+      "mindset": "Glob decides which files by name; Grep decides which files by content. Combine or scope them, and don't read everything.",
+      "tags": [
+        "grep-tool",
+        "glob-tool",
+        "scoping",
+        "multi-select"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/tools-reference"
+      ]
+    },
+    {
+      "id": "f-d2-x2-014",
+      "taskStatementId": "2.5",
+      "stem": "Claude has finished adding a new `PricingRules` class and now needs to create its test file at `src/pricing/__tests__/pricingRules.test.ts`. That file doesn't exist yet. Which built-in tool is the MOST appropriate for creating it?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Edit, with an empty `old_string` and the full test code as the `new_string` for the new file."
+        },
+        {
+          "id": "B",
+          "text": "Bash, piping a heredoc containing the full test code into the new path with `cat >`."
+        },
+        {
+          "id": "C",
+          "text": "Read the new file path first, so the tool records that the file was seen before writing."
+        },
+        {
+          "id": "D",
+          "text": "Write, giving the new file's path and its complete contents in a single tool call."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "**Write** creates a new file (or fully overwrites an existing one) with the content you provide. For a brand-new file it is the direct, auditable choice: the change goes through a file tool, so Edit/Write hooks and checkpoints apply. The read-before-overwrite check concerns *existing* files; there is nothing to read here.",
+      "whyWrong": {
+        "A": "Edit is for targeted changes to existing text, matched exactly. Creating a whole new file is Write's job.",
+        "B": "A shell heredoc works, but it goes around the dedicated file tool: PostToolUse hooks matched on `Edit|Write` don't fire, and checkpoints don't capture files changed by Bash commands, so the change can't be rewound.",
+        "C": "There's nothing to read: the file doesn't exist yet. The read-before-overwrite check is about existing files."
+      },
+      "difficulty": 1,
+      "mindset": "New file: Write. Targeted change: Edit. Running something: Bash.",
+      "tags": [
+        "write-tool",
+        "new-file",
+        "tool-selection"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/tools-reference",
+        "https://code.claude.com/docs/en/checkpointing"
+      ]
+    },
+    {
+      "id": "f-d2-x2-015",
+      "taskStatementId": "2.5",
+      "scenario": "Developer Productivity with Claude: the team's Claude Code setup has a PostToolUse hook that matches `Edit|Write`. It runs the formatter and records each changed file for audit, and an `Edit(infra/**)` ask rule makes Claude confirm before touching anything under `infra/`. A reviewer notices that during a bulk refactor the agent changed dozens of files with `perl -pi` one-liners and a short Python script run through Bash. None of the files were formatted or recorded, the `infra/` files changed with no prompt, and `/rewind` can't restore any of them.",
+      "stem": "What is the BEST way to address this?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add `Bash(perl *)` and `Bash(python *)` to the allow list so in-place shell edits are at least pre-approved and consistent across the team."
+        },
+        {
+          "id": "B",
+          "text": "Make file changes through Edit/Write so existing hooks, rules and checkpoints apply, and add deny rules for the common in-place edit commands in Bash."
+        },
+        {
+          "id": "C",
+          "text": "Extend the hook matcher to include Bash, and parse each command string to work out which files it changed so they can be formatted and recorded."
+        },
+        {
+          "id": "D",
+          "text": "Add a CLAUDE.md note asking the agent to run the formatter and update the audit log itself after any shell-based edit it makes."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "The team's controls (formatter hook, audit trail, the `infra/` ask rule, and checkpoint rewind) are attached to the **dedicated file tools**. A Python script or `perl -pi` run through Bash writes files on its own, so none of those controls see the change: hooks matched on `Edit|Write` don't fire, path rules can't follow a subprocess that opens files itself, and checkpoints don't track Bash edits. The fix is to route modifications through Edit/Write, where the controls already apply, and discourage the back door with deny rules for the in-place edit commands. (A Bash rule isn't a hard security boundary, so sandboxing is the answer when it must be enforced.) Bash stays for what it's for: running tests, builds and git.",
+      "whyWrong": {
+        "A": "Pre-approving shell edits widens the gap: it removes the last chance for a human to notice, and the hooks, audit and checkpoints still never see the change.",
+        "C": "Parsing arbitrary shell commands to infer which files changed is fragile and easy to evade, and it rebuilds what Edit/Write already provide for free.",
+        "D": "A prompt-only instruction can be skipped. The controls are deterministic for Edit/Write, so put the edits where the controls are."
+      },
+      "difficulty": 3,
+      "mindset": "Use the dedicated file tools so deterministic hooks and permissions apply; Bash is for running things.",
+      "tags": [
+        "bash-tool",
+        "edit-tool",
+        "hooks",
+        "permissions",
+        "checkpointing",
+        "auditability"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/tools-reference",
+        "https://code.claude.com/docs/en/hooks",
+        "https://code.claude.com/docs/en/checkpointing"
+      ]
+    },
+    {
+      "id": "f-d2-x2-016",
+      "taskStatementId": "2.5",
+      "scenario": "Developer Productivity with Claude: an engineer reports that invoices in a legacy billing service sometimes total one cent too much. The error log shows the message \"Rounding adjustment applied\". Nobody on the current team knows the service's layout. The engineer wants the agent to find and fix the bug with a fix they can trust.",
+      "stem": "Which TWO actions belong in the agent's workflow? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Grep for \"Rounding adjustment applied\" to find where it's raised, then Read that file and follow its imports into the rounding logic."
+        },
+        {
+          "id": "B",
+          "text": "Glob every source file in the billing service and Read them all first, so nothing relevant is missed before changing code."
+        },
+        {
+          "id": "C",
+          "text": "Write a new rounding module from scratch based on the bug report, replacing the old one without reading it first."
+        },
+        {
+          "id": "D",
+          "text": "After making the fix with Edit, use Bash to run the billing service's test suite and confirm that the totals are now correct."
+        },
+        {
+          "id": "E",
+          "text": "After making the fix with Edit, ask the agent to reread its own diff carefully and confirm that the rounding is now correct."
+        }
+      ],
+      "correct": [
+        "A",
+        "D"
+      ],
+      "explanation": "The effective pattern is **incremental exploration**: Grep for a concrete anchor (here, the log message) to find the entry point, then Read and follow imports only as far as the flow requires. After a targeted Edit, **Bash runs the tests**. That's objective evidence the fix works and didn't break anything else.",
+      "whyWrong": {
+        "B": "Reading the whole service up front floods the context and buries the relevant code. Explore from an entry point instead.",
+        "C": "Replacing code you haven't read risks losing behaviour other callers depend on. It's the opposite of a targeted, trustworthy fix.",
+        "E": "Self-review can help, but it isn't verification. Running the tests is deterministic evidence; rereading the diff only gives an opinion."
+      },
+      "difficulty": 3,
+      "mindset": "Grep to find the entry point, Read to follow the flow, Edit to fix, Bash to prove it works.",
+      "tags": [
+        "incremental-exploration",
+        "grep-tool",
+        "bash-tool",
+        "verification",
+        "multi-select"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/tools-reference",
+        "https://code.claude.com/docs/en/best-practices"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,645 @@
+{
+  "certId": "foundations",
+  "domainId": "d1-agentic",
+  "questions": [
+    {
+      "id": "f-d1-x3-001",
+      "taskStatementId": "1.6",
+      "scenario": "You are integrating Claude Code into your CI/CD pipeline. It runs automated code reviews, generates test cases and posts feedback on pull requests. Feedback must be actionable with few false positives.",
+      "stem": "A nightly job checks each of the company's 14 shared libraries against the same dependency and licence checklist. The set of libraries is fixed, the checklist is identical every night, and no library's result depends on another's. Today one agent works through all 14 in a single long session; it takes about three hours, and the last few libraries get noticeably thinner checks. A teammate proposes replacing it with an orchestrator agent that decides at run time how to split up the work. Which decomposition is MOST appropriate?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Adopt the orchestrator-workers proposal, since a lead agent that plans the split each night can also absorb newly added libraries without any pipeline changes"
+        },
+        {
+          "id": "B",
+          "text": "Keep the single session but move it to the model with the largest available context window, so all 14 libraries' results fit without the later checks degrading"
+        },
+        {
+          "id": "C",
+          "text": "Fan out one focused call per library in parallel, each given the same checklist, and combine the 14 results into the nightly report in code"
+        },
+        {
+          "id": "D",
+          "text": "Run the full 14-library session three times in parallel and keep only the findings that appear in all three runs, so that the thin checks are filtered out"
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "The subtasks are **known in advance** and **independent**, so this is **parallelization by sectioning**: split the work into predefined pieces, run them at the same time, and aggregate the outputs programmatically. Each call handles one library with full attention, which removes the thinning seen late in the long session, and the wall-clock time drops to roughly one library's review. Orchestrator-workers differs from parallelization precisely in that the orchestrator decides the subtasks dynamically; that flexibility is only worth paying for when the subtasks can't be predicted.",
+      "whyWrong": {
+        "A": "The split is already known (one unit per library), so a planning LLM step adds cost and run-to-run variability for nothing; adding a library to a fixed list is a one-line change, not a reason for dynamic decomposition.",
+        "B": "The degradation is attention spread across 14 reviews in one conversation, not a hard context limit. A bigger window still asks one call to juggle everything, and the three-hour sequential run remains.",
+        "D": "Voting is for confidence on the same judgment. Here it triples cost, keeps the late-session thinning inside every run, and unanimity then drops findings rather than fixing coverage."
+      },
+      "difficulty": 2,
+      "mindset": "Predefined, independent subtasks: section and run in parallel; reserve a dynamic orchestrator for subtasks you can't list in advance.",
+      "tags": [
+        "parallelization",
+        "sectioning",
+        "orchestrator-workers",
+        "pattern-selection",
+        "attention-dilution"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "f-d1-x3-002",
+      "taskStatementId": "1.6",
+      "scenario": "You are integrating Claude Code into your CI/CD pipeline. It runs automated code reviews, generates test cases and posts feedback on pull requests. Feedback must be actionable with few false positives.",
+      "stem": "The team split its PR review into a per-file analysis pass followed by a separate cross-file integration pass. The integration pass still misses interactions: it is handed the full transcripts of all per-file passes plus the diff, runs out of room on large PRs, and spends most of its output re-reviewing individual files instead of checking how the changes fit together. Which TWO changes to the hand-off between the two stages would MOST improve the integration pass? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Keep passing the full per-file transcripts and the whole diff, but run the integration pass on the model with the largest context window so nothing is dropped"
+        },
+        {
+          "id": "B",
+          "text": "Have each per-file reviewer also flag any cross-file problems it suspects while it reviews, so that the separate integration pass can be removed from the pipeline entirely"
+        },
+        {
+          "id": "C",
+          "text": "Have each per-file pass return a compact structured record (changed public symbols, renamed/removed fields, new dependencies, open questions) and give the integration pass only those records"
+        },
+        {
+          "id": "D",
+          "text": "Run the integration pass first, so that it can tell the per-file reviewers which cross-file interactions to look for before they start analyzing their assigned files"
+        },
+        {
+          "id": "E",
+          "text": "Give the integration pass a narrow objective: check interactions between the changed files and their consumers, and explicitly tell it not to repeat file-level review"
+        }
+      ],
+      "correct": [
+        "C",
+        "E"
+      ],
+      "explanation": "In a prompt chain each step should receive **what it needs and nothing more**, in a shape it can use, and should have **one clear objective**. A fixed, compact output contract for the per-file stage (symbols changed, fields renamed, new dependencies) turns a stack of per-file transcripts into a short list the integration pass can actually reason over, and a narrow objective stops it from drifting back into file-level review. This mirrors Anthropic's delegation guidance: every stage needs an objective and an output format.",
+      "whyWrong": {
+        "A": "Bigger windows treat the symptom. The pass still has to find a handful of cross-file facts inside a wall of unrelated per-file text, and the wasted attention and cost grow with the PR.",
+        "B": "A per-file reviewer only sees its own file, so it cannot actually judge interactions; its cross-file flags would be speculation, and removing the stage built to catch interactions drops the one check that works.",
+        "D": "Interactions are discovered from the local analyses (which fields were renamed, which signatures changed). Run first, the integration pass has nothing concrete to direct the reviewers toward."
+      },
+      "difficulty": 2,
+      "mindset": "In a chain, design the hand-off: a compact output contract from one stage and a single clear objective for the next.",
+      "tags": [
+        "prompt-chaining",
+        "integration-pass",
+        "output-contract",
+        "code-review",
+        "multi-select"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents",
+        "https://www.anthropic.com/engineering/multi-agent-research-system"
+      ]
+    },
+    {
+      "id": "f-d1-x3-003",
+      "taskStatementId": "1.6",
+      "scenario": "You are building a customer support resolution agent using the Claude Agent SDK. It handles returns, billing disputes and account issues through custom MCP tools (get_customer, lookup_order, process_refund, escalate_to_human), targeting 80%+ first-contact resolution while knowing when to escalate.",
+      "stem": "The agent uses one large system prompt for every request. When the team tuned it to handle billing disputes more carefully, the quality of return requests dropped; when they then tuned it for returns, account-access issues got worse. Incoming requests fall into a few clearly distinguishable categories, each with its own policies and tool usage. What is the MOST appropriate way to restructure the work?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Keep the single prompt but add several worked examples for each category, so that the model learns all of the policies together in one place"
+        },
+        {
+          "id": "B",
+          "text": "Add a first step that classifies each request and routes it to a prompt specialized for that category, with its own instructions and tools"
+        },
+        {
+          "id": "C",
+          "text": "Replace the single agent with an orchestrator that dynamically breaks each request into subtasks and spawns workers to resolve them in parallel"
+        },
+        {
+          "id": "D",
+          "text": "Move to a larger model with a bigger context window so that the full policy text for every category fits comfortably into one prompt"
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "This is the textbook case for **routing**: distinct input categories that are better handled separately, where optimizing one prompt for one category hurts the others. A classification step sends each request to a specialized prompt, so each category can be tuned without side effects on the rest.",
+      "whyWrong": {
+        "A": "More examples in the same shared prompt keep the categories competing for the same instructions, which is the cause of the regressions.",
+        "C": "Orchestrator-workers is for tasks whose subtasks can't be known in advance. A support request is one task of a known category, not something to fan out.",
+        "D": "The prompt already fits; the problem is conflicting optimization between categories, which a bigger model does not resolve."
+      },
+      "difficulty": 2,
+      "mindset": "When improving one input type keeps breaking another, separate them with routing.",
+      "tags": [
+        "routing",
+        "pattern-selection",
+        "support-agent",
+        "prompt-specialization"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "f-d1-x3-004",
+      "taskStatementId": "1.6",
+      "scenario": "You are building developer productivity tools with the Claude Agent SDK. The agent helps engineers explore unfamiliar codebases, understand legacy systems, generate boilerplate and automate repetitive tasks, using the built-in tools (Read, Write, Bash, Grep, Glob) and MCP servers.",
+      "stem": "An engineer asks the agent to migrate 40 microservices from a deprecated logging library to a new one. All 40 services depend on an internal shared utilities package that also uses the old library. The current design fans out 40 parallel workers immediately, one per service. Most workers fail or produce inconsistent workarounds because the shared package has not been migrated yet, and each worker patches it differently. Which TWO changes would MOST reliably fix the decomposition? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Give every worker a higher retry limit, so that a worker that fails on the shared package can keep trying until its own workaround finally compiles"
+        },
+        {
+          "id": "B",
+          "text": "Migrate the shared utilities package first as a single sequential step, and fan out to the per-service workers only after that step is complete"
+        },
+        {
+          "id": "C",
+          "text": "Run all 40 services in one long agent session instead of in parallel, so that a single context window sees the whole migration at once"
+        },
+        {
+          "id": "D",
+          "text": "Allow each worker to edit the shared package directly, and add a final merge step that reconciles the 40 different versions of it afterward"
+        },
+        {
+          "id": "E",
+          "text": "Add a programmatic gate between the two steps that runs the shared package's full build and test suite and blocks the fan-out whenever either fails"
+        }
+      ],
+      "correct": [
+        "B",
+        "E"
+      ],
+      "explanation": "The subtasks are not independent: every service depends on the shared package. Good decomposition respects **dependencies**: do the shared prerequisite once, in sequence, then **parallelize** the truly independent per-service work. A **programmatic gate** between the stages (build and tests pass) makes sure the fan-out never starts on a broken foundation, as in prompt chaining with gates.",
+      "whyWrong": {
+        "A": "Retries repeat the same mistake 40 times and still let each worker invent its own patch to the shared code.",
+        "C": "One giant session throws away the parallelism for the independent part and risks attention dilution across 40 services.",
+        "D": "This creates 40 conflicting versions on purpose and then needs a hard reconciliation step; the dependency should be handled once, up front."
+      },
+      "difficulty": 3,
+      "mindset": "Sequence what others depend on, gate it, then parallelize what is truly independent.",
+      "tags": [
+        "dependencies",
+        "parallelization",
+        "gates",
+        "migration",
+        "multi-select"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents",
+        "https://code.claude.com/docs/en/agent-sdk/subagents"
+      ]
+    },
+    {
+      "id": "f-d1-x3-005",
+      "taskStatementId": "1.6",
+      "scenario": "You are integrating Claude Code into your CI/CD pipeline. It runs automated code reviews, generates test cases and posts feedback on pull requests. Feedback must be actionable with few false positives.",
+      "stem": "The team's test-generation job always runs the same stages: find the changed functions, generate unit tests for them, run the tests, and post a summary on the PR. When generated tests fail, though, the cause varies a lot: a bad test, a real bug in the PR, a flaky fixture or a missing mock, and a fixed \"fix the test\" step often hides genuine bugs. Which design is MOST appropriate, with the least added complexity?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Turn the whole job into one autonomous agent that decides at run time which of the stages to run, and in what order, for every PR that arrives"
+        },
+        {
+          "id": "B",
+          "text": "Keep the fixed pipeline and add a stronger instruction to the fix step telling it never to weaken an assertion that catches a real bug"
+        },
+        {
+          "id": "C",
+          "text": "Run the test-generation stage three times in parallel and keep only the tests that all three runs produce, to filter out bad tests"
+        },
+        {
+          "id": "D",
+          "text": "Keep the fixed pipeline for the predictable stages, and hand failed tests to an agentic investigation step that decides its next checks from what it finds"
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "Decomposition can be **hybrid**. The outer stages are predictable, so a fixed pipeline keeps them cheap, consistent and debuggable. Diagnosing a failing test is open-ended: the next step depends on what the first check reveals. That one stage benefits from **dynamic, adaptive** decomposition. Use autonomy only where the path can't be known in advance.",
+      "whyWrong": {
+        "A": "Making the predictable stages autonomous adds cost and unpredictability on every PR where the fixed sequence already works.",
+        "B": "A prompt-only rule does not give the step the ability to investigate; it still has to guess the cause in one fixed pass.",
+        "C": "Voting on test generation does nothing for diagnosing why a test fails, and it may discard the tests that expose real bugs."
+      },
+      "difficulty": 3,
+      "mindset": "Use a fixed pipeline where the path is known and adaptive investigation only where it isn't.",
+      "tags": [
+        "hybrid-decomposition",
+        "dynamic-decomposition",
+        "prompt-chaining",
+        "ci-cd",
+        "test-generation"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "f-d1-x3-006",
+      "taskStatementId": "1.6",
+      "stem": "A localization team uses Claude to translate product announcements into German. Native-speaker reviewers apply a written rubric (glossary terms used, brand tone kept, no literal idioms) and regularly send drafts back with specific comments; when the comments are applied, the second draft is consistently much better. The team wants that improvement without a human in every round. Which decomposition is MOST appropriate?",
+      "options": [
+        {
+          "id": "A",
+          "text": "An evaluator-optimizer loop: one call translates, a second call critiques the draft against the rubric, and the translator revises, for a bounded number of rounds"
+        },
+        {
+          "id": "B",
+          "text": "A single translation call whose prompt ends by asking the model to review its own draft against the rubric before it returns the final translation"
+        },
+        {
+          "id": "C",
+          "text": "An orchestrator that splits each announcement into paragraphs, has parallel workers translate them, and joins the paragraphs back in the original order"
+        },
+        {
+          "id": "D",
+          "text": "A routing step that detects the announcement type (release, outage, pricing) and sends each type to a translation prompt with examples written for that type"
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The **evaluator-optimizer** pattern fits when there are **clear evaluation criteria** and when **iterative feedback measurably improves** the result, which is exactly what the human review cycle shows. A separate critique call applies the rubric and produces specific feedback; the generator revises. Bound the number of rounds so cost stays predictable.",
+      "whyWrong": {
+        "B": "Asking the same call to grade its own draft is the 'ask the model to self-check' shortcut: the critique shares the draft's context and assumptions, so it rarely produces the specific, independent feedback the human reviewers provide.",
+        "C": "Paragraph-level parallelism makes tone and glossary consistency harder across the announcement, and it adds no feedback loop.",
+        "D": "Routing helps when input types need different handling; the stated gain comes from critique and revision, not from type-specific prompts."
+      },
+      "difficulty": 2,
+      "mindset": "Clear criteria plus proven gains from feedback means: separate the critic from the writer and loop.",
+      "tags": [
+        "evaluator-optimizer",
+        "pattern-selection",
+        "iteration"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "f-d1-x3-007",
+      "taskStatementId": "1.6",
+      "stem": "An internal tool turns a two-page meeting transcript into a list of action items. It uses a six-call chain: clean the text, split it into topics, label speakers, extract candidate items, remove duplicates, and format the list. It is slow, and a mistake in the speaker-labeling step often carries through to wrong owners in the final list. Nobody has tested whether the chain beats a simpler design. What should the team try FIRST?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add a seventh step at the end that checks every action item's owner against the speaker labels and corrects any mismatch it finds"
+        },
+        {
+          "id": "B",
+          "text": "Run the six steps in parallel instead of in sequence, so that the total latency becomes that of the slowest individual step"
+        },
+        {
+          "id": "C",
+          "text": "Compare the chain against a single well-prompted call that does the whole task, and keep the extra steps only if they measurably help"
+        },
+        {
+          "id": "D",
+          "text": "Rebuild the tool as an autonomous agent that decides at run time which of the six processing steps each transcript actually needs"
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Anthropic's guidance is to **start with the simplest solution** and add steps only when they demonstrably improve results. A two-page transcript is small enough for one call, and each extra hop in a chain adds latency and a place for errors to compound. Measure the simple baseline before keeping (or adding) machinery.",
+      "whyWrong": {
+        "A": "Another step adds more latency to a chain that was never shown to be needed, and it patches a symptom of over-decomposition.",
+        "B": "The steps depend on each other's output, so they can't run in parallel as described.",
+        "D": "An autonomous agent is more complex and less predictable than the chain it replaces, for a task with fixed, known steps."
+      },
+      "difficulty": 1,
+      "mindset": "Don't decompose what one good call can do; prove each step earns its place.",
+      "tags": [
+        "over-decomposition",
+        "simplicity",
+        "prompt-chaining",
+        "baseline"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "f-d1-x3-008",
+      "taskStatementId": "1.7",
+      "scenario": "You are building developer productivity tools with the Claude Agent SDK. The agent helps engineers explore unfamiliar codebases, understand legacy systems, generate boilerplate and automate repetitive tasks, using the built-in tools (Read, Write, Bash, Grep, Glob) and MCP servers.",
+      "stem": "A Python CLI built on the Agent SDK lets an engineer ask a question about a legacy repository and then ask follow-ups such as \"now show me where that function is called\". Each follow-up is sent with a new standalone query() call, and the agent answers as if it had never seen the earlier question, re-reading files it had just analyzed. The CLI handles one conversation at a time in a single process. What is the SIMPLEST correct fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Append a summary of every previous answer to the start of each new prompt, so that the agent can see what it said in the earlier turns"
+        },
+        {
+          "id": "B",
+          "text": "Use ClaudeSDKClient and send each follow-up through the same client, so every call automatically continues the same session"
+        },
+        {
+          "id": "C",
+          "text": "Pass fork_session=True on each follow-up call so that every new question branches off from the session that answered the last one"
+        },
+        {
+          "id": "D",
+          "text": "Raise max_turns on each query() call so that the agent keeps more of the conversation in memory between the separate calls"
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "By default each standalone `query()` call starts a **new session**. For multi-turn chat in one process, the Python SDK's **`ClaudeSDKClient`** tracks the session internally, so each `client.query()` continues the same conversation with full context and no ID handling. (In TypeScript, `continue: true` serves the same purpose.)",
+      "whyWrong": {
+        "A": "Hand-written summaries lose detail such as the files the agent already read, and they rebuild something the SDK manages for you.",
+        "C": "Forking creates a new branch session on every call, which is meant for exploring alternatives, not for a single linear conversation.",
+        "D": "max_turns limits turns within one call; it does nothing to carry context from one query() call to the next."
+      },
+      "difficulty": 1,
+      "mindset": "Use the SDK's built-in session handling before inventing your own memory.",
+      "tags": [
+        "ClaudeSDKClient",
+        "multi-turn",
+        "agent-sdk",
+        "sessions"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/sessions",
+        "https://code.claude.com/docs/en/agent-sdk/python"
+      ]
+    },
+    {
+      "id": "f-d1-x3-009",
+      "taskStatementId": "1.7",
+      "scenario": "Your engineering team uses Claude Code daily for code generation, refactoring, debugging and documentation, with custom slash commands, CLAUDE.md configuration and a mix of plan mode and direct execution.",
+      "stem": "A developer has a long-running Claude Code session in which Claude has built up a detailed picture of the payments module and is partway through implementing a fix. She wants to open a second terminal to ask exploratory questions that build on that same understanding, but her side questions must not appear in the first session's history or disturb the implementation in progress. What should she run in the second terminal?",
+      "options": [
+        {
+          "id": "A",
+          "text": "claude --resume <session-id> for the same session, since both terminals share the context and Claude Code keeps each terminal's messages separate in the transcript"
+        },
+        {
+          "id": "B",
+          "text": "claude --resume <session-id> --fork-session, so the second terminal gets its own copy of the conversation that diverges from that point under a new session ID"
+        },
+        {
+          "id": "C",
+          "text": "claude --continue, which reopens the most recent session in the directory as a view that can ask questions without being able to alter the original transcript"
+        },
+        {
+          "id": "D",
+          "text": "A fresh claude session whose first prompt pastes the key findings from the first session, so that the two conversations stay fully independent"
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "A **fork** creates a new session that starts with a copy of the original's history and then diverges; the original's ID and transcript stay untouched. That is exactly \"same understanding, separate history\". The docs warn that if you resume the same session in two terminals **without** forking, messages from both interleave into one transcript, which is what she wants to avoid. From inside the first session `/branch` would do the same thing, but it switches that process into the branch rather than giving a second terminal.",
+      "whyWrong": {
+        "A": "Resuming the same session in two terminals writes both conversations into one transcript, so the side questions land in the implementation session's history and confuse it.",
+        "C": "`--continue` simply reopens the most recent session; there is no read-only mode, and in a repository with several sessions it may not even pick the right one.",
+        "D": "A pasted summary loses the files read and the reasoning behind the analysis. Forking is the built-in way to reuse that context without hand-copying it."
+      },
+      "difficulty": 2,
+      "mindset": "Need the same context in a second place without cross-talk? Fork; never resume one session from two terminals.",
+      "tags": [
+        "fork-session",
+        "concurrent-sessions",
+        "claude-code-cli",
+        "resume-vs-fork"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/sessions",
+        "https://code.claude.com/docs/en/cli-reference"
+      ]
+    },
+    {
+      "id": "f-d1-x3-010",
+      "taskStatementId": "1.7",
+      "stem": "A document-review service runs Agent SDK jobs in short-lived serverless containers. A reviewer often asks a follow-up hours later, and the service passes the stored session_id as resume, but the follow-up lands on a different container and fails because the session cannot be found. Which TWO approaches would MOST reliably support follow-ups? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Attach a session store adapter so the SDK mirrors transcripts to shared storage, and resume from a working directory that matches the original run"
+        },
+        {
+          "id": "B",
+          "text": "Switch the follow-up calls to continue_conversation=True so that the SDK finds the most recent session on the host without needing the stored ID"
+        },
+        {
+          "id": "C",
+          "text": "Add fork_session=True to the follow-up call so that the SDK creates a fresh copy of the original session's transcript on the new container"
+        },
+        {
+          "id": "D",
+          "text": "Save the results the follow-up needs (findings, decisions, file references) as application state and pass them into a fresh session's prompt"
+        },
+        {
+          "id": "E",
+          "text": "Raise max_turns on the original job so that it completes more of its work before the short-lived container shuts down and its local transcript files are lost"
+        }
+      ],
+      "correct": [
+        "A",
+        "D"
+      ],
+      "explanation": "Session files are **local to the machine that created them**. To resume on another host, the docs give options: a **`SessionStore` adapter** that mirrors transcripts to your backend (the lookup key comes from the working directory, so match the original `cwd`), moving the transcript file, or **not relying on resume** at all and passing captured results into a fresh session, which is often more robust.",
+      "whyWrong": {
+        "B": "Continue still looks for sessions on the local disk of whatever machine it runs on, and a fresh container holds none from the earlier run.",
+        "C": "A fork needs the original transcript on disk to copy from, so on the new container it fails for the same reason the resume does.",
+        "E": "Reviewers ask follow-ups hours later; completing more work up front does nothing to make the session or its files available to another container."
+      },
+      "difficulty": 3,
+      "mindset": "Sessions are machine-local; persist them deliberately or persist the results instead.",
+      "tags": [
+        "cross-host",
+        "session-store",
+        "serverless",
+        "resume",
+        "multi-select"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/sessions",
+        "https://code.claude.com/docs/en/agent-sdk/session-storage"
+      ]
+    },
+    {
+      "id": "f-d1-x3-011",
+      "taskStatementId": "1.7",
+      "scenario": "You are building a multi-agent research system with the Claude Agent SDK. A coordinator agent delegates to specialized subagents: one searches the web, one analyzes documents, one synthesizes findings and one generates reports. The system produces comprehensive, cited research reports.",
+      "stem": "A coordinator run on a complex topic ended with an error_max_turns result after an hour of work. The log shows most research was done and only synthesis of the last two sub-areas was left. The job had captured the session_id from the result message. What is the MOST efficient way to get the finished report?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Resume the session by its session_id with a higher max_turns and ask the coordinator to finish the remaining synthesis work"
+        },
+        {
+          "id": "B",
+          "text": "Rerun the whole job from the beginning with a much higher max_turns setting, so that it can complete in one uninterrupted run"
+        },
+        {
+          "id": "C",
+          "text": "Fork the session and start a fresh research plan in the fork, so the original hour of work is kept as a backup in case the fork fails"
+        },
+        {
+          "id": "D",
+          "text": "Start a new session that asks the coordinator to repeat only the research on the last two sub-areas and then write the report"
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "`session_id` is present on **every** result message, including error results like `error_max_turns`. The docs list \"recover from a limit\" as a main reason to **resume**: pass the ID with a higher limit and the agent continues with all prior findings in context. One detail to get right: a single-shot `query()` raises after yielding the error result, so capture `session_id` inside the message loop and catch the exception before you resume.",
+      "whyWrong": {
+        "B": "Repeating an hour of completed research wastes time and tokens when the context can simply be resumed.",
+        "C": "A fresh plan in a fork throws away the progress the fork inherited; nothing needs to be explored as an alternative here.",
+        "D": "A new session doesn't have the earlier findings, so the final report couldn't draw on most of the research."
+      },
+      "difficulty": 2,
+      "mindset": "Hitting a limit isn't failure; resume with more room instead of starting over.",
+      "tags": [
+        "error_max_turns",
+        "resume",
+        "session_id",
+        "recovery"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/sessions",
+        "https://code.claude.com/docs/en/agent-sdk/agent-loop"
+      ]
+    },
+    {
+      "id": "f-d1-x3-012",
+      "taskStatementId": "1.7",
+      "scenario": "Your engineering team uses Claude Code daily for code generation, refactoring, debugging and documentation, with custom slash commands, CLAUDE.md configuration and a mix of plan mode and direct execution.",
+      "stem": "In a Claude Code session a developer analyzed a module, then asked Claude to try a refactor. Claude used its Edit tool on eight files, and the result is a mess. The developer wants both the files and the conversation back to the point just before the refactor prompt, keeping the earlier analysis, so she can try a different approach. The edits are not committed. What should she do?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Fork with claude --continue --fork-session, since the forked branch starts from the files as they were before the refactor"
+        },
+        {
+          "id": "B",
+          "text": "Run /clear to start a new conversation, then ask Claude to undo all of the changes it made in the previous conversation"
+        },
+        {
+          "id": "C",
+          "text": "Use /rewind, pick the checkpoint just before the refactor prompt, and restore both the code and the conversation to it"
+        },
+        {
+          "id": "D",
+          "text": "Run /compact so the failed refactor attempt gets summarized away and Claude can continue in the same session with a cleaner context"
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Claude Code creates a **checkpoint** before each prompt that starts a turn. **`/rewind`** (or Esc Esc with an empty input) lets you restore code, conversation or both to an earlier point, which is exactly \"back to before the refactor, keep the analysis\". Checkpoints track edits made through Claude's file-editing tools; changes made through Bash commands are not tracked, and most subagent edits are not restored by a rewind, and git is still the real safety net.",
+      "whyWrong": {
+        "A": "Forking branches only the conversation. The files on disk keep the broken edits from the failed refactor.",
+        "B": "/clear drops the analysis the developer wanted to keep, and a blanket request to undo everything relies on Claude reconstructing every change.",
+        "D": "/compact only summarizes the conversation; the broken edits remain on disk, and the failed attempt is hidden rather than undone."
+      },
+      "difficulty": 2,
+      "mindset": "Sessions hold conversation, not files; to roll back files, use checkpoints (or git).",
+      "tags": [
+        "checkpoints",
+        "rewind",
+        "claude-code",
+        "fork-vs-rewind"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/checkpointing",
+        "https://code.claude.com/docs/en/agent-sdk/sessions"
+      ]
+    },
+    {
+      "id": "f-d1-x3-013",
+      "taskStatementId": "1.7",
+      "stem": "A developer spent the morning in one Claude Code session tracing how a legacy reporting module builds its SQL. It is the only session she has run in this repository today. After a one-hour lunch break, nothing in the code or database has changed, and she wants to continue exactly where she stopped. What is the BEST way to do that?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Run claude --continue in the repository to reopen the most recent session there with its full history"
+        },
+        {
+          "id": "B",
+          "text": "Start a new session and paste a structured summary of the morning's findings into the first prompt"
+        },
+        {
+          "id": "C",
+          "text": "Fork the morning session with --fork-session so that the original analysis stays untouched as a backup"
+        },
+        {
+          "id": "D",
+          "text": "Start a new session and ask Claude to re-read the reporting module so its analysis is fully up to date"
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "When the prior context is **still valid** (short break, nothing changed), simply **resume**. `claude --continue` reopens the most recent conversation in the current directory, which is the one she wants. A fresh session with a summary is the right call only when old tool results have gone **stale**.",
+      "whyWrong": {
+        "B": "Summaries lose detail; that trade-off is only worth it when the earlier tool results are stale, and here nothing changed.",
+        "C": "There is no alternative approach to explore, so a fork adds an extra session for no benefit.",
+        "D": "Re-reading everything repeats the morning's work although none of it is out of date."
+      },
+      "difficulty": 1,
+      "mindset": "Resume when the context is still true; don't pay to rebuild what hasn't changed.",
+      "tags": [
+        "continue",
+        "resume-vs-fresh",
+        "claude-code-cli"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/cli-reference",
+        "https://code.claude.com/docs/en/agent-sdk/sessions"
+      ]
+    },
+    {
+      "id": "f-d1-x3-014",
+      "taskStatementId": "1.7",
+      "scenario": "You are building a structured data extraction system with Claude. It pulls fields out of unstructured documents, validates the output against JSON schemas and feeds downstream systems, and it must handle edge cases gracefully.",
+      "stem": "A TypeScript service built on the Agent SDK extracts fields from scanned medical intake forms. Each document is a single query() call with no follow-up, and nobody ever resumes these runs. A security review notes that session transcripts containing patient data are piling up on the host's local disk. The team wants transcripts never to be written for these jobs, with minimal changes. What should they do?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Keep sessions as they are, but add a nightly cleanup job that deletes transcript files older than one day from the projects directory"
+        },
+        {
+          "id": "B",
+          "text": "Add an instruction to the system prompt telling the agent not to repeat patient identifiers in its responses or in its tool calls"
+        },
+        {
+          "id": "C",
+          "text": "Capture the session_id for every job and fork each session once it ends, so that the original transcript is replaced by a redacted copy"
+        },
+        {
+          "id": "D",
+          "text": "Set persistSession: false in the query options, so that each session exists only in memory for the duration of the single call"
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "These are **stateless one-shot jobs**, so there is nothing to resume. The SDK docs list exactly this case: set **`persistSession: false`** (TypeScript) so the session exists only in memory for the call and nothing is written to disk. (In Python the docs point to an environment setting to suppress transcript writes instead.) Choose session persistence based on whether you will ever return to the session.",
+      "whyWrong": {
+        "A": "The data is still written to disk and sits there until the cleanup runs, which does not meet \"never written\".",
+        "B": "The patient data comes from the documents and tool results, so it lands in the transcript regardless of what the agent says; a prompt can't stop that.",
+        "C": "Forking creates an additional transcript copy and doesn't redact or remove the original."
+      },
+      "difficulty": 3,
+      "mindset": "If a session will never be resumed, don't persist it; control data at the configuration layer, not in the prompt.",
+      "tags": [
+        "persistSession",
+        "stateless",
+        "data-handling",
+        "agent-sdk"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/sessions",
+        "https://code.claude.com/docs/en/agent-sdk/typescript"
+      ]
+    }
+  ]
+}

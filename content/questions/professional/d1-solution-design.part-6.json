@@ -1,0 +1,817 @@
+{
+  "certId": "professional",
+  "domainId": "d1-solution-design",
+  "questions": [
+    {
+      "id": "p-d1-x3-001",
+      "taskStatementId": "1.5",
+      "stem": "A mortgage lender splits loan-file review into two parallel Claude calls: one reads the applicant's income documents and writes a prose summary of income, and the other reads the credit report and writes a prose summary of debts. A third call reads both summaries and states whether the debt-to-income ratio is under the lender's limit. Underwriters find the ratio verdict is wrong on roughly 1 file in 15, usually because a monthly figure was annualised in one summary but not the other. What is the MOST reliable fix with minimal changes to the pipeline?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Merge the two extraction calls into a single call that reads all documents together, so one prompt sees both income and debts at the same time."
+        },
+        {
+          "id": "B",
+          "text": "Add few-shot examples to the third call showing how to convert annual figures to monthly before it compares the two summaries."
+        },
+        {
+          "id": "C",
+          "text": "Have each extraction call return structured monthly amounts with source references, and compute the ratio and limit check in code."
+        },
+        {
+          "id": "D",
+          "text": "Switch the third call to the most capable model and ask it to double-check its own arithmetic before giving its verdict."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "The split itself is fine (income and debts are independent extractions), but the hand-off between steps is loose prose, and the final step is doing arithmetic on inconsistent units. Making the interface between steps a **structured contract** (monthly amounts, with where each figure came from) and moving the ratio and threshold comparison into **code** turns the error-prone part into a deterministic, testable step. This keeps the existing decomposition and fixes the exact failure.",
+      "whyWrong": {
+        "A": "Merging removes the parallelism and makes a bigger, less focused prompt, but the model would still be doing unit conversion and arithmetic in free text, so the root cause remains.",
+        "B": "Examples may reduce the mistake but leave a policy-critical calculation to probabilistic text reasoning over prose summaries; a deterministic check is more reliable for an exact numeric rule.",
+        "D": "A bigger model and a self-check are the classic tempting distractors: they raise cost and still rely on the model to catch its own arithmetic, instead of removing arithmetic from the model's job."
+      },
+      "difficulty": 2,
+      "mindset": "Pass structured data between decomposed steps, and give exact calculations to code rather than to a prompt.",
+      "tags": [
+        "decomposition",
+        "prompt-chaining",
+        "structured-handoff",
+        "deterministic-controls"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents",
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs"
+      ]
+    },
+    {
+      "id": "p-d1-x3-002",
+      "taskStatementId": "1.5",
+      "stem": "A finance team produces the same monthly variance report every month: pull actuals from the ledger, compare them with budget per cost centre, explain any variance above 5%, and write an executive summary. The steps are identical every month. An engineer built it as an orchestrator agent that decides its own subtasks each run. The CFO complains that sections appear in a different order, some cost centres are occasionally skipped, and run cost varies widely from month to month. What should the architect recommend?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Replace the orchestrator with a fixed chain of steps in code, using Claude only to explain variances and write the summary, with a coverage check before the summary."
+        },
+        {
+          "id": "B",
+          "text": "Keep the orchestrator but add the required section order and the full list of cost centres to its system prompt, so that it plans the report the same way every month."
+        },
+        {
+          "id": "C",
+          "text": "Keep the orchestrator and add a planner agent that writes the subtask list first, so that the run-time plan is reviewed by a second model before the orchestrator executes it."
+        },
+        {
+          "id": "D",
+          "text": "Move the orchestrator to the most capable model available so that its planning each month is more thorough and consistent, with no change to the pattern."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The steps are known before the input arrives and do not change between months, which is the textbook case for **fixed decomposition** (prompt chaining) rather than dynamic decomposition. A chain defined in code gives a stable structure, predictable cost and a programmatic coverage gate. Anthropic's guidance is to use the simplest pattern that works and add agentic autonomy only when the steps cannot be predicted.",
+      "whyWrong": {
+        "B": "Listing the sections and cost centres in the prompt is a soft control; the model still chooses the plan each run, so skipped cost centres and variable cost remain possible.",
+        "C": "A planner agent reviewing another agent's plan piles more model calls and cost on top of a pattern that is wrong for a stable process; it treats symptoms instead of removing run-time planning.",
+        "D": "A bigger model costs more and still plans dynamically; it does not give the repeatable, testable structure a recurring report needs."
+      },
+      "difficulty": 1,
+      "mindset": "If you can write the steps on a whiteboard before seeing the input, use a fixed workflow, not an agent.",
+      "tags": [
+        "decomposition",
+        "fixed-vs-dynamic",
+        "workflow",
+        "over-engineering"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "p-d1-x3-003",
+      "taskStatementId": "1.5",
+      "stem": "An insurer's claim-letter pipeline has five chained steps: classify the claim, extract policy details, look up coverage rules, decide the outcome, and draft the letter. Quality reviewers reject about 9% of final letters, but the team only stores the final letter, and each engineer has a different theory about which step is at fault. Before changing any prompt, what should the architect do FIRST?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add a final step in which Claude reviews each letter against the claim file and rewrites it if it finds a mistake before sending."
+        },
+        {
+          "id": "B",
+          "text": "Collapse the five steps into a single prompt on a larger model so that there are fewer hand-offs where errors could be introduced."
+        },
+        {
+          "id": "C",
+          "text": "Rewrite all five prompts at once with clearer instructions and more examples, then compare the new rejection rate with the old one."
+        },
+        {
+          "id": "D",
+          "text": "Log every step's intermediate output, label a sample of rejected cases, and evaluate each step separately to find where errors start."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "One of the main benefits of decomposition is that each step can be evaluated on its own. Here that benefit is being thrown away because only the final output is kept. Capturing intermediate outputs and running a **per-step evaluation** on labelled failures locates the step where errors originate, so the fix can be targeted and its effect measured.",
+      "whyWrong": {
+        "A": "A self-review step adds cost and latency and may catch some errors, but it does not tell the team which step is broken, so the underlying cause keeps producing bad letters.",
+        "B": "Collapsing the chain loses the ability to test steps separately and makes debugging harder, which is the opposite of what the team needs.",
+        "C": "Changing every prompt at once without knowing the failing step mixes many changes together, so any improvement or regression cannot be attributed to a cause."
+      },
+      "difficulty": 2,
+      "mindset": "Decomposition pays off only if you can observe and evaluate each step; measure before you fix.",
+      "tags": [
+        "decomposition",
+        "evaluation",
+        "observability",
+        "prompt-chaining"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents",
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests"
+      ]
+    },
+    {
+      "id": "p-d1-x3-004",
+      "taskStatementId": "1.5",
+      "stem": "A strategy team uses a lead agent to assess entering a new country. At the start, the lead agent writes a plan of 12 research subtasks (pricing, channels, competitors, hiring and so on) and dispatches them in waves. In the first wave, a subagent finds that the country's regulations prohibit the product category entirely, yet the lead agent continues dispatching the remaining pricing and channel subtasks and spends the full budget. Which change BEST addresses this?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Have the lead agent write a longer, more detailed plan at the start that anticipates possible blockers before any subtasks are dispatched."
+        },
+        {
+          "id": "B",
+          "text": "After each wave, have the lead agent review findings and revise, reprioritise or cancel the remaining subtasks in a plan it keeps updated."
+        },
+        {
+          "id": "C",
+          "text": "Dispatch all 12 subtasks at once in parallel so the full study completes faster, then let the final report flag any blocking finding."
+        },
+        {
+          "id": "D",
+          "text": "Add a final reviewer agent that reads the completed report and highlights any contradictions between the regulatory and pricing sections."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Open-ended research is the case for dynamic decomposition, and the plan must be a **living artifact**: map, prioritise, execute a wave, then re-plan using what was learned. Anthropic's research system has the lead agent think about results and decide whether more work is needed, and save its plan to memory. A re-planning checkpoint after each wave lets a blocking finding stop wasted work.",
+      "whyWrong": {
+        "A": "No upfront plan can anticipate every discovery; the failure is not re-planning after new information, not a lack of detail at the start.",
+        "C": "Running everything at once guarantees the full budget is spent even when an early finding makes most subtasks pointless.",
+        "D": "A reviewer at the end would notice the contradiction only after all the money and time were spent; it does not change how the work was decomposed."
+      },
+      "difficulty": 2,
+      "mindset": "For open-ended problems, decompose in waves and re-plan after each one; the plan is a living document.",
+      "tags": [
+        "decomposition",
+        "dynamic-planning",
+        "orchestrator-workers",
+        "cost-control"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/multi-agent-research-system"
+      ]
+    },
+    {
+      "id": "p-d1-x3-005",
+      "taskStatementId": "1.5",
+      "stem": "A bid team uses a two-step chain to answer public-sector tenders. Step one reads a 90-page request for proposal and writes a bulleted prose list of the buyer's requirements. Step two uses that list to write a compliance matrix. Bid managers find that some mandatory requirements never appear in the matrix, and that two similar requirements are sometimes merged into one row. Spot checks show step one usually does capture the missing requirements, but by step two they have been dropped or folded into a neighbouring row. Which redesign MOST reliably ensures every captured requirement gets its own matrix row and makes any gap detectable?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Have step two read the full 90-page document as well as the list, so that it can notice any requirements the first step left out."
+        },
+        {
+          "id": "B",
+          "text": "Tell step one to be exhaustive and never merge requirements, and tell step two to double-check the list for missing items."
+        },
+        {
+          "id": "C",
+          "text": "Run step one three times and merge the three lists, keeping every requirement that appears in at least one of the runs."
+        },
+        {
+          "id": "D",
+          "text": "Have step one output records with an ID, a verbatim quote and section reference, and check in code that each ID has a matrix row."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "The weak point is the interface between steps: loose prose lets requirements be merged or dropped silently. Turning the hand-off into **structured records with stable IDs and verbatim source quotes** makes each requirement traceable, and a **code check** that every ID is covered by the matrix makes completeness verifiable instead of hoped for. Grounding extractions in direct quotes also reduces invented or paraphrased requirements.",
+      "whyWrong": {
+        "A": "Giving step two the whole document again adds tokens and blurs the split, and since step one already captures the requirements, it does nothing to verify that each one reaches the matrix.",
+        "B": "Instructions to be exhaustive and to self-check are prompt-only fixes; they do not create a way to prove nothing was dropped.",
+        "C": "Repeating extraction targets recall, which is not the failing part here; without IDs it also multiplies near-duplicates and still offers no deterministic completeness check."
+      },
+      "difficulty": 3,
+      "mindset": "Make the contract between decomposed steps explicit and checkable, so coverage is verified rather than assumed.",
+      "tags": [
+        "decomposition",
+        "structured-handoff",
+        "coverage",
+        "traceability"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents",
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-hallucinations"
+      ]
+    },
+    {
+      "id": "p-d1-x3-006",
+      "taskStatementId": "1.5",
+      "stem": "A telecom's support team routes chat transcripts into one of 140 intent labels grouped under 11 product families. A single Claude call that receives all 140 label definitions picks the right label 72% of the time on a labelled set. Most errors are confusions between labels within the same family, the prompt is already very long, and about 1 transcript in 20 fits no label well. Which TWO changes would MOST effectively improve routing quality? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add three worked examples for each of the 140 labels to the existing prompt so that the model has a concrete reference for every fine-grained distinction it must make."
+        },
+        {
+          "id": "B",
+          "text": "Classify in two stages: a first call picks the product family, then a second call sees only that family's labels, definitions and examples and picks the final label."
+        },
+        {
+          "id": "C",
+          "text": "Keep the single call but move it to the most capable model with a large thinking budget so that it can weigh all 140 definitions more carefully at once."
+        },
+        {
+          "id": "D",
+          "text": "Ask the model to list its top three candidate labels, re-read the transcript against each one, and then confirm or revise its final choice within the same call."
+        },
+        {
+          "id": "E",
+          "text": "Give each stage an explicit none-of-these outcome that routes the transcript to a human queue, and evaluate each stage separately on the labelled set."
+        }
+      ],
+      "correct": [
+        "B",
+        "E"
+      ],
+      "explanation": "This is **hierarchical decomposition** of a classification problem. Anthropic's ticket-routing guidance recommends a taxonomic hierarchy once there are roughly 20 or more categories: a cascade of classifiers, each with its own targeted prompt, instead of one unwieldy prompt that must carry examples for every label. The coarse stage is easy and the fine stage sees only a dozen or so related labels, which is exactly where the current confusions occur. Decomposing also means designing the **hand-offs**: a none-of-these exit at each stage stops a wrong family choice from being forced into a wrong fine label, and per-stage evaluation shows where the remaining errors come from. The trade-off is an extra call, so the guidance pairs this with a fast, small model.",
+      "whyWrong": {
+        "A": "The official guidance notes that as classes grow, the examples needed grow with them and the prompt becomes unwieldy; 420 examples in one prompt makes the long-prompt problem worse without separating the confusable labels.",
+        "C": "A bigger model and more thinking raise cost and latency on every transcript but still ask one call to discriminate among 140 labels; the structural cause of the sibling confusions is untouched.",
+        "D": "A self-check inside the same call is a probabilistic double-check over the same 140 definitions; it does not reduce the label set the model must discriminate among."
+      },
+      "difficulty": 3,
+      "mindset": "When a single decision is too wide, split it into a coarse decision and a narrow one, and give every stage an exit.",
+      "tags": [
+        "decomposition",
+        "hierarchical-classification",
+        "routing",
+        "evaluation"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/about-claude/use-case-guides/ticket-routing",
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "p-d1-x3-007",
+      "taskStatementId": "1.5",
+      "stem": "A legal-operations manager, who is not technical, wants Claude to help with inbound client matters: read the client's documents, identify the legal risks, and draft the client email. A single prompt that does all three produces usable emails. However, the firm's rule is that a lawyer must approve the risk assessment before any client-facing text is written, and the manager also wants to see which part went wrong whenever an email is poor. Which design should the architect propose?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Keep the single prompt but add an instruction that the risk assessment must be complete and approved by a lawyer before the email part of the response is written."
+        },
+        {
+          "id": "B",
+          "text": "Split the work into a chain: one call reads the documents and lists the risks, a lawyer approves that list, then a second call drafts the email from the approved list."
+        },
+        {
+          "id": "C",
+          "text": "Keep the single prompt and run it on the most capable model so that the risk assessment is reliable enough for the lawyer to review the finished email instead."
+        },
+        {
+          "id": "D",
+          "text": "Build an agent that decides for itself whether a matter needs lawyer review, and lets it draft and send the email directly when it judges the risks to be routine."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Anthropic's prompting guidance says explicit prompt chaining is most useful when you need to **inspect intermediate outputs** or **enforce a specific pipeline structure**. Both apply here: the lawyer's approval is an inspection point that must happen between two pieces of work, and separate calls let the team log and evaluate the risk list and the email independently, so a poor email can be traced to the step that caused it. Decompose where the process needs a checkpoint, not everywhere.",
+      "whyWrong": {
+        "A": "A model cannot pause mid-response for a lawyer to approve anything; the instruction is a prompt-only gesture that leaves the email generated before the review happens.",
+        "C": "A stronger model changes the order of nothing: the email is still written before the lawyer sees the risks, which breaks the firm's rule and still gives no step-level visibility.",
+        "D": "Letting the system decide when review is needed removes the mandatory approval the firm requires and is far more autonomy than a fixed three-step process calls for."
+      },
+      "difficulty": 1,
+      "mindset": "Put the boundary between steps where a human must inspect or approve, and you get traceability for free.",
+      "tags": [
+        "decomposition",
+        "prompt-chaining",
+        "human-in-the-loop",
+        "non-technical"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices#chain-complex-prompts",
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "p-d1-x3-008",
+      "taskStatementId": "1.5",
+      "stem": "A manufacturer needs its 200-page equipment manual translated into 12 languages, and the regulator requires that safety terms such as hazard labels are translated identically everywhere they appear in a given language. A first attempt translated each chapter in its own parallel call per language, and reviewers found the same warning term rendered three different ways within one language. Which approach BEST balances consistency and turnaround time?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Translate the entire manual for each language in one single call so that the model sees every chapter together and stays consistent."
+        },
+        {
+          "id": "B",
+          "text": "Translate chapters strictly one after another per language, passing every previous chapter into the next call as extra context."
+        },
+        {
+          "id": "C",
+          "text": "First build and approve a per-language glossary of safety terms, then translate chapters in parallel with that glossary in every call."
+        },
+        {
+          "id": "D",
+          "text": "Keep the parallel chapter calls but add a reminder in each prompt telling Claude to use consistent terms for hazards and warnings."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "The chapters are independent **except** for a shared dependency: the terminology. Good decomposition puts that shared dependency in its own **sequential step first** (build and approve a glossary), then fans out the independent work in parallel with the glossary injected into every call. This gives consistency where it matters while keeping the speed of parallel translation.",
+      "whyWrong": {
+        "A": "One call per language over 200 pages risks diluted attention and output-length limits, and still gives the regulator no approved term list.",
+        "B": "Fully sequential translation with growing context is slow and expensive, and consistency still depends on the model noticing earlier choices.",
+        "D": "A reminder cannot make parallel calls agree on wording they cannot see; each call would still pick its own translation of the term."
+      },
+      "difficulty": 2,
+      "mindset": "Resolve shared dependencies first, then parallelize the truly independent work.",
+      "tags": [
+        "decomposition",
+        "parallelization",
+        "dependencies",
+        "prompt-chaining"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "p-d1-x3-009",
+      "taskStatementId": "1.5",
+      "stem": "A shared-services centre asks one Claude agent session to reconcile all 40 company bank accounts at month end and produce a single exceptions report. Runs often degrade partway through: later accounts get shallow treatment, and when the session fails on account 31, the whole job has to be restarted. Transfers between the company's own accounts also need to be matched across accounts. Which TWO design changes BEST address these problems? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Reconcile each account as its own bounded task with a fresh context, saving a structured result so a failed account can be rerun alone."
+        },
+        {
+          "id": "B",
+          "text": "Move the whole job to a model with a larger context window so all 40 accounts and their statements fit comfortably in one session."
+        },
+        {
+          "id": "C",
+          "text": "Add an instruction asking the agent to give each account equal care and to summarise its progress every ten accounts it completes."
+        },
+        {
+          "id": "D",
+          "text": "After the per-account tasks, run a consolidation step that matches internal transfers across the stored results and builds the report."
+        },
+        {
+          "id": "E",
+          "text": "Run the full 40-account session three times in parallel and keep the exceptions that appear in at least two of the three reports."
+        }
+      ],
+      "correct": [
+        "A",
+        "D"
+      ],
+      "explanation": "This is the **local passes plus integration pass** technique applied to a long-running job. Per-account units in fresh contexts keep attention focused and make failures **isolated and retryable** (rerun account 31 only). A separate consolidation step over the stored structured results handles the cross-account matching that no single unit can see. Neither change alone covers both the local quality and the cross-unit problem.",
+      "whyWrong": {
+        "B": "A larger window lets more fit, but attention still thins over a very long session and a failure still forces a full restart.",
+        "C": "Instructions and periodic summaries do not stop context build-up or give the job retryable units; this is a prompt-only fix for a structural problem.",
+        "E": "Voting across three full runs triples cost and keeps every run's degradation and restart problem."
+      },
+      "difficulty": 3,
+      "mindset": "Break long jobs into bounded, retryable units, then add an integration step for what crosses unit boundaries.",
+      "tags": [
+        "decomposition",
+        "integration-pass",
+        "failure-isolation",
+        "context-management"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents",
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "p-d1-x3-010",
+      "taskStatementId": "1.6",
+      "stem": "A telecom company runs several Claude workloads on the synchronous API and wants to cut spend by moving some of them to the Message Batches API. The service owners will reject any move that breaks an existing service-level commitment. Which TWO workloads are the BEST candidates to move? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "A live agent-assist panel that suggests the next reply to a support agent while the customer is still on the phone call."
+        },
+        {
+          "id": "B",
+          "text": "A fraud-risk explanation that must be shown before an order can complete checkout in the online store for the customer."
+        },
+        {
+          "id": "C",
+          "text": "A nightly job that scores yesterday's call transcripts for quality-assurance findings, which supervisors read the next morning."
+        },
+        {
+          "id": "D",
+          "text": "A chat assistant on the website whose agreed target is that 95% of replies arrive within four seconds of the user's question."
+        },
+        {
+          "id": "E",
+          "text": "A weekly job that re-tags every knowledge-base article with updated topic labels before the following Monday's review meeting."
+        }
+      ],
+      "correct": [
+        "C",
+        "E"
+      ],
+      "explanation": "The Message Batches API halves input and output token prices, but it is asynchronous: most batches finish within an hour, yet processing can take up to 24 hours and is not guaranteed sooner. It fits work where **nobody is waiting** and the deadline is comfortably longer than that window: the overnight QA scoring and the weekly re-tagging. The cost pillar is served without touching any SLA.",
+      "whyWrong": {
+        "A": "Agent assist during a live call needs answers within seconds; batch results could arrive hours later.",
+        "B": "Checkout is a blocking interactive path; an asynchronous job with no latency guarantee would stall orders.",
+        "D": "A 4-second p95 SLA is incompatible with a processing window that can stretch to 24 hours."
+      },
+      "difficulty": 2,
+      "mindset": "Batch is a cost lever only for work where nobody is waiting; never trade an interactive SLA for a discount.",
+      "tags": [
+        "value-pillars",
+        "cost",
+        "batch-api",
+        "sla"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/batch-processing"
+      ]
+    },
+    {
+      "id": "p-d1-x3-011",
+      "taskStatementId": "1.6",
+      "stem": "A claims department piloted two configurations of a Claude drafting assistant. Configuration X uses a smaller model and costs about a third as much in tokens per draft. Configuration Y uses a larger model. Adjusters must review and edit every draft before it is sent, and the pilot logged their editing time. The CFO wants to pick the configuration with the lowest cost. How should the architect frame the comparison?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Compare total cost per approved letter, including token spend and adjuster review and editing time, at the quality bar both must meet."
+        },
+        {
+          "id": "B",
+          "text": "Choose configuration X, because its token cost per draft is about a third of Y's and token spend is the cost that varies with volume."
+        },
+        {
+          "id": "C",
+          "text": "Choose configuration Y, because a larger model produces drafts that need less editing, and the adjuster time saved will outweigh its higher token cost."
+        },
+        {
+          "id": "D",
+          "text": "Compare the average number of tokens each configuration generates per draft, since shorter drafts will be cheaper and quicker to review."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The cost pillar is about **cost per business outcome**, not cost per API call. When every draft is reviewed by a paid adjuster, human editing time can easily outweigh token spend. The fair comparison is total cost (tokens plus review labour) per **approved** letter at the required quality. Either configuration might win; the data decides.",
+      "whyWrong": {
+        "B": "Token cost per draft ignores the labour cost of fixing weaker drafts, which may dominate the total cost per letter.",
+        "C": "This assumes the conclusion without evidence; the pilot logged editing time precisely so that the trade-off can be measured rather than asserted.",
+        "D": "Draft length is a proxy that says nothing about how much editing a draft needs or whether it meets the quality bar."
+      },
+      "difficulty": 2,
+      "mindset": "Measure cost per accepted outcome, including human time, not cost per model call.",
+      "tags": [
+        "value-pillars",
+        "cost",
+        "model-selection",
+        "metrics"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/about-claude/models/choosing-a-model",
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests"
+      ]
+    },
+    {
+      "id": "p-d1-x3-012",
+      "taskStatementId": "1.6",
+      "stem": "A bank's compliance team manually listens to a random 2% of recorded customer calls each month to check for mis-selling. A Claude-based system could screen every call and send the likely problems to the same reviewers, but it would not reduce the team's headcount. The finance committee asks, \"If it doesn't save headcount, why fund it?\" Which framing BEST answers the committee?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Present it as an efficiency project and estimate the hours each reviewer saves per call, even though total review hours will not fall."
+        },
+        {
+          "id": "B",
+          "text": "Present the token cost per call screened and argue that it is low enough that the project does not need any further justification."
+        },
+        {
+          "id": "C",
+          "text": "Present it as a productivity project, measured by the number of calls each reviewer personally listens to each month after launch."
+        },
+        {
+          "id": "D",
+          "text": "Present it as transformation: coverage goes from 2% to 100% of calls, with targets for issues found and time from call to detection."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "The value here is not doing the same work cheaper; it is doing something that was **not feasible before**: reviewing every call. That is the **transformation** pillar, and it still needs a baseline and measurable targets (coverage, confirmed issues found, time to detect) to be credible to a finance committee. The framing directly answers the question asked.",
+      "whyWrong": {
+        "A": "Claiming efficiency savings when total hours do not fall is misleading and will not survive the committee's scrutiny.",
+        "B": "A low unit cost is not a reason to fund anything; it describes cost without stating the value delivered.",
+        "C": "Calls listened to per reviewer is an activity metric that may not change at all; it misses the coverage and risk value."
+      },
+      "difficulty": 1,
+      "mindset": "Name the right value pillar and back it with a baseline and a measurable target.",
+      "tags": [
+        "value-pillars",
+        "transformation",
+        "business-case",
+        "non-technical"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/define-success"
+      ]
+    },
+    {
+      "id": "p-d1-x3-013",
+      "taskStatementId": "1.6",
+      "stem": "The head of HR sponsors a Claude assistant that answers employee questions about benefits. In the kickoff she says only, \"It has to be fast, or people won't use it.\" Engineering is already debating streaming, a smaller model and prompt caching. What should the architect do FIRST?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Turn on streaming, switch to the fastest model and enable prompt caching together, since each of them reduces latency in some way."
+        },
+        {
+          "id": "B",
+          "text": "Build the assistant on the most capable model first and tune for speed only if employees later complain that it feels too slow."
+        },
+        {
+          "id": "C",
+          "text": "Agree a measurable target with her, such as time until text starts appearing and p95 time to a full answer, plus how it is measured."
+        },
+        {
+          "id": "D",
+          "text": "Benchmark several models on a public latency leaderboard and pick whichever one is listed as having the lowest response time."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "\"Fast\" is not an SLA. Different levers improve different things: streaming improves **time to first token** (perceived speed) but not total time, while a smaller model or shorter outputs cut total latency. Until the sponsor's need is turned into a **measurable target** with a percentile and a measurement method, the team cannot choose levers or prove success. Anthropic's latency guidance also distinguishes baseline latency from time to first token.",
+      "whyWrong": {
+        "A": "Applying every lever at once may sacrifice quality (a smaller model) without knowing which target is being met, and success still cannot be measured.",
+        "B": "Getting quality right first is sound, but ignoring the sponsor's stated concern until complaints arrive leaves the SLA undefined and adoption at risk.",
+        "D": "Public benchmarks do not reflect this workload's prompts, outputs or infrastructure, and still leave the target undefined."
+      },
+      "difficulty": 1,
+      "mindset": "Turn vague business wishes into a measurable SLA before choosing technical levers.",
+      "tags": [
+        "value-pillars",
+        "performance-sla",
+        "latency",
+        "stakeholders"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-latency"
+      ]
+    },
+    {
+      "id": "p-d1-x3-014",
+      "taskStatementId": "1.6",
+      "stem": "A trade-finance firm processes about 30,000 shipping documents a day with Claude. Its contract with clients promises that every document is processed within 4 business hours of receipt, with financial penalties for misses. To lower cost, a manager proposes submitting documents to the Message Batches API every 30 minutes, noting that most batches finish within an hour. What is the BEST response?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Approve the plan, because most batches finish within an hour, which leaves a comfortable margin inside the 4-hour contractual window."
+        },
+        {
+          "id": "B",
+          "text": "Reject it for this path: batches may take up to 24 hours, so stay synchronous and cut cost with caching and right-sized models instead."
+        },
+        {
+          "id": "C",
+          "text": "Approve the plan but submit smaller batches every 10 minutes, since smaller batches move through the queue faster and should finish within the agreed window."
+        },
+        {
+          "id": "D",
+          "text": "Approve the plan and add a clause to the client contract explaining that processing time now depends on the batch provider's speed."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "The Message Batches API gives a 50% discount and most batches finish in under an hour, but the documented processing window is up to **24 hours**, and requests not finished by then expire. \"Usually fast\" is not a guarantee, and this path carries a **contractual, penalty-backed SLA**. Keep it synchronous and pursue cost through other levers (prompt caching of stable instructions, a smaller model where evaluation shows quality holds, shorter outputs).",
+      "whyWrong": {
+        "A": "This mistakes typical performance for a guarantee; any slow batch would breach a penalty-backed commitment.",
+        "C": "Batch size creates no latency guarantee; the documentation promises no completion time shorter than the 24-hour window, and batches can expire if processing does not finish within it.",
+        "D": "Weakening a client commitment to save on tokens trades away the performance SLA the business sold, which is a business decision, not an architecture fix."
+      },
+      "difficulty": 3,
+      "mindset": "Typical latency is not guaranteed latency; contractual SLAs need paths with predictable timing.",
+      "tags": [
+        "value-pillars",
+        "performance-sla",
+        "batch-api",
+        "cost"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/batch-processing",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching"
+      ]
+    },
+    {
+      "id": "p-d1-x3-015",
+      "taskStatementId": "1.6",
+      "stem": "An e-commerce site's order-status assistant misses its SLA of complete replies within 3 seconds for about 20% of requests, and the finance team flags that output tokens are the biggest part of its bill. Logs show replies average about 400 words, although customers mainly need a status, a date and a next step. Users say the answers are accurate. Which change BEST improves both the SLA and cost with the lowest risk?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Ask for a short, fixed reply format with sentence limits, and set an appropriate max_tokens as a hard ceiling on reply length."
+        },
+        {
+          "id": "B",
+          "text": "Enable streaming so that customers see the first words of each reply sooner while the rest of the long answer is still being written."
+        },
+        {
+          "id": "C",
+          "text": "Move the assistant to the most capable model, because stronger models are better at deciding on their own when to keep replies short."
+        },
+        {
+          "id": "D",
+          "text": "Add a second Claude call that summarises each long reply into a short version before it is sent back to the waiting customer."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Generation time and output cost both scale with output length. Anthropic's latency guidance recommends asking directly for shorter responses (sentence or paragraph limits work better than word counts because models count tokens, not words) and using `max_tokens` as a hard limit. Because a reply that hits `max_tokens` is cut off mid-sentence, the format instruction does the main work and the limit is a safety ceiling. Since accuracy is already acceptable, tightening the output is the low-risk change that moves both the **performance SLA** and the **cost** pillar.",
+      "whyWrong": {
+        "B": "Streaming improves perceived responsiveness but does not shorten total generation time or reduce output tokens, so the completion SLA and the bill stay the same.",
+        "C": "A larger model is usually slower and pricier per token, and nothing guarantees it will write shorter replies.",
+        "D": "A second call adds latency and cost on top of the long reply it summarises, making both problems worse."
+      },
+      "difficulty": 2,
+      "mindset": "Fewer output tokens means lower latency and lower cost; constrain the output before adding machinery.",
+      "tags": [
+        "value-pillars",
+        "performance-sla",
+        "cost",
+        "output-length"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-latency"
+      ]
+    },
+    {
+      "id": "p-d1-x3-016",
+      "taskStatementId": "1.6",
+      "stem": "A travel company's booking-change assistant has a performance SLA agreed with the operations director: 95% of complete replies within 4 seconds. The engineering dashboard shows an average reply time of 2.3 seconds, so the team reports the SLA as met, yet operations keeps receiving complaints about slow replies. Logs show most replies finish in about 2 seconds, but requests that need itinerary lookups across several tools sometimes take 10 to 15 seconds. Which TWO actions should the architect take? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Report p95 and p99 reply times per request type alongside the average, so that the dashboard measures what the SLA actually promises."
+        },
+        {
+          "id": "B",
+          "text": "Enable streaming on every reply so that customers see text sooner, and measure the SLA from time to first token, which better reflects perceived speed."
+        },
+        {
+          "id": "C",
+          "text": "Redesign the slow path: run independent lookups in parallel, cap tool and output time, and return a partial answer with a follow-up when a cap is hit."
+        },
+        {
+          "id": "D",
+          "text": "Move all requests to the most capable model so that it completes multi-tool itinerary requests in fewer turns and the slow tail shortens on its own."
+        },
+        {
+          "id": "E",
+          "text": "Renegotiate the SLA with operations to 95% within 15 seconds, since the slow requests are legitimately complex and customers can be told to expect a wait."
+        }
+      ],
+      "correct": [
+        "A",
+        "C"
+      ],
+      "explanation": "A performance SLA is a **percentile over complete replies**, which is why Anthropic's success-criteria guidance writes latency targets as, for example, \"95% response time < 200ms\". An average says nothing about whether 95% of replies finish within 4 seconds: when most replies take about 2 seconds, a minority of multi-tool requests taking 10 to 15 seconds can push the 95th percentile past the target while the mean still looks healthy, and that tail is exactly what customers complain about. First measure the right thing (p95 and p99, split by request type so the slow path is visible), then shorten the critical path of the slow requests: parallelize independent tool calls, bound each step, and degrade gracefully when a bound is hit. Both are needed: measurement alone fixes nothing, and redesign without percentile tracking cannot prove the SLA is met.",
+      "whyWrong": {
+        "B": "Streaming improves perceived responsiveness, but the agreed SLA is for complete replies; redefining it around time to first token changes the promise rather than meeting it.",
+        "D": "A bigger model is usually slower per token and may not reduce the number of tool round trips at all; it raises cost on every request to chase a tail that needs structural fixes.",
+        "E": "Loosening the target to fit the current system abandons the commitment the business made and removes the pressure to fix a path that is fixable."
+      },
+      "difficulty": 2,
+      "mindset": "SLAs live in the percentiles, not the average; measure the tail per path, then engineer the tail.",
+      "tags": [
+        "value-pillars",
+        "performance-sla",
+        "latency",
+        "metrics",
+        "parallelization"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/define-success",
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-latency"
+      ]
+    },
+    {
+      "id": "p-d1-x3-017",
+      "taskStatementId": "1.6",
+      "stem": "A loan-servicing workflow runs four Claude calls in sequence: (1) classify the customer's request, (2) retrieve and summarise account history, (3) check the request against hardship policy, and (4) draft the reply. Steps 2 and 3 each need only the classification from step 1, not each other's output. End-to-end time is about 14 seconds against an SLA of 6 seconds for a complete reply, and quality is currently acceptable. Which TWO changes are MOST likely to meet the SLA without hurting quality? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Stream the final drafted reply to the customer so that the text starts appearing well before the 6-second SLA deadline is reached."
+        },
+        {
+          "id": "B",
+          "text": "Run steps 2 and 3 at the same time once step 1 finishes, then pass both results to the drafting step after they complete."
+        },
+        {
+          "id": "C",
+          "text": "Add a fifth step in which Claude reviews the final draft for accuracy, so that a faster pipeline does not let errors slip through."
+        },
+        {
+          "id": "D",
+          "text": "Move the simple classification step to a smaller, faster model after an evaluation confirms its accuracy stays at the current level."
+        },
+        {
+          "id": "E",
+          "text": "Send the whole workflow through the Message Batches API so that the four calls are processed together at a lower overall cost."
+        }
+      ],
+      "correct": [
+        "B",
+        "D"
+      ],
+      "explanation": "Each sequential call adds a round trip. Steps 2 and 3 are independent, so **parallelizing** them removes one round trip from the critical path. A simple classification step is a good candidate for a **smaller, faster model**, provided an evaluation confirms quality holds, which is Anthropic's recommended order: get quality right first, then optimise latency. Both changes reduce total completion time, which is what this SLA measures.",
+      "whyWrong": {
+        "A": "Streaming improves time to first token, but the SLA is for a complete reply, and the first three steps would still run before anything streams.",
+        "C": "An extra review call adds latency to a pipeline already over its SLA, and quality is already acceptable.",
+        "E": "Batch processing is asynchronous and can take up to 24 hours, which is incompatible with a 6-second interactive SLA."
+      },
+      "difficulty": 3,
+      "mindset": "Shorten the critical path: parallelize independent steps and right-size models step by step, backed by evals.",
+      "tags": [
+        "value-pillars",
+        "performance-sla",
+        "latency",
+        "parallelization",
+        "model-selection"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-latency",
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "p-d1-x3-018",
+      "taskStatementId": "1.6",
+      "stem": "An IT help-desk agent built with the Claude Agent SDK resolves most tickets in a few tool-use turns, but about 1 ticket in 200 sends it into a long loop of repeated searches and retries, and those tickets account for a large share of the monthly bill. The business case promised a predictable cost per ticket. Which change BEST protects the cost target while keeping normal tickets unaffected?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add a system-prompt instruction asking the agent to be economical with tool calls and to stop searching once it has enough information."
+        },
+        {
+          "id": "B",
+          "text": "Switch the agent to a smaller, cheaper model for every ticket so that each of the long-running loops costs less money overall."
+        },
+        {
+          "id": "C",
+          "text": "Add a reviewer agent that monitors every conversation and tells the main agent to stop when it judges that progress has stalled."
+        },
+        {
+          "id": "D",
+          "text": "Set max_turns and max_budget_usd limits, and route any ticket that hits a limit to a human queue with the agent's notes attached."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "The Agent SDK supports `max_turns` and `max_budget_usd` as hard limits, and returns a result with an error subtype (`error_max_turns` or `error_max_budget_usd`) when either is reached. Used as a **safety net** with a defined escalation path, they cap the cost tail deterministically while typical tickets, which finish well within the limits, are unaffected. That directly protects the **cost** pillar the business case promised.",
+      "whyWrong": {
+        "A": "A prompt instruction is a soft control; it may help on average but cannot guarantee that the rare runaway loop stops.",
+        "B": "A cheaper model for every ticket risks quality on the normal 199 in 200 tickets and does not stop the runaway loops.",
+        "C": "A second monitoring agent adds cost to every ticket and is itself a probabilistic judge, when a deterministic limit already exists."
+      },
+      "difficulty": 2,
+      "mindset": "Cap cost tails with deterministic limits and an escalation path, not with prompt requests.",
+      "tags": [
+        "value-pillars",
+        "cost",
+        "agent-sdk",
+        "deterministic-controls"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/agent-loop"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,508 @@
+{
+  "certId": "professional",
+  "domainId": "d3-integration",
+  "questions": [
+    {
+      "id": "p-d3-x5-001",
+      "taskStatementId": "3.8",
+      "stem": "To cut prompt size, a bank's customer-service agent was refactored: its 5k-token system prompt was moved into several on-demand skills, including one called 'disclosure-rules' that holds the regulator-mandated wording every reply about fees or interest rates must contain. Token use per conversation fell by about a third, but QA now finds replies about fees that omit the mandatory disclosure, mostly in short conversations where the skill never triggered. What is the MOST reliable fix that keeps most of the savings?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Rewrite the 'disclosure-rules' skill description with more trigger keywords such as fees, APR, charges and interest, so Claude invokes the skill in more of the conversations."
+        },
+        {
+          "id": "B",
+          "text": "Add a self-check step at the end of every reply asking Claude to confirm whether a disclosure was needed and, if so, to load the skill and revise its answer."
+        },
+        {
+          "id": "C",
+          "text": "Move the mandatory disclosure rules back into the always-loaded, cached system prompt, and leave only the optional, task-specific guidance in on-demand skills."
+        },
+        {
+          "id": "D",
+          "text": "Return to the original monolithic prompt for every conversation, accepting the higher token cost, on the grounds that one missed disclosure costs more than the savings."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Progressive discovery only helps when it is acceptable for the agent to *not* load something. A rule that must apply to every relevant reply should not depend on the model deciding to look it up. The right design is **hybrid**: keep the small, mandatory core (the disclosure rules) in the always-loaded system prompt, where prompt caching keeps repeat use cheap, and keep the large, situational material in skills that load on demand. Skills are designed this way: only names and descriptions are always in context, and a skill's body loads only when Claude judges it relevant, so a missed trigger means missing content.",
+      "whyWrong": {
+        "A": "Better descriptions raise the trigger rate but still leave a mandatory rule to the model's judgment. Any remaining miss is a compliance failure, so this is less reliable than always loading the rule.",
+        "B": "A self-check is still a probabilistic, prompt-based safeguard and adds latency and tokens to every reply. It treats the symptom instead of putting mandatory content where it is always present.",
+        "D": "This does stop the misses, but it throws away the savings from the content that really is optional. Only the mandatory rules need to be always loaded, so a hybrid design closes the compliance gap without going back to a fully monolithic prompt."
+      },
+      "difficulty": 2,
+      "mindset": "Mandatory rules are always loaded; only optional, situational content should depend on discovery.",
+      "tags": [
+        "progressive-discovery",
+        "hybrid-context",
+        "skills",
+        "compliance",
+        "system-prompt"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview",
+        "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents"
+      ]
+    },
+    {
+      "id": "p-d3-x5-002",
+      "taskStatementId": "3.8",
+      "stem": "An IT helpdesk agent uses the API tool search tool with about 250 deferred tools. Logs show that when users write things like 'my laptop won't connect to the VPN', Claude often searches, finds nothing relevant and answers without acting, even though a deferred tool named `nw_tun_reset` exists with the description 'Resets tunnel state for endpoint.' Which change is MOST likely to fix the problem with the least disruption?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Rewrite the tool's description and arguments in users' words (VPN, connect, reset), and adopt service-prefixed names such as `network_vpn_reset` across the catalog."
+        },
+        {
+          "id": "B",
+          "text": "Instruct Claude in the system prompt to pass a much larger `limit` in every search, so each search returns 50 tools instead of the default five and the VPN tool appears more often."
+        },
+        {
+          "id": "C",
+          "text": "Stop deferring tools and load all 250 definitions on every request, so Claude sees the VPN tool directly instead of depending on a keyword search it may get wrong."
+        },
+        {
+          "id": "D",
+          "text": "Add a handful of few-shot examples to the system prompt showing Claude searching with exact tool names such as `nw_tun_reset` before it answers any user request."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Tool search matches against tool names, descriptions, argument names and argument descriptions. A cryptic name and a description that never says 'VPN' give the search nothing to match when the user's words are 'VPN' and 'connect'. The tool search docs recommend clear, descriptive names and descriptions, keywords that match how users describe tasks, consistent namespacing (for example a `network_` prefix), and monitoring which tools Claude discovers so you can refine descriptions. This fixes the root cause, which is discoverability, without changing the architecture.",
+      "whyWrong": {
+        "B": "Returning more results does not help when the target tool matches none of the query terms. It also pulls more unrelated definitions into context on every search, working against the reason for deferring.",
+        "C": "Loading 250 definitions brings back the context bloat and the selection-accuracy drop that tool search exists to avoid. It is a bigger change than fixing one description.",
+        "D": "Users do not know internal tool names, and Claude cannot search for a name it has never seen. Examples that hard-code names do not scale to 250 tools and leave the poor description in place."
+      },
+      "difficulty": 2,
+      "mindset": "In progressive discovery, the index is the interface: descriptions must use the words of the task.",
+      "tags": [
+        "progressive-discovery",
+        "tool-search",
+        "tool-descriptions",
+        "discoverability"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool"
+      ]
+    },
+    {
+      "id": "p-d3-x5-003",
+      "taskStatementId": "3.8",
+      "stem": "A voice-ordering agent has 40 tools and uses tool search with every tool deferred except the search tool. Analytics show that about 90% of calls use only three tools: `menu_lookup`, `add_to_cart` and `place_order`. Since tool search was turned on, response latency on simple orders has risen noticeably, which callers on the phone notice. What should the architect do?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Turn off tool search and load all 40 tool definitions on every request; their context cost is lower than a search round-trip on every call."
+        },
+        {
+          "id": "B",
+          "text": "Switch from the regex variant to the BM25 variant of the tool search tool, because natural-language queries are resolved faster than regex patterns."
+        },
+        {
+          "id": "C",
+          "text": "Add a system prompt instruction telling Claude to skip searching and guess the tool name directly whenever a request looks like a simple order."
+        },
+        {
+          "id": "D",
+          "text": "Keep tool search, but make the three heavily used tools non-deferred, so simple orders skip the search step while the other 37 stay deferred."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "The tool search docs recommend keeping your **3–5 most frequently used tools non-deferred** so Claude can call them without searching first. Here that removes the discovery step from about 90% of calls while still keeping the long tail of 37 tools out of context until needed. It is the standard hybrid: a small always-loaded core plus on-demand discovery for everything else.",
+      "whyWrong": {
+        "A": "This removes the search latency but puts all 40 definitions in every call, which costs context and pushes the toolset into the range where selection accuracy starts to degrade. Only the few common tools need to skip the search.",
+        "B": "The variants differ in how Claude writes queries (regex patterns or natural language), not in a guaranteed latency advantage. Either way a search step still runs before every simple order.",
+        "C": "Claude can only call tools whose definitions are loaded. Instructing it to 'guess' a deferred tool does not load its definition, so the call would fail or Claude would search anyway."
+      },
+      "difficulty": 1,
+      "mindset": "Defer the long tail, keep the hot path loaded.",
+      "tags": [
+        "progressive-discovery",
+        "tool-search",
+        "defer-loading",
+        "latency"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool"
+      ]
+    },
+    {
+      "id": "p-d3-x5-004",
+      "taskStatementId": "3.8",
+      "stem": "A platform team's root CLAUDE.md in a large monorepo has grown to about 2,500 lines. Most of it is conventions that apply only to certain kinds of files spread across many services, such as SQL migration files (`**/migrations/*.sql`) and React test files (`**/*.test.tsx`). Developers report that Claude Code follows the universal rules less consistently since the file grew, and every session starts with a large share of context already used. What is the BEST restructuring?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Split the conventions into separate markdown files and pull them into the root CLAUDE.md with @imports, so the main file stays short and each topic is maintained by its owning team."
+        },
+        {
+          "id": "B",
+          "text": "Keep universal rules in the root CLAUDE.md and move each file-type convention into a `.claude/rules/` file whose `paths` frontmatter matches those files, so it loads only when they are touched."
+        },
+        {
+          "id": "C",
+          "text": "Put a copy of the relevant conventions into a CLAUDE.md inside every service directory, so each service's conventions load only when Claude works in that directory."
+        },
+        {
+          "id": "D",
+          "text": "Ask developers to paste the relevant conventions into their first prompt of each session, so only the guidance needed for the current task is ever placed in context."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Path-scoped rules are Claude Code's progressive-discovery mechanism for instructions. A rule file in `.claude/rules/` with a `paths` glob loads only when Claude reads a matching file, while rules without `paths` and the root CLAUDE.md load at launch. Because these conventions are tied to **file types scattered across many directories**, globs such as `**/migrations/*.sql` express them exactly once. The short root CLAUDE.md keeps the universal rules visible on every session.",
+      "whyWrong": {
+        "A": "@imports are expanded when the session starts, so the same content still enters context up front. It improves file organization but not context use.",
+        "C": "Directory CLAUDE.md files do load on demand, but conventions that cut across services would have to be copied into every service, creating drift. Glob-scoped rules match the scattered file types directly.",
+        "D": "This moves a deterministic configuration job onto people's memory. Developers will forget or paste the wrong section, and the guidance is no longer shared or versioned with the repo."
+      },
+      "difficulty": 2,
+      "mindset": "Load instructions where they apply: always-on for universal rules, path-scoped for file-type conventions.",
+      "tags": [
+        "progressive-discovery",
+        "claude-code",
+        "claude-md",
+        "path-scoped-rules"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/memory"
+      ]
+    },
+    {
+      "id": "p-d3-x5-005",
+      "taskStatementId": "3.8",
+      "stem": "An architect has moved an internal operations agent from a monolithic prompt (all runbooks and tool definitions loaded every time) to progressive discovery using skills and tool search. Leadership asks how they will know the new design is actually better and stays that way as more runbooks and tools are added. Which TWO measures provide the MOST useful evidence? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Track the total number of skills and tools in the catalog each month, treating steady growth as a sign that progressive discovery is scaling well."
+        },
+        {
+          "id": "B",
+          "text": "Run a labeled eval set of tasks and check, for each, whether the agent discovered and loaded the right skill or tool, so discovery misses are measured directly."
+        },
+        {
+          "id": "C",
+          "text": "Measure the size of the system prompt before and after the migration and report the reduction as the main success metric for the new design."
+        },
+        {
+          "id": "D",
+          "text": "Ask the agent at the end of each task to rate how confident it is that it had all the context it needed, and alert when the average rating drops."
+        },
+        {
+          "id": "E",
+          "text": "Compare task success, latency and cost per task on the same eval set against the old monolithic setup, and rerun it whenever the catalog changes."
+        }
+      ],
+      "correct": [
+        "B",
+        "E"
+      ],
+      "explanation": "The new risk that progressive discovery introduces is the **discovery miss**: the agent fails to find content it needed. That has to be measured directly with labeled tasks (B). The overall question is whether the trade-off pays off, so compare end-to-end task success, latency and cost against the monolithic baseline on the same eval set and repeat it as the catalog grows (E). Anthropic's eval guidance favors task-specific, automated tests over proxy signals, and the tool search docs advise monitoring which tools Claude discovers.",
+      "whyWrong": {
+        "A": "Catalog size measures inputs, not outcomes. A growing catalog can coincide with worse discovery accuracy.",
+        "C": "A smaller prompt is expected by construction. It says nothing about whether tasks still succeed or whether the agent finds what it needs.",
+        "D": "Self-reported confidence is not a reliable measure of whether the agent actually missed content; an agent that never discovered a runbook has no way to know it was missing."
+      },
+      "difficulty": 2,
+      "mindset": "Judge a context strategy by task outcomes and discovery misses on evals, not by how small the prompt got.",
+      "tags": [
+        "progressive-discovery",
+        "evals",
+        "observability",
+        "skills",
+        "tool-search"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool",
+        "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents"
+      ]
+    },
+    {
+      "id": "p-d3-x5-006",
+      "taskStatementId": "3.8",
+      "stem": "A Claude Agent SDK assistant answers questions about a 40,000-file codebase. The team's first version preloads summaries of every module into the system prompt; a second version has the main agent read files itself. In the second version, long investigations fill the main context with file contents it no longer needs, and answers late in a session get worse. Which TWO changes BEST fit a progressive-discovery strategy for this agent? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Delegate open-ended exploration to subagents that search and read in their own context and return only condensed findings with file paths to the main agent."
+        },
+        {
+          "id": "B",
+          "text": "Go back to preloading module summaries for the entire 40,000-file codebase, using a model with a larger context window so the static summaries all fit comfortably."
+        },
+        {
+          "id": "C",
+          "text": "Instruct the main agent to read every file in each directory it visits, so it does not miss relevant code that a narrower search would not surface."
+        },
+        {
+          "id": "D",
+          "text": "Keep lightweight references such as file paths and search hits in context, and use search tools to locate code and read full files only when they are needed."
+        },
+        {
+          "id": "E",
+          "text": "Raise the maximum output tokens for the main agent so that it has more room to reason about the many files that accumulate in its context."
+        }
+      ],
+      "correct": [
+        "A",
+        "D"
+      ],
+      "explanation": "Anthropic's context-engineering guidance describes **just-in-time** context: keep lightweight identifiers (file paths, queries, links) and load data at runtime with tools, the way Claude Code uses glob and grep instead of preloading a repo (D). It also recommends **sub-agent architectures**, where focused subagents explore in clean context windows and return condensed summaries, so the lead agent's context stays small (A). Together they keep the main context focused and avoid context rot.",
+      "whyWrong": {
+        "B": "A larger window holds more, but accuracy and recall still degrade as context grows (context rot), and a static summary of 40,000 files goes stale as the code changes.",
+        "C": "Reading everything is the opposite of progressive discovery. It fills context with irrelevant code, which is exactly what is degrading late-session answers.",
+        "E": "Output tokens do not change what accumulates in input context. The problem is too much irrelevant input, not too little room to write."
+      },
+      "difficulty": 2,
+      "mindset": "Hold pointers, fetch on demand, and let subagents absorb noisy exploration.",
+      "tags": [
+        "progressive-discovery",
+        "just-in-time-context",
+        "subagents",
+        "context-rot",
+        "agent-sdk"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents",
+        "https://code.claude.com/docs/en/agent-sdk/subagents"
+      ]
+    },
+    {
+      "id": "p-d3-x5-007",
+      "taskStatementId": "3.8",
+      "stem": "An operations agent connects to a dozen MCP servers that expose several hundred tools. A typical job pulls about 50,000 log entries from an observability server, keeps only the errors for one service, and posts a short incident summary to a ticketing server. Even with deferred tool loading, each job is slow and expensive, because the full log pull passes through the model's context between tool calls and often overflows it. Which design change addresses this MOST directly?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Present the MCP servers as code APIs the agent browses on demand, and have it filter the logs in sandboxed code so only a short error summary reaches the model."
+        },
+        {
+          "id": "B",
+          "text": "Turn off deferred loading for the observability and ticketing servers so their tools are always in context, which removes the discovery overhead from each job."
+        },
+        {
+          "id": "C",
+          "text": "Ask the observability server to return its log entries in a more compact JSON format, so the 50,000 entries take fewer tokens when they pass through the model's context."
+        },
+        {
+          "id": "D",
+          "text": "Move the job to a model with a larger context window, so the full log pull and the intermediate results fit without overflowing on each tool call."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Deferred loading solves **definition** bloat but not **intermediate-result** bloat. Anthropic’s ‘code execution with MCP’ pattern presents MCP tools as code modules on a filesystem. The agent discovers only the tools it needs by browsing (Anthropic’s example cut tool-definition tokens from about 150,000 to about 2,000), and data flows between tools inside the execution environment, so large results are filtered in code and only the small outcome reaches the model (in Anthropic's example, the agent sees five rows of a 10,000-row sheet instead of all of them). This is progressive discovery applied to both tools and data.",
+      "whyWrong": {
+        "B": "The cost is the log data moving through context, not the search step. Loading more definitions up front adds tokens instead of removing them.",
+        "C": "A tighter format shrinks the payload somewhat, but tens of thousands of entries still pass through context on every hop. The model never needed the raw entries, only the error summary.",
+        "D": "A bigger window delays overflow but keeps paying for every entry on every call, and long contexts still reduce accuracy. It treats capacity as the fix when curation is the issue."
+      },
+      "difficulty": 3,
+      "mindset": "Discover tools on demand and keep bulk data out of the model's context; return only what the model needs to reason about.",
+      "tags": [
+        "progressive-discovery",
+        "code-execution",
+        "mcp",
+        "intermediate-results",
+        "token-cost"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/code-execution-with-mcp"
+      ]
+    },
+    {
+      "id": "p-d3-x5-008",
+      "taskStatementId": "3.8",
+      "stem": "A legal team's contract assistant puts all 40 active customer contracts, about 600k tokens in total, into every session so 'Claude always has everything'. A typical question concerns one or two contracts, and contracts are amended several times a week. Users complain that answers sometimes cite clauses from the wrong customer's contract and that costs are high. What is the BEST redesign?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Keep loading all contracts but cache them as one large prefix, so repeated sessions cost less and the assistant still always has every contract available."
+        },
+        {
+          "id": "B",
+          "text": "Add an instruction asking Claude to double-check that every clause it cites comes from the contract of the customer the user asked about before replying."
+        },
+        {
+          "id": "C",
+          "text": "Keep a compact index in context (contract IDs, parties, dates, summaries) and give Claude a tool that fetches the current full text of a contract by ID when needed."
+        },
+        {
+          "id": "D",
+          "text": "Split the contracts across 40 specialized subagents, one per customer, and have a coordinator query every subagent in parallel for each user question."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "This content is **large relative to what each request uses** and **volatile**, which is the case for just-in-time retrieval. A lightweight index of identifiers and metadata lets Claude choose the right contract, and a fetch-by-ID tool loads only the one or two that matter, always in their current version. Less irrelevant text in context also reduces the cross-contract confusion caused by context rot, and cost scales with what is used.",
+      "whyWrong": {
+        "A": "Caching lowers the cost of reprocessing a repeated prefix but does nothing for accuracy: 38 irrelevant contracts still sit in context, and frequent amendments keep invalidating the cached prefix.",
+        "B": "A self-check prompt does not remove the cause, which is too much similar, irrelevant text in context. It adds tokens and remains unreliable.",
+        "D": "Querying 40 subagents for every question multiplies cost and latency to solve a lookup problem. An index plus fetch-by-ID is far simpler."
+      },
+      "difficulty": 2,
+      "mindset": "Large and changing content belongs behind an index and a fetch, not in every prompt.",
+      "tags": [
+        "progressive-discovery",
+        "just-in-time-context",
+        "retrieval",
+        "context-rot",
+        "freshness"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents"
+      ]
+    },
+    {
+      "id": "p-d3-x5-009",
+      "taskStatementId": "3.8",
+      "stem": "A team plans to move a support agent from loading all 120 tool definitions up front to the API tool search tool with most tools deferred. In the design review, someone asks which new risks or costs this introduces that the team must plan for. Which TWO are real consequences of the change? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Prompt caching will stop working, because deferred tools that Claude discovers mid-conversation change the cached prefix on every turn."
+        },
+        {
+          "id": "B",
+          "text": "The client no longer has to send deferred tool definitions, so the application must store them on the API side before the first request."
+        },
+        {
+          "id": "C",
+          "text": "Claude can miss a tool it needed if the search does not match the tool's name or description, so discoverability now affects task success."
+        },
+        {
+          "id": "D",
+          "text": "Claude must search again for a discovered tool on every later turn, because discovered tools are dropped from the conversation context after a single use."
+        },
+        {
+          "id": "E",
+          "text": "Requests that need an uncommon tool take an extra search step before the call, which adds some latency compared with having it loaded."
+        }
+      ],
+      "correct": [
+        "C",
+        "E"
+      ],
+      "explanation": "Progressive discovery trades a smaller, more focused context for two costs: a **discovery miss** risk (Claude only finds tools whose names and descriptions match its search) and an **extra step** before a deferred tool can be used. The other claims are common misconceptions. Per the docs, deferred tools are excluded from the system-prompt prefix and discovered tools are added inline, so caching is preserved; you still send every definition in the `tools` array on every request; and discovered tools stay available in later turns without re-searching.",
+      "whyWrong": {
+        "A": "The API keeps deferred tools out of the prefix and appends discovered tools inline in the conversation, so the cached prefix is untouched.",
+        "B": "The reverse is true: every definition, deferred or not, is still sent in the `tools` array on each request so the API can run the search and expand references.",
+        "D": "The API expands `tool_reference` blocks throughout the conversation history, so Claude can reuse a discovered tool in later turns without searching again."
+      },
+      "difficulty": 3,
+      "mindset": "Know the real price of progressive discovery (misses and an extra step) and do not reject it for costs it does not have.",
+      "tags": [
+        "progressive-discovery",
+        "tool-search",
+        "defer-loading",
+        "prompt-caching",
+        "trade-offs"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool"
+      ]
+    },
+    {
+      "id": "p-d3-x5-010",
+      "taskStatementId": "3.8",
+      "stem": "A department has installed 60 Agent Skills for Claude, covering everything from expense reports to slide templates. A manager worries that this many skills will crowd Claude's context and make everyday answers slower and worse. Which statement BEST describes what is actually loaded before any skill is used?",
+      "options": [
+        {
+          "id": "A",
+          "text": "All 60 SKILL.md files are loaded in full at the start of every session, so the manager should remove skills that are not used every day."
+        },
+        {
+          "id": "B",
+          "text": "Only each skill's name and short description are loaded up front; full instructions load when it is used, and extra files only if referenced."
+        },
+        {
+          "id": "C",
+          "text": "Nothing at all about the skills enters context until a user types the exact name of a skill, so Claude cannot pick a skill on its own for a request."
+        },
+        {
+          "id": "D",
+          "text": "The skills are loaded in rotation, about ten per session, so that the total context they take up stays roughly the same over time."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Agent Skills use **progressive disclosure** in three levels: (1) the name and description of every skill are always available so Claude knows what exists, (2) the body of SKILL.md loads when Claude judges the skill relevant or a user invokes it, and (3) supporting files and scripts load only when they are referenced. That is why many skills can be installed with little up-front cost. The quality of each description matters, because it is what Claude uses to decide when to load the skill.",
+      "whyWrong": {
+        "A": "Only metadata is loaded up front. Full skill bodies load on demand, so having many installed skills costs little until they are used.",
+        "C": "Claude can load a relevant skill on its own based on its description; it does not need the user to type the name. (In Claude Code a skill can opt out with `disable-model-invocation: true`, but that is a deliberate exception, not the default.)",
+        "D": "There is no rotation. All skill descriptions are available every session; only the detailed content is loaded on demand."
+      },
+      "difficulty": 1,
+      "mindset": "Skills cost a short description until they are used; write descriptions that say when to use them.",
+      "tags": [
+        "progressive-discovery",
+        "skills",
+        "progressive-disclosure",
+        "non-technical"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview",
+        "https://www.anthropic.com/engineering/equipping-agents-for-the-real-world-with-agent-skills",
+        "https://code.claude.com/docs/en/skills"
+      ]
+    },
+    {
+      "id": "p-d3-x5-011",
+      "taskStatementId": "3.8",
+      "stem": "A company calls the Messages API with the MCP connector, attaching five remote MCP servers that together expose about 200 tools. They want tool search to keep most tools out of context, but two tools on the CRM server, `crm_get_account` and `crm_log_activity`, are used in nearly every request and should always be loaded. What is the MOST appropriate configuration?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Copy each of the 200 MCP tool definitions into the regular `tools` array with `defer_loading: true`, and leave the two CRM tools without the flag."
+        },
+        {
+          "id": "B",
+          "text": "Remove the MCP connector and write an application-side filter that decides before each request which CRM and other tools to include in the request payload."
+        },
+        {
+          "id": "C",
+          "text": "Set `defer_loading: true` on the tool search tool entry itself, so every MCP tool is deferred, and mention the two CRM tools in the system prompt."
+        },
+        {
+          "id": "D",
+          "text": "Include a tool search tool, set deferred loading in each server's `mcp_toolset` default configuration, and override it per tool for the two CRM tools."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "With the MCP connector you do not set `defer_loading` on individual tool definitions. The tool search docs say to set it once on the `mcp_toolset` entry's default configuration for a whole server, or per tool in its `configs`. Deferring by default and overriding the two hot tools gives the hybrid the docs recommend (keep the most frequently used tools non-deferred). A tool search tool must be present so Claude can find the deferred ones.",
+      "whyWrong": {
+        "A": "MCP connector tools are configured through the toolset, not by copying definitions into the regular `tools` array. Duplicating 200 definitions by hand also drifts whenever a server changes.",
+        "B": "A per-request pre-filter is fragile: it changes the tool set between turns (breaking cache reuse) and can drop tools used earlier in the conversation. Built-in deferral solves this without custom code.",
+        "C": "The docs say never to set `defer_loading` on the tool search tool; it is not a switch that defers other tools, since deferral is configured on the tools or toolsets themselves. A mention in the system prompt also cannot load a definition."
+      },
+      "difficulty": 3,
+      "mindset": "Use the platform's own deferral controls at the right level, and pin the hot path.",
+      "tags": [
+        "progressive-discovery",
+        "tool-search",
+        "mcp-connector",
+        "defer-loading",
+        "configuration"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool",
+        "https://platform.claude.com/docs/en/agents-and-tools/mcp-connector"
+      ]
+    }
+  ]
+}

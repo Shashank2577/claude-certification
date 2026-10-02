@@ -1,0 +1,715 @@
+{
+  "certId": "developer",
+  "domainId": "d5-model-optimization",
+  "questions": [
+    {
+      "id": "v-d5-g1-001",
+      "taskStatementId": "5.1",
+      "scenario": "A team ships a Claude-powered travel assistant using the Messages API directly. Users complain that follow-ups like \"book the cheaper one\" or \"change the dates to March\" get confused, generic replies. Request logs show that each API call contains only the newest user message.",
+      "stem": "What is the MOST likely cause and the correct fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The model's context window is too small to hold an ongoing conversation; switch to a model with a larger context window."
+        },
+        {
+          "id": "B",
+          "text": "The Messages API is stateless: each request is evaluated on its own, so the application must resend the prior conversation history with every turn."
+        },
+        {
+          "id": "C",
+          "text": "The conversation exceeded a server-side session TTL; enable conversation storage on the API key so earlier turns persist between calls."
+        },
+        {
+          "id": "D",
+          "text": "The model is sampling a fresh interpretation on each turn; lower the temperature so it stays anchored to the earlier topic."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "The Messages API is stateless. History, documents, and tool results only influence a response if they are included in that request. Because the app sends only the newest message, the model literally cannot see \"the cheaper one\" — the fix is to include the prior turns in `messages` on every call (and use prompt caching to control the cost of the repeated prefix).",
+      "whyWrong": {
+        "A": "The window is not the constraint here — nothing from prior turns is being sent at all, so a bigger window changes nothing.",
+        "C": "There is no server-side conversation storage or session TTL to enable; state must be managed by the caller.",
+        "D": "Sampling settings affect how the model picks tokens, not what it can see; the model cannot reference content that was never sent."
+      },
+      "difficulty": 1,
+      "mindset": "The API has no memory of your last call — if you didn't send it, the model didn't see it.",
+      "tags": [
+        "stateless-api",
+        "messages-api",
+        "context",
+        "llm-fundamentals"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/context-windows",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching"
+      ]
+    },
+    {
+      "id": "v-d5-g1-002",
+      "taskStatementId": "5.1",
+      "scenario": "A contract-review pipeline asks Claude to extract clauses into a single JSON object. Intermittently the returned JSON is cut off mid-field and fails parsing. The failing responses all show `stop_reason: \"max_tokens\"`, and `output_tokens` equals the configured cap.",
+      "stem": "What does this indicate, and what is the correct response?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The input exceeded the context window; split each contract across multiple requests before extracting."
+        },
+        {
+          "id": "B",
+          "text": "The model finished early and padded the output; regenerate with a stricter schema and a lower temperature."
+        },
+        {
+          "id": "C",
+          "text": "Generation hit the max_tokens output cap and was truncated; raise max_tokens or split the extraction into smaller outputs."
+        },
+        {
+          "id": "D",
+          "text": "A rate limit interrupted generation mid-stream; add exponential backoff and retry the same request."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "`stop_reason: \"max_tokens\"` means the output was truncated at the cap, not that the model finished. The fix is to raise `max_tokens` (output shares the context window with input) or restructure the task so each response is shorter. Input overflow surfaces differently — a 400 \"prompt is too long\" error or `model_context_window_exceeded`.",
+      "whyWrong": {
+        "A": "Oversized input produces a request error or `model_context_window_exceeded`, not `max_tokens`; here the input was accepted and the output was cut off.",
+        "B": "The model did not finish at all — it was cut off; schema strictness and temperature do not raise an output cap.",
+        "D": "Rate limiting is an HTTP 429 error, not a stop reason on a successful (HTTP 200) response; retrying with the same cap reproduces the truncation."
+      },
+      "difficulty": 1,
+      "mindset": "Read stop_reason before debugging anything else — max_tokens means truncated, not done.",
+      "tags": [
+        "stop-reason",
+        "max-tokens",
+        "truncation",
+        "llm-fundamentals"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons",
+        "https://platform.claude.com/docs/en/build-with-claude/context-windows"
+      ]
+    },
+    {
+      "id": "v-d5-g1-003",
+      "taskStatementId": "5.1",
+      "scenario": "A team is porting a large library of prompts from another vendor's LLM to Claude. Their internal budgeting tool estimates request sizes using the previous vendor's tokenizer, and actual Claude invoices are running well above the forecasts.",
+      "stem": "What is the MOST reliable way to size prompts before they are sent?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Call the count_tokens endpoint with the exact Claude model each route uses, treating the result as an estimate that must be re-run if the model changes."
+        },
+        {
+          "id": "B",
+          "text": "Apply a fixed multiplier to the previous vendor's token counts for every prompt, calibrated once on a handful of examples."
+        },
+        {
+          "id": "C",
+          "text": "Estimate tokens as character count divided by four, validated once against a small sample of live requests."
+        },
+        {
+          "id": "D",
+          "text": "Fire one live generation request per prompt, record its reported usage, and reuse that count for all future budgeting."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Token counts are tokenizer-specific, and tokenizers differ between vendors and even between Claude model generations (the tokenizer can differ enough that the same text counts materially differently). The supported approach is the free `count_tokens` endpoint using the target model's tokenizer, understanding it returns an estimate (and that output tokens still need separate budgeting). Re-baseline whenever the model changes.",
+      "whyWrong": {
+        "B": "No stable conversion factor exists between different tokenizers; a multiplier calibrated on a few prompts will drift across content types.",
+        "C": "Characters-per-token varies widely with content; a one-time sample does not generalize and ignores output entirely.",
+        "D": "A single live call measures one sampled output, costs money, and conflates input with variable output tokens; count_tokens exists precisely to avoid this."
+      },
+      "difficulty": 2,
+      "mindset": "Count tokens with the tokenizer of the model that will actually process the request.",
+      "tags": [
+        "tokens",
+        "token-counting",
+        "budgeting",
+        "llm-fundamentals"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/token-counting"
+      ]
+    },
+    {
+      "id": "v-d5-g1-004",
+      "taskStatementId": "5.1",
+      "scenario": "A CI job asserts that Claude's one-paragraph release summary exactly equals a stored golden string. Roughly one run in five fails with a slightly different but perfectly valid summary. The prompt and inputs are identical on every run.",
+      "stem": "Which change to the test approach is BEST?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Set temperature to 0 for the production request and keep asserting the exact golden string against its output."
+        },
+        {
+          "id": "B",
+          "text": "Retry the request inside the test until the output matches the golden string, then record the pass."
+        },
+        {
+          "id": "C",
+          "text": "Append an instruction asking the model to verify its summary matches the expected wording before finalizing."
+        },
+        {
+          "id": "D",
+          "text": "Assert on properties — valid structure, key facts present, length bounds — and run the prompt over several samples, scoring consistency across runs."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "LLM sampling is non-deterministic: identical prompts can yield different but equally valid outputs, so exact-string matching is the wrong assertion for a sampler. Test LLM behavior with property assertions over multiple samples — check structure and required content within bounds — and measure how consistently the prompt performs across runs. Sampling settings cannot rescue an exact-match test: they narrow the token distribution but never guarantee byte-identical output.",
+      "whyWrong": {
+        "A": "Lower temperature narrows the distribution but never guarantees identical output — a single divergent token still fails the test, and non-determinism persists.",
+        "B": "Retrying until a lucky match hides the real variance, makes CI slow and flaky, and validates nothing about typical behavior.",
+        "C": "Asking the model to self-check wording against an expected string it cannot see is a prompt-only fix for what is fundamentally a test-design problem."
+      },
+      "difficulty": 2,
+      "mindset": "Never test a sampler with exact-string equality; test properties over multiple samples.",
+      "tags": [
+        "non-determinism",
+        "evals",
+        "testing",
+        "llm-fundamentals"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests",
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/increase-consistency"
+      ]
+    },
+    {
+      "id": "v-d5-g1-005",
+      "taskStatementId": "5.1",
+      "scenario": "An insurance-rules assistant has an audit requirement: identical question inputs must produce byte-identical answers across repeated requests. The engineer proposes setting temperature to 0 everywhere and calling it deterministic.",
+      "stem": "Which approach meets the requirement MOST reliably?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Set temperature and top_p to their minimum values on every request; sampling then becomes deterministic and identical inputs will always produce identical answers."
+        },
+        {
+          "id": "B",
+          "text": "Treat determinism as an application concern: constrain the format with structured outputs, validate in code, and cache the verified result keyed by input so repeat requests return the stored answer."
+        },
+        {
+          "id": "C",
+          "text": "Attach the previously approved response and prompt the model to reproduce it exactly, checking the result character by character inside the prompt."
+        },
+        {
+          "id": "D",
+          "text": "Route all traffic to the smallest available model, whose narrower output distribution is assumed to be more stable and therefore easier to reproduce."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Sampling selects each next token from a probability distribution, so no sampling configuration guarantees byte-identical output across requests. Reliable determinism is enforced outside the model: constrain the format with structured outputs, validate and normalize in code, and serve repeat identical inputs from your own result cache so the stored, verified answer is what auditors see.",
+      "whyWrong": {
+        "A": "Minimum sampling values narrow the distribution but never eliminate variance — non-determinism is inherent to next-token sampling, so this cannot satisfy a byte-identical audit requirement.",
+        "C": "Repetition-by-prompt is probabilistic; any sampled divergence breaks the audit guarantee, and there is no enforcement mechanism if the model deviates.",
+        "D": "No model tier guarantees deterministic output; model choice affects quality, latency, and cost, not reproducibility."
+      },
+      "difficulty": 3,
+      "mindset": "Determinism is a property of your system, not of the sampler — enforce it in code.",
+      "tags": [
+        "non-determinism",
+        "determinism",
+        "structured-outputs",
+        "caching",
+        "llm-fundamentals"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs",
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/increase-consistency"
+      ]
+    },
+    {
+      "id": "v-d5-g1-006",
+      "taskStatementId": "5.1",
+      "scenario": "A support-ticket classifier sorts tickets into five categories. Overall accuracy is good and the written category definitions are already explicit, but evals show recurring misses on tickets with missing fields, sarcasm, or multiple topics in one message.",
+      "stem": "Which improvement is MOST effective with minimal added cost?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Append \"Always classify consistently and be careful with edge cases\" to the system prompt."
+        },
+        {
+          "id": "B",
+          "text": "Add a single worked example of the most common, straightforward ticket type."
+        },
+        {
+          "id": "C",
+          "text": "Add three to five clearly tagged examples that each demonstrate one of the failing edge cases, consistent with the written rules."
+        },
+        {
+          "id": "D",
+          "text": "Add all 25+ misclassified tickets from the last quarter as examples so every past mistake is covered."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Few-shot examples are the documented tool for inconsistent judgment on specific cases: a small set (3–5 is the documented starting point) of relevant, diverse examples — each covering a different failure mode, clearly tagged, and consistent with the written rules. Targeted examples fix the observed drift at a modest token cost, especially when the examples sit in a cacheable system prompt.",
+      "whyWrong": {
+        "A": "Vague directives like \"be careful\" do not change behavior on edge cases; explicit criteria or demonstrations do.",
+        "B": "One example of the easiest case teaches format but nothing about the failing edge cases, and single examples can over-fit the model to that pattern.",
+        "D": "Dozens of examples bloat every request, risk teaching unintended patterns, and — if drawn from past misses — likely overlap the eval set, contaminating measurement."
+      },
+      "difficulty": 2,
+      "mindset": "Fix observed drift with a few diverse, targeted examples — not with volume or vague instructions.",
+      "tags": [
+        "few-shot",
+        "multishot",
+        "prompting-techniques",
+        "llm-fundamentals"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices",
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/increase-consistency"
+      ]
+    },
+    {
+      "id": "v-d5-g1-007",
+      "taskStatementId": "5.1",
+      "scenario": "A team is starting a new invoice-field extraction task. Before running any tests, the engineer plans to paste ten example invoices with expected outputs into the prompt \"for reliability\".",
+      "stem": "With minimal changes, what is the BEST first step?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Start zero-shot with clear instructions and an explicit output format, build a small eval set, and add examples only if evals show inconsistent format or judgment."
+        },
+        {
+          "id": "B",
+          "text": "Include the ten examples from the start; more examples always improve reliability and avoid a rework cycle."
+        },
+        {
+          "id": "C",
+          "text": "Start one-shot with the single most complex invoice you have; a complex example implicitly covers the simple cases."
+        },
+        {
+          "id": "D",
+          "text": "Skip the eval set and add one example at a time whenever a user reports a bad extraction."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Start simple and add complexity only when it demonstrably helps. Clear instructions plus an explicit output format are the starting point; examples cost tokens on every request and work best when they target a demonstrated failure mode. Build a small eval set first to get a baseline, then add few-shot examples deliberately if evals show format drift or inconsistent judgment — keeping evaluation data out of the prompt so measurement stays honest.",
+      "whyWrong": {
+        "B": "Examples are a response to measured inconsistency, not a default; ten untargeted examples add standing token cost on every call and can teach unintended patterns before you know what is actually broken.",
+        "C": "A single maximally complex example is the wrong shape — good examples are diverse and each demonstrates a distinct case; complexity does not cascade downward.",
+        "D": "Reactive, anecdote-driven prompting without an eval set gives you no baseline and no way to tell whether each addition helped or hurt."
+      },
+      "difficulty": 2,
+      "mindset": "Zero-shot plus evals first; earn every example you add to the prompt.",
+      "tags": [
+        "zero-shot",
+        "few-shot",
+        "evals",
+        "prompting-techniques",
+        "llm-fundamentals"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices",
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests"
+      ]
+    },
+    {
+      "id": "v-d5-g1-008",
+      "taskStatementId": "5.1",
+      "scenario": "A market-report product generates long reports with a large Opus model. Streaming is already on, and users see the first sentence quickly — but a full report takes several minutes to finish generating. The team is satisfied with quality and does not want to change models.",
+      "stem": "Which option BEST fits the requirement?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Move report generation to the Message Batches API to reduce token cost and finish reports sooner."
+        },
+        {
+          "id": "B",
+          "text": "Switch report generation to the smallest available model, which writes the same volume faster and cheaper."
+        },
+        {
+          "id": "C",
+          "text": "Raise max_tokens so the model has room to write the report in fewer, longer passes."
+        },
+        {
+          "id": "D",
+          "text": "Enable fast mode: the same model generating output tokens at a substantially higher rate, at a premium per-token price."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "The complaint is output throughput, and fast mode is exactly that lever: the same Opus model producing output tokens markedly faster, at premium per-token pricing, through the Claude API. Streaming already handles the perceived-latency side here, and fast mode cannot be combined with the Batches API.",
+      "whyWrong": {
+        "A": "The Batches API halves cost for latency-tolerant workloads but does not generate faster — results can take up to 24 hours, and it is incompatible with fast mode.",
+        "B": "The team explicitly does not want to change models; downsizing trades capability and is a quality lever, not a throughput knob for the same model.",
+        "C": "max_tokens is an output cap, not a speed control; raising it only permits longer output (and output already fits — it's just slow)."
+      },
+      "difficulty": 2,
+      "mindset": "Name the dimension first: slow generation rate means fast mode; slow first token means streaming.",
+      "tags": [
+        "fast-mode",
+        "throughput",
+        "latency",
+        "model-options",
+        "llm-fundamentals"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-latency",
+        "https://platform.claude.com/docs/en/about-claude/pricing"
+      ]
+    },
+    {
+      "id": "v-d5-g1-009",
+      "taskStatementId": "5.1",
+      "scenario": "After migrating a well-tested service to the newest Opus model, every request begins returning HTTP 400 `invalid_request_error`. The requests all set `thinking: {\"type\": \"enabled\", \"budget_tokens\": 4000}` with `max_tokens` of 8192, a combination that worked on the previous model.",
+      "stem": "What is the cause and the correct fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "budget_tokens must be smaller than max_tokens; raise max_tokens above the budget and the errors stop."
+        },
+        {
+          "id": "B",
+          "text": "Manual extended-thinking budgets are rejected on current models; switch to adaptive thinking and steer reasoning depth with the effort setting."
+        },
+        {
+          "id": "C",
+          "text": "Extended thinking now requires streaming on this model; enable stream: true and the requests will be accepted."
+        },
+        {
+          "id": "D",
+          "text": "The thinking configuration belongs in the system prompt on current models; move it there as text instructions."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Manual `budget_tokens` thinking is a known hard break when moving to current models — the request is rejected with a 400. The current approach is adaptive thinking, where the model decides how much to reason and the effort setting steers that depth (and thinking output is still billed as output tokens). Budget-based control remains only on earlier models.",
+      "whyWrong": {
+        "A": "The budget-below-max_tokens ordering was the old model's constraint; here the parameter itself is rejected, so no value of max_tokens helps.",
+        "C": "Streaming changes how the response is delivered, not which request parameters the model accepts.",
+        "D": "Thinking is an API parameter, not prompt text; instructing the model to \"think deeply\" does not configure the feature and does not clear the 400."
+      },
+      "difficulty": 3,
+      "mindset": "A sudden wave of 400s after a model upgrade is usually a removed parameter — check the migration guide before debugging logic.",
+      "tags": [
+        "extended-thinking",
+        "adaptive-thinking",
+        "effort",
+        "migration",
+        "model-options",
+        "llm-fundamentals"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/extended-thinking",
+        "https://platform.claude.com/docs/en/api/errors"
+      ]
+    },
+    {
+      "id": "v-d5-g1-010",
+      "taskStatementId": "5.1",
+      "scenario": "A support-triage agent runs on a current model with adaptive thinking. About 90% of tickets are simple routing decisions, but the model reasons deeply on every request, driving up p95 latency and cost. Eval results show simple tickets are classified correctly even when the model reasons lightly; the hardest 10% still benefit from deep reasoning.",
+      "stem": "Which lever BEST addresses this without sacrificing quality where it matters?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Lower the effort setting for the triage route so adaptive thinking reasons less on simple work, keeping the same model."
+        },
+        {
+          "id": "B",
+          "text": "Switch the entire triage service to the smallest available model for every ticket."
+        },
+        {
+          "id": "C",
+          "text": "Cap max_tokens at a small value so reasoning is forced to stay short."
+        },
+        {
+          "id": "D",
+          "text": "Add a system-prompt instruction to \"think briefly and skip reasoning for simple tickets.\""
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Effort is the designed steering control for adaptive thinking: dialing it down reduces reasoning (and the output tokens thinking is billed as) without changing models. Because evals show simple tickets succeed with light reasoning, lowering effort for that route captures the savings while the model and its capability stay intact for hard cases.",
+      "whyWrong": {
+        "B": "Swapping the model is a much heavier lever that changes capability for all traffic, including the 10% of tickets that need it; effort tunes the same model per route.",
+        "C": "max_tokens is a blunt cap: it truncates whatever it catches — including the final answer — rather than reducing reasoning deliberately.",
+        "D": "A prompt suggestion is probabilistic and competes with the model's own judgment; effort is the actual control for how much adaptive thinking occurs."
+      },
+      "difficulty": 3,
+      "mindset": "Effort is the dial for reasoning depth; model choice and max_tokens are different, blunter levers.",
+      "tags": [
+        "adaptive-thinking",
+        "effort",
+        "cost",
+        "latency",
+        "model-options",
+        "llm-fundamentals"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/extended-thinking",
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-latency"
+      ]
+    },
+    {
+      "id": "v-d5-g1-011",
+      "taskStatementId": "5.1",
+      "scenario": "A product team hides chain-of-thought from end users by setting the thinking display option to omitted. Users see only the final answer, but the next invoice shows essentially the same token spend as before the change.",
+      "stem": "Why did the bill not decrease?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The display option only takes effect during streaming; disable streaming to stop being billed for hidden reasoning."
+        },
+        {
+          "id": "B",
+          "text": "Thinking tokens are only billed when displayed, and the billing pipeline lags by one usage cycle."
+        },
+        {
+          "id": "C",
+          "text": "Display settings change visibility only; the thinking tokens are still generated and billed as output tokens either way."
+        },
+        {
+          "id": "D",
+          "text": "Omitted thinking is billed at the input rate instead, so cost moves between line items while the total stays flat."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Thinking is real generated output: its tokens are produced, count toward the response, and are billed at the output rate regardless of whether the user sees them — models that return summarized thinking are still billed for the full thinking. Display options (summarized, omitted) control presentation, not generation or cost — the way to reduce thinking spend is to reduce thinking itself (e.g., lower effort).",
+      "whyWrong": {
+        "A": "Display applies to how reasoning is surfaced, streaming or not; billing follows generation, not rendering.",
+        "B": "There is no display-contingent billing and no lag; the tokens were generated and charged in the same cycle as always.",
+        "D": "Thinking tokens are billed as output, not reclassified as input when hidden; there is no rate change from a display setting."
+      },
+      "difficulty": 1,
+      "mindset": "You pay for what the model generates, not for what you choose to show.",
+      "tags": [
+        "thinking",
+        "billing",
+        "display-options",
+        "model-options",
+        "llm-fundamentals"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/extended-thinking",
+        "https://platform.claude.com/docs/en/about-claude/pricing"
+      ]
+    },
+    {
+      "id": "v-d5-g1-012",
+      "taskStatementId": "5.1",
+      "scenario": "A platform team is migrating a large library of stored requests from older Claude models to the current model generation. They want to predict which request patterns in their codebase will start failing with HTTP 400 errors after the upgrade.",
+      "stem": "Which TWO patterns are common hard breaks that will be rejected on current models? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Requests that configure extended thinking with a manual budget_tokens value."
+        },
+        {
+          "id": "B",
+          "text": "Requests that enable streaming for long generations."
+        },
+        {
+          "id": "C",
+          "text": "Requests that pin the exact model ID in configuration rather than an alias."
+        },
+        {
+          "id": "D",
+          "text": "Requests that prefill the assistant turn (for example, an opening \"{\") to force JSON formatting."
+        },
+        {
+          "id": "E",
+          "text": "Requests that set an explicit max_tokens value on each call."
+        }
+      ],
+      "correct": [
+        "A",
+        "D"
+      ],
+      "explanation": "The recurring hard breaks on current models are removed request features: manual `budget_tokens` thinking is rejected outright (the replacement is adaptive thinking steered by effort), and prefilled assistant messages now return a 400 — the conversation must end with a user message, so format forcing moves to structured outputs or constrained tools. Streaming and explicit `max_tokens` remain standard parameters, and pinning an exact model ID is a supported configuration practice, not a request error.",
+      "whyWrong": {
+        "B": "Streaming is a supported delivery mode on current models and is recommended for long requests.",
+        "C": "Pinning an exact model ID is a supported stability practice examined under configuration management; it changes which model serves the request, not whether the request is valid.",
+        "E": "max_tokens remains a standard parameter; changing its value affects truncation behavior, not request validity."
+      },
+      "difficulty": 3,
+      "mindset": "Migration breakage comes from removed parameters, not from delivery options — grep for budget_tokens, prefill, sampling, and forced tool_choice.",
+      "tags": [
+        "migration",
+        "breaking-changes",
+        "extended-thinking",
+        "prefill",
+        "model-options",
+        "llm-fundamentals"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/extended-thinking",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices",
+        "https://platform.claude.com/docs/en/api/errors"
+      ]
+    },
+    {
+      "id": "v-d5-g1-013",
+      "taskStatementId": "5.1",
+      "scenario": "A compliance-categorization tool must return the same category codes and field formats run after run. The team has learned the hard way that sampling settings cannot make outputs identical — run-to-run variance persists no matter how they are tuned.",
+      "stem": "Which TWO measures MOST reliably increase consistency? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Set temperature to 0 on every request so the model always picks the same tokens."
+        },
+        {
+          "id": "B",
+          "text": "Use structured outputs so every response is constrained to conform to the same schema."
+        },
+        {
+          "id": "C",
+          "text": "Instruct the model to review its own answer for consistency before finalizing it."
+        },
+        {
+          "id": "D",
+          "text": "Increase max_tokens so responses are never truncated mid-answer."
+        },
+        {
+          "id": "E",
+          "text": "Validate responses in code and retry with the validation error fed back into the next attempt, up to a bounded number of tries."
+        }
+      ],
+      "correct": [
+        "B",
+        "E"
+      ],
+      "explanation": "Reliable consistency comes from controls outside sampling: structured outputs constrain generation to a schema (the documented route for guaranteed schema conformance), and a code-enforced validate-and-retry loop — feeding the specific validation error into the next attempt, with bounded tries and escalation after — catches what the schema cannot, such as cross-field rules or enum casing. Together they replace hope in temperature with enforcement.",
+      "whyWrong": {
+        "A": "Temperature 0 narrows the token distribution but does not guarantee the same tokens on every run; sampling remains non-deterministic, so it cannot be the enforcement mechanism for run-to-run consistency.",
+        "C": "Self-review is a probabilistic prompt-level suggestion, not a control; it cannot enforce a format the request does not constrain.",
+        "D": "Truncation causes incompleteness, not inconsistency between complete answers; a bigger cap does nothing for run-to-run variance."
+      },
+      "difficulty": 2,
+      "mindset": "Consistency is enforced by schema and code, not requested from the sampler.",
+      "tags": [
+        "consistency",
+        "structured-outputs",
+        "validation-retry",
+        "non-determinism",
+        "llm-fundamentals"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs",
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/increase-consistency"
+      ]
+    },
+    {
+      "id": "v-d5-g1-014",
+      "taskStatementId": "5.1",
+      "scenario": "A document-analysis agent runs on a model with a 1M-token context window, processing large document sets with long tool-calling histories. During design review, engineers make claims about how the context window and caching interact.",
+      "stem": "Which TWO statements are correct? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "For each request, input tokens and generated tokens — including thinking — all draw on the same context window."
+        },
+        {
+          "id": "B",
+          "text": "The API retains conversation state server-side, so resent history can be excluded from window accounting on later turns."
+        },
+        {
+          "id": "C",
+          "text": "Tokens served from the prompt cache no longer occupy the context window because they are not reprocessed."
+        },
+        {
+          "id": "D",
+          "text": "Raising max_tokens also expands the model's effective context window for the request."
+        },
+        {
+          "id": "E",
+          "text": "Cached tokens still count toward the context window even though they are billed at a discount."
+        }
+      ],
+      "correct": [
+        "A",
+        "E"
+      ],
+      "explanation": "Everything in the request — system, messages, documents, tool definitions and results, plus generated output and thinking — shares one context window; `max_tokens` is a separate output cap within it. Caching changes billing and processing time, not occupancy: cached tokens still occupy the window. Since the API is stateless, resent history is re-sent and re-counted every turn, which is exactly why long agent loops eventually force compaction or trimming.",
+      "whyWrong": {
+        "B": "The API is stateless; there is no server-side conversation to charge against — the window accounting covers exactly what each request contains.",
+        "C": "A cache hit skips reprocessing cost, not window occupancy; the cached prefix is still part of the request.",
+        "D": "max_tokens caps output; it does not enlarge the window — larger input plus larger max_tokens simply approaches the same limit faster."
+      },
+      "difficulty": 3,
+      "mindset": "One window per request holds everything you send and everything it generates — caching discounts the bill, not the space.",
+      "tags": [
+        "context-window",
+        "caching",
+        "stateless-api",
+        "llm-fundamentals"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/context-windows",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching"
+      ]
+    },
+    {
+      "id": "v-d5-g1-015",
+      "taskStatementId": "5.1",
+      "scenario": "A consumer chat assistant has quality scores users like, but complaints say \"nothing appears for 8–10 seconds.\" Metrics show time-to-first-token is high while the output generation rate and answer quality are fine.",
+      "stem": "Which TWO changes address this BEST? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Enable fast mode on the current Opus endpoint so answers are produced more quickly."
+        },
+        {
+          "id": "B",
+          "text": "Stream responses so users see partial output as soon as it begins generating."
+        },
+        {
+          "id": "C",
+          "text": "Mark the static system prompt and tool definitions as a cache prefix so requests start processing sooner."
+        },
+        {
+          "id": "D",
+          "text": "Increase max_tokens for these requests so the model can begin answering earlier."
+        },
+        {
+          "id": "E",
+          "text": "Raise the effort level so the model reasons more thoroughly before answering."
+        }
+      ],
+      "correct": [
+        "B",
+        "C"
+      ],
+      "explanation": "The problem dimension is the perceived wait before the first content. Streaming is the canonical fix — users watch text appear as soon as generation begins. Prompt caching cuts processing time on the static prefix, shortening the wait before generation starts. Neither changes the model or the answer, so quality is untouched.",
+      "whyWrong": {
+        "A": "Fast mode is a premium-priced lever on output generation speed — but the generation rate here is explicitly fine; the suffering metric is the wait before any content appears, which streaming and prompt caching address directly.",
+        "D": "max_tokens is an output cap that prevents truncation; it has no effect on when the first token arrives.",
+        "E": "More reasoning delays the first visible output further — the opposite of the goal, at higher cost."
+      },
+      "difficulty": 2,
+      "mindset": "First name the dimension — first-token wait means streaming and faster processing, not faster generation.",
+      "tags": [
+        "latency",
+        "ttft",
+        "streaming",
+        "caching",
+        "fast-mode",
+        "llm-fundamentals"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-latency",
+        "https://platform.claude.com/docs/en/build-with-claude/streaming",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,689 @@
+{
+  "certId": "developer",
+  "domainId": "d2-applications-integration",
+  "questions": [
+    {
+      "id": "v-d2-g3-001",
+      "taskStatementId": "2.3",
+      "scenario": "A developer is building a two-turn support assistant. In the first request, Claude summarizes a customer's order history. For the second request (\"now draft an apology email referencing those issues\"), the developer sends only the new user message, assuming the API will remember the previous exchange. Claude replies asking for the order details again.",
+      "stem": "What is the MOST likely cause, and what is the correct fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The conversation hit a server-side session timeout; re-send both turns under the same session id to restore context."
+        },
+        {
+          "id": "B",
+          "text": "The Messages API is stateless: the application must persist the conversation and resend the full message history with every request, including the prior assistant reply."
+        },
+        {
+          "id": "C",
+          "text": "The first response was truncated by max_tokens, so its contents were not retained by the model between calls."
+        },
+        {
+          "id": "D",
+          "text": "Context is deliberately cleared between calls for privacy; the developer should enable history retention in the request."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "The Messages API keeps no server-side conversation state. Every call must carry the entire history you want Claude to see — prior user turns, assistant replies, and tool results — and your application owns storing and resending it. Session concepts in tools like the Agent SDK are conversation transcripts managed on the client side, not server memory.",
+      "whyWrong": {
+        "A": "There are no server-side sessions or timeouts to restore; nothing is retained between calls.",
+        "C": "Truncation (stop_reason max_tokens) affects a single response's completeness and has nothing to do with cross-request memory.",
+        "D": "There is no retention setting to enable; statelessness is by design, and the fix is application-managed history."
+      },
+      "difficulty": 1,
+      "mindset": "The API remembers nothing between calls — your application is the memory.",
+      "tags": [
+        "messages",
+        "stateless-api",
+        "conversation-history"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls"
+      ]
+    },
+    {
+      "id": "v-d2-g3-002",
+      "taskStatementId": "2.3",
+      "scenario": "A team's first Claude integration reuses a generic chat client that only sends a messages array of role/content pairs. Their always-apply behavioral instructions (tone rules, refusal policy, output format) currently ride as the first 'user' turn, and Claude sometimes treats them as ordinary content to respond to rather than standing instructions.",
+      "stem": "Where should these instructions be sent on every request?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Keep them in the first user message but wrap them in <instructions> tags so Claude knows they are rules."
+        },
+        {
+          "id": "B",
+          "text": "Append them to the last assistant message in the history so Claude continues from them."
+        },
+        {
+          "id": "C",
+          "text": "Pass them in the top-level system parameter of the Messages API request, separate from the messages array."
+        },
+        {
+          "id": "D",
+          "text": "Send them as a separate priming request before each real request so they are already 'in context'."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "`system` is a top-level request parameter, not a message role. Putting standing instructions there gives them a dedicated, authoritative instruction channel that applies to the whole conversation — exactly what the API is designed for. XML tags inside a user turn help organize content but do not turn user content into system-level instructions.",
+      "whyWrong": {
+        "A": "Tags inside a user message organize content but keep the instructions in the weakest position, where they compete with the actual task.",
+        "B": "Appending to the last assistant turn is prefilling; it is not supported on newer models and does not establish standing instructions.",
+        "D": "Context does not carry over between requests, so a separate priming request accomplishes nothing while doubling calls."
+      },
+      "difficulty": 1,
+      "mindset": "Standing instructions have a designated slot — the top-level system parameter.",
+      "tags": [
+        "messages",
+        "system-prompt",
+        "api-mechanics"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices"
+      ]
+    },
+    {
+      "id": "v-d2-g3-003",
+      "taskStatementId": "2.3",
+      "scenario": "A customer-facing feature drafts refund replies while the user watches, with a product requirement of a few seconds to first content. To cut spend in half, a product manager proposes routing these interactive requests through the Message Batches API instead of the realtime Messages API.",
+      "stem": "Which approach is BEST?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Keep the feature on the realtime Messages API: batch results only become available as the batch completes (up to 24 hours), which cannot meet an interactive latency budget."
+        },
+        {
+          "id": "B",
+          "text": "Switch to batches and poll for each result every few seconds until it appears."
+        },
+        {
+          "id": "C",
+          "text": "Switch to batches and enable streaming on each request so replies arrive progressively."
+        },
+        {
+          "id": "D",
+          "text": "Keep realtime calls but set max_tokens very low so the per-request cost matches batch pricing."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Who is waiting decides the access pattern: a human watching the screen requires realtime requests. Batches trade latency for a 50% discount and only return results once the batch finishes — within minutes to hours, with a 24-hour ceiling — so they are categorically wrong for interactive features.",
+      "whyWrong": {
+        "B": "Polling cannot make a batch fast; results appear when the whole batch completes, not per request on demand.",
+        "C": "Batch requests do not support streaming; there is no progressive output to enable.",
+        "D": "Lowering max_tokens truncates output and damages quality; it does not change the per-token unit price."
+      },
+      "difficulty": 1,
+      "mindset": "Ask who is waiting — humans get realtime, latency-tolerant bulk gets batches.",
+      "tags": [
+        "batch-api",
+        "realtime-vs-batch",
+        "latency",
+        "cost"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/batch-processing"
+      ]
+    },
+    {
+      "id": "v-d2-g3-004",
+      "taskStatementId": "2.3",
+      "scenario": "A custom agent harness returns tool results to Claude. It prefixes a short status text block before each tool_result (\"result follows:\"), and when Claude makes two tool calls in a single turn, it sends the two tool_result blocks in two separate consecutive user messages. Some requests fail with a 400 error about tool_use ids missing tool_result blocks, and Claude's parallel tool use degrades over long sessions.",
+      "stem": "Which change fixes the format errors with minimal rework?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Drop the tool_use ids and let Claude match results to calls by tool name and argument similarity."
+        },
+        {
+          "id": "B",
+          "text": "Keep results in separate user messages but move the status text after each tool_result block."
+        },
+        {
+          "id": "C",
+          "text": "Merge both tool outputs into a single combined tool_result block so there is only one result to place."
+        },
+        {
+          "id": "D",
+          "text": "Return exactly one tool_result per tool_use, matched by tool_use_id, placed at the start of a single user message that immediately follows the tool_use turn, with any text after the results."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "The API requires tool_result blocks to come first in the next user message, immediately after the assistant's tool_use turn, one result per tool_use id, all in that single message. Text before the results, or results split across multiple user messages, produces 400 errors and erodes future parallel tool behavior.",
+      "whyWrong": {
+        "A": "Ids are the required matching mechanism; name-based matching is unreliable and the API validates ids.",
+        "B": "Splitting results across multiple user messages remains invalid regardless of where the text sits, and parallel behavior still degrades.",
+        "C": "There must be exactly one tool_result per tool_use block; merging loses the id linkage the API enforces."
+      },
+      "difficulty": 2,
+      "mindset": "Tool results are protocol-structured data: ids first, one per call, one message.",
+      "tags": [
+        "tool-use",
+        "tool-result",
+        "messages",
+        "parallel-tool-use"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls"
+      ]
+    },
+    {
+      "id": "v-d2-g3-005",
+      "taskStatementId": "2.3",
+      "scenario": "A factory quality team prototypes visual defect detection. Each request sends a full-resolution 12-megapixel photo as a base64 image block together with the inspection question. The prototype works, but measured input token costs are several times the estimate, dominated by the images.",
+      "stem": "What is the BEST first change to reduce input cost with minimal quality loss?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Move the image block after the question text so the model only processes pixels relevant to the question."
+        },
+        {
+          "id": "B",
+          "text": "Downscale each photo to the resolution the inspection task actually needs before sending, because an image's token cost scales with its size."
+        },
+        {
+          "id": "C",
+          "text": "Reference the same images by URL instead of base64 so they are fetched and tokenized at lower cost."
+        },
+        {
+          "id": "D",
+          "text": "Have a smaller model write a text description of each photo first, then send only the description with the question."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Image token consumption scales with the image's dimensions, so sending 12-megapixel originals when the task needs far less detail is the dominant, avoidable cost. Resizing to the required resolution is a direct, low-risk fix. (Placement still matters for quality — long content belongs before the query — but placement does not change how many tokens the image costs.)",
+      "whyWrong": {
+        "A": "Reordering does not change an image's token cost, and guidance recommends placing long content before the question, not after.",
+        "C": "The delivery mechanism (base64 vs URL) does not change how many tokens the image represents once processed.",
+        "D": "A second model pass adds cost and latency and discards the visual signal the task depends on — an over-engineered first move."
+      },
+      "difficulty": 2,
+      "mindset": "Images are priced by size; send the smallest image that still solves the task.",
+      "tags": [
+        "vision",
+        "images",
+        "token-cost",
+        "input-optimization"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices",
+        "https://platform.claude.com/docs/en/build-with-claude/context-windows"
+      ]
+    },
+    {
+      "id": "v-d2-g3-006",
+      "taskStatementId": "2.3",
+      "scenario": "A retail assistant answers \"is this in stock?\" and \"what does it cost?\" questions. The team loads a nightly inventory CSV export into the system prompt. Answers are correct in the morning but quote stale stock by mid-afternoon, and increasing the refresh cadence to every 15 minutes still leaves gaps and churns the prompt.",
+      "stem": "Which approach BEST fits this requirement?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Expose a tool that queries the live inventory service at answer time, so freshness comes from the source system instead of a snapshot in the prompt."
+        },
+        {
+          "id": "B",
+          "text": "Refresh the CSV every 15 minutes and rely on prompt caching to keep the updated snapshot cheap to send."
+        },
+        {
+          "id": "C",
+          "text": "Instruct Claude to caveat every stock answer with \"quantities as of last night's data\" so answers are honest about staleness."
+        },
+        {
+          "id": "D",
+          "text": "Precompute answers to the most common stock questions in an overnight batch job and serve the cached answers during the day."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Choosing a data access pattern is driven by freshness: data that changes faster than you can snapshot belongs behind a tool that fetches it on demand at answer time. A nightly (or 15-minute) export, a disclaimer, or precomputed answers all still serve stale values.",
+      "whyWrong": {
+        "B": "Churning the snapshot every 15 minutes keeps breaking the cached prefix and still returns data up to 15 minutes old.",
+        "C": "A caveat discloses the staleness but does not fix the underlying incorrectness the product needs.",
+        "D": "Precomputed answers are stale by construction and add an over-engineered pipeline for a problem a live tool solves directly."
+      },
+      "difficulty": 2,
+      "mindset": "Pick the data access pattern by freshness — live questions need live lookups.",
+      "tags": [
+        "data-access-patterns",
+        "tool-use",
+        "freshness"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls"
+      ]
+    },
+    {
+      "id": "v-d2-g3-007",
+      "taskStatementId": "2.3",
+      "scenario": "A support pipeline defines eight tools, a stable system prompt, and long multi-turn conversations, with strong cache read rates. After every release that edits even one word of a tool description, the next request for each active conversation shows a cache-creation spike and zero cache reads, after which hit rates recover until the next tool change.",
+      "stem": "Why does editing a tool definition wipe the cache benefit for those conversations?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Editing tools forces a new conversation identifier, orphaning the breakpoints attached to the old one."
+        },
+        {
+          "id": "B",
+          "text": "The cache TTL happened to expire at each deploy, and the timing of the releases is coincidental."
+        },
+        {
+          "id": "C",
+          "text": "The cached prefix is ordered tools → system → messages, so any change at the tools level invalidates that level and every level after it."
+        },
+        {
+          "id": "D",
+          "text": "Tool edits are billed as new requests against the rate limit, which resets the workspace's cache quota."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Prompt caching works on an identical prefix that is layered tools → system → messages. Tool definitions sit at the very front, so changing any of them changes the prefix from its first cached bytes and invalidates the system and message breakpoints too. The practical consequences: group tool-definition changes into releases and expect one cache rewrite per conversation afterward.",
+      "whyWrong": {
+        "A": "Conversations have no cache-bearing identifier; invalidation comes from prefix bytes changing, not identifiers.",
+        "B": "TTL expiry would produce scattered misses, not the reliable zero-read pattern that tracks each tool edit.",
+        "D": "There is no cache quota tied to rate limits; edits to tools invalidate prefixes rather than consuming allowances."
+      },
+      "difficulty": 2,
+      "mindset": "Cache invalidation cascades from wherever the prefix changes — tools sit first in line.",
+      "tags": [
+        "prompt-caching",
+        "tools",
+        "cache-invalidation",
+        "prefix-order"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching"
+      ]
+    },
+    {
+      "id": "v-d2-g3-008",
+      "taskStatementId": "2.3",
+      "scenario": "A coding agent runs with extended thinking enabled so it can plan before editing files. Two symptoms appear: replies are often cut off mid-sentence with stop_reason \"max_tokens\" even though the visible text is short, and the monthly output-token bill is far higher than the volume of delivered text alone would suggest.",
+      "stem": "What explains this, and what is the BEST adjustment?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Thinking tokens are billed as input, so the bill reflects prompt growth; shorten the system prompt to fix both symptoms."
+        },
+        {
+          "id": "B",
+          "text": "The model is duplicating its answer inside tool calls; deduplicate the tool_use blocks before displaying them."
+        },
+        {
+          "id": "C",
+          "text": "Streaming is dropping text segments; buffer the entire response before processing to recover the missing sentences."
+        },
+        {
+          "id": "D",
+          "text": "Thinking tokens count toward max_tokens and are billed as output, so the invisible reasoning consumes the generation budget; raise max_tokens (or steer effort down) to fit thinking plus the answer."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "Thinking tokens are generated output: they are billed as output tokens and they count against max_tokens. A short visible answer plus a long hidden reasoning trace both explains the oversized bill and the stop_reason max_tokens truncation. The fix is budgeting max_tokens for thinking plus the answer, or reducing the effort level so less reasoning is produced.",
+      "whyWrong": {
+        "A": "Thinking tokens are billed as output, not input, so trimming the system prompt does not address either symptom.",
+        "B": "Duplicate tool calls are not the cause; truncation is signaled directly by stop_reason max_tokens.",
+        "C": "Streaming faithfully delivers what was generated; the generation itself stopped at the token limit."
+      },
+      "difficulty": 2,
+      "mindset": "Thinking is not free and not invisible to the budget — it is output.",
+      "tags": [
+        "thinking",
+        "max-tokens",
+        "billing",
+        "stop-reasons"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/extended-thinking",
+        "https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons"
+      ]
+    },
+    {
+      "id": "v-d2-g3-009",
+      "taskStatementId": "2.3",
+      "scenario": "A research agent uses Anthropic-hosted server-side tools. Occasionally a response returns with HTTP 200 and stop_reason \"pause_turn\" because the server-side tool loop hit its iteration limit. The harness, copying how it handles client tool calls, replies with a user message containing tool_result blocks — and the API rejects that follow-up request.",
+      "stem": "What is the correct way to continue after a pause_turn stop reason?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Send the assistant message back unmodified as the conversation's next turn (keeping the same tools) and let the server-side loop continue; never answer pause_turn with tool_result blocks."
+        },
+        {
+          "id": "B",
+          "text": "Return an empty tool_result for the pending server tool so the loop believes the call finished and resumes."
+        },
+        {
+          "id": "C",
+          "text": "Strip the server-tool blocks out of the assistant message and resend only the remaining text as the latest turn."
+        },
+        {
+          "id": "D",
+          "text": "Treat pause_turn as a terminal error, discard the session, and restart the research task from the first message."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "pause_turn is a continuation signal, not a tool request: the server-side tool loop paused at its iteration limit and expects the assistant response to be sent back exactly as-is so it can carry on. Supplying tool_result blocks (or editing the assistant message) breaks the protocol the server maintains on your behalf.",
+      "whyWrong": {
+        "B": "Server tools are executed by Anthropic, not by you; there is no pending client-side call to answer with a tool_result.",
+        "C": "Altering the assistant turn's content discards the state the server-side loop needs to resume correctly.",
+        "D": "pause_turn arrives in a successful 200 response; discarding the session wastes completed work for a routine continuation."
+      },
+      "difficulty": 3,
+      "mindset": "Server tools pause the loop — resume by echoing the assistant turn, never by faking results.",
+      "tags": [
+        "stop-reasons",
+        "pause-turn",
+        "server-tools",
+        "api-mechanics"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons"
+      ]
+    },
+    {
+      "id": "v-d2-g3-010",
+      "taskStatementId": "2.3",
+      "scenario": "A compliance assistant must read each customer's 60-page policy PDF in full to answer questions — summaries or partial excerpts are not acceptable. The same documents are reused across many requests for weeks. Today each request inlines the PDF as a base64 document block; payloads are large, some requests approach the Messages API's per-request size limit, and the full document cost repeats on every call.",
+      "stem": "Which data access pattern BEST fits this workload's size and reuse profile?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Keep inlining the base64 document, but move it into the system prompt so it is cached automatically on every request."
+        },
+        {
+          "id": "B",
+          "text": "Chunk each PDF and retrieve only the passages that look relevant to the current question."
+        },
+        {
+          "id": "C",
+          "text": "Upload each document once via the Files API and reference it by file id in requests, keeping a stable, cache-controlled prefix for the shared instructions and rubric."
+        },
+        {
+          "id": "D",
+          "text": "Stand up an MCP server that fetches the PDF from storage and returns it as a tool result on every turn."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Data access patterns are chosen by size, freshness, reuse, and sensitivity. Here the documents are large, fully consumed, and heavily reused — exactly the profile for uploading once to the Files API (designed for payloads well above the per-request inline limit) and referencing by id, with prompt caching covering the stable shared prefix so instructions don't re-bill every call.",
+      "whyWrong": {
+        "A": "Nothing is cached 'automatically'; caching requires explicit breakpoints on an identical prefix, and inlining still duplicates the payload and approaches request size limits.",
+        "B": "Retrieval returns excerpts, but the requirement is that the whole document be read — the pattern fights the requirement.",
+        "D": "Re-fetching the full PDF through a tool on every turn repeats the payload and token cost and adds a server to operate, solving neither problem."
+      },
+      "difficulty": 3,
+      "mindset": "Match the access pattern to the data's profile: large + reused + fully read → Files API, not re-inlining.",
+      "tags": [
+        "data-access-patterns",
+        "files-api",
+        "prompt-caching",
+        "documents"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/context-windows",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching"
+      ]
+    },
+    {
+      "id": "v-d2-g3-011",
+      "taskStatementId": "2.3",
+      "scenario": "An agent harness, after receiving tool results, appends the text \"Please continue with the next step.\" in the same user message, immediately after the tool_result blocks. Intermittently, Claude replies with an essentially empty end_turn response of a couple of tokens. Retrying the identical request reproduces the same empty reply, and the team has begun auto-retrying every empty response up to five times.",
+      "stem": "What is the BEST fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Keep retrying but force temperature to 0 so one of the attempts eventually produces non-empty text."
+        },
+        {
+          "id": "B",
+          "text": "Stop retrying the empty response; send the tool_result message on its own and put the continuation instruction in a new user message afterward."
+        },
+        {
+          "id": "C",
+          "text": "Raise max_tokens significantly so the truncated response has room to finish what it was starting to say."
+        },
+        {
+          "id": "D",
+          "text": "Convert the continuation text into an extra tool_result block so it no longer appears as text after the results."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Text appended directly after tool_result blocks is a known trigger for empty end_turn responses. The documented handling is not to retry — the same input reproduces the same emptiness — but to deliver the continuation prompt in a new user message after the tool_result-only message. It is not a truncation problem, so token limits are irrelevant.",
+      "whyWrong": {
+        "A": "Retrying an identical request reliably reproduces the empty response; determinism is the issue, not sampling randomness.",
+        "C": "The response is not truncated — it ended cleanly with end_turn — so a higher limit changes nothing.",
+        "D": "Hiding your own instructions inside tool_result blocks corrupts the tool protocol and mixes instructions into untrusted-data channels."
+      },
+      "difficulty": 3,
+      "mindset": "Empty responses after tool results are a formatting trigger — continue in a fresh user message instead of retrying.",
+      "tags": [
+        "messages",
+        "tool-result",
+        "stop-reasons",
+        "failure-modes"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons",
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/mitigate-jailbreaks"
+      ]
+    },
+    {
+      "id": "v-d2-g3-012",
+      "taskStatementId": "2.3",
+      "scenario": "A company plans to move its Claude-based document pipeline from the Anthropic API to invoking Claude through their cloud provider's managed Claude offering, to reuse existing cloud contracts and networking. The pipeline depends on several recently shipped API capabilities and runs at a strict daily throughput with fixed release schedules.",
+      "stem": "Which TWO steps should they take BEFORE committing to the migration? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Assume feature parity because the underlying models are the same, and port the code unchanged to preserve behavior."
+        },
+        {
+          "id": "B",
+          "text": "Verify that the specific capabilities the pipeline depends on are actually available on the target platform, since feature availability differs across platforms."
+        },
+        {
+          "id": "C",
+          "text": "Reuse their existing model ID strings verbatim, because model identifiers are standardized across every provider."
+        },
+        {
+          "id": "D",
+          "text": "Review the platform's request limits and model lifecycle dates, and plan capacity and migration timing around them."
+        },
+        {
+          "id": "E",
+          "text": "Avoid authentication differences by embedding one long-lived API key in a shared service configuration file."
+        }
+      ],
+      "correct": [
+        "B",
+        "D"
+      ],
+      "explanation": "Third-party platforms that serve Claude differ in model identifiers, authentication, feature availability, limits, and lifecycle dates — parity is never safe to assume. The two commitments to make before migrating are verifying the capabilities you depend on exist on the target, and reading its limits and deprecation timelines so capacity planning and model retirement are handled deliberately rather than discovered in production.",
+      "whyWrong": {
+        "A": "Same underlying models does not mean the same surface: betas, tools, and parameters can differ per platform.",
+        "C": "Model ID strings are not standardized across vendors; identifiers must be confirmed on the target platform.",
+        "E": "A shared long-lived key ignores both the platform's auth model and secrets-management basics (least privilege, rotation)."
+      },
+      "difficulty": 2,
+      "mindset": "Treat a platform change as a re-integration: verify capabilities, identifiers, auth, limits, and lifecycle first.",
+      "tags": [
+        "third-party-vendors",
+        "model-ids",
+        "lifecycle",
+        "verification"
+      ],
+      "sourceRefs": [
+        "https://everpath-course-content.s3-accelerate.amazonaws.com/instructor%2F6nizmqk8tpzpfjvt6qmmav7rh%2Fpublic%2F1783542875%2FClaude+Certified+Developer+%E2%80%93+Foundations+Exam+Guide.pdf",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching"
+      ]
+    },
+    {
+      "id": "v-d2-g3-013",
+      "taskStatementId": "2.3",
+      "scenario": "A chat UI adopts streaming (SSE) for long agent replies that include tool calls. In early prototypes, the client crashes trying to parse half-received tool input JSON, and operators notice requests that showed HTTP 200 in the access logs but actually failed partway through generation.",
+      "stem": "Which TWO practices should the team adopt? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Accumulate the input_json_delta events for a tool call and parse the tool input only after that call's content_block_stop event arrives."
+        },
+        {
+          "id": "B",
+          "text": "Adopt streaming primarily to reduce total token cost, since streamed tokens are billed at a discount."
+        },
+        {
+          "id": "C",
+          "text": "Treat an HTTP 200 response status as a guarantee that the entire response will complete successfully."
+        },
+        {
+          "id": "D",
+          "text": "Handle SSE error events explicitly, because failures such as overloaded errors can arrive mid-stream after a 200."
+        },
+        {
+          "id": "E",
+          "text": "Disable prompt caching on streamed requests, since caching and streaming cannot be combined."
+        }
+      ],
+      "correct": [
+        "A",
+        "D"
+      ],
+      "explanation": "Streaming has two documented mechanics teams routinely miss. Tool input arrives incrementally as JSON deltas, so it must be buffered and parsed only at content_block_stop. And the HTTP status only covers the start of the stream: errors can be delivered as SSE error events mid-response, so event-level handling, not status-code handling, determines reliability. Streaming improves time to first token — it does not change token pricing, and it coexists with caching.",
+      "whyWrong": {
+        "B": "Streaming reduces perceived latency and time to first token; it does not discount tokens.",
+        "C": "A 200 means the stream started, not that it will finish — mid-stream failures arrive as events.",
+        "E": "Caching applies to the prompt prefix and is independent of streaming; nothing needs disabling."
+      },
+      "difficulty": 2,
+      "mindset": "In streaming, correctness lives at the event level: buffer partial JSON, catch mid-stream errors.",
+      "tags": [
+        "streaming",
+        "sse",
+        "tool-use",
+        "error-handling"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/streaming"
+      ]
+    },
+    {
+      "id": "v-d2-g3-014",
+      "taskStatementId": "2.3",
+      "scenario": "A nightly job grades 40,000 essay drafts. Each request is independent, carries the same system prompt, rubric, and few-shot examples, and nothing waits on the results until morning. The team is moving the job onto the Message Batches API.",
+      "stem": "Which TWO practices should they follow for this workload? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Map results back to submissions by array position, since batch results are returned in submission order."
+        },
+        {
+          "id": "B",
+          "text": "Give every request a custom_id and match returned results by that id, because result order is not guaranteed."
+        },
+        {
+          "id": "C",
+          "text": "Set stream: true on each batch request so graded essays render progressively as they finish."
+        },
+        {
+          "id": "D",
+          "text": "Structure each request to run its own iterative tool loop so one request grades essays until the batch is done."
+        },
+        {
+          "id": "E",
+          "text": "Put a 1-hour cache TTL on the shared rubric prefix, since batch processing can outlast the default 5-minute TTL and batch discounts stack with caching."
+        }
+      ],
+      "correct": [
+        "B",
+        "E"
+      ],
+      "explanation": "Two batch-specific rules apply here. Results are not guaranteed to arrive in request order, so every request needs a custom_id for reliable correlation. And because a batch can take longer than the default 5-minute cache TTL to process, the shared rubric/system prefix should use the 1-hour TTL — cache savings stack on top of the batch discount.",
+      "whyWrong": {
+        "A": "Positional mapping breaks precisely because ordering is not guaranteed; custom_id is the correlation mechanism.",
+        "C": "Batch requests do not support streaming; there is no progressive output.",
+        "D": "A single batch request does not run an interactive multi-step tool loop; grading must be structured as independent requests."
+      },
+      "difficulty": 2,
+      "mindset": "Batches are fire-and-correlate: custom_id for matching, long-TTL caching for shared prefixes.",
+      "tags": [
+        "batch-api",
+        "custom-id",
+        "prompt-caching",
+        "bulk-processing"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/batch-processing",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching"
+      ]
+    },
+    {
+      "id": "v-d2-g3-015",
+      "taskStatementId": "2.3",
+      "scenario": "A multi-turn assistant keeps a long, stable system prompt behind a cache breakpoint. A template engine injects per-request fields (user display name, current date, session id) near the top of that system prompt, so consecutive requests for different users never hit the cache. Separately, in very long conversations, cache reads fall away after many turns even though nothing in the earlier history changed.",
+      "stem": "Which TWO changes will most improve cache hit rates? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add cache_control markers to every message in the conversation history to maximize coverage."
+        },
+        {
+          "id": "B",
+          "text": "Switch the existing breakpoint to the 1-hour TTL so prefixes that changed between requests remain valid longer."
+        },
+        {
+          "id": "C",
+          "text": "Keep everything up to the breakpoint byte-identical across requests by moving per-request fields out of the cached prefix — for example, into the latest user message."
+        },
+        {
+          "id": "D",
+          "text": "Rotate the order of tool definitions between requests so cache load is spread across prefix variants."
+        },
+        {
+          "id": "E",
+          "text": "Add another breakpoint further down the conversation once new turns extend well past the last write, because the system only searches a limited number of blocks (about 20) back from each breakpoint."
+        }
+      ],
+      "correct": [
+        "C",
+        "E"
+      ],
+      "explanation": "Caching requires a byte-identical prefix through the breakpoint, so volatile fields inside the system prompt guarantee misses; moving them after the cached prefix (e.g., into the newest user message) restores hits. And the system's cache lookup only reaches a limited number of blocks (about 20) back from each breakpoint, so long conversations need an additional breakpoint closer to the end once history grows past that lookback.",
+      "whyWrong": {
+        "A": "Requests allow only a small number of breakpoints (four explicit), so marking every message is not viable and adds write cost where it does work.",
+        "B": "A longer TTL extends how long an entry lives; it cannot make a changed prefix match an existing cache entry.",
+        "D": "Reordering tools changes the front of the prefix and invalidates everything downstream — it destroys hits rather than spreading load."
+      },
+      "difficulty": 3,
+      "mindset": "Cache hits come from identical bytes plus reachable breakpoints — remove volatility, extend coverage as history grows.",
+      "tags": [
+        "prompt-caching",
+        "prefix-stability",
+        "lookback",
+        "multi-turn"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching"
+      ]
+    }
+  ]
+}

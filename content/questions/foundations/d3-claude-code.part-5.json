@@ -1,0 +1,643 @@
+{
+  "certId": "foundations",
+  "domainId": "d3-claude-code",
+  "questions": [
+    {
+      "id": "f-d3-x2-001",
+      "taskStatementId": "3.3",
+      "stem": "The frontend team keeps three rule files with identical content: .claude/rules/ts.md (paths: [\"src/**/*.ts\"]), .claude/rules/tsx.md (paths: [\"src/**/*.tsx\"]) and .claude/rules/ts-tests.md (paths: [\"tests/**/*.test.ts\"]). Every convention change must be made three times, and last month the copies drifted apart, so Claude got different guidance depending on which file it read. What is the BEST way to fix this with minimal change to how conventions load?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Merge them into one rule file whose paths list holds \"src/**/*.{ts,tsx}\" and \"tests/**/*.test.ts\", then delete the other two copies."
+        },
+        {
+          "id": "B",
+          "text": "Remove the paths frontmatter from all three files so the conventions load in every session and can no longer drift by file type."
+        },
+        {
+          "id": "C",
+          "text": "Move the conventions into the root CLAUDE.md and @import that section from each of the three rule files to keep one shared copy."
+        },
+        {
+          "id": "D",
+          "text": "Keep the three files but add a line to each saying \"keep this file in sync with the others\" so Claude flags any drift it notices."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "A rule's `paths` field accepts several glob patterns, and brace expansion such as `{ts,tsx}` matches multiple extensions in one pattern. One rule file with a combined `paths` list keeps exactly the same conditional loading (only when Claude reads a matching file) while giving the team a single source of truth, so the copies cannot drift.",
+      "whyWrong": {
+        "B": "Dropping `paths` makes the rule load unconditionally at launch, adding it to every session, including sessions that never touch TypeScript. That changes loading behaviour rather than fixing duplication.",
+        "C": "Even if the import chain worked, the conventions now live in the root CLAUDE.md, which loads in every session at launch. This undoes the path scoping that the team relies on and spends context in sessions that never touch TypeScript.",
+        "D": "A text reminder is a probabilistic, manual fix for a structural problem. The duplicate files still exist and will still drift; Claude is not a sync mechanism for config files."
+      },
+      "difficulty": 1,
+      "mindset": "Fix duplication structurally: one rule, many patterns, same conditional loading.",
+      "tags": [
+        "path-rules",
+        "brace-expansion",
+        "dry",
+        "rule-organization"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/memory#path-specific-rules"
+      ]
+    },
+    {
+      "id": "f-d3-x2-002",
+      "taskStatementId": "3.3",
+      "stem": "A developer adds .claude/rules/testing.md that starts with this frontmatter:\n\n```yaml\n---\npaths:\n  - **/*.test.ts\n---\n```\n\nThe testing conventions now appear in every session, including sessions that only touch documentation. Which TWO actions BEST diagnose and fix the problem? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Rename the key from paths to globs, because Claude Code expects the same key that other AI editors use for file-scoped rules."
+        },
+        {
+          "id": "B",
+          "text": "Wrap the pattern in quotes (\"**/*.test.ts\"): an unquoted value starting with * is not valid YAML, so the frontmatter is ignored."
+        },
+        {
+          "id": "C",
+          "text": "Add alwaysApply: false to the frontmatter so Claude Code knows the rule should load only for matching test files."
+        },
+        {
+          "id": "D",
+          "text": "Run claude --debug to see the frontmatter parse error, which confirms the rule is being loaded as if it had no paths."
+        },
+        {
+          "id": "E",
+          "text": "Move the rule into tests/CLAUDE.md, since rule files cannot target files by extension across many directories."
+        }
+      ],
+      "correct": [
+        "B",
+        "D"
+      ],
+      "explanation": "When the YAML between the `---` markers does not parse, Claude Code ignores the frontmatter and loads the rule as if it had no `paths`, which means it loads unconditionally. In YAML a plain value starting with `*` is read as an alias, so `- **/*.test.ts` fails to parse. Quoting the pattern (as the official examples do) fixes it, and `claude --debug` shows the parse error so you can confirm the diagnosis.",
+      "whyWrong": {
+        "A": "`paths` is the correct key. It is the only frontmatter field Claude Code reads in a rule, so renaming it to `globs` would make the rule unconditional for a different reason.",
+        "C": "Claude Code ignores every rule frontmatter field except `paths`, so `alwaysApply` has no effect, and the YAML would still fail to parse.",
+        "E": "Rules can target files by extension in any directory (`**/*.test.ts` is exactly the documented use). A nested CLAUDE.md is tied to one directory and would miss test files elsewhere."
+      },
+      "difficulty": 3,
+      "mindset": "When a scoped rule loads everywhere, suspect the frontmatter first: broken YAML means no paths.",
+      "tags": [
+        "path-rules",
+        "yaml",
+        "frontmatter",
+        "debugging"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/memory#rules-frontmatter-reference",
+        "https://code.claude.com/docs/en/memory#path-specific-rules"
+      ]
+    },
+    {
+      "id": "f-d3-x2-003",
+      "taskStatementId": "3.3",
+      "scenario": "Your team uses Claude Code daily for code generation, refactoring, debugging and documentation in a shared repository. You own the team's Claude Code setup: CLAUDE.md files, .claude/rules/, skills, settings, and the guidance on when to use plan mode versus direct execution.",
+      "stem": "API conventions live in .claude/rules/api.md with paths: [\"src/api/**/*.ts\"], and they work well early in sessions. In a long session, after the developer ran /compact, Claude was asked to create a brand-new endpoint file and wrote it with the old error format. It had not opened any existing file under src/api/ since the compaction. With the smallest change, how should the developer get the conventions applied for this step?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Copy the API conventions into the root CLAUDE.md, because that file is re-read after compaction and path rules are lost for the rest of the session."
+        },
+        {
+          "id": "B",
+          "text": "Disable automatic compaction for the project so that path-scoped rules, once loaded, are never removed from the session's context."
+        },
+        {
+          "id": "C",
+          "text": "Ask Claude to first read an existing endpoint file under src/api/, which re-triggers the rule, and then write the new file following the same pattern."
+        },
+        {
+          "id": "D",
+          "text": "Add an instruction to the rule asking Claude to reload it after every compaction, so that the conventions stay active for new files."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "After compaction the project-root CLAUDE.md is re-read from disk, but path-scoped rules reload only when Claude reads a file they apply to. Writing a brand-new file is not a read of a matching file, so the rule had not come back yet. Having Claude read an existing endpoint, which is also a useful pattern to copy, reloads the rule with no config change.",
+      "whyWrong": {
+        "A": "Path rules are not lost for good; they reload on the next matching read. Moving them to the root CLAUDE.md puts API conventions into every session to fix a one-step timing issue.",
+        "B": "The developer ran /compact by hand, so disabling automatic compaction would not have prevented it. Turning compaction off only trades this problem for context exhaustion, and it does not address the actual trigger: no matching file had been read.",
+        "D": "A rule that is not in context cannot instruct Claude to do anything. The reload is triggered by Claude Code when a matching file is read, not by text inside the rule."
+      },
+      "difficulty": 3,
+      "mindset": "Know the trigger: path rules load on a matching read, including after compaction.",
+      "tags": [
+        "path-rules",
+        "compaction",
+        "load-timing"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/memory#instructions-seem-lost-after-%2Fcompact",
+        "https://code.claude.com/docs/en/memory#path-specific-rules"
+      ]
+    },
+    {
+      "id": "f-d3-x2-004",
+      "taskStatementId": "3.3",
+      "stem": "The platform team maintains about 30 path-scoped rule files. Engineers often ask whether a given rule was actually in context when Claude made a questionable change, and today nobody can answer with evidence. The team wants an automatic record of which rule files loaded, when, and why, without changing how Claude behaves. What is the MOST reliable approach?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add a line to every rule file asking Claude to state the rule's filename in its reply whenever it applies that rule to an edit."
+        },
+        {
+          "id": "B",
+          "text": "Configure an InstructionsLoaded hook that logs each CLAUDE.md and rules file as it loads, including lazy loads from paths matches."
+        },
+        {
+          "id": "C",
+          "text": "Add a PreToolUse hook on Edit that blocks any edit unless Claude first confirms which rule files it has read in the session."
+        },
+        {
+          "id": "D",
+          "text": "Ask engineers to run /memory at the end of every session and paste the listed files into the pull request description."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "The `InstructionsLoaded` hook event fires when a CLAUDE.md or `.claude/rules/*.md` file is loaded into context, both at session start and later when files are lazily loaded, such as when conditional rules with `paths:` match. It is observability-only (no blocking), and its matcher runs against the load reason, which makes it exactly the deterministic audit trail the team wants.",
+      "whyWrong": {
+        "A": "Asking the model to self-report is probabilistic and unverifiable. It also adds instructions to every rule and changes Claude's replies, which the team wanted to avoid.",
+        "C": "Blocking edits changes behaviour and still relies on Claude's own statement about what it read. That is enforcement, not the passive audit log that was asked for.",
+        "D": "A manual end-of-session step is easy to skip and gives no timing information about when a rule loaded relative to a given change. /memory also lists memory file locations rather than what loaded; /context shows the loaded files, but still only as a snapshot."
+      },
+      "difficulty": 2,
+      "mindset": "For evidence, use a deterministic hook, not the model's own account.",
+      "tags": [
+        "path-rules",
+        "hooks",
+        "instructionsloaded",
+        "observability"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/hooks#instructionsloaded",
+        "https://code.claude.com/docs/en/memory#troubleshoot-memory-issues"
+      ]
+    },
+    {
+      "id": "f-d3-x2-005",
+      "taskStatementId": "3.3",
+      "scenario": "Your team uses Claude Code daily for code generation, refactoring, debugging and documentation in a shared repository. You own the team's Claude Code setup: CLAUDE.md files, .claude/rules/, skills, settings, and the guidance on when to use plan mode versus direct execution.",
+      "stem": "You are sorting a pile of guidance that people want \"Claude to know\" into the right Claude Code mechanism. Which TWO items are the BEST fit for a .claude/rules/ file with paths frontmatter? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Storybook conventions that apply to every *.stories.tsx file, which sit next to components in dozens of packages."
+        },
+        {
+          "id": "B",
+          "text": "A 12-step procedure for cutting a release branch, which a developer runs by hand roughly once every two weeks."
+        },
+        {
+          "id": "C",
+          "text": "A requirement that Claude must never run destructive database commands against the shared staging cluster."
+        },
+        {
+          "id": "D",
+          "text": "SQL style conventions for every .sql file, whether it lives under db/queries/ or inside a service's reports folder."
+        },
+        {
+          "id": "E",
+          "text": "The team's commit message format, which applies to every task in every session regardless of the files involved."
+        }
+      ],
+      "correct": [
+        "A",
+        "D"
+      ],
+      "explanation": "Path-scoped rules are for conventions tied to a type or location of file, especially when those files are scattered across directories: they load automatically only when Claude reads a matching file. Storybook files (`**/*.stories.tsx`) and SQL files (`**/*.sql`) are both scattered file-type conventions, so a glob-scoped rule is the best fit.",
+      "whyWrong": {
+        "B": "An on-demand, multi-step procedure is a skill: it loads only when invoked or judged relevant, rather than whenever certain files are read.",
+        "C": "A hard safety requirement needs deterministic enforcement, such as permission deny rules or a PreToolUse hook. Rule text is guidance Claude may not follow every time.",
+        "E": "Guidance that applies to every session regardless of files belongs in CLAUDE.md (or a rule without paths), not in a path-scoped rule."
+      },
+      "difficulty": 2,
+      "mindset": "Match the mechanism to the trigger: files touched means rules, invoked means skills, must-never means enforcement.",
+      "tags": [
+        "path-rules",
+        "skills",
+        "permissions",
+        "claude-md",
+        "mechanism-selection"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/memory#path-specific-rules",
+        "https://code.claude.com/docs/en/memory#organize-rules-with-claude/rules/",
+        "https://code.claude.com/docs/en/permissions"
+      ]
+    },
+    {
+      "id": "f-d3-x2-006",
+      "taskStatementId": "3.3",
+      "stem": "A developer's personal ~/.claude/rules/style.md says \"prefer default exports.\" The repository's .claude/rules/components.md, scoped to src/components/**/*.tsx, says \"use named exports only.\" When Claude edits components on her machine it sometimes uses default exports, while teammates see named exports consistently. What is the MOST accurate explanation and fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Neither set overrides the other, so Claude may follow either rule; she should remove or narrow her personal rule so it is consistent with the project."
+        },
+        {
+          "id": "B",
+          "text": "Project rules always override user rules, so the conflict cannot be the cause; the components rule's glob pattern must be failing to match."
+        },
+        {
+          "id": "C",
+          "text": "User rules always override project rules, so she should move her personal preference into CLAUDE.local.md, which has lower priority than rules."
+        },
+        {
+          "id": "D",
+          "text": "Claude follows whichever rule it read most recently, so she should prefix the project rule with IMPORTANT to keep it ahead of her personal one."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "User-level rules load before project rules, but neither set overrides the other: when they conflict, Claude may follow either. The cure is to remove the contradiction, for example by deleting or narrowing her personal rule so it does not cover what the project already defines.",
+      "whyWrong": {
+        "B": "There is no override relationship between user and project rules. The teammates' consistent results point to her personal rule, not a broken glob.",
+        "C": "User rules do not override project rules, and moving a conflicting preference to CLAUDE.local.md keeps the conflict in context. It does not create a priority that wins.",
+        "D": "Adding emphasis does not resolve a contradiction; with two conflicting instructions in context, the outcome stays unpredictable. Remove the conflict instead."
+      },
+      "difficulty": 2,
+      "mindset": "Conflicting instructions are not ranked; remove the contradiction instead of out-shouting it.",
+      "tags": [
+        "path-rules",
+        "user-rules",
+        "conflicts",
+        "precedence"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/memory#user-level-rules",
+        "https://code.claude.com/docs/en/memory#write-effective-instructions"
+      ]
+    },
+    {
+      "id": "f-d3-x2-007",
+      "taskStatementId": "3.3",
+      "scenario": "Your team uses Claude Code daily for code generation, refactoring, debugging and documentation in a shared repository. You own the team's Claude Code setup: CLAUDE.md files, .claude/rules/, skills, settings, and the guidance on when to use plan mode versus direct execution.",
+      "stem": "The company keeps its engineering standards in a separate repository. To reuse them, a developer cloned it to ~/company-standards and ran ln -s ~/company-standards/rules .claude/rules/shared inside the product repository. The product repo's CLAUDE.md already @imports a file from ~/company-standards, so every developer has approved external imports for the project. The linked standards that have no paths frontmatter now load, but none of the path-scoped standards (for example, the one for **/*.sql) ever load for anyone. What should the team do so the path-scoped standards work for every developer?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Approve the external-import prompt again on each machine, since path-scoped rules from a symlinked folder load after a second approval."
+        },
+        {
+          "id": "B",
+          "text": "Remove the paths frontmatter from the shared standards so they load like the others once the external-import prompt has been approved."
+        },
+        {
+          "id": "C",
+          "text": "Ask each developer to also add the standards' folder to their user-level settings so Claude Code treats the folder as trusted."
+        },
+        {
+          "id": "D",
+          "text": "Bring the standards inside the product repository, for example by vendoring them into .claude/rules/shared/, and commit them."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "A `.claude/rules/` symlink whose target is outside the working directory is treated like an external import: the linked rules load only once external imports are approved for the project (the approval dialog itself is triggered by an `@path` import, not by a symlink alone), and even then only the rules without a `paths` field load. Placing the files inside the repository makes them ordinary project rules, so their `paths` scoping works and every clone gets them through version control.",
+      "whyWrong": {
+        "A": "There is no second approval that unlocks path-scoped rules from an external symlink target, and a symlink on its own never triggers the dialog anyway. After approval, only rules without `paths` load.",
+        "B": "Stripping `paths` makes the standards load in every session, inflating context and losing the conditional loading that was the point of scoping them.",
+        "C": "This mechanism does not exist as described, and per-machine settings would not reach CI or new teammates. Committed files in the repo are the shared channel."
+      },
+      "difficulty": 3,
+      "mindset": "Shared, scoped conventions should live in the repo, versioned with the code they govern.",
+      "tags": [
+        "path-rules",
+        "symlinks",
+        "team-sharing",
+        "external-imports"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/memory#share-rules-across-projects-with-symlinks",
+        "https://code.claude.com/docs/en/memory#path-specific-rules"
+      ]
+    },
+    {
+      "id": "f-d3-x2-008",
+      "taskStatementId": "3.4",
+      "stem": "Six months ago the team set defaultMode to \"plan\" in the project's .claude/settings.json. Most of today's tickets are small, clear changes: add a log line, fix a typo in an error message, rename a local variable. Developers say they now approve trivial plans without reading them. What is the BEST change to the team's workflow?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Keep plan mode as the default but ask Claude to make every plan shorter, so approvals take less time while every change still gets a plan."
+        },
+        {
+          "id": "B",
+          "text": "Switch the project default to bypassPermissions so routine edits never pause, and rely on code review to catch anything that goes wrong."
+        },
+        {
+          "id": "C",
+          "text": "Stop defaulting to plan; ask for small, clear changes directly, and enter plan mode (Shift+Tab or /plan) for uncertain or multi-file work."
+        },
+        {
+          "id": "D",
+          "text": "Keep plan mode as the default and add a CLAUDE.md line telling Claude to skip planning on its own when it judges a task to be trivial."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Plan mode adds overhead. The official guidance is to ask for small, clear-scope changes directly (if you could describe the diff in one sentence, skip the plan) and to plan when the approach is uncertain, many files change, or the code is unfamiliar. Plan mode is easy to enter per task with Shift+Tab or a `/plan` prefix, and rubber-stamped plans show the default is costing more than it protects.",
+      "whyWrong": {
+        "A": "Shorter plans still put a review step on one-line changes, and the rubber-stamping problem stays. The issue is planning where it adds no value, not plan length.",
+        "B": "This overcorrects to the opposite extreme: it removes permission checks entirely, which is unrelated to deciding when planning is worthwhile. It also would not work as written, since a bypassPermissions default in project settings does not take effect.",
+        "D": "Plan mode is enforced by Claude Code, not by Claude's judgment. A prompt cannot reliably switch modes, and it leaves the wrong default in place."
+      },
+      "difficulty": 1,
+      "mindset": "If you can describe the diff in one sentence, skip the plan.",
+      "tags": [
+        "plan-mode",
+        "direct-execution",
+        "overhead",
+        "workflow"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/best-practices#explore-first-then-plan-then-code",
+        "https://code.claude.com/docs/en/permission-modes#analyze-before-you-edit-with-plan-mode"
+      ]
+    },
+    {
+      "id": "f-d3-x2-009",
+      "taskStatementId": "3.4",
+      "scenario": "You are rolling out Claude Code as a developer productivity tool. Engineers use it to explore unfamiliar codebases, understand legacy systems, generate boilerplate and automate repetitive tasks with the built-in tools (Read, Write, Edit, Bash, Grep, Glob) plus a few MCP servers.",
+      "stem": "An engineer suspects that replacing a JSON parser call with a streaming parser in one hot function will speed up an import job. The change is confined to one file, it is easy to benchmark locally, and she is not sure it will help. She wants to find out quickly with the least ceremony. Which approach is MOST appropriate?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Start in plan mode so Claude can produce a detailed proposal for the parser swap, then approve it before anything is edited in the file."
+        },
+        {
+          "id": "B",
+          "text": "Ask Claude directly to make the change and run the benchmark; if it does not help, rewind to the earlier checkpoint with /rewind."
+        },
+        {
+          "id": "C",
+          "text": "Delegate the change to the Explore subagent so the experiment happens in an isolated context and cannot affect the main session."
+        },
+        {
+          "id": "D",
+          "text": "Write a full design document of the streaming approach first and paste it into the prompt so Claude can apply it in one pass."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "This is a small, contained, measurable experiment. Every prompt that starts a turn creates a checkpoint, and Claude Code snapshots files before its edits, so instead of planning every move you can let Claude try something, check the result, and use `/rewind` (or double-tap Escape) to restore the code if it does not pay off. Direct execution plus checkpoints is the low-ceremony path. (Checkpoints track Claude's file-tool edits, not changes made through Bash commands.)",
+      "whyWrong": {
+        "A": "Planning is useful when the approach is uncertain across many files or the code is unfamiliar. For a one-file, easily measured, reversible tweak it is pure overhead.",
+        "C": "Explore is a read-only subagent built for discovery; it cannot edit files, so it cannot run this experiment.",
+        "D": "A design document for a single-function experiment is over-engineering; the fastest way to learn is to try it and measure."
+      },
+      "difficulty": 2,
+      "mindset": "Cheap, reversible, measurable: try it directly and rewind if it fails.",
+      "tags": [
+        "direct-execution",
+        "checkpoints",
+        "rewind",
+        "experimentation"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/best-practices#rewind-with-checkpoints",
+        "https://code.claude.com/docs/en/checkpointing"
+      ]
+    },
+    {
+      "id": "f-d3-x2-010",
+      "taskStatementId": "3.4",
+      "scenario": "Your team uses Claude Code daily for code generation, refactoring, debugging and documentation in a shared repository. You own the team's Claude Code setup: CLAUDE.md files, .claude/rules/, skills, settings, and the guidance on when to use plan mode versus direct execution.",
+      "stem": "In plan mode, Claude has produced a 14-step plan for splitting a reporting module. The developer agrees with almost all of it, but wants two exact changes before any code is touched: steps 6 and 7 must be swapped, and one file listed in step 9 must be left alone. What is the MOST direct way to make these precise changes?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Approve the plan with manual edit approval, then reject the edits to the excluded file and reorder the steps as Claude reaches them."
+        },
+        {
+          "id": "B",
+          "text": "Exit plan mode, start a new session, and write a fresh prompt that spells out all 14 steps in the order and scope she prefers."
+        },
+        {
+          "id": "C",
+          "text": "Approve the plan as it is and add a CLAUDE.md note about the excluded file, so Claude will remember to skip it during the edits."
+        },
+        {
+          "id": "D",
+          "text": "Press Ctrl+G to open the proposed plan in her text editor, edit the two steps directly, and then approve the revised plan."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "Plan mode lets you open the proposed plan in your default text editor with Ctrl+G and edit it directly before Claude proceeds. For small, exact edits to an otherwise good plan, editing it yourself is the most direct and precise option, and the work still starts only after approval.",
+      "whyWrong": {
+        "A": "This approves a plan you already know is wrong and relies on catching the problems during execution, which risks partial edits in the wrong order.",
+        "B": "Throwing away a good 14-step plan and the exploration behind it to change two details is wasteful and adds new chances for error.",
+        "C": "A durable CLAUDE.md change for a one-off exclusion pollutes every future session, and it does not fix the step order in the approved plan."
+      },
+      "difficulty": 2,
+      "mindset": "Correct the plan before execution; edit it directly when the changes are precise.",
+      "tags": [
+        "plan-mode",
+        "plan-review",
+        "ctrl-g"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/permission-modes#review-and-approve-a-plan",
+        "https://code.claude.com/docs/en/best-practices#explore-first-then-plan-then-code"
+      ]
+    },
+    {
+      "id": "f-d3-x2-011",
+      "taskStatementId": "3.4",
+      "stem": "After a planning session, the team agrees on Claude's plan for changing how billing reconciliation rounds currency amounts. Team policy says every edit to the billing module must be reviewed by a human before it is applied. The plan is ready for approval. What should the developer do?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Approve the plan with the option that has her review and approve each edit individually as Claude makes it."
+        },
+        {
+          "id": "B",
+          "text": "Approve the plan with the option that lets Claude make all edits without prompting, then review the full diff in the PR."
+        },
+        {
+          "id": "C",
+          "text": "Stay in plan mode and have Claude print the full change as a unified diff in the chat, which she reads and then applies herself with git apply."
+        },
+        {
+          "id": "D",
+          "text": "Approve the plan in bypass permissions mode so execution is fast, then run the test suite afterwards to catch errors."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Approving a plan exits plan mode and switches the session to the permission mode chosen in the approve option. One option approves and then asks you to review each edit individually, which is exactly what a 'human reviews every edit before it lands' policy requires while still using Claude to implement the approved plan.",
+      "whyWrong": {
+        "B": "Reviewing afterwards in the PR is useful, but it does not meet a policy requiring review before each edit is applied.",
+        "C": "This adds ceremony without adding control: per-edit approval already gives her a human review of each change before it lands, and it keeps Claude able to run the tests and fix follow-ups. Hand-applying a diff loses that loop and invites copy errors.",
+        "D": "Bypass removes per-action prompts, the opposite of the policy. Tests catch some regressions but are not the required human review."
+      },
+      "difficulty": 1,
+      "mindset": "Planning decides the approach; the approval choice decides how much oversight execution gets.",
+      "tags": [
+        "plan-mode",
+        "plan-approval",
+        "permission-modes",
+        "governance"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/permission-modes#review-and-approve-a-plan"
+      ]
+    },
+    {
+      "id": "f-d3-x2-012",
+      "taskStatementId": "3.4",
+      "scenario": "You are rolling out Claude Code as a developer productivity tool. Engineers use it to explore unfamiliar codebases, understand legacy systems, generate boilerplate and automate repetitive tasks with the built-in tools (Read, Write, Edit, Bash, Grep, Glob) plus a few MCP servers.",
+      "stem": "An engineer spent a long plan-mode session exploring a legacy payments service: dozens of file reads and searches before Claude produced a solid plan. Implementation will take many steps, and the context is already heavily used by exploration output that won't be needed again. Which TWO actions BEST set up the implementation phase? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Switch to a model with a larger context window for implementation so the exploration history and plan both remain fully available."
+        },
+        {
+          "id": "B",
+          "text": "Enable showClearContextOnPlanAccept and approve using the option that also clears the planning context before Claude starts editing."
+        },
+        {
+          "id": "C",
+          "text": "Add a line to the prompt asking Claude to disregard the exploration output from now on and focus only on the steps of the plan."
+        },
+        {
+          "id": "D",
+          "text": "Save the agreed plan to a file such as PLAN.md, run /clear, and start the implementation in fresh context with a prompt that tells Claude to work from that file."
+        },
+        {
+          "id": "E",
+          "text": "Return to direct execution without approving the plan, and paste the plan into each later prompt so Claude always has it nearby."
+        }
+      ],
+      "correct": [
+        "B",
+        "D"
+      ],
+      "explanation": "Both correct options keep the plan but drop the bulky exploration history. `showClearContextOnPlanAccept` adds a first approve option that approves the plan, clears the conversation context and starts implementing from the plan alone. Saving the plan to a file and then using `/clear` gets the same clean start by hand, and also leaves a durable artifact to check progress against.",
+      "whyWrong": {
+        "A": "A bigger window keeps the noise rather than removing it. Stale exploration output still competes for attention, and the change is costlier without fixing the cause.",
+        "C": "Telling Claude to ignore content does not remove it from context; it still uses tokens and can still distract. Clearing the context is the real fix.",
+        "E": "Skipping approval loses plan mode's handoff into execution, and pasting the plan into every prompt adds repetition while all the exploration output remains."
+      },
+      "difficulty": 2,
+      "mindset": "Carry the decision forward, not the search history: keep the plan, clear the noise.",
+      "tags": [
+        "plan-mode",
+        "context-management",
+        "clear-context",
+        "plan-handoff"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/permission-modes#review-and-approve-a-plan",
+        "https://code.claude.com/docs/en/settings-reference#showclearcontextonplanaccept",
+        "https://code.claude.com/docs/en/best-practices#manage-context-aggressively"
+      ]
+    },
+    {
+      "id": "f-d3-x2-013",
+      "taskStatementId": "3.4",
+      "stem": "A contractor has to answer a list of questions about how an unfamiliar infrastructure repository wires its deployment secrets. No changes are expected, and her client insists that nothing in the repo be modified during the investigation. She is using an interactive Claude Code session with default settings. Which approach BEST fits this need?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Use default mode and add \"do not modify any files\" to every prompt, declining any edit request that still appears during the session."
+        },
+        {
+          "id": "B",
+          "text": "Work in default mode and, once the questions are answered, have Claude run git status and git diff to confirm the tree is clean before she reports back to the client."
+        },
+        {
+          "id": "C",
+          "text": "Start with claude --permission-mode plan so Claude reads and explores but makes no source edits, then ask her questions there."
+        },
+        {
+          "id": "D",
+          "text": "Run the investigation in a disposable worktree so any accidental edits happen on a separate branch that she can delete afterwards."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Plan mode is built for exploring a codebase before (or without) changing it: Claude reads files and runs exploratory commands but does not edit source, and edits stay blocked until a plan is approved. That is a mode-level control rather than a prompt request. For a hard guarantee, the team could add deny rules on top; note that in interactive sessions where bypass permissions is available, plan mode's blocks are not enforced.",
+      "whyWrong": {
+        "A": "A prompt instruction is guidance, not a control, and relying on her to catch every edit prompt is error-prone. Plan mode gives the read-only behaviour structurally.",
+        "B": "This verifies after the fact instead of preventing changes: by the time git status runs, an edit may already have happened and been accepted. The client asked that nothing be modified, so prevention beats detection.",
+        "D": "A worktree contains damage after the fact but still lets changes happen. For pure investigation, preventing edits is the simpler and stronger choice."
+      },
+      "difficulty": 2,
+      "mindset": "Read-only investigation calls for a mode that prevents edits, not a promise not to make them.",
+      "tags": [
+        "plan-mode",
+        "read-only-exploration",
+        "permission-modes"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/permission-modes#analyze-before-you-edit-with-plan-mode",
+        "https://code.claude.com/docs/en/permission-modes"
+      ]
+    },
+    {
+      "id": "f-d3-x2-014",
+      "taskStatementId": "3.4",
+      "scenario": "Your team uses Claude Code daily for code generation, refactoring, debugging and documentation in a shared repository. You own the team's Claude Code setup: CLAUDE.md files, .claude/rules/, skills, settings, and the guidance on when to use plan mode versus direct execution.",
+      "stem": "A developer asked Claude directly to \"add a discount_code column to the order export CSV.\" After two edits, Claude reports that the discount code is not stored on orders at all: it lives in a separate promotions service. Getting it into the export means either a new cross-service call during export or a schema change with a backfill, and both touch several services. What should the developer do NEXT?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Let Claude continue directly and choose whichever option it thinks is simpler, since it now has the most context about the code."
+        },
+        {
+          "id": "B",
+          "text": "Switch to plan mode, have Claude explore both options and propose a plan for review, and rewind the two partial edits if needed."
+        },
+        {
+          "id": "C",
+          "text": "Write a longer prompt that tells Claude to add the cross-service call, and run it directly to keep the change moving forward."
+        },
+        {
+          "id": "D",
+          "text": "Abandon Claude Code for this ticket and assign it to a senior engineer, since the task is too complex for an AI assistant to handle."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "The task changed shape mid-flight: it now spans several services and has two valid approaches with different trade-offs, which are exactly the conditions that call for planning. Switching to plan mode (Shift+Tab) stops further edits while Claude explores and lays out the options for a human decision, and checkpoints let the developer roll back the partial edits made under the wrong assumption.",
+      "whyWrong": {
+        "A": "An architectural choice with cross-service consequences should not be made silently mid-execution; this is how half-finished, hard-to-undo changes happen.",
+        "C": "Choosing an approach before exploring the trade-offs (latency, coupling, backfill risk) commits to a design without evidence, and a longer prompt does not replace that analysis.",
+        "D": "This overcorrects. The right response to new complexity is to change workflow (plan first), not to abandon the tool."
+      },
+      "difficulty": 3,
+      "mindset": "When a 'simple' task reveals multiple approaches or a wide blast radius, stop and plan.",
+      "tags": [
+        "plan-mode",
+        "direct-execution",
+        "scope-change",
+        "mid-task-escalation"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/best-practices#explore-first-then-plan-then-code",
+        "https://code.claude.com/docs/en/permission-modes#analyze-before-you-edit-with-plan-mode",
+        "https://code.claude.com/docs/en/checkpointing"
+      ]
+    }
+  ]
+}

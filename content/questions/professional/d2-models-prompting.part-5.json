@@ -1,0 +1,465 @@
+{
+  "certId": "professional",
+  "domainId": "d2-models-prompting",
+  "questions": [
+    {
+      "id": "p-d2-x3-001",
+      "taskStatementId": "2.5",
+      "stem": "A ticket-tagging service sends a short system prompt (role, 12 tag definitions and output rules, about 400 tokens) on every request, followed by the ticket text. The team added a `cache_control` breakpoint at the end of the system prompt expecting lower cost and latency. No errors are returned, but in every response `cache_creation_input_tokens` and `cache_read_input_tokens` are both 0, even for identical back-to-back requests. The team also sends eight stable few-shot examples (about 5,000 tokens) at the start of each user message. What is the MOST likely cause and the MOST sensible fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The 5-minute cache entries are expiring between requests; switch the system-prompt breakpoint to the 1-hour time-to-live so that entries persist."
+        },
+        {
+          "id": "B",
+          "text": "The prefix is below the model's minimum cacheable length and is skipped silently; move the stable examples ahead of the breakpoint."
+        },
+        {
+          "id": "C",
+          "text": "Caching needs a second breakpoint to confirm the first; add another `cache_control` marker on the ticket text so the whole request is stored."
+        },
+        {
+          "id": "D",
+          "text": "The `ephemeral` cache type is not persisted across requests; change the cache type so the system prompt is stored as a persistent cache entry."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Each model has a **minimum cacheable prompt length** (model-dependent, from a few hundred to a few thousand tokens; a 400-token prefix is below every model's minimum). If the prefix up to the breakpoint is shorter, the request is processed normally and **nothing is cached, with no error**. The tell-tale sign is exactly what the team sees: both cache usage fields are 0 even for identical back-to-back requests.\n\nThe team already sends ~5,000 tokens of *stable* few-shot examples on every call, but in the volatile user turn. Moving them into the static prefix before the breakpoint (static first, variable last) makes the prefix about 5,400 tokens, above the minimum for every current model, so it can be cached. It also caches content they were paying full price for each time, and adds no padding.",
+      "whyWrong": {
+        "A": "Identical back-to-back requests would hit a 5-minute entry if one had been written. `cache_creation_input_tokens` is 0, so nothing is being written at all, and a longer TTL changes nothing.",
+        "C": "One breakpoint is enough to cache a prefix. A breakpoint on the per-ticket text would only add a write of unique content that is never reused.",
+        "D": "`ephemeral` is the only cache type, and it does persist across requests for its TTL. The problem is that no entry is created, not how long it lasts."
+      },
+      "difficulty": 2,
+      "mindset": "When both cache counters read zero with no error, check the prefix length before tuning TTLs or breakpoints.",
+      "tags": [
+        "prompt-caching",
+        "minimum-cacheable-length",
+        "troubleshooting",
+        "prompt-structure"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching"
+      ]
+    },
+    {
+      "id": "p-d2-x3-002",
+      "taskStatementId": "2.5",
+      "scenario": "A claims-processing company enabled prompt caching on its document-summary service last month. Its FinOps dashboard estimates spend by multiplying each response's `usage.input_tokens` by the base input price and adding output cost. The dashboard now shows input spend down 92%, and leadership wants to quote that figure in a board update. The architect is asked to make the reporting trustworthy and to catch future caching regressions early.",
+      "stem": "Which TWO changes should the architect make? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Replace the usage fields with a call to the token-counting endpoint for every request, since it reports the exact billed input tokens for cached prompts."
+        },
+        {
+          "id": "B",
+          "text": "Compute total input as `input_tokens` plus `cache_creation_input_tokens` plus `cache_read_input_tokens`, pricing writes and reads at their own rates."
+        },
+        {
+          "id": "C",
+          "text": "Turn caching off for one billing cycle so `input_tokens` again reflects the full prompt, then use that month as the permanent cost baseline."
+        },
+        {
+          "id": "D",
+          "text": "Estimate the true prompt size from a fixed characters-per-token ratio applied to the assembled prompt text and use it in place of `input_tokens`."
+        },
+        {
+          "id": "E",
+          "text": "Track the share of input tokens served from cache reads per prompt version as a KPI, and alert when that share drops after a deployment."
+        }
+      ],
+      "correct": [
+        "B",
+        "E"
+      ],
+      "explanation": "With caching enabled, `input_tokens` counts only the tokens **after the last cache breakpoint**. The cached part appears in `cache_read_input_tokens` (hits, billed at a large discount) and `cache_creation_input_tokens` (writes, billed at a premium over base input). A dashboard that prices only `input_tokens` under-reports spend, so the 92% figure is inflated.\n\n- **B** produces the real total and prices each component at its own rate.\n- **E** turns the same fields into an early-warning signal. A silent cache killer (a timestamp in the prefix, nondeterministic tool ordering) shows up as a drop in cache-read share right after a deployment.",
+      "whyWrong": {
+        "A": "Token counting gives an estimate of prompt size and does not use or simulate caching, so it can't tell you what was billed as a cache write versus a read. It also adds a call to every request.",
+        "C": "Switching caching off raises real costs for a month and still gives no ongoing visibility into cache performance. The usage fields already contain everything needed.",
+        "D": "Character ratios are rough estimates that differ by tokenizer, and they ignore the write/read split that drives cost. The API already returns exact counts."
+      },
+      "difficulty": 2,
+      "mindset": "Measure caching from the usage fields that describe it; a tiny input_tokens value means cache hits, not a small prompt.",
+      "tags": [
+        "prompt-caching",
+        "usage-metrics",
+        "cost-reporting",
+        "observability",
+        "stakeholders"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
+        "https://platform.claude.com/docs/en/about-claude/pricing"
+      ]
+    },
+    {
+      "id": "p-d2-x3-003",
+      "taskStatementId": "2.5",
+      "stem": "A due-diligence chat assistant caches a 20,000-token system prompt with one breakpoint, and a second breakpoint is moved to the last content block of each new user turn so the growing conversation is cached too. Most turns are a short question and cache well. But when an analyst uploads a data-room folder, the app sends that turn as 30 separate document and text blocks, and that request reads only the system prompt from cache, reprocessing the entire earlier conversation at full price. The team wants the MOST reliable fix with minimal changes. What should they do?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Switch both breakpoints to the 1-hour time-to-live, so that the cached conversation entries remain available after a large upload turn."
+        },
+        {
+          "id": "B",
+          "text": "Move the full conversation history into the system prompt each turn, so it sits under the system-prompt breakpoint that is already caching well."
+        },
+        {
+          "id": "C",
+          "text": "Drop the conversation breakpoint and keep only the system-prompt breakpoint, since conversation caching cannot work once turns contain documents."
+        },
+        {
+          "id": "D",
+          "text": "When a turn adds many blocks, also place a breakpoint at the end of the previous turn's content, staying within the four-breakpoint limit."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "When looking for an earlier cache entry, the API checks at most **20 positions** back from each breakpoint (counting the breakpoint itself as the first). Normal turns add a couple of blocks, so the previous turn's entry is within reach. A 30-block upload pushes the new breakpoint more than 20 blocks past the last write, so the lookback can't find the previous conversation entry and falls back to the system-prompt cache.\n\nThe documented remedy is to add an explicit breakpoint closer to the earlier content, here at the end of the previous turn, so there is always a cache entry within the lookback window. That is a small change in how breakpoints are placed, and it stays within the four-breakpoint maximum (system, previous turn, current turn).",
+      "whyWrong": {
+        "A": "The entries didn't expire; the lookback can't reach them from the new breakpoint position. A longer TTL raises the write cost from 1.25x to 2x base input and leaves the miss in place.",
+        "B": "Rewriting the system prompt with the growing history changes it every turn, which invalidates the system-prompt cache that is currently working.",
+        "C": "Conversation caching works with document blocks. Removing it would make every turn reprocess the whole history, which is worse than the occasional miss."
+      },
+      "difficulty": 3,
+      "mindset": "A breakpoint only finds earlier entries within its lookback window; when a turn adds many blocks, add a breakpoint closer to the earlier content.",
+      "tags": [
+        "prompt-caching",
+        "lookback-window",
+        "multi-turn",
+        "breakpoints"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching"
+      ]
+    },
+    {
+      "id": "p-d2-x3-004",
+      "taskStatementId": "2.5",
+      "stem": "A research agent sends a stable set of tool definitions, then a 15,000-token system prompt, then the conversation. Breakpoints sit after the system prompt and on the latest message. The team is reviewing five proposed per-request behaviours and wants to keep the expensive tools-plus-system-prompt cache hitting, even if the conversation-level cache is sometimes rebuilt. Which TWO behaviours still allow the cached tools and system prompt to be reused? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Attaching a screenshot image to the latest user message on turns where the user shares one, and none on other turns."
+        },
+        {
+          "id": "B",
+          "text": "Serializing tool definitions from a hash map whose key order varies from one request to the next request."
+        },
+        {
+          "id": "C",
+          "text": "Switching `tool_choice` between automatic selection and forcing a specific tool on some turns of the session."
+        },
+        {
+          "id": "D",
+          "text": "Appending a line to the end of the system prompt that states which UI tab the user currently has open in the application."
+        },
+        {
+          "id": "E",
+          "text": "Turning the web search tool on for turns that look like they need current information, and off for all other turns."
+        }
+      ],
+      "correct": [
+        "A",
+        "C"
+      ],
+      "explanation": "The cache prefix is built in a fixed order, **tools → system → messages**, and a change invalidates its own level and everything after it. According to the prompt-caching docs' invalidation table, adding or removing **images** and changing **`tool_choice`** affect only the **message-level** cache. The tools and system-prompt entries remain valid, so the expensive part keeps hitting, and only the conversation portion is rewritten.\n\nNote what is *not* on the safe list: changing the thinking configuration or effort level always invalidates message blocks and, on some models, the system and tools caches as well, so it would not be a safe per-turn variation either.",
+      "whyWrong": {
+        "B": "The tool definitions come first in the prefix, so a change in their serialized order changes the very start of it and invalidates everything after, including the system prompt.",
+        "D": "Any change to the system prompt text, even a line at its end stating the currently open UI tab, invalidates the system-level cache and everything after it. Volatile UI state belongs in the latest user message.",
+        "E": "Enabling or disabling web search modifies the system prompt, so toggling it per turn invalidates the system-level cache and the messages after it; only the tools entry survives."
+      },
+      "difficulty": 3,
+      "mindset": "Know which changes invalidate which level of the cache (tools, then system, then messages) before adding per-request variation.",
+      "tags": [
+        "prompt-caching",
+        "cache-invalidation",
+        "images",
+        "tool-choice",
+        "web-search"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching"
+      ]
+    },
+    {
+      "id": "p-d2-x3-005",
+      "taskStatementId": "2.5",
+      "stem": "A lease-abstraction service processes each uploaded lease (about 30,000 tokens) with exactly one request. The lease appears after a 4,000-token instruction block that is identical for every lease, and there are no follow-up questions. To cut costs, an engineer placed a cache breakpoint after the lease text on every request. Monthly input spend went up instead of down. What is the lowest-cost configuration?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Move the breakpoint to the end of the shared instruction block, so that only the content reused across many leases is written to the cache."
+        },
+        {
+          "id": "B",
+          "text": "Keep the breakpoint after the lease text and switch to the 1-hour time-to-live so each lease stays cached for longer before it expires."
+        },
+        {
+          "id": "C",
+          "text": "Add breakpoints after every few pages of each lease, so that smaller sections of the document can each be cached and reused separately."
+        },
+        {
+          "id": "D",
+          "text": "Move each lease ahead of the instruction block, so that the long document is cached first and the instruction block follows it."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Cache writes cost **more** than normal input (a premium over the base price), and the saving comes only from later **reads** of the same prefix. Each lease is read once, so caching it pays the write premium on 30,000 tokens per lease and never gets a hit. That is why spend went up.\n\nThe instruction block is identical across every request, so it's worth caching: one write, then discounted reads for every following lease. Putting the breakpoint at the end of that block caches the reused part and processes each one-off lease at the normal input price.",
+      "whyWrong": {
+        "B": "A 1-hour TTL has an even higher write premium, and these leases are never read again. It makes the waste worse.",
+        "C": "More breakpoints mean more writes of unique content that is never reused. Caching splits nothing into reusable pieces unless a later request repeats the exact prefix.",
+        "D": "Putting unique content first breaks the shared prefix, so even the identical instruction block can no longer be reused across leases."
+      },
+      "difficulty": 1,
+      "mindset": "Cache only what is reused; a cache write on single-use content is a surcharge, not a saving.",
+      "tags": [
+        "prompt-caching",
+        "cost-optimization",
+        "cache-writes",
+        "prompt-structure"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
+        "https://platform.claude.com/docs/en/about-claude/pricing"
+      ]
+    },
+    {
+      "id": "p-d2-x3-006",
+      "taskStatementId": "2.5",
+      "scenario": "A software vendor runs six in-product assistants (billing, analytics, admin and others) that share an identical tool set. Every prompt is assembled from modules: a 10,000-token core module (role, safety rules, brand voice) shared by all six, a 4,000-token product module per assistant, a 2,000-token account-context module that changes per customer, then the conversation. Today the assembler outputs product module, account context, core module, then the conversation, with one breakpoint at the end of the core module.",
+      "stem": "The vendor wants the HIGHEST cache reuse across all six assistants and across returning customers, without changing the content of any module. What should the architect do?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Merge the core and product modules into six fully self-contained prompts, one per assistant, and cache each with a single breakpoint at its end."
+        },
+        {
+          "id": "B",
+          "text": "Keep the current order but add breakpoints after the product module and after the account context, so every module gets its own cache entry."
+        },
+        {
+          "id": "C",
+          "text": "Order modules from most to least stable: core, product, account context, conversation, with a breakpoint after each of the first three."
+        },
+        {
+          "id": "D",
+          "text": "Put the account context first, because it is the most specific to the customer, followed by core and product modules with a breakpoint after each one."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "A cache hit needs an **identical prefix** up to a breakpoint, so modular prompts should be assembled **from most to least shared**:\n\n1. **Core** (identical for all six assistants), with a breakpoint, so a request from any assistant can hit the core entry.\n2. **Product module**, with a breakpoint, so all customers of one assistant share it.\n3. **Account context**, with a breakpoint, so a returning customer's next request reuses it.\n4. Conversation and the new user message last.\n\nThat uses three explicit breakpoints, within the limit of four, and leaves one free for the conversation. Today the product and account modules come first, so the core module's prefix is different for every customer and the shared 10,000 tokens almost never hit.",
+      "whyWrong": {
+        "A": "Self-contained prompts hide the shared core behind product-specific text, so the core is written to the cache six times and can't be reused across assistants.",
+        "B": "Breakpoints don't make an entry reusable if the content before them varies. With account context near the front, every later entry is unique to a single customer.",
+        "D": "Putting the most variable module first makes everything after it unique to one customer, which is the opposite of what caching needs."
+      },
+      "difficulty": 3,
+      "mindset": "Assemble modular prompts from most shared to least shared, and put a breakpoint at each boundary where reuse changes.",
+      "tags": [
+        "modular-prompts",
+        "prompt-caching",
+        "breakpoints",
+        "prompt-assembly"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching"
+      ]
+    },
+    {
+      "id": "p-d2-x3-007",
+      "taskStatementId": "2.5",
+      "scenario": "A bank keeps a shared \"refusal and escalation policy\" prompt fragment in source control. Nine customer-facing Claude applications (cards, mortgages, wealth and others) include it in their system prompts. The mortgages team found its assistant refusing harmless rate questions, edited the shared fragment to relax the wording, and merged it. The next day, the wealth and cards assistants began giving investment-style recommendations that compliance had previously blocked.",
+      "stem": "The head of AI platform wants to keep the benefits of a single shared fragment while preventing this kind of incident. What is the BEST change to the reuse process?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Let each of the nine teams keep its own copy of the policy text inside its own prompt, so one team's edit can never affect any other application."
+        },
+        {
+          "id": "B",
+          "text": "Append a line to the shared fragment asking Claude to re-check every answer against compliance rules before replying, to catch any loosened wording."
+        },
+        {
+          "id": "C",
+          "text": "Freeze the shared fragment permanently and require every future wording change to go through a full model upgrade and re-certification cycle."
+        },
+        {
+          "id": "D",
+          "text": "Version the fragment, run every consuming application's eval suite before release, and put app-specific wording in that app's own module."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "A shared prompt fragment is a **dependency**, and a change to it is a change to all nine applications. Modular prompts should be managed like shared code:\n\n- **Version** the fragment, so consumers know what they're running and a bad version can be rolled back.\n- **Gate releases on evals** from *every* consumer, not just the team proposing the change, so the wealth and cards regressions would be caught before merge.\n- **Keep local needs local**: the mortgages team's wording goes in its own product module, layered on top of the shared policy.\n\nThis keeps the single source of truth and adds the change control that was missing.",
+      "whyWrong": {
+        "A": "Copies drift. The next regulatory change would have to be made nine times, and the bank loses the consistency that the shared fragment provides.",
+        "B": "Asking the model to self-check is advisory, not a release control. It does nothing to stop an unreviewed edit from reaching all nine applications.",
+        "C": "A permanent freeze blocks legitimate fixes such as the mortgages over-refusal, and model upgrades have nothing to do with prompt-text changes."
+      },
+      "difficulty": 2,
+      "mindset": "Treat shared prompt modules as versioned dependencies with evals from every consumer, not as text anyone can edit.",
+      "tags": [
+        "modular-prompts",
+        "prompt-versioning",
+        "evals",
+        "governance",
+        "change-management"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/overview"
+      ]
+    },
+    {
+      "id": "p-d2-x3-008",
+      "taskStatementId": "2.5",
+      "stem": "A platform team's project CLAUDE.md for Claude Code has grown to about 1,800 lines. It contains the build commands and coding standards that apply to every task, plus a 600-line release runbook used about once a week and a 400-line database-migration procedure used a few times a month. Developers say sessions start with a lot of irrelevant context and the standards sometimes get overlooked. What is the BEST restructuring?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Keep build commands and standards in CLAUDE.md; move the runbook and migration procedure into project skills whose descriptions say when to use them."
+        },
+        {
+          "id": "B",
+          "text": "Split the file into several smaller markdown files and pull each one into CLAUDE.md with `@` imports, so that the context is loaded only when it is needed."
+        },
+        {
+          "id": "C",
+          "text": "Move everything, including build commands and coding standards, into separate skills so that nothing at all is loaded until a developer asks for it."
+        },
+        {
+          "id": "D",
+          "text": "Keep the single file as it is and add a line at the top telling Claude to always prioritize the coding standards over the runbook and migration sections."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "CLAUDE.md is loaded into **every** session, so it should hold guidance that applies to every task: build commands and coding standards. Procedures that are needed only sometimes fit a **Skill**. Only the skill's name and description stay in context until it is used, and the full instructions load when Claude or the developer invokes it. This keeps the always-on context small and focused, so the standards stand out, and makes the runbook available on demand.",
+      "whyWrong": {
+        "B": "`@` imports are loaded when the session starts, so splitting the file this way doesn't reduce the context loaded at the start of a session.",
+        "C": "Universal standards in a skill would apply only when that skill is invoked, which is exactly how standards get missed.",
+        "D": "An instruction to prioritize doesn't remove the 1,000 lines of irrelevant procedure from every session's context."
+      },
+      "difficulty": 1,
+      "mindset": "Always-relevant guidance goes in always-loaded memory; occasional procedures go in on-demand Skills.",
+      "tags": [
+        "skills",
+        "claude-code",
+        "claude-md",
+        "progressive-disclosure",
+        "context-budget"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/skills",
+        "https://code.claude.com/docs/en/memory"
+      ]
+    },
+    {
+      "id": "p-d2-x3-009",
+      "taskStatementId": "2.5",
+      "stem": "A company built a custom \"brand-compliance-review\" Skill and uploaded it through the Claude API. Their API-based marketing agent now uses it reliably. The marketing team also wants it in the Claude app (claude.ai), and the web developers want it in Claude Code. Both groups report that the skill doesn't appear on their surface. The skill's files live in a Git repository owned by the brand team. What should the architect do?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Wait for the upload to propagate to other surfaces, then rewrite the description with more trigger phrases if the skill still doesn't appear."
+        },
+        {
+          "id": "B",
+          "text": "Paste the full SKILL.md text into each user's custom instructions and each project's CLAUDE.md so the guidance is always present everywhere."
+        },
+        {
+          "id": "C",
+          "text": "Install the skill separately on each surface from the one versioned repository, keeping its frontmatter to fields every surface supports."
+        },
+        {
+          "id": "D",
+          "text": "Rebuild the skill as an MCP server, since MCP servers are the only mechanism for sharing reusable procedures across Claude surfaces."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Custom Skills **don't sync across surfaces**. A skill uploaded through the Skills API is available to API requests in that workspace only. claude.ai needs its own upload (custom skills there are per user, so each marketer uploads it, and admins can't distribute it centrally), and Claude Code needs it on the filesystem (a project skill in `.claude/skills/`, a personal skill, or a plugin). Publishing every copy from **one version-controlled source** keeps them identical, and sticking to the standard frontmatter fields matters because a claude.ai upload accepts only those, so a Claude Code-only field such as `context: fork` would make the same SKILL.md fail there.",
+      "whyWrong": {
+        "A": "An API upload never propagates to claude.ai or Claude Code. A better description affects when an installed skill triggers, not whether it is installed on a surface.",
+        "B": "Pasting the full instructions everywhere loses progressive disclosure, so the cost is paid on every conversation, and creates copies that drift away from the brand team's source.",
+        "D": "MCP connects Claude to external tools and data. It isn't the only way to share procedures, and rewriting the skill throws away a packaging format that all three surfaces support."
+      },
+      "difficulty": 2,
+      "mindset": "Skills are portable but not synced: distribute one versioned source to every surface that needs it.",
+      "tags": [
+        "skills",
+        "distribution",
+        "claude-code",
+        "claude-api",
+        "claude-apps"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview",
+        "https://code.claude.com/docs/en/skills"
+      ]
+    },
+    {
+      "id": "p-d2-x3-010",
+      "taskStatementId": "2.5",
+      "stem": "An engineering manager finds a popular community Skill for generating financial-model spreadsheets in a public repository and wants to roll it out to 200 analysts who work with confidential client data. The skill folder contains SKILL.md, several reference files and Python scripts that Claude runs during the task. Which TWO actions are MOST appropriate before the rollout? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Read SKILL.md and its description, and approve the skill if the stated purpose matches the analysts' needs and the repository is popular."
+        },
+        {
+          "id": "B",
+          "text": "Audit every bundled file, including scripts and references, for unexpected network calls, external URLs and instructions unrelated to its stated purpose."
+        },
+        {
+          "id": "C",
+          "text": "Add a system-prompt line telling Claude to never run harmful code from skills, so that any malicious script is detected and refused at run time."
+        },
+        {
+          "id": "D",
+          "text": "Publish a reviewed copy from a company-controlled repository, test it on non-confidential data, and re-review upstream changes before adopting them."
+        },
+        {
+          "id": "E",
+          "text": "Rely on the code execution sandbox to contain whatever the scripts do, since sandboxed code cannot reach or affect any data that the analysts handle."
+        }
+      ],
+      "correct": [
+        "B",
+        "D"
+      ],
+      "explanation": "A skill can direct Claude to **run code** and follow instructions, so installing one is like installing software. Anthropic's guidance is to use skills only from **trusted sources** and to **audit** any you didn't author.\n\n- **B** is that audit: read every file, especially scripts, and look for data exfiltration (network calls, external URLs) and instructions that don't fit the stated purpose.\n- **D** makes trust last. The company controls the copy analysts use, tests it away from confidential data, and reviews upstream changes before adopting them, so a later malicious update can't arrive silently.",
+      "whyWrong": {
+        "A": "The description and popularity tell you what the skill claims to do. Harmful behavior can sit in scripts or reference files that SKILL.md never shows.",
+        "C": "A prompt instruction is not a security control, and malicious code may not look harmful to the model in context. Vetting has to happen before deployment.",
+        "E": "A sandbox reduces some risks, but the skill's code and instructions still operate on the files and data Claude gives them. Code with access to client data can leak it through outputs or allowed channels."
+      },
+      "difficulty": 2,
+      "mindset": "Treat a third-party Skill like third-party software: audit it, control the copy you run, and re-review updates.",
+      "tags": [
+        "skills",
+        "security",
+        "supply-chain",
+        "governance"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview",
+        "https://platform.claude.com/docs/en/agents-and-tools/agent-skills/enterprise"
+      ]
+    }
+  ]
+}

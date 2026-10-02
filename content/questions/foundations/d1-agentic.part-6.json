@@ -1,0 +1,644 @@
+{
+  "certId": "foundations",
+  "domainId": "d1-agentic",
+  "questions": [
+    {
+      "id": "f-d1-x2-001",
+      "taskStatementId": "1.3",
+      "scenario": "You are building a multi-agent research system with the Claude Agent SDK. A coordinator delegates to four specialized subagents (web search, document analysis, synthesis and report generation), and the system produces comprehensive, cited research reports.",
+      "stem": "The report-generation subagent ends its run with a complete report that carries numbered citations. In the result the user receives, however, the coordinator usually hands back a two-paragraph paraphrase and drops most of the citations. Logs confirm the subagent's final message was complete and well cited. With minimal changes, what is the MOST reliable fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Raise maxTurns on the report-generation AgentDefinition so the subagent has enough turns to finish the full report before returning to the coordinator."
+        },
+        {
+          "id": "B",
+          "text": "Add \"return the complete report with every citation\" to the report-generation subagent's prompt so it stops condensing its own output."
+        },
+        {
+          "id": "C",
+          "text": "Instruct the coordinator, via the main query() systemPrompt or prompt, to pass the subagent's report through verbatim instead of summarizing it."
+        },
+        {
+          "id": "D",
+          "text": "Have the subagent write the report to a file and tell the coordinator to read the file back, so the report text never passes through the Agent tool result."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "A subagent's final message goes back to the parent, but the parent **may summarize it in its own response**. The SDK docs say that to preserve subagent output verbatim in the user-facing result, you put that instruction in the `prompt` or `systemPrompt` of the main `query()` call. The behaviour that misbehaves here is the coordinator's restatement, so the instruction belongs at the coordinator layer, not in the subagent.",
+      "whyWrong": {
+        "A": "The subagent already finishes: logs show a complete, cited final message. maxTurns only matters when the run stops early and the result is marked partial.",
+        "B": "The subagent's prompt governs what the subagent returns, and it is already returning everything. It has no influence on how the parent restates that text.",
+        "D": "The coordinator still writes the user-facing answer and can still paraphrase it. Reading the file back also puts the whole report into its context anyway, so nothing is gained."
+      },
+      "difficulty": 2,
+      "mindset": "The subagent controls what it returns; the parent controls what the user sees. Fix the instruction at the layer that misbehaves.",
+      "tags": [
+        "subagent-output",
+        "coordinator",
+        "verbatim-passthrough",
+        "systemPrompt"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/subagents"
+      ]
+    },
+    {
+      "id": "f-d1-x2-002",
+      "taskStatementId": "1.3",
+      "scenario": "You are building developer productivity tools with the Claude Agent SDK. The agent helps engineers explore unfamiliar codebases and legacy systems, generate boilerplate and automate repetitive tasks with the built-in tools (Read, Write, Bash, Grep, Glob) plus MCP servers.",
+      "stem": "Yesterday a custom \"legacy-mapper\" subagent spent about 40 tool calls reading a legacy billing module and returned a short architecture summary. Today an engineer asks a follow-up that depends on details the subagent read but left out of its summary. The app saved the session ID and the agentId from the Agent tool result. What is the BEST way to answer the follow-up without repeating the exploration?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Resume the saved session with the same agents definitions and name the saved agentId in the prompt so the subagent continues its prior history."
+        },
+        {
+          "id": "B",
+          "text": "Invoke legacy-mapper again with the prompt \"Continue from your earlier analysis of the billing module\" so the new run builds on yesterday's work."
+        },
+        {
+          "id": "C",
+          "text": "Fork the main session, because the fork inherits the coordinator's full conversation and therefore everything the subagent read yesterday."
+        },
+        {
+          "id": "D",
+          "text": "Paste yesterday's short architecture summary into the coordinator's system prompt so that every new subagent invocation starts with that knowledge."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "A new subagent invocation starts fresh, but a **resumed** subagent keeps its full conversation history, including earlier tool calls and results. The documented recipe is to capture `session_id` and the `agentId` from the Agent tool result, resume the session (passing the same `agents` definitions) and name the agent ID in the prompt. That gives access to the details the subagent read without redoing 40 tool calls.",
+      "whyWrong": {
+        "B": "A fresh invocation has no memory of yesterday's run. \"Continue from your earlier analysis\" refers to something the new subagent never saw.",
+        "C": "The main conversation only contains the subagent's final summary, not its intermediate reads. A fork inherits that same summary, so the missing details are still missing.",
+        "D": "Subagents do not receive the parent's system prompt, and the summary lacks the needed details anyway."
+      },
+      "difficulty": 2,
+      "mindset": "Fresh invocation forgets; resume remembers. Pick resume when the follow-up needs the subagent's own working history.",
+      "tags": [
+        "resume-subagent",
+        "context-isolation",
+        "sessions",
+        "agentId"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/subagents",
+        "https://code.claude.com/docs/en/sub-agents"
+      ]
+    },
+    {
+      "id": "f-d1-x2-003",
+      "taskStatementId": "1.3",
+      "stem": "A coordinator built with the Agent SDK uses one capable model for everything. Its \"link-collector\" subagent only runs searches and returns a list of URLs with titles, while its \"synthesis\" subagent writes nuanced analysis. Cost is too high. What change gives the LOWEST cost with minimal impact on report quality?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Run the entire query on a smaller model so the coordinator and every subagent become cheaper to operate at the same time."
+        },
+        {
+          "id": "B",
+          "text": "Merge link-collector into the coordinator so one fewer agent runs and the search results are produced by the same model."
+        },
+        {
+          "id": "C",
+          "text": "Set maxTurns to 1 on both subagents so that each one completes at most a single round of tool calls before it must return."
+        },
+        {
+          "id": "D",
+          "text": "Set the model field in link-collector's AgentDefinition to a smaller, faster model and leave the synthesis subagent on the capable model."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "`AgentDefinition` has a per-subagent `model` override (an alias such as `haiku`, `sonnet`, `opus`, `inherit`, or a full model ID). Routing the simple, mechanical subagent to a cheaper model cuts cost where quality is not at risk, while the reasoning-heavy synthesis subagent keeps the capable model. It is a one-line change.",
+      "whyWrong": {
+        "A": "Downgrading everything saves money but also weakens the coordinator and the synthesis step, which is where report quality comes from.",
+        "B": "Merging puts all search output into the coordinator's context on the expensive model, which raises token use and gives up context isolation.",
+        "C": "Capping turns at 1 can stop the subagents mid-task and returns partial work, especially for synthesis, without targeting where the cost actually goes."
+      },
+      "difficulty": 1,
+      "mindset": "Match model capability to each subagent's job; spend on reasoning, save on mechanics.",
+      "tags": [
+        "agentdefinition",
+        "model-selection",
+        "cost",
+        "subagents"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/subagents"
+      ]
+    },
+    {
+      "id": "f-d1-x2-004",
+      "taskStatementId": "1.3",
+      "scenario": "You are building a customer support resolution agent using the Claude Agent SDK. It handles returns, billing disputes and account issues through custom MCP tools (get_customer, lookup_order, process_refund, escalate_to_human), targeting 80%+ first-contact resolution while knowing when to escalate.",
+      "stem": "Enterprise customers fall under a stricter refund policy than standard customers, and their policy checks justify a more capable model. Today the team keeps two subagent files and a coordinator instruction saying \"use enterprise-policy for enterprise customers\". Logs show the coordinator sometimes picks the wrong one. The application already knows each customer's tier from its own database before the query starts. What is the MOST reliable design?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Keep both subagent files and add several worked examples to the coordinator prompt showing which customer tier maps to which subagent definition."
+        },
+        {
+          "id": "B",
+          "text": "Build the policy-check AgentDefinition at query time with a factory that sets prompt and model from the tier the application already knows."
+        },
+        {
+          "id": "C",
+          "text": "Use a single policy-check subagent whose prompt tells it to ask get_customer for the tier first and then apply the matching rules."
+        },
+        {
+          "id": "D",
+          "text": "Keep both subagent files and add a second reviewer subagent that checks the coordinator's choice and redirects to the other definition if needed."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "The SDK documents **dynamic agent configuration**: a factory function returns an `AgentDefinition` built from runtime conditions (prompt strictness, model choice) and you register it under one name when you call `query()`. Since the application already knows the tier, the right rules and model are fixed in code before Claude makes any choice. That removes a probabilistic routing decision instead of trying to coax it.",
+      "whyWrong": {
+        "A": "More examples may improve the routing rate, but the choice stays a model decision. The tier is already a known fact, so there is no reason to let the model guess.",
+        "C": "This adds a tool call per check and still asks the model to pick and apply the correct rule set from one prompt that contains both policies.",
+        "D": "A reviewer agent adds latency and cost and is itself probabilistic. It is over-engineering a problem that one line of application logic solves."
+      },
+      "difficulty": 3,
+      "mindset": "If your code already knows the condition, configure the subagent from code; don't ask the model to route on it.",
+      "tags": [
+        "dynamic-agentdefinition",
+        "subagent-configuration",
+        "deterministic-control",
+        "model-selection"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/subagents"
+      ]
+    },
+    {
+      "id": "f-d1-x2-005",
+      "taskStatementId": "1.3",
+      "stem": "A nightly Agent SDK job must always use the custom \"dependency-auditor\" subagent, but on some nights the main agent does the audit itself and the report misses checks that only the subagent's prompt describes. The job has no human watching. Which TWO changes BEST make delegation reliable and let the job verify that it happened? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Ask dependency-auditor to begin its final message with the line \"Report by dependency-auditor\" so the job can search the result for that phrase."
+        },
+        {
+          "id": "B",
+          "text": "Name the subagent explicitly in the query prompt, for example \"Use the dependency-auditor agent to audit the submitted lockfiles\"."
+        },
+        {
+          "id": "C",
+          "text": "Copy dependency-auditor's full checklist into the main agent's system prompt so both delegation and self-audit produce the same checks."
+        },
+        {
+          "id": "D",
+          "text": "Switch the main agent to a more capable model, which is better at recognising when a task matches a subagent description."
+        },
+        {
+          "id": "E",
+          "text": "Have the job inspect the message stream for an Agent (or older Task) tool_use block whose subagent_type is dependency-auditor."
+        }
+      ],
+      "correct": [
+        "B",
+        "E"
+      ],
+      "explanation": "To **guarantee** a specific subagent runs, the docs say to mention it by name in the prompt, which bypasses automatic description matching. To **verify** delegation programmatically, check for `tool_use` blocks named `Agent` (older versions: `Task`) and read `subagent_type` from the input; messages produced inside the subagent also carry `parent_tool_use_id`. Together these give an explicit request plus evidence the job can check.",
+      "whyWrong": {
+        "A": "A phrase in the output is self-reported text. The main agent could produce it too, so it proves nothing about who did the work.",
+        "C": "This duplicates the checklist in two places and accepts the failure instead of fixing it; the two copies will drift.",
+        "D": "A bigger model may delegate more often, but it does not guarantee delegation and gives the job no way to verify it."
+      },
+      "difficulty": 2,
+      "mindset": "Make the invocation explicit and verify it from structured events, not from what the model says about itself.",
+      "tags": [
+        "explicit-invocation",
+        "detect-subagent",
+        "Task-tool",
+        "verification",
+        "multi-select"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/subagents"
+      ]
+    },
+    {
+      "id": "f-d1-x2-006",
+      "taskStatementId": "1.3",
+      "scenario": "You are building a customer support resolution agent using the Claude Agent SDK. It handles returns, billing disputes and account issues through custom MCP tools (get_customer, lookup_order, process_refund, escalate_to_human), targeting 80%+ first-contact resolution while knowing when to escalate.",
+      "stem": "The support coordinator connects five MCP servers (about 40 tools) plus the built-in tools. A new \"reply-drafter\" subagent should be able to use everything except the payments server's tools and Bash, and backend teams add new tools to the other servers almost every sprint. Which TWO statements accurately describe how to configure this subagent? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Omit the tools field and set disallowedTools to the payments server pattern (mcp__payments) plus Bash, so tools added to the other servers are inherited automatically."
+        },
+        {
+          "id": "B",
+          "text": "List every currently available tool except the payments tools and Bash in the tools field, because an allowlist is the only restriction mechanism an AgentDefinition supports."
+        },
+        {
+          "id": "C",
+          "text": "Add \"never call payments tools or run shell commands\" to the subagent's system prompt, since the tool-list fields only control what the coordinator itself can see."
+        },
+        {
+          "id": "D",
+          "text": "A tool excluded by a subagent's tools or disallowedTools field is simply absent from its session: Claude works without it, and no permission prompt or denial is raised."
+        },
+        {
+          "id": "E",
+          "text": "Remove the payments server from the coordinator's mcpServers option, which is the only place where MCP access for the entire agent tree can be restricted at once."
+        }
+      ],
+      "correct": [
+        "A",
+        "D"
+      ],
+      "explanation": "`AgentDefinition` supports both an allowlist (`tools`) and a denylist (`disallowedTools`). The denylist accepts MCP **server-level patterns** such as `mcp__payments` or `mcp__payments__*`, which remove every tool from that server while the rest of the inherited set, including tools added later, stays available (A). Whichever way a tool is removed, it is not in the subagent's session at all: there is no permission prompt and no error, Claude just works without it (D).",
+      "whyWrong": {
+        "B": "An explicit allowlist works but is brittle: every new tool on the other servers must be added by hand. disallowedTools exists precisely so you do not have to maintain that list.",
+        "C": "A prompt instruction is probabilistic. The tools and disallowedTools fields are enforced for the subagent itself; they are not about what the coordinator sees.",
+        "E": "That removes payments tools from the coordinator too, which still has to call process_refund. Restrict the subagent's own definition instead of the whole agent tree."
+      },
+      "difficulty": 3,
+      "mindset": "Restrict each subagent in its own definition; a denylist keeps up with a growing tool catalogue better than a hand-maintained allowlist.",
+      "tags": [
+        "agentdefinition",
+        "disallowedTools",
+        "tool-restrictions",
+        "mcp-tools",
+        "multi-select"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/subagents",
+        "https://code.claude.com/docs/en/sub-agents"
+      ]
+    },
+    {
+      "id": "f-d1-x2-007",
+      "taskStatementId": "1.3",
+      "stem": "A repository contains .claude/agents/reviewer.md, which limits the reviewer subagent to Read, Grep and Glob. The team's Agent SDK app also passes a programmatic agents entry named \"reviewer\" that was copied from an old template and lists Bash among its tools. In production, the reviewer runs Bash commands. What explains this, and what should the team do?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Programmatic definitions take precedence over filesystem agents with the same name, so update or remove the programmatic reviewer entry."
+        },
+        {
+          "id": "B",
+          "text": "The filesystem file was never loaded because the session needs a restart, so restart the app and the read-only list will take effect."
+        },
+        {
+          "id": "C",
+          "text": "Subagents always inherit the coordinator's allowed tools in addition to their own list, so remove Bash from the coordinator's allowed tools."
+        },
+        {
+          "id": "D",
+          "text": "Tool lists in subagent definition files are advisory hints to the model, so add a sentence to the file's prompt forbidding shell commands."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The SDK docs state that agents passed to `query()` override a filesystem agent with the same name. The running reviewer is the old programmatic template, which grants Bash. Fix the single source of truth: update that entry to the read-only tools or delete it so the file definition applies. Keep one definition per name to avoid this kind of silent override.",
+      "whyWrong": {
+        "B": "A restart cannot help, because even a loaded file loses to the programmatic entry with the same name.",
+        "C": "A subagent's `tools` list restricts it to those tools; a tool left out is not in its session at all. The coordinator's allow list is not added on top.",
+        "D": "The `tools` field is enforced, not advisory: an omitted tool simply does not exist for the subagent. A prompt sentence is weaker than that control."
+      },
+      "difficulty": 2,
+      "mindset": "When behaviour contradicts a config you trust, check which definition actually won.",
+      "tags": [
+        "agentdefinition",
+        "precedence",
+        "tool-restrictions",
+        "filesystem-agents"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/subagents"
+      ]
+    },
+    {
+      "id": "f-d1-x2-008",
+      "taskStatementId": "1.5",
+      "scenario": "You are building a customer support resolution agent using the Claude Agent SDK. It handles returns, billing disputes and account issues through custom MCP tools (get_customer, lookup_order, process_refund, escalate_to_human), targeting 80%+ first-contact resolution while knowing when to escalate.",
+      "stem": "get_customer has no parameter for choosing fields: it always returns the full payment card number and date of birth along with the fields the agent actually needs. Security requires that these two values never enter the model's context. The backend team cannot change the tool for another quarter. What is the BEST way to meet the requirement now?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add a rule to the system prompt telling Claude never to repeat card numbers or dates of birth in replies to customers or in its notes."
+        },
+        {
+          "id": "B",
+          "text": "Register a PreToolUse hook on get_customer that uses updatedInput to request only the specific fields the agent needs from the tool."
+        },
+        {
+          "id": "C",
+          "text": "Have a dedicated subagent call get_customer and pass only the safe fields back to the main agent in its returned final message."
+        },
+        {
+          "id": "D",
+          "text": "Register a PostToolUse hook on get_customer that returns updatedToolOutput with the card number masked and the birth date removed."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "A `PostToolUse` hook runs after the tool returns and **before Claude sees the result**. Returning `updatedToolOutput` replaces what the model receives, so the sensitive values never reach the context. It is deterministic code, costs no tokens and needs no backend change. The match target is the MCP tool name (`mcp__<server>__get_customer`).",
+      "whyWrong": {
+        "A": "The data still lands in the context; the rule only governs what Claude repeats, and only probabilistically.",
+        "B": "updatedInput can only change arguments the tool already accepts. get_customer has no field-selection parameter, so it returns the full record regardless and the sensitive values still arrive.",
+        "C": "The raw values still enter the subagent's context. Isolation moves the exposure to another model call; it does not remove it."
+      },
+      "difficulty": 2,
+      "mindset": "Sanitise data in code at the boundary, before the model ever sees it.",
+      "tags": [
+        "posttooluse",
+        "redaction",
+        "pii",
+        "updatedToolOutput",
+        "data-normalization"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/hooks",
+        "https://code.claude.com/docs/en/hooks"
+      ]
+    },
+    {
+      "id": "f-d1-x2-009",
+      "taskStatementId": "1.5",
+      "scenario": "You are building a customer support resolution agent using the Claude Agent SDK. It handles returns, billing disputes and account issues through custom MCP tools (get_customer, lookup_order, process_refund, escalate_to_human), targeting 80%+ first-contact resolution while knowing when to escalate.",
+      "stem": "Refunds between $200 and $500 now need a supervisor's sign-off, which arrives through a ticket queue, sometimes hours later. The agent runs as an unattended Agent SDK service. The team wants the refund call held until approval and then carried out exactly as Claude requested, without keeping a process blocked in the meantime. Which approach BEST fits?",
+      "options": [
+        {
+          "id": "A",
+          "text": "In a PreToolUse hook, return deny with the reason \"awaiting supervisor approval; try again later\" so Claude retries the refund."
+        },
+        {
+          "id": "B",
+          "text": "In a PreToolUse hook, poll the ticket queue in a loop until a supervisor approves, then return allow so the refund continues."
+        },
+        {
+          "id": "C",
+          "text": "In a PreToolUse hook, return defer; store the pending call, and when approval arrives resume the session so the hook can return allow."
+        },
+        {
+          "id": "D",
+          "text": "In a PostToolUse hook, check the ticket queue and reverse the refund if no supervisor has approved it by the time the hook runs."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "`defer` exists for this: the tool does not execute, the run ends with `stop_reason: \"tool_deferred\"`, and the result carries a `deferred_tool_use` object with the call's `id`, `name` and `input`. When the supervisor approves, the app resumes the session; the same call fires PreToolUse again and the hook returns `allow`. Nothing is blocked while waiting, and there is no timeout on the deferral. Two conditions from the docs: defer is honoured only in non-interactive (`-p`/SDK) runs, and only when Claude makes a single tool call in that turn.",
+      "whyWrong": {
+        "A": "Deny with \"try later\" invites Claude to retry or improvise. It cannot wait hours, and each retry is a new, unapproved call.",
+        "B": "Hook callbacks have timeouts (600 seconds by default for PreToolUse). If one expires, the call is not run and Claude gets a timeout result. A blocked process for hours is also what the team wants to avoid.",
+        "D": "PostToolUse runs after the money has moved. Compensating after the fact is riskier than never executing the call."
+      },
+      "difficulty": 3,
+      "mindset": "Long human approvals belong in a pause-and-resume control, not in a blocked loop or a prompt.",
+      "tags": [
+        "pretooluse",
+        "defer",
+        "human-approval",
+        "tool_deferred",
+        "escalation"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/hooks",
+        "https://code.claude.com/docs/en/hooks"
+      ]
+    },
+    {
+      "id": "f-d1-x2-010",
+      "taskStatementId": "1.5",
+      "stem": "To stop an Agent SDK coding agent from running destructive shell commands, an engineer writes a PostToolUse hook with matcher \"Bash\" that inspects the command and returns a deny decision when it contains \"rm -rf\". In testing, the hook fires and logs the deny, but the files are already gone. What is the correct fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Change the matcher from \"Bash\" to \"rm -rf\" so the hook fires only for destructive commands and not for every shell call."
+        },
+        {
+          "id": "B",
+          "text": "Move the same check into a PreToolUse hook on Bash and return permissionDecision \"deny\" with a reason Claude can act on."
+        },
+        {
+          "id": "C",
+          "text": "Keep the PostToolUse hook and also return continue set to false so that the agent stops right after a destructive command."
+        },
+        {
+          "id": "D",
+          "text": "Add a system prompt rule forbidding rm -rf, because a hook cannot stop a command that the model has already decided to run."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "PostToolUse fires **after** the tool has run, so it can log, enrich or rewrite the result, but it cannot prevent the action. Blocking belongs in `PreToolUse`, which runs before execution and can return `permissionDecision: \"deny\"`. The `permissionDecisionReason` goes back to Claude so it can choose a safer approach.",
+      "whyWrong": {
+        "A": "Matchers match tool names, not command text. \"rm -rf\" would never match a tool, so the hook would stop firing. Inspect the command inside the callback.",
+        "C": "Stopping the agent after the deletion does not undo it. The damage happens before any PostToolUse output is read.",
+        "D": "Prompts are probabilistic; a PreToolUse hook is exactly the deterministic control that stops a call the model has decided to make."
+      },
+      "difficulty": 1,
+      "mindset": "Prevent before execution (PreToolUse); observe or transform after execution (PostToolUse).",
+      "tags": [
+        "pretooluse",
+        "posttooluse",
+        "blocking",
+        "hook-timing"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/hooks",
+        "https://code.claude.com/docs/en/hooks"
+      ]
+    },
+    {
+      "id": "f-d1-x2-011",
+      "taskStatementId": "1.5",
+      "scenario": "You are building a multi-agent research system with the Claude Agent SDK. A coordinator delegates to four specialized subagents (web search, document analysis, synthesis and report generation), and the system produces comprehensive, cited research reports.",
+      "stem": "The document analysis subagent quotes passages verbatim from a fetch_paper tool. An internal registry knows whether each paper is a peer-reviewed article or a preprint, and the synthesis step should weigh claims accordingly. The paper text must reach Claude exactly as returned. Which hook output BEST adds the review status?",
+      "options": [
+        {
+          "id": "A",
+          "text": "A PostToolUse hook on fetch_paper that returns additionalContext such as \"Registry: preprint, not peer reviewed\" beside the untouched result."
+        },
+        {
+          "id": "B",
+          "text": "A PostToolUse hook on fetch_paper that returns updatedToolOutput with the review status written into the first line of the returned text."
+        },
+        {
+          "id": "C",
+          "text": "A PostToolUse hook on fetch_paper that returns a systemMessage stating the review status of the paper that was just fetched."
+        },
+        {
+          "id": "D",
+          "text": "A UserPromptSubmit hook that looks up every paper in the registry and appends their review status to the user's research request."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "`additionalContext` appends information next to the tool result **without altering it**, which is exactly what is needed when the original text must stay verbatim. `updatedToolOutput` is the right tool when you must replace or normalise the result, which this requirement rules out.",
+      "whyWrong": {
+        "B": "Rewriting the output changes the document text that will be quoted, which breaks the verbatim requirement; it is the wrong field for annotation.",
+        "C": "`systemMessage` is shown to the user, not passed to the model, so Claude would never see the review status.",
+        "D": "UserPromptSubmit fires when a prompt is submitted, before any papers have been fetched, so it cannot know which papers the agent will retrieve."
+      },
+      "difficulty": 2,
+      "mindset": "Annotate with additionalContext; replace with updatedToolOutput; tell the human with systemMessage.",
+      "tags": [
+        "posttooluse",
+        "additionalContext",
+        "updatedToolOutput",
+        "data-enrichment"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/hooks",
+        "https://code.claude.com/docs/en/hooks"
+      ]
+    },
+    {
+      "id": "f-d1-x2-012",
+      "taskStatementId": "1.5",
+      "stem": "Compliance asks that every tool call an Agent SDK agent makes be sent to a central audit service. The audit API takes about two seconds per request, and the logging result never needs to change what the agent does. The product team will not accept a two-second delay on every tool call. What is the BEST implementation?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Give the agent an audit_log tool and instruct it in the system prompt to call that tool after every other tool it uses."
+        },
+        {
+          "id": "B",
+          "text": "Register a PreToolUse hook with no matcher that awaits the audit API and then returns an empty object so the call proceeds."
+        },
+        {
+          "id": "C",
+          "text": "Register a PostToolUse hook only for MCP tools that awaits the audit API, since built-in tools are already logged in the transcript."
+        },
+        {
+          "id": "D",
+          "text": "Register a PostToolUse hook with no matcher that starts the audit request in the background and returns async output immediately."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "A hook with no matcher runs for every tool call, which gives complete coverage in code. Returning async output (`async_: True` in Python, `async: true` in TypeScript) tells the agent to continue without waiting, which is documented for side effects such as logging. Async output cannot block or modify anything, and this requirement needs neither.",
+      "whyWrong": {
+        "A": "Relying on the model to log is probabilistic, costs a tool call and tokens every time, and will eventually miss calls, which is unacceptable for audit.",
+        "B": "Awaiting the API inside the hook adds the two-second delay to every call, which the product team rejected.",
+        "C": "This misses built-in tool calls and still waits two seconds per MCP call. A transcript is not the central audit service compliance asked for."
+      },
+      "difficulty": 1,
+      "mindset": "Use hooks for guaranteed coverage; go async when the side effect doesn't need to influence the agent.",
+      "tags": [
+        "posttooluse",
+        "async-hooks",
+        "audit-logging",
+        "matchers"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/hooks"
+      ]
+    },
+    {
+      "id": "f-d1-x2-013",
+      "taskStatementId": "1.5",
+      "scenario": "You are building a multi-agent research system with the Claude Agent SDK. A coordinator delegates to four specialized subagents (web search, document analysis, synthesis and report generation), and the system produces comprehensive, cited research reports.",
+      "stem": "The coordinator's options register a PreToolUse hook with matcher \"WebFetch\" that should block fetches to domains outside an allowlist. Reviewers ask whether it also covers the web search subagent and how the logs can show which agent made each call. Which TWO statements are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Hooks registered in the coordinator's options never fire for subagent tool calls, so each subagent would need its own query() call with the hook."
+        },
+        {
+          "id": "B",
+          "text": "Setting the matcher to \"WebFetch(domain:example.com)\" makes the hook fire only for that domain, so no URL check is needed in code."
+        },
+        {
+          "id": "C",
+          "text": "Because matchers see only the tool name, the domain check must read the URL from tool_input in the callback and return deny when needed."
+        },
+        {
+          "id": "D",
+          "text": "A SubagentStart hook can return a deny decision for individual WebFetch calls that a subagent makes after it has started running."
+        },
+        {
+          "id": "E",
+          "text": "When the hook fires inside a subagent, its input includes agent_id and agent_type fields, which the hook can write to the audit log."
+        }
+      ],
+      "correct": [
+        "C",
+        "E"
+      ],
+      "explanation": "Hook inputs carry `agent_id` and `agent_type` when the hook fires inside a subagent, so one registration covers the subagent's tool calls and can attribute them (E). Matchers filter on the tool name only; the URL is an argument, so the allowlist check belongs inside the callback using `tool_input`, returning `permissionDecision: \"deny\"` with a reason (C).",
+      "whyWrong": {
+        "A": "The hook input documents `agent_id`/`agent_type` precisely because hooks fire for tool calls inside subagents. Separate `query()` calls are unnecessary.",
+        "B": "`Tool(specifier)` is permission-rule syntax, not matcher syntax: a hook matcher is compared with the tool name only. (Settings-file hooks have a separate `if` field for argument patterns, but an allowlist that blocks every unlisted domain still needs a check in code.)",
+        "D": "SubagentStart fires once when a subagent begins. Per-call blocking is a PreToolUse decision."
+      },
+      "difficulty": 3,
+      "mindset": "Matchers pick the tool; the callback inspects the arguments; agent_id tells you who called.",
+      "tags": [
+        "pretooluse",
+        "matchers",
+        "subagents",
+        "agent_id",
+        "multi-select"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/hooks",
+        "https://code.claude.com/docs/en/hooks"
+      ]
+    },
+    {
+      "id": "f-d1-x2-014",
+      "taskStatementId": "1.5",
+      "stem": "A support agent's process_refund tool fails in two very different ways: transient gateway timeouts that succeed on a second try, and permanent errors such as \"account closed\" that need a human. The raw error strings are long and inconsistent, and Claude often retries permanent errors several times and escalates transient ones. With minimal changes, what is the MOST reliable improvement?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add a table of known error strings and the correct reaction to each one into the agent's system prompt, together with a handful of worked examples."
+        },
+        {
+          "id": "B",
+          "text": "Register a PreToolUse hook that denies any repeat process_refund call made after an earlier call in the same session has already failed."
+        },
+        {
+          "id": "C",
+          "text": "Register a PostToolUseFailure hook on process_refund that classifies the error in code and returns additionalContext: retry once, or escalate."
+        },
+        {
+          "id": "D",
+          "text": "Move refund handling to a dedicated subagent running on a larger model that is better at reading raw stack traces and gateway error pages."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "`PostToolUseFailure` fires after a tool call fails and receives the `error` string plus the tool name and input. Classifying the error deterministically in code and returning `additionalContext` (for example \"Transient gateway timeout: retry once\" or \"Permanent: account closed. Call escalate_to_human\") gives Claude a clean, consistent signal next to the raw error, at little token cost. That normalises messy failure data the same way PostToolUse normalises successful results.",
+      "whyWrong": {
+        "A": "A table in the prompt asks the model to pattern-match inconsistent strings every time. It helps somewhat but stays probabilistic, adds tokens to every call, and goes stale as error text changes.",
+        "B": "Blanket denial after any failure also blocks the legitimate second try that resolves transient timeouts, which hurts first-contact resolution.",
+        "D": "A bigger model reading the same noisy errors is a costly guess. The inconsistency is in the data, and code can fix that directly."
+      },
+      "difficulty": 2,
+      "mindset": "Normalise failure signals in code too, so the model reasons over clean categories instead of raw noise.",
+      "tags": [
+        "posttoolusefailure",
+        "error-normalization",
+        "additionalContext",
+        "retry-vs-escalate"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/hooks",
+        "https://code.claude.com/docs/en/agent-sdk/hooks"
+      ]
+    }
+  ]
+}

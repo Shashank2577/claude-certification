@@ -1,0 +1,637 @@
+{
+  "certId": "foundations",
+  "domainId": "d4-prompting",
+  "questions": [
+    {
+      "id": "f-d4-x3-001",
+      "taskStatementId": "4.5",
+      "scenario": "Scenario: Structured Data Extraction. Your system uses Claude to pull fields out of unstructured business documents, validates every result against a JSON schema, and must stay accurate while handling odd documents gracefully. Most documents are processed in bulk; no one waits on an individual result.",
+      "stem": "Your team submitted its first 40,000-request extraction batch on Friday evening. On Saturday the batch shows as ended, and every single request has the result type errored with an invalid-request error: a parameter in the request body was misspelled. Nobody had sent this exact request shape before. What is the MOST effective change to stop this from happening on the next large batch?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Before each new batch shape, send one request with identical params through the synchronous Messages API to confirm it succeeds."
+        },
+        {
+          "id": "B",
+          "text": "Split future jobs into batches of 1,000 requests each, so a malformed request only spoils one small batch instead of the whole run."
+        },
+        {
+          "id": "C",
+          "text": "Add automatic retry logic that resubmits every errored request three times before alerting the team that something has failed."
+        },
+        {
+          "id": "D",
+          "text": "Poll the batch every few minutes after submission and cancel it the moment the first errored result appears in the request counts."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The batch docs say validation of each request's `params` happens **asynchronously**, and validation errors are only returned when the whole batch has ended. So a typo in the request shape costs you the full wait before you find out. The documented best practice is to **dry run a single request shape with the Messages API** first: it validates immediately and costs one call. (Errored requests aren't billed, but the lost day is the real cost.)",
+      "whyWrong": {
+        "B": "Smaller batches still all share the same malformed shape, so every one of them fails. You'd just get the same failure 40 times.",
+        "C": "An invalid request fails the same way every time. Retrying a deterministic validation error just repeats the wait without fixing anything.",
+        "D": "Validation errors surface when the batch ends, not while it is in progress, so there's no early errored count to react to. Fixing the shape up front is the real fix."
+      },
+      "difficulty": 1,
+      "mindset": "Validate the request shape cheaply and synchronously before paying for a long asynchronous wait.",
+      "tags": [
+        "message-batches",
+        "validation",
+        "dry-run"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/batch-processing"
+      ]
+    },
+    {
+      "id": "f-d4-x3-002",
+      "taskStatementId": "4.5",
+      "scenario": "Scenario: Structured Data Extraction. Your system uses Claude to pull fields out of unstructured business documents, validates every result against a JSON schema, and must stay accurate while handling odd documents gracefully. Most documents are processed in bulk; no one waits on an individual result.",
+      "stem": "Twenty minutes after submitting a 60,000-request batch, an analyst notices that the prompt maps the field `invoice_date` to the delivery date instead of the issue date. Every result produced with this prompt will be wrong, and the downstream system rejects a record outright if any field fails its checks, so partial results cannot be salvaged. The fix is a one-line prompt change. What should the team do NOW to waste the least money and time?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Let the batch finish, then run a second batch that only re-extracts the `invoice_date` field for every document using the corrected prompt."
+        },
+        {
+          "id": "B",
+          "text": "Submit a corrected batch immediately in parallel and simply ignore the first batch's results when both of them have finished processing."
+        },
+        {
+          "id": "C",
+          "text": "Cancel the batch, discard any results it already produced, check the corrected prompt on a small sample, then resubmit the documents."
+        },
+        {
+          "id": "D",
+          "text": "Let the batch finish, then fix `invoice_date` in post-processing code by swapping in the delivery-date value from each document's result."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Cancelling stops further spend. Per the docs, a cancelled batch moves to `canceling`, then `ended`, and may contain partial results for requests already processed. Requests that hadn't been sent to the model come back as `canceled` and **aren't billed**. Results already produced used the buggy prompt and can't be salvaged, so throw them away. Check the fix on a small sample before resubmitting so you don't repeat the mistake at scale.",
+      "whyWrong": {
+        "A": "You pay for 60,000 known-bad extractions and then pay again for a second pass, and you wait up to two batch windows.",
+        "B": "Both batches run to completion, so you pay for the bad one in full. Ignoring results doesn't refund them.",
+        "D": "The model never produced the issue date, so there's nothing correct to swap in. Post-processing can't recover data the prompt never extracted."
+      },
+      "difficulty": 2,
+      "mindset": "When a batch is known to be wrong, stop the spend early; unsent requests are free to cancel.",
+      "tags": [
+        "message-batches",
+        "cancel",
+        "cost-control"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/batch-processing"
+      ]
+    },
+    {
+      "id": "f-d4-x3-003",
+      "taskStatementId": "4.5",
+      "stem": "A nightly pipeline sends support tickets through the Message Batches API. Failed items are resubmitted in a follow-up batch the next night, so one ticket can appear in several batches over time. Analysts have found tickets with two different summaries stored, and some summaries attached to the wrong ticket. Which TWO practices will make merging results across original and retry batches reliable? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Give each request a `custom_id` derived from the stable ticket ID, unique within its batch, never reused for a different ticket."
+        },
+        {
+          "id": "B",
+          "text": "Write results to storage in the same order they appear in the results file, since retries are always appended to the end of the file."
+        },
+        {
+          "id": "C",
+          "text": "Generate a fresh random `custom_id` for every request at submission time, so that no two batches can ever share an identifier."
+        },
+        {
+          "id": "D",
+          "text": "Store results by key with an upsert, so a successful retry replaces that ticket's earlier record rather than adding a second one."
+        },
+        {
+          "id": "E",
+          "text": "Resubmit the entire night's ticket set whenever any request fails, so each night produces one complete and self-consistent result set."
+        }
+      ],
+      "correct": [
+        "A",
+        "D"
+      ],
+      "explanation": "Results can come back in **any order**, and the docs say to always match on `custom_id` and to use **meaningful** IDs. Deriving the ID from the ticket ID (A) means every result, from any batch, points back to the right ticket. Writing by key with an upsert (D) makes reprocessing **idempotent**: a retry overwrites the earlier record instead of creating a duplicate. Together they fix both symptoms.",
+      "whyWrong": {
+        "B": "Result order isn't guaranteed, within a batch or across batches. Writing by position is what attaches summaries to the wrong tickets.",
+        "C": "Random IDs that aren't tied to the ticket give you nothing to match on, unless you keep a separate mapping table, which is more fragile than a stable business key.",
+        "E": "Rerunning everything to fix a few failures wastes money and still leaves the duplicate and mismatch problems unless results are keyed correctly."
+      },
+      "difficulty": 2,
+      "mindset": "Key every result on a stable business identifier and make writes idempotent; never trust position.",
+      "tags": [
+        "message-batches",
+        "custom_id",
+        "idempotency",
+        "multi-select"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/batch-processing"
+      ]
+    },
+    {
+      "id": "f-d4-x3-004",
+      "taskStatementId": "4.5",
+      "scenario": "Scenario: Structured Data Extraction. Your system uses Claude to pull fields out of unstructured business documents, validates every result against a JSON schema, and must stay accurate while handling odd documents gracefully. Most documents are processed in bulk; no one waits on an individual result.",
+      "stem": "Each of 30,000 batched requests starts with the same 40,000-token extraction guide (field definitions, normalization rules and worked examples), followed by one short document. You added a `cache_control` breakpoint after the guide with the default settings, but usage reports show very few cache reads. What is the BEST change to raise cache hit rates with minimal other changes?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Move the extraction guide after each document, so that the short and highly variable part of the request is processed first."
+        },
+        {
+          "id": "B",
+          "text": "Keep the guide as the identical prefix and switch to the 1-hour cache duration, since batch runs can exceed five minutes."
+        },
+        {
+          "id": "C",
+          "text": "Replace the guide with a 2,000-token summary, since prompt caching cannot be combined with the Message Batches API discount."
+        },
+        {
+          "id": "D",
+          "text": "Move this job to synchronous calls, because prompt caching only produces cache reads when requests are sent one after another."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "The default cache lifetime is 5 minutes, but batch items run concurrently, in any order, over a window that can be much longer. The batch docs specifically suggest the **1-hour cache duration** for batches with shared context. Keeping the guide as the byte-identical prefix before the breakpoint, plus the longer TTL, gives the best chance of hits. Caching discounts **stack** with the batch discount. Hits are still best-effort in a batch.",
+      "whyWrong": {
+        "A": "The cache works on an identical **prefix**. Putting the variable document first makes every prefix different, so nothing can be reused at all.",
+        "C": "Caching and batching do combine. Shrinking the guide throws away the field definitions and examples that keep extractions accurate.",
+        "D": "You'd lose the 50% batch discount on a job where nobody is waiting, to fix something a TTL setting addresses."
+      },
+      "difficulty": 2,
+      "mindset": "Match the cache lifetime to how long the workload really runs, and keep shared context as a stable prefix.",
+      "tags": [
+        "message-batches",
+        "prompt-caching",
+        "cost-optimization"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/batch-processing",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching"
+      ]
+    },
+    {
+      "id": "f-d4-x3-005",
+      "taskStatementId": "4.5",
+      "stem": "A retailer must re-categorize 420,000 product listings once using a validated prompt; results are needed within the week, and the merchandising team must be able to trace and re-run any single listing's result. One engineer proposes a single batch with all listings. Another proposes packing 50 listings into each request to cut the request count. Which plan is MOST reliable and cost-effective?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Pack 50 listings into each request inside one batch, since fewer requests means a smaller batch and less overhead per listing."
+        },
+        {
+          "id": "B",
+          "text": "Send all 420,000 listings as one batch, because the batch API queues and splits very large jobs automatically on the server side."
+        },
+        {
+          "id": "C",
+          "text": "Use synchronous calls with high concurrency, because a job of this size exceeds anything the batch API is designed to handle."
+        },
+        {
+          "id": "D",
+          "text": "Split the listings into several batches under the per-batch limits, one listing per request, tracking every batch ID and `custom_id` for re-runs."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "A single batch is limited to **100,000 requests or 256 MB**, whichever comes first, and the docs recommend breaking very large datasets into multiple batches for manageability. Keeping **one listing per request** means each result is independent: a failure affects one listing, and every result maps cleanly back to its `custom_id`. The work is latency-tolerant, so batch pricing applies.",
+      "whyWrong": {
+        "A": "Packing 50 items into one request dilutes attention, lets listings influence each other, and makes one error or truncated output spoil all 50 with no per-listing `custom_id`.",
+        "B": "The API doesn't split oversized batches for you. A batch over the request or size limit is rejected, and nothing in the docs says it is split automatically.",
+        "C": "Size isn't a reason to give up the batch discount. Splitting into several batches handles the volume, and nobody is waiting on individual results."
+      },
+      "difficulty": 2,
+      "mindset": "Respect the per-batch limits by splitting across batches, not by cramming many items into one request.",
+      "tags": [
+        "message-batches",
+        "limits",
+        "request-design"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/batch-processing"
+      ]
+    },
+    {
+      "id": "f-d4-x3-006",
+      "taskStatementId": "4.5",
+      "stem": "During a period of heavy platform demand, a 90,000-request evaluation batch ends with 86,500 succeeded and 3,500 expired. A manager asks what this means for the bill and what to do next. Which TWO statements are correct? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "The expired requests are billed at the batch rate, because they were accepted into the processing queue before the batch expired."
+        },
+        {
+          "id": "B",
+          "text": "The expired requests are not billed, because they were never sent to the model before the 24-hour window ran out for this batch."
+        },
+        {
+          "id": "C",
+          "text": "Expired requests are retried automatically by the API in the following batch window, so the team does not need to take any action."
+        },
+        {
+          "id": "D",
+          "text": "Resubmit only the expired requests, matched by their `custom_id`, in a new batch rather than rerunning the full 90,000."
+        },
+        {
+          "id": "E",
+          "text": "Move the whole evaluation suite to synchronous calls permanently, since batch results can never be trusted to complete on time."
+        }
+      ],
+      "correct": [
+        "B",
+        "D"
+      ],
+      "explanation": "An `expired` result means the batch reached its 24-hour limit **before that request was sent to the model**, and the docs state these requests **aren't billed** (B). The docs also say heavy demand can slow processing and cause more expirations. The 86,500 succeeded results are fine, so identify the expired items by `custom_id` and **resubmit only those** (D).",
+      "whyWrong": {
+        "A": "The docs are explicit that expired requests aren't billed. You pay only for requests that were processed.",
+        "C": "Nothing retries expired requests automatically. You have to resubmit them.",
+        "E": "An evaluation suite is a textbook batch workload, and one partial expiration doesn't change that. Resubmitting a few thousand items is far cheaper than paying full price for everything."
+      },
+      "difficulty": 1,
+      "mindset": "Read each result type for what it means, and retry only what didn't run.",
+      "tags": [
+        "message-batches",
+        "expired",
+        "partial-failure",
+        "multi-select"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/batch-processing"
+      ]
+    },
+    {
+      "id": "f-d4-x3-007",
+      "taskStatementId": "4.5",
+      "stem": "An operations director (non-technical) wants a sentiment digest of each day's support tickets in leadership inboxes by 8:00 AM the next morning, guaranteed, because it opens the daily stand-up. Tickets keep closing until midnight. An engineer proposes submitting one Message Batch at midnight to save 50%, noting batches usually finish within an hour. Which design meets the guarantee at the LOWEST expected cost?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Approve the midnight batch as proposed, because most batches complete within about an hour, which leaves a buffer of several hours before 8 AM."
+        },
+        {
+          "id": "B",
+          "text": "Run the whole midnight job with synchronous calls, since an 8-hour deadline is shorter than the 24-hour batch window and batch cannot guarantee it."
+        },
+        {
+          "id": "C",
+          "text": "Approve the midnight batch and instruct the model to keep each response short, so the batch finishes faster during busy periods on the platform."
+        },
+        {
+          "id": "D",
+          "text": "Submit the midnight batch, poll it, and at a fixed cutoff cancel it and run any still-unsent tickets synchronously before the digest."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "The requirement is a **guarantee**, and the docs only promise that *most* batches finish within an hour; a batch can take up to 24 hours. So the batch alone can't be the plan. But it doesn't have to be all or nothing: cancel a batch at a cutoff (say 5 AM) and it moves to `canceling`, then `ended`, keeping results for requests already processed, while unsent requests come back `canceled` and **aren't billed**. Identify those by `custom_id` and run them synchronously in the remaining hours. Most nights the batch finishes early and you get the full discount; on a slow night the guarantee still holds.",
+      "whyWrong": {
+        "A": "\"Usually within an hour\" is a typical case, not a guarantee. A digest that sometimes misses stand-up fails the stated requirement, and the stakeholder said guaranteed.",
+        "B": "This meets the deadline but pays full price every night. Because cancelling keeps processed results and doesn't bill unsent requests, a cutoff-and-fallback design meets the same guarantee at a lower expected cost.",
+        "C": "Output length doesn't change how batches are scheduled or when they are picked up. There's still no latency guarantee, so the risk is unchanged."
+      },
+      "difficulty": 3,
+      "mindset": "When a hard deadline is shorter than the batch window, keep the guarantee with a synchronous fallback instead of giving up the discount entirely.",
+      "tags": [
+        "message-batches",
+        "latency",
+        "cancel",
+        "fallback",
+        "stakeholder-requirements"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/batch-processing",
+        "https://everpath-course-content.s3-accelerate.amazonaws.com/instructor%2F6nizmqk8tpzpfjvt6qmmav7rh%2Fpublic%2F1783542750%2FClaude+Certified+Architect+%E2%80%93+Foundations+Exam+Guide.pdf"
+      ]
+    },
+    {
+      "id": "f-d4-x3-008",
+      "taskStatementId": "4.6",
+      "stem": "A team built a separate reviewer call to check code produced by their generator agent. To help the reviewer understand intent, they pass it the generator's full conversation, including its step-by-step reasoning, along with the final diff. The reviewer still approves almost everything, including bugs later found in production. What is the MOST effective fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Give the reviewer only the diff, the task spec and explicit review criteria, leaving out the generator's conversation and reasoning."
+        },
+        {
+          "id": "B",
+          "text": "Keep the conversation in the reviewer's input but add a strong instruction telling it to be skeptical and to assume the code has bugs in it."
+        },
+        {
+          "id": "C",
+          "text": "Switch the reviewer to a larger and more capable model, so that it can spot the mistakes hidden inside the generator's reasoning trail."
+        },
+        {
+          "id": "D",
+          "text": "Have the generator write a short summary of its design decisions, and give that summary to the reviewer instead of the full conversation."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "An independent reviewer works because it **doesn't share the generator's reasoning**. Passing the full conversation recreates the self-review bias: the reviewer reads the justification for each choice and tends to accept it. Give it the artifact, the spec it should meet and explicit criteria, so it judges the code on its merits.",
+      "whyWrong": {
+        "B": "A generic \"be skeptical\" instruction doesn't remove the anchoring effect of reading the generator's justifications. Vague directives rarely change behavior much.",
+        "C": "The problem is what the reviewer sees, not how capable it is. A larger model reading the same reasoning is still anchored to it.",
+        "D": "A summary of design decisions is still the generator's framing. It passes on the same assumptions in a shorter form."
+      },
+      "difficulty": 1,
+      "mindset": "Independence means the reviewer sees the work and the criteria, not the author's reasoning.",
+      "tags": [
+        "independent-review",
+        "self-review-bias"
+      ],
+      "sourceRefs": [
+        "https://everpath-course-content.s3-accelerate.amazonaws.com/instructor%2F6nizmqk8tpzpfjvt6qmmav7rh%2Fpublic%2F1783542750%2FClaude+Certified+Architect+%E2%80%93+Foundations+Exam+Guide.pdf",
+        "https://code.claude.com/docs/en/best-practices"
+      ]
+    },
+    {
+      "id": "f-d4-x3-009",
+      "taskStatementId": "4.6",
+      "scenario": "Scenario: Structured Data Extraction. Your system uses Claude to pull fields out of unstructured business documents, validates every result against a JSON schema, and must stay accurate while handling odd documents gracefully. Most documents are processed in bulk; no one waits on an individual result.",
+      "stem": "For contracts above a value threshold, a wrong `termination_notice_days` or `liability_cap` value is costly. Schema validation passes, but audits find about 3% of these two fields are wrong. The current prompt already ends with \"double-check your extracted values before answering.\" Which design MOST effectively catches these errors before they reach downstream systems?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Strengthen the closing instruction so the extraction call re-reads the contract twice and lists the page number of each field it used."
+        },
+        {
+          "id": "B",
+          "text": "Make the two fields required with tighter types and numeric ranges, so that implausible values are rejected automatically by the schema."
+        },
+        {
+          "id": "C",
+          "text": "Add an independent second call that checks each extracted value against the contract text and flags any mismatch for human review."
+        },
+        {
+          "id": "D",
+          "text": "Run the same extraction prompt three times for each contract and keep whichever value appears most often for each of the two fields."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "These are **semantic** errors that the schema can't catch, and the self-check already in the prompt isn't catching them. A **separate verification instance** that sees only the source and the claimed values, without the extractor's reasoning, checks each value against the text. That pass can quote the supporting clause, and disagreements go to a human, which concentrates reviewer time on the high-value contracts where the risk is.",
+      "whyWrong": {
+        "A": "This is still the same call checking its own work. Asking for more rereading and page numbers adds effort without adding independence.",
+        "B": "Types and ranges catch impossible values, not plausible but wrong ones like 30 days instead of 60. Making fields required also pushes the model to invent values when the contract leaves them out.",
+        "D": "Running the same prompt with the same blind spot three times tends to repeat the same misreading, and voting hides disagreement instead of escalating it."
+      },
+      "difficulty": 2,
+      "mindset": "Verify high-stakes values with an independent pass against the source, and send disagreements to people.",
+      "tags": [
+        "independent-review",
+        "verification-pass",
+        "structured-extraction"
+      ],
+      "sourceRefs": [
+        "https://everpath-course-content.s3-accelerate.amazonaws.com/instructor%2F6nizmqk8tpzpfjvt6qmmav7rh%2Fpublic%2F1783542750%2FClaude+Certified+Architect+%E2%80%93+Foundations+Exam+Guide.pdf",
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "f-d4-x3-010",
+      "taskStatementId": "4.6",
+      "scenario": "Scenario: Claude Code for Continuous Integration. Claude Code runs in your CI/CD pipeline to review pull requests, generate tests and post feedback on PRs. Engineers will tune out the bot if its comments are noisy, so findings must be actionable with few false positives.",
+      "stem": "Your PR review now runs one local pass per changed file in parallel, followed by a cross-file integration pass. The integration pass currently receives nothing but the list of changed file names, and it rarely finds anything. What should it receive to be MOST effective at catching cross-file defects without re-creating the original attention problem?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The full contents of every changed file plus the complete diff, so it has total visibility and can redo the local checks if it needs to."
+        },
+        {
+          "id": "B",
+          "text": "Only the local passes' final verdicts (approve or reject), so it can decide whether the PR as a whole should be merged or blocked."
+        },
+        {
+          "id": "C",
+          "text": "The full repository loaded into a large context window, so that every caller of every changed function is guaranteed to be visible."
+        },
+        {
+          "id": "D",
+          "text": "The changed interfaces and signatures, the call sites crossing file boundaries, and each local pass's findings summarized."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "The integration pass checks **data flow between files**: changed signatures with stale callers, renamed fields, mismatched contracts. It needs the **interfaces and the edges where files meet**, plus summaries of the local findings, so it can also spot conflicts between files. That keeps its context focused on its job instead of piling everything back into one pass.",
+      "whyWrong": {
+        "A": "Giving it everything again brings back the attention dilution the split was meant to fix, and invites it to redo local work.",
+        "B": "Approve or reject verdicts don't contain any of the interface information needed to find mismatches between files.",
+        "C": "A bigger context window isn't more attention. Loading the whole repository makes the dilution worse."
+      },
+      "difficulty": 3,
+      "mindset": "Give each pass exactly the context its job needs: local passes get files, the integration pass gets the boundaries.",
+      "tags": [
+        "multi-pass-review",
+        "integration-pass",
+        "context-design"
+      ],
+      "sourceRefs": [
+        "https://everpath-course-content.s3-accelerate.amazonaws.com/instructor%2F6nizmqk8tpzpfjvt6qmmav7rh%2Fpublic%2F1783542750%2FClaude+Certified+Architect+%E2%80%93+Foundations+Exam+Guide.pdf",
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "f-d4-x3-011",
+      "taskStatementId": "4.6",
+      "scenario": "Scenario: Claude Code for Continuous Integration. Claude Code runs in your CI/CD pipeline to review pull requests, generate tests and post feedback on PRs. Engineers will tune out the bot if its comments are noisy, so findings must be actionable with few false positives.",
+      "stem": "After splitting PR review into parallel per-file passes, depth improved, but the passes disagree with each other: one flags a string-built SQL query as critical while another file's pass approves the same pattern, and severity labels vary widely. Which TWO changes BEST make findings consistent across passes? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Give every per-file pass the same explicit criteria, concrete severity examples, and few-shot findings showing the expected format."
+        },
+        {
+          "id": "B",
+          "text": "Return to a single pass over the full diff, since one reviewer is naturally more consistent with itself than several parallel reviewers."
+        },
+        {
+          "id": "C",
+          "text": "Have the integration pass compare local findings for the same pattern across files and reconcile conflicting verdicts and severities."
+        },
+        {
+          "id": "D",
+          "text": "Run each per-file pass at a higher temperature setting so that different reviewers explore a wider range of possible issues in the code."
+        },
+        {
+          "id": "E",
+          "text": "Let developers settle conflicting findings in PR comments, since they understand the code better than any automated reviewer does."
+        }
+      ],
+      "correct": [
+        "A",
+        "C"
+      ],
+      "explanation": "The inconsistency comes from passes judging with **different implicit standards**. A **shared rubric** in every pass, with explicit report and skip criteria, severity tied to examples and few-shot findings (A), lines up their judgment at the source. The **integration pass** (C) sees all the local findings, so it can catch any remaining conflicts, such as the same pattern labeled differently, and resolve them before anything is posted.",
+      "whyWrong": {
+        "B": "A single pass over a large diff is the original problem. It was inconsistent even with itself.",
+        "D": "Higher temperature adds variance, which makes consistency worse.",
+        "E": "This pushes the system's inconsistency onto people and makes the bot noisier, which is exactly how engineers end up ignoring it."
+      },
+      "difficulty": 3,
+      "mindset": "Parallel reviewers need a shared rubric, and something has to reconcile what they produce.",
+      "tags": [
+        "multi-pass-review",
+        "consistency",
+        "explicit-criteria",
+        "multi-select"
+      ],
+      "sourceRefs": [
+        "https://everpath-course-content.s3-accelerate.amazonaws.com/instructor%2F6nizmqk8tpzpfjvt6qmmav7rh%2Fpublic%2F1783542750%2FClaude+Certified+Architect+%E2%80%93+Foundations+Exam+Guide.pdf",
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "f-d4-x3-012",
+      "taskStatementId": "4.6",
+      "stem": "A benefits team (no engineers) uses Claude to draft customer-facing FAQ answers about a new leave policy. Two risks worry the compliance lead: answers that misstate the policy, and wording that implies legal guarantees. Today the same chat that writes each answer is asked to review it against a 15-item checklist. Which TWO changes BEST reduce both risks? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Review each answer in a fresh conversation that is given only the draft answer and the official policy text, not the drafting chat history."
+        },
+        {
+          "id": "B",
+          "text": "Ask the drafting chat to review its answer twice more and to explain in detail why each checklist item is or is not satisfied."
+        },
+        {
+          "id": "C",
+          "text": "Split the review into focused passes, one checking facts against the policy and one checking for guarantee or legal-promise language."
+        },
+        {
+          "id": "D",
+          "text": "Expand the checklist from 15 items to 30 items, so the single review step covers every possible way an answer could go wrong."
+        },
+        {
+          "id": "E",
+          "text": "Use a larger model for drafting the answers, so its first drafts are accurate enough that a separate review step is unnecessary."
+        }
+      ],
+      "correct": [
+        "A",
+        "C"
+      ],
+      "explanation": "Two fixes match two causes. **Independence (A)**: a fresh conversation given only the draft and the source policy isn't anchored to the drafting reasoning, so it checks claims against the policy rather than defending them. **Focused passes (C)**: one review covering 15 mixed criteria spreads attention thin. Separate passes for factual accuracy and legal-promise language each get full attention, the same idea as sectioning in parallel workflows.",
+      "whyWrong": {
+        "B": "Repeating self-review in the same chat keeps the same blind spots. Longer explanations aren't independent checks.",
+        "D": "More criteria in one pass spreads attention even thinner, which is the opposite of what you need.",
+        "E": "A stronger drafter doesn't remove the need for review on compliance-sensitive content, and it does nothing about the risk of guarantee language."
+      },
+      "difficulty": 2,
+      "mindset": "Separate the checker from the author, and give each review concern its own focused pass.",
+      "tags": [
+        "independent-review",
+        "focused-passes",
+        "non-technical",
+        "multi-select"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents",
+        "https://everpath-course-content.s3-accelerate.amazonaws.com/instructor%2F6nizmqk8tpzpfjvt6qmmav7rh%2Fpublic%2F1783542750%2FClaude+Certified+Architect+%E2%80%93+Foundations+Exam+Guide.pdf"
+      ]
+    },
+    {
+      "id": "f-d4-x3-013",
+      "taskStatementId": "4.6",
+      "scenario": "Scenario: Claude Code for Continuous Integration. Claude Code runs in your CI/CD pipeline to review pull requests, generate tests and post feedback on PRs. Engineers will tune out the bot if its comments are noisy, so findings must be actionable with few false positives.",
+      "stem": "A CI job pairs a fix-generator instance with an independent reviewer instance: the reviewer's findings go back to the generator, which revises, and the loop repeats until the reviewer approves. On some PRs the loop runs 15+ rounds, with the reviewer raising fresh stylistic nits each time and occasionally reversing its earlier advice. What is the BEST redesign?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Share the reviewer's full reasoning with the generator each round and keep looping until approval, so the generator can anticipate and satisfy future comments in one revision."
+        },
+        {
+          "id": "B",
+          "text": "Give the reviewer explicit, severity-defined criteria, loop only on blocking findings, cap the number of rounds, and send anything unresolved to a human."
+        },
+        {
+          "id": "C",
+          "text": "Merge the generator and reviewer into a single instance that writes, critiques and revises in one response, and limit it to a single pass to remove the back-and-forth."
+        },
+        {
+          "id": "D",
+          "text": "Cap the loop at three rounds and tell the reviewer to be lenient and approve once the code is reasonably good, so that every PR converges within a few revisions."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "An evaluator-optimizer loop works when the evaluator has **clear criteria** and the loop has a **stopping rule**. Defining what counts as blocking, with examples per severity, stops the endless nits and reversals. Looping only on blocking findings, and posting non-blocking ones as suggestions, keeps the loop focused. An iteration cap with **human escalation** bounds cost and handles real disagreements.",
+      "whyWrong": {
+        "A": "The reviewer's comments drift because it has no stable criteria. Showing the generator its reasoning doesn't change that, the generator is still chasing a moving target, and without a cap or escalation the loop can still run indefinitely.",
+        "C": "Merging the two removes independence and brings back self-review bias, the reason for having a separate reviewer. A single pass also means real blocking issues get no second look.",
+        "D": "A cap alone ends the loop but doesn't fix why it looped. \"Lenient\" and \"reasonably good\" are vague, so you trade endless rounds for missed real bugs, with no severity rule and no human path for genuine disagreements."
+      },
+      "difficulty": 3,
+      "mindset": "A review loop needs explicit criteria and a stopping rule; independence alone doesn't converge.",
+      "tags": [
+        "evaluator-optimizer",
+        "review-loop",
+        "explicit-criteria",
+        "escalation"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents",
+        "https://everpath-course-content.s3-accelerate.amazonaws.com/instructor%2F6nizmqk8tpzpfjvt6qmmav7rh%2Fpublic%2F1783542750%2FClaude+Certified+Architect+%E2%80%93+Foundations+Exam+Guide.pdf"
+      ]
+    },
+    {
+      "id": "f-d4-x3-014",
+      "taskStatementId": "4.6",
+      "scenario": "Scenario: Claude Code for Continuous Integration. Claude Code runs in your CI/CD pipeline to review pull requests, generate tests and post feedback on PRs. Engineers will tune out the bot if its comments are noisy, so findings must be actionable with few false positives.",
+      "stem": "Your independent reviewer sees only the diff and the review criteria. It keeps flagging \"missing input validation\" on new API handlers, but validation actually happens in shared middleware that the diff doesn't touch. Engineers have started dismissing its comments. What is the MOST effective fix that keeps the reviewer independent?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Provide the generator's conversation, which explains that validation is handled in middleware, so the reviewer understands the design intent."
+        },
+        {
+          "id": "B",
+          "text": "Add an instruction to assume that validation is always handled somewhere else, so the reviewer stops reporting validation-related findings."
+        },
+        {
+          "id": "C",
+          "text": "Give the reviewer read-only access to the repository and the documented middleware contract, so it can verify where validation actually occurs."
+        },
+        {
+          "id": "D",
+          "text": "Turn off the input-validation category for the whole reviewer permanently, since this category has produced too many false positives."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Independence means not sharing the **generator's reasoning**. It doesn't mean cutting the reviewer off from the codebase. With **read-only tools** (for example Read or Grep) and the documented middleware contract, the reviewer can **check** whether validation happens upstream instead of guessing from the diff alone. False positives drop, real gaps stay visible, and it never sees the author's justifications.",
+      "whyWrong": {
+        "A": "The generator's conversation brings back the anchoring bias the independent reviewer exists to avoid.",
+        "B": "A blanket assumption hides real bugs, such as a new handler mounted outside the middleware chain.",
+        "D": "Permanently disabling the category gives up coverage. Temporarily disabling a noisy category is a stopgap while criteria are fixed, not the fix when the problem is missing context."
+      },
+      "difficulty": 2,
+      "mindset": "Keep the reviewer free of the author's reasoning, but give it the evidence it needs to check facts.",
+      "tags": [
+        "independent-review",
+        "false-positives",
+        "reviewer-context"
+      ],
+      "sourceRefs": [
+        "https://everpath-course-content.s3-accelerate.amazonaws.com/instructor%2F6nizmqk8tpzpfjvt6qmmav7rh%2Fpublic%2F1783542750%2FClaude+Certified+Architect+%E2%80%93+Foundations+Exam+Guide.pdf",
+        "https://code.claude.com/docs/en/best-practices"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,715 @@
+{
+  "certId": "developer",
+  "domainId": "d5-model-optimization",
+  "questions": [
+    {
+      "id": "v-d5-g3-001",
+      "taskStatementId": "5.3",
+      "scenario": "A 24/7 support platform runs ticket triage (classify into 12 categories) on a top-tier Opus model. Volume is high, the feature is interactive, and the team wants the lowest cost with minimal changes. Their eval suite shows the smallest-tier model matches the current model's classification accuracy on the same test set.",
+      "stem": "Which single change best meets the goal?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Keep the current model and add a few-shot example for each category to make outputs more predictable."
+        },
+        {
+          "id": "B",
+          "text": "Keep the current model and lower the temperature so classification becomes more deterministic."
+        },
+        {
+          "id": "C",
+          "text": "Route triage requests to the smallest-tier model, which passes the same evals at lower cost and latency."
+        },
+        {
+          "id": "D",
+          "text": "Enable fast mode on the current model so each request completes sooner and therefore costs less."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "The guiding principle is to **pick the cheapest configuration (model and effort) that passes your evals**. The eval evidence already shows the smaller tier matches accuracy for this task, so switching the route is the minimal, lowest-cost change. Model right-sizing is the structural cost lever; every other option either adds input tokens or does not reduce cost at all.",
+      "whyWrong": {
+        "A": "Few-shot examples improve format and judgment consistency but add input tokens on every request — they do not right-size an over-powered model.",
+        "B": "Temperature is a sampling control, not a cost lever; it does nothing to reduce token spend, and consistency is better addressed with structured outputs and examples.",
+        "D": "Fast mode is a premium-priced speed option — it raises the per-token price rather than lowering cost, and it leaves the over-powered model in place."
+      },
+      "difficulty": 1,
+      "mindset": "Cheapest model that passes the evals wins; don't pay for capability the task doesn't need.",
+      "tags": [
+        "model-selection",
+        "cost",
+        "evals",
+        "right-sizing"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/about-claude/pricing",
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests",
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-latency"
+      ]
+    },
+    {
+      "id": "v-d5-g3-002",
+      "taskStatementId": "5.3",
+      "scenario": "A team migrates a reasoning-heavy analysis agent from an earlier Opus model to the current top-tier Opus model. The code sends `thinking: {\"type\":\"enabled\",\"budget_tokens\": 2048}` on every request. After the migration, every request fails with HTTP 400 `invalid_request_error`, and the team needs thinking depth back with minimal rework.",
+      "stem": "What should they do?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Remove the manual thinking parameter and steer reasoning depth with the effort setting instead."
+        },
+        {
+          "id": "B",
+          "text": "Keep the parameter and raise `budget_tokens`, because the new model needs a larger minimum thinking budget."
+        },
+        {
+          "id": "C",
+          "text": "Wrap the calls in an exponential-backoff retry loop that honors `retry-after` until the errors clear."
+        },
+        {
+          "id": "D",
+          "text": "Drop the thinking parameter entirely and add a system-prompt instruction to reason step by step before answering."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Manual extended thinking with `budget_tokens` is **rejected (HTTP 400) on the newest models**; the replacement is adaptive thinking steered by `effort`. Note that simply omitting the `thinking` parameter already falls back to adaptive thinking on these models — the deliberate control is setting effort explicitly. Retrying a deterministic client error never helps.",
+      "whyWrong": {
+        "B": "The parameter itself is rejected on this model — any `budget_tokens` value returns 400.",
+        "C": "4xx errors mean the request itself must be fixed; retries are for 429/529/5xx and connection errors only.",
+        "D": "Thinking is already on and adaptive by default on this model; a prompt instruction is a far less reliable depth control than the supported effort parameter and cannot restore a specific reasoning depth."
+      },
+      "difficulty": 2,
+      "mindset": "On current top-tier models, adaptive thinking plus effort replaces budget_tokens; 400s are request bugs, not transient faults.",
+      "tags": [
+        "migration",
+        "extended-thinking",
+        "adaptive-thinking",
+        "effort",
+        "hard-breaks"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/extended-thinking",
+        "https://platform.claude.com/docs/en/api/errors"
+      ]
+    },
+    {
+      "id": "v-d5-g3-003",
+      "taskStatementId": "5.3",
+      "scenario": "A document pipeline extracts structured metadata by defining one `extract_metadata` tool and forcing it with `tool_choice: {\"type\":\"tool\",\"name\":\"extract_metadata\"}`, reading the JSON from `tool_use.input`. After moving to the current top-tier models, every request returns HTTP 400. The team wants guaranteed schema-valid JSON with minimal changes.",
+      "stem": "Which fix is correct?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Keep the forced `tool_choice` and wrap the calls in a retry loop with exponential backoff, since 400s are usually transient."
+        },
+        {
+          "id": "B",
+          "text": "Prefill the assistant turn with `{` so the model must start its JSON immediately."
+        },
+        {
+          "id": "C",
+          "text": "Keep the forced `tool_choice` but raise `max_tokens` so the tool call has room to complete."
+        },
+        {
+          "id": "D",
+          "text": "Switch to `tool_choice: \"auto\"` with `strict: true` on the tool (or structured outputs) so the schema guarantee is preserved."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "Forced tool selection (`any`/`tool`) is a **hard break on the newest models — it returns 400**. The supported replacement is `auto` plus `strict: true`, which uses grammar-constrained sampling so the tool input conforms to the schema (structured outputs give the same guarantee at the response level). The JSON guarantee the pipeline was built on survives the migration.",
+      "whyWrong": {
+        "A": "The 400 is deterministic — a client error must be fixed in the request, not retried.",
+        "B": "Prefilling the assistant message is also rejected on current models and returns 400; it was the legacy format-forcing trick.",
+        "C": "The failure is the unsupported `tool_choice` value, not output truncation — `max_tokens` is unrelated to this error."
+      },
+      "difficulty": 2,
+      "mindset": "Forced tool_choice is a migration hard break; strict tool use under `auto` preserves the schema guarantee.",
+      "tags": [
+        "tool-choice",
+        "migration",
+        "structured-output",
+        "strict-tool-use",
+        "hard-breaks"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools",
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs"
+      ]
+    },
+    {
+      "id": "v-d5-g3-004",
+      "taskStatementId": "5.3",
+      "scenario": "An advisory product generated its hardest analyses on an earlier Opus model using manual extended thinking with a large `budget_tokens` value. During the migration to the current top-tier Opus model, the team dropped the thinking parameter (the new model rejects it) and changed nothing else. After the migration, the eval pass rate on the hardest cases dropped, and logs show noticeably shorter reasoning traces. Quality must be restored before the rollout continues.",
+      "stem": "What is the best first action?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Revert the hardest requests to the previous, more expensive model and leave them there permanently."
+        },
+        {
+          "id": "B",
+          "text": "Set effort explicitly to high for the hard request class to steer the new model's adaptive thinking, then re-run the evals before continuing the rollout."
+        },
+        {
+          "id": "C",
+          "text": "Add several few-shot examples of hard cases so the model imitates deeper analysis."
+        },
+        {
+          "id": "D",
+          "text": "Lower the temperature on the hard requests to make the analyses more focused and consistent."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Manual thinking budgets are rejected on the new model, so dropping the parameter left these requests on adaptive thinking's default depth — a **silent behavior change, not an error** (a classic soft break across model releases). The supported depth control on current top-tier models is the **effort** setting: raise it explicitly for the hard class and confirm with evals before rolling out. This addresses the actual cause while keeping the new model's cost advantage.",
+      "whyWrong": {
+        "A": "Permanent reversion forfeits the migration's cost win before trying the one-setting fix that addresses the actual cause.",
+        "C": "Examples improve format and judgment consistency, but they cannot restore the reasoning depth that the effort setting controls.",
+        "D": "Temperature changes sampling variety, not how much the model reasons; it cannot lengthen shortened thinking traces."
+      },
+      "difficulty": 2,
+      "mindset": "Silent quality drops after a model swap are often lost thinking-depth settings — restore depth explicitly with effort, then re-eval.",
+      "tags": [
+        "effort",
+        "migration",
+        "soft-breaks",
+        "quality",
+        "evals"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/extended-thinking",
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests"
+      ]
+    },
+    {
+      "id": "v-d5-g3-005",
+      "taskStatementId": "5.3",
+      "scenario": "After a model migration, a platform team observes that the same prompts now produce roughly 30% more tokens, weekly spend rose accordingly, and several long-document requests that previously fit now fail with a `prompt is too long` error. Token budgets and per-route limits across the codebase were originally measured against the old model.",
+      "stem": "What is the most reliable next step?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Double every token limit and budget as a rule of thumb, since the new model's tokenizer is known to be larger."
+        },
+        {
+          "id": "B",
+          "text": "Disable prompt caching so token accounting returns to its previous behavior and counts are comparable again."
+        },
+        {
+          "id": "C",
+          "text": "Re-run `count_tokens` with the new model on representative requests and re-baseline budgets, limits, and input trimming against the actual counts."
+        },
+        {
+          "id": "D",
+          "text": "Raise `max_tokens` on the failing requests so the rejected prompts have room to complete."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "**Tokenizers are model-specific and changed with recent releases**, so counts, costs, and context fit do not transfer between models. The documented remedy is to re-baseline with `count_tokens` for the target model — it is free and built for pre-flight budgeting. Fixed-guess scaling hides the real distribution and leaves either waste or new overflows.",
+      "whyWrong": {
+        "A": "A blanket multiplier is a guess that ignores per-route variance; measurement replaces guessing.",
+        "B": "Caching changes how the prompt prefix is billed, not how tokens are counted — disabling it only raises cost further.",
+        "D": "`max_tokens` caps output; these requests fail because the input alone exceeds the context window, which `max_tokens` cannot fix."
+      },
+      "difficulty": 3,
+      "mindset": "Token counts are tokenizer-specific; after any model change, re-measure, don't re-guess.",
+      "tags": [
+        "tokenizer",
+        "migration",
+        "cost",
+        "context-window",
+        "count-tokens"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/token-counting",
+        "https://platform.claude.com/docs/en/build-with-claude/context-windows"
+      ]
+    },
+    {
+      "id": "v-d5-g3-006",
+      "taskStatementId": "5.3",
+      "scenario": "A financial reporting feature generates long analyses (about 8,000 output tokens) on a current Opus model. Responses are already streamed end to end, time to first token is fine, but users wait minutes while tokens are generated. Output quality must remain identical, and the team is willing to pay a premium per token to shorten the wait.",
+      "stem": "Which lever best fits?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Enable fast mode on the same model — a premium-priced option that generates output faster without switching models."
+        },
+        {
+          "id": "B",
+          "text": "Stream the report to the client instead of returning the complete message in one response."
+        },
+        {
+          "id": "C",
+          "text": "Switch report generation to the smallest-tier model, which generates tokens faster and cheaper."
+        },
+        {
+          "id": "D",
+          "text": "Queue the reports through the Message Batches API so they are processed at reduced cost overnight."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Name the dimension first: the complaint is **generation throughput after the first token**, not perceived latency, cost, or quality. Fast mode is the matching lever — the same model generating output faster at a premium price, with no model swap and no deferred delivery, so the quality baseline is preserved. Note it cannot be combined with the Batches API, so it rules out stacking with deferred delivery.",
+      "whyWrong": {
+        "B": "They already stream end to end; streaming improves perceived latency and time to first token, not how fast tokens are generated.",
+        "C": "Switching models is the quality/cost lever — the requirement is identical output quality, which a model swap puts at risk.",
+        "D": "The Batches API suits latency-tolerant work, cannot stream, and can take up to 24 hours — it would turn an interactive wait into an overnight one."
+      },
+      "difficulty": 3,
+      "mindset": "Diagnose the latency dimension first: fast mode buys generation throughput, streaming buys perceived latency.",
+      "tags": [
+        "latency",
+        "fast-mode",
+        "throughput",
+        "streaming"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-latency",
+        "https://platform.claude.com/docs/en/about-claude/pricing"
+      ]
+    },
+    {
+      "id": "v-d5-g3-007",
+      "taskStatementId": "5.3",
+      "scenario": "A retailer tags 200,000 product reviews every night. The job is non-urgent — results are only needed by the next morning — and cost is the primary concern. The team's evals, graded against human labels, show the smallest-tier model matching the accuracy of every larger model they tested.",
+      "stem": "Which model choice is best?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The largest, most capable model, to maximize quality margin even though the evals show no accuracy gap."
+        },
+        {
+          "id": "B",
+          "text": "The tier the documentation recommends as a default starting point for new projects, regardless of this task's evals."
+        },
+        {
+          "id": "C",
+          "text": "The most demanding tier, on the theory that more capable models are more reliable at repetitive volume."
+        },
+        {
+          "id": "D",
+          "text": "The smallest-tier model that passes the evals, at the lowest cost — with the nightly run sent through the Message Batches API for further savings."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "When evals demonstrate equal task performance, the **cheapest configuration that passes becomes the right choice**: the smallest tier is the fastest and cheapest, and for a latency-tolerant overnight job the Batches API stacks roughly half-price delivery on top without changing the model or the quality.",
+      "whyWrong": {
+        "A": "Paying for quality margin the evals cannot detect is pure waste at this volume.",
+        "B": "A recommended starting point is where you begin building, not a mandate — eval evidence overrides the default for a specific task.",
+        "C": "Capability tiers do not buy reliability on a task the smallest model already passes; this is the most expensive wrong answer."
+      },
+      "difficulty": 1,
+      "mindset": "Let the evals, not the tier list, set the floor — then take the cheapest passing option.",
+      "tags": [
+        "model-selection",
+        "cost",
+        "evals",
+        "batch"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/about-claude/pricing",
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests",
+        "https://platform.claude.com/docs/en/build-with-claude/batch-processing"
+      ]
+    },
+    {
+      "id": "v-d5-g3-008",
+      "taskStatementId": "5.3",
+      "scenario": "A legal assistant handles two very different loads: about 80% simple definitional lookups and 20% multi-document contract analysis. Today every request runs on the single most capable model, sized to the hardest task, and users complain about cost and latency on the simple lookups. Both request classes have their own eval sets.",
+      "stem": "What is the most effective design change?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Keep one strongest-available model for everything, so the hardest cases are never at risk."
+        },
+        {
+          "id": "B",
+          "text": "Route by request type: a fast, cheap tier for lookups and a capable tier with higher effort for analysis, each gated by its own evals."
+        },
+        {
+          "id": "C",
+          "text": "At runtime, ask the model to recommend which model tier fits the request, then forward the request accordingly."
+        },
+        {
+          "id": "D",
+          "text": "Keep the single capable model but tighten `max_tokens` per request so simple lookups cost less."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Because request types differ in difficulty, **route each type to the cheapest configuration that passes its own evals**. This removes the over-provisioning on the 80% without touching the quality of the 20%. Deterministic routing on request metadata is simple, testable, and auditable — unlike model self-selection.",
+      "whyWrong": {
+        "A": "Sizing everything to the hardest task is over-provisioning — the anti-pattern that routing exists to fix.",
+        "C": "A model guessing its own best tier is an unreliable meta-decision layered on the problem; route on observable request properties instead.",
+        "D": "`max_tokens` caps output length and risks truncation; it does not right-size per-request capability, input cost, or latency."
+      },
+      "difficulty": 2,
+      "mindset": "Match the configuration to the request class and prove each route with its own evals.",
+      "tags": [
+        "routing",
+        "model-selection",
+        "cost",
+        "evals",
+        "architecture"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests",
+        "https://platform.claude.com/docs/en/about-claude/pricing"
+      ]
+    },
+    {
+      "id": "v-d5-g3-009",
+      "taskStatementId": "5.3",
+      "scenario": "A team piloted moving a summarization workload to the cheapest model. Per-call cost fell about 60%, but roughly 12% of outputs now fail downstream validation and are retried on a larger model, and some never succeed. Finance asks which single metric should decide whether the migration is a win.",
+      "stem": "Which metric best supports the decision?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Average cost per API call, since each individual request is what the provider bills."
+        },
+        {
+          "id": "B",
+          "text": "Published per-million-token list prices of the two models, which are fixed and objective."
+        },
+        {
+          "id": "C",
+          "text": "Cost per completed, validated task, together with each configuration's eval pass rate."
+        },
+        {
+          "id": "D",
+          "text": "The model's self-reported confidence score on each summary, averaged over the pilot."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Judge configurations by **cost per completed task, not per call**. Retries, failures, and escalations are real costs of a cheaper-but-weaker configuration, and only a per-successful-outcome metric paired with the eval pass rate captures them. A configuration that wins per call can lose per task — exactly what the pilot data is hinting at.",
+      "whyWrong": {
+        "A": "Per-call cost hides the retries and failures that dominate the true economics here.",
+        "B": "List prices ignore volume, retry loops, thinking tokens, and failure rates — token price is not task cost.",
+        "D": "Self-reported confidence is a poorly calibrated proxy; measure outcomes with evals, not the model's self-assessment."
+      },
+      "difficulty": 3,
+      "mindset": "Cheap calls that fail twice are expensive — optimize cost per successful task.",
+      "tags": [
+        "cost-per-task",
+        "evals",
+        "model-selection",
+        "retries"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests",
+        "https://platform.claude.com/docs/en/about-claude/pricing"
+      ]
+    },
+    {
+      "id": "v-d5-g3-010",
+      "taskStatementId": "5.3",
+      "scenario": "An organization has model IDs hard-coded across 40 services, each pinned to an exact model version. A rushed, ungated switch to a newly released version — made without re-running evals — caused production incidents when the new release quietly changed behavior. The team still wants the new release's benefits, safely.",
+      "stem": "What is the recommended approach?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Centralize the pinned model ID in shared configuration and gate each upgrade behind the eval suite, rolling traffic over gradually."
+        },
+        {
+          "id": "B",
+          "text": "Move every service to the newest released model version immediately, so the platform adopts each release as it ships."
+        },
+        {
+          "id": "C",
+          "text": "Let each service team choose whichever model it prefers at build time, with no central review."
+        },
+        {
+          "id": "D",
+          "text": "Stay on the current pinned model indefinitely and treat upgrades as too risky to schedule."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Model releases can carry **breaking behavior changes**, so upgrades must be deliberate acts: keep version-pinned model IDs in configuration, run the eval suite against the candidate model, and shift traffic gradually with a rollback path. This captures the new release's benefits without inheriting its behavior changes by surprise.",
+      "whyWrong": {
+        "B": "Adopting every release the day it ships exposes production to each release's breaking changes with no eval gate — the exact incident they just had.",
+        "C": "Per-team model choice fragments behavior, cost, and compatibility, and makes migrations uncoordinated.",
+        "D": "Refusing all upgrades forfeits improvements; the guidance is controlled adoption, not freezing."
+      },
+      "difficulty": 2,
+      "mindset": "Pin in config, upgrade on eval evidence, roll out gradually — never drift with the latest release.",
+      "tags": [
+        "model-pinning",
+        "rollout",
+        "governance",
+        "migration",
+        "evals"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests",
+        "https://everpath-course-content.s3-accelerate.amazonaws.com/instructor%2F6nizmqk8tpzpfjvt6qmmav7rh%2Fpublic%2F1783542875%2FClaude+Certified+Developer+%E2%80%93+Foundations+Exam+Guide.pdf"
+      ]
+    },
+    {
+      "id": "v-d5-g3-011",
+      "taskStatementId": "5.3",
+      "scenario": "A disputes agent runs on the current top-tier Opus model. Simple account-status lookups burn long thinking traces (hurting latency and cost), while complex disputes genuinely need deep reasoning. The team must keep this single model for the product and wants per-request depth control with minimal changes.",
+      "stem": "What should they do?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Disable thinking entirely on the lookup route so those requests answer without reasoning."
+        },
+        {
+          "id": "B",
+          "text": "Keep adaptive thinking and steer depth per route with the effort setting — low for lookups, high for disputes — verified by evals."
+        },
+        {
+          "id": "C",
+          "text": "Set a small `budget_tokens` value on lookup requests and a large one on dispute requests."
+        },
+        {
+          "id": "D",
+          "text": "Move all traffic to the smallest-tier model and use its thinking mode for every request."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "On the current top-tier model, thinking **cannot be turned off** and manual budgets are rejected — the supported steering mechanism is adaptive thinking plus the **effort** setting. Effort per route gives the lookups shallow reasoning and the disputes deep reasoning on one model, and evals confirm neither route regressed.",
+      "whyWrong": {
+        "A": "Thinking is always on for this model — there is no disable switch; effort is the depth control.",
+        "C": "`budget_tokens` belongs to manual extended thinking, which this model rejects with a 400.",
+        "D": "The smallest tier lacks the capability the complex disputes require, and its thinking controls differ (it supports manual extended thinking rather than adaptive thinking), so it fails the hard half of the workload."
+      },
+      "difficulty": 3,
+      "mindset": "On current top-tier models, effort is the reasoning-depth dial — not budget_tokens, not an off switch.",
+      "tags": [
+        "adaptive-thinking",
+        "effort",
+        "routing",
+        "extended-thinking"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/extended-thinking"
+      ]
+    },
+    {
+      "id": "v-d5-g3-012",
+      "taskStatementId": "5.3",
+      "scenario": "A platform team is migrating request code from Claude 4.5-era models to the current top-tier models. They are auditing every request pattern to classify which ones will fail loudly versus silently change behavior.",
+      "stem": "Which two patterns are hard breaks — the API returns HTTP 400 — rather than silent behavior changes? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Prefilling the last assistant message with `{` to force JSON output."
+        },
+        {
+          "id": "B",
+          "text": "Raising `max_tokens` from 4,096 to 8,192 on long-form generation requests."
+        },
+        {
+          "id": "C",
+          "text": "Reordering the sections of the system prompt so instructions come after the role definition."
+        },
+        {
+          "id": "D",
+          "text": "Sending `tool_choice: {\"type\": \"tool\", \"name\": \"extract\"}` to force a specific tool call."
+        },
+        {
+          "id": "E",
+          "text": "Adding a second tool definition to the request's tools array."
+        }
+      ],
+      "correct": [
+        "A",
+        "D"
+      ],
+      "explanation": "The canonical hard breaks on current top-tier models are **assistant prefill** (removed — the conversation must end with a user message) and **forced tool selection** (`any`/`tool`), both of which return 400 (as does a carried-over manual `budget_tokens`). The other changes are accepted by the API but alter behavior or caching silently — the soft breaks that evals, not error logs, must catch.",
+      "whyWrong": {
+        "B": "A higher output cap is a valid request change; it risks nothing at the protocol level (just watch the context window).",
+        "C": "Reordering the system prompt is accepted; it silently shifts behavior and invalidates the cached prefix rather than erroring.",
+        "E": "Adding a tool is valid; it invalidates the tools-level cache prefix and can alter tool selection silently, but produces no 400."
+      },
+      "difficulty": 1,
+      "mindset": "Migrations break loudly on prefill, forced tool_choice, and manual thinking budgets; everything else breaks quietly.",
+      "tags": [
+        "migration",
+        "hard-breaks",
+        "prefill",
+        "tool-choice",
+        "soft-breaks"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools",
+        "https://platform.claude.com/docs/en/api/errors"
+      ]
+    },
+    {
+      "id": "v-d5-g3-013",
+      "taskStatementId": "5.3",
+      "scenario": "A team must cut Claude spend on an eval-gated document pipeline by roughly 40% **without reducing output quality**. The pipeline has a latency-tolerant nightly bulk portion and a static tools-plus-system-prompt prefix that is identical on every call. Output quality and eval pass rates must be unchanged after the cuts.",
+      "stem": "Which two changes meet the constraint? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Route every request, including the hardest analysis cases, to the smallest-tier model."
+        },
+        {
+          "id": "B",
+          "text": "Cap `max_tokens` just below the current average output length so most responses cost less."
+        },
+        {
+          "id": "C",
+          "text": "Move the nightly bulk to the Message Batches API, which processes the same requests on the same models at roughly half the token cost."
+        },
+        {
+          "id": "D",
+          "text": "Set effort to the minimum on every request, including the complex analysis route."
+        },
+        {
+          "id": "E",
+          "text": "Add cache breakpoints on the static tools and system prompt so the shared prefix is read at a small fraction of base input price on subsequent calls."
+        }
+      ],
+      "correct": [
+        "C",
+        "E"
+      ],
+      "explanation": "The two **no-quality-loss cost levers** are batching and caching: Batches runs identical requests on the same models at about half price, and prompt caching re-reads the unchanged static prefix at roughly 0.1x base input price (a small first-write surcharge, then cheap reads — it pays off because the prefix is identical every call). Neither touches generation, so eval results are unaffected. Model downsizing, effort cuts, and output caps all trade quality or completeness for savings.",
+      "whyWrong": {
+        "A": "Downsizing the model for the hardest cases is a quality lever — the evals gate it, and the constraint forbids the risk.",
+        "B": "Capping output below typical length invites truncation (`stop_reason: max_tokens` means cut-off answers, not finished ones).",
+        "D": "Minimum effort reduces reasoning depth — a quality tradeoff, not a free saving."
+      },
+      "difficulty": 2,
+      "mindset": "Batch and cache are the free lunches; model, effort, and max_tokens all charge quality for savings.",
+      "tags": [
+        "cost",
+        "batch",
+        "caching",
+        "quality",
+        "evals"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/batch-processing",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching"
+      ]
+    },
+    {
+      "id": "v-d5-g3-014",
+      "taskStatementId": "5.3",
+      "scenario": "A team is migrating a production service from an earlier Opus model to the current top-tier Opus model. The old code steers reasoning with a manual `budget_tokens` value on the hardest requests. They have an existing eval suite and a canary deployment process. Leadership wants the migration done safely this quarter.",
+      "stem": "Which two actions follow the migration guidance? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Wrap every HTTP 400 response in an exponential-backoff retry loop until the requests succeed."
+        },
+        {
+          "id": "B",
+          "text": "Re-run the eval suite against the new model and shift traffic over gradually behind the canary."
+        },
+        {
+          "id": "C",
+          "text": "Keep sending `thinking` with `budget_tokens` unchanged, since the parameter is still accepted on the new model."
+        },
+        {
+          "id": "D",
+          "text": "Set effort explicitly for the request classes that need deep reasoning, since adaptive thinking on the new model replaces the manual thinking budget."
+        },
+        {
+          "id": "E",
+          "text": "Treat per-request cost and token counts as unchanged, since the prompts and settings are identical."
+        }
+      ],
+      "correct": [
+        "B",
+        "D"
+      ],
+      "explanation": "The documented migration path is **evals first, then gradual rollout**, plus re-declaring every relied-upon control: manual thinking budgets are rejected on the new model, so reasoning depth now comes from adaptive thinking steered by effort and must be set explicitly. Cost assumptions must also be re-measured — the newer tokenizer produces more tokens for the same text, so identical prompts do not mean identical spend.",
+      "whyWrong": {
+        "A": "400s are deterministic client errors — backoff cannot fix them; the request pattern must be corrected.",
+        "C": "Manual thinking budgets are rejected on this model — every such request returns 400.",
+        "E": "Same prompt text does not mean same cost: the newer tokenizer yields roughly 30% more tokens for the same text, shifting spend and context fit — re-measure with `count_tokens`."
+      },
+      "difficulty": 2,
+      "mindset": "Migrate deliberately: evals + gradual rollout, and re-pin every control (effort, budgets, cost baselines) you relied on.",
+      "tags": [
+        "migration",
+        "effort",
+        "evals",
+        "rollout",
+        "hard-breaks"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/extended-thinking",
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://everpath-course-content.s3-accelerate.amazonaws.com/instructor%2F6nizmqk8tpzpfjvt6qmmav7rh%2Fpublic%2F1783542875%2FClaude+Certified+Developer+%E2%80%93+Foundations+Exam+Guide.pdf"
+      ]
+    },
+    {
+      "id": "v-d5-g3-015",
+      "taskStatementId": "5.3",
+      "scenario": "A legal-tech team is selecting a model for a service that must analyze entire case files of about 900,000 tokens in a single request. Results are not needed until the next morning, and the chosen model must pass their accuracy evals. Different candidate models differ in context-window capacity, thinking modes, and delivery options.",
+      "stem": "Which two statements are correct? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Context-window capacity differs across the lineup — the smallest tier's 200K window cannot hold the file in one request, while several current mid- and top-tier models offer 1M-token windows."
+        },
+        {
+          "id": "B",
+          "text": "Choose the model with the largest context window regardless of eval results, since capacity implies quality."
+        },
+        {
+          "id": "C",
+          "text": "Realtime-versus-batch delivery is independent of model choice — they can keep the eval-passing model and roughly halve cost with the Message Batches API, since results are due the next morning."
+        },
+        {
+          "id": "D",
+          "text": "Enable fast mode on the batched requests so the overnight window finishes sooner."
+        },
+        {
+          "id": "E",
+          "text": "Require adaptive thinking from every candidate model, since all current models, including the smallest tier, support it."
+        }
+      ],
+      "correct": [
+        "A",
+        "C"
+      ],
+      "explanation": "Two independent checks apply: **capacity** (window sizes differ by model — 200K on the smallest tier versus 1M on several current larger models, so the file fits only on the latter) and **delivery economics** (batching is orthogonal to model choice and halves token cost for latency-tolerant work, with quality unchanged). Evals still decide which fitting model to use.",
+      "whyWrong": {
+        "B": "Window size is capacity, not capability — a big window doesn't make a model more accurate; evals pick the model.",
+        "D": "Fast mode cannot be combined with the Batches API — it is an API-only, premium realtime option, so it is unavailable for this job.",
+        "E": "The smallest tier supports manual extended thinking rather than adaptive thinking — thinking modes differ across the lineup, so this requirement would wrongly exclude viable candidates."
+      },
+      "difficulty": 2,
+      "mindset": "Check capacity, thinking-mode support, and delivery independently — never conflate window size with quality.",
+      "tags": [
+        "context-window",
+        "model-selection",
+        "batch",
+        "adaptive-thinking",
+        "capacity"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/context-windows",
+        "https://platform.claude.com/docs/en/build-with-claude/batch-processing",
+        "https://platform.claude.com/docs/en/build-with-claude/extended-thinking"
+      ]
+    }
+  ]
+}

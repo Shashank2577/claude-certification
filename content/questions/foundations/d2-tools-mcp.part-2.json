@@ -10,19 +10,19 @@
       "options": [
         {
           "id": "A",
-          "text": "Add a system prompt rule telling the agent never to call process_refund more than twice in a row, and to apologize for a technical issue after the second failure."
+          "text": "Add a system prompt rule telling the agent never to call process_refund more than twice in a row, to wait ten seconds between calls, and to apologize for a temporary technical issue after the second failure."
         },
         {
           "id": "B",
-          "text": "Change process_refund to return isError: true with errorCategory \"business\", isRetryable: false and a customer-friendly reason (the order is 41 days past the 30-day window)."
+          "text": "Change process_refund to return isError: true with errorCategory \"business\" and isRetryable: false, plus a customer-friendly reason such as the order being past the 30-day window."
         },
         {
           "id": "C",
-          "text": "Add few-shot examples to the system prompt that show the agent turning down refunds politely whenever process_refund fails, whatever caused the failure."
+          "text": "Add few-shot examples to the system prompt that show the agent turning down refunds politely whenever process_refund fails, whatever caused the failure, keeping refusals consistent."
         },
         {
           "id": "D",
-          "text": "Put an automatic retry with exponential backoff inside the MCP server so that process_refund failures are retried server-side before anything goes back to the agent."
+          "text": "Put an automatic retry with exponential backoff inside the MCP server so that process_refund failures are retried server-side, up to five attempts, before anything goes back to the agent."
         }
       ],
       "correct": [
@@ -30,9 +30,9 @@
       ],
       "explanation": "The agent behaves badly because the tool tells it nothing. A generic \"Operation failed\" looks like it could be transient, so retrying is a reasonable guess. A **structured error** that marks the failure as a business-rule violation (`errorCategory`), says it is **not retryable**, and gives a human-readable reason lets the agent stop retrying and explain the real policy to the customer. The MCP spec puts business-logic failures in the tool result with `isError: true`, where the model can see and react to them, and the exam guide calls for a `retriable: false` flag plus a customer-friendly explanation for policy violations. The change stays inside one tool's response, which satisfies the \"minimal changes\" constraint.",
       "whyWrong": {
-        "A": "A retry cap stops the loop, but the agent still doesn't know *why* the call failed, so it keeps blaming a \"technical problem\". The prompt rule treats the symptom, and a real transient failure would get cut off too.",
-        "C": "Few-shot examples teach the agent to refuse on *any* failure, so real outages and validation errors would also turn into policy refusals. The agent needs the error category, and examples can't supply it.",
-        "D": "Retrying a policy violation server-side only wastes time and load. The request fails the same way every time. Backoff is meant for transient errors, not business-rule errors."
+        "A": "A retry cap and a forced pause stop the loop, but the agent still doesn't know *why* the call failed, so it keeps blaming a \"temporary technical problem\". The prompt rule treats the symptom, and a real transient failure would get cut off too.",
+        "C": "Few-shot examples teach the agent to refuse on *any* failure, so real outages and validation errors would also turn into polite policy refusals. The agent needs the error category, and examples can't supply it.",
+        "D": "Retrying a policy violation server-side only wastes time and load; all five attempts fail the same way every time. Backoff is meant for transient errors, not business-rule errors."
       },
       "difficulty": 2,
       "mindset": "Give the agent structured error metadata (category, retryable flag, reason) instead of trying to fix its recovery behavior with prompt rules.",
@@ -99,15 +99,15 @@
       "options": [
         {
           "id": "A",
-          "text": "Have the coordinator re-dispatch every search task that returns zero results to a second web-search subagent before it accepts the empty result as final."
+          "text": "Have the coordinator re-dispatch every search task that returns zero results to a second web-search subagent, and treat the empty result as final only when both runs come back empty."
         },
         {
           "id": "B",
-          "text": "Instruct the synthesis agent to label any subtopic with zero sources as \"low confidence\" in the report instead of saying no research exists."
+          "text": "Instruct the synthesis agent to label any subtopic with zero sources as \"low confidence\" in the report, instead of claiming that no published research exists on it."
         },
         {
           "id": "C",
-          "text": "Make the coordinator stop the whole research run and report a failure whenever any subagent hits an error, so that partial reports are never produced."
+          "text": "Make the coordinator stop the whole research run and report a failure to the user whenever any subagent hits an error, so partially sourced reports are never produced."
         },
         {
           "id": "D",
@@ -119,8 +119,8 @@
       ],
       "explanation": "The root cause is that an **access failure was disguised as a valid empty result**. These are different situations. A timeout means the agent doesn't know the answer and has to decide whether to retry. An empty result from a successful query means \"no matches\". Fix it at the source: return a structured, retryable transient error, recover locally inside the subagent, and send the coordinator only what can't be resolved, together with what was attempted and any partial results. The coordinator can then annotate the gap honestly.",
       "whyWrong": {
-        "A": "Re-running every empty search doubles the cost of the many searches that really have no results, and it still can't tell a timeout from a genuine empty result. It hides the root cause with extra work.",
-        "B": "The synthesis agent still can't tell \"we couldn't search\" from \"we searched and found nothing\", because that information was lost upstream. Changing the label wording doesn't recover it.",
+        "A": "Re-running every empty search doubles the cost of the many searches that genuinely have no results, and two empty runs still can't tell a timeout from a genuine empty result. It hides the root cause with extra work.",
+        "B": "The synthesis agent still can't tell \"we couldn't search\" from \"we searched and found nothing\", because that information was lost upstream. Relabeling the claim as \"low confidence\" doesn't recover it.",
         "C": "Ending the whole workflow because of one recoverable timeout is too drastic. It throws away all the good work from other subagents when a local retry or an annotated coverage gap would do."
       },
       "difficulty": 3,
@@ -144,7 +144,7 @@
       "options": [
         {
           "id": "A",
-          "text": "Use Grep to search file contents for applyLoyaltyDiscount across the codebase, then Read only the files that match to inspect each call site."
+          "text": "Use Grep to search file contents for applyLoyaltyDiscount, then Read only the matching files to inspect each call site."
         },
         {
           "id": "B",
@@ -199,7 +199,7 @@
         },
         {
           "id": "D",
-          "text": "Raise an exception inside the server so that the host application logs the failure and quietly drops the tool call from the conversation."
+          "text": "Raise an exception inside the server so that the host application logs the failure and quietly drops the failed tool call from the conversation entirely."
         }
       ],
       "correct": [
@@ -234,11 +234,11 @@
         },
         {
           "id": "B",
-          "text": "Stop and ask the engineer to make the six edits by hand, since the Edit tool can't handle files that contain repeated text."
+          "text": "Stop and ask the engineer to make the six edits by hand, since the Edit tool can't handle a file where the same stanza text repeats six times."
         },
         {
           "id": "C",
-          "text": "Use Bash to run a sed command that replaces the memory line by regex, so the file is changed without needing a unique anchor."
+          "text": "Use Bash to run a sed command that replaces the memory lines by regex, so the file is changed without needing a unique anchor for each stanza."
         },
         {
           "id": "D",
@@ -251,7 +251,7 @@
       "explanation": "Edit needs `old_string` to match **exactly once**. When the target text is genuinely not unique, and here even the surrounding context is identical, the dependable fallback is **Read + Write**: load the whole file, produce the full correct content, and write it back. That way each stanza gets its own value, and the result can be reviewed as one change.",
       "whyWrong": {
         "A": "replace_all applies the *same* replacement everywhere. The task needs a different value per stanza, so this produces wrong content that then needs more repair.",
-        "B": "Handing the work back is unnecessary. The built-in tools already cover this case through Read + Write.",
+        "B": "Handing the work back to the engineer is unnecessary. The built-in tools already handle repeated text through a Read followed by a Write.",
         "C": "A regex over identical lines can't give each stanza a different value either, so the result is still wrong. Going around the file-editing tools also has a cost: Claude Code checkpoints don't track files changed through Bash commands, so /rewind can't undo the change."
       },
       "difficulty": 3,
@@ -278,19 +278,19 @@
         },
         {
           "id": "B",
-          "text": "Include the raw database stack trace and internal hostname in the error content, so the agent has the full technical detail behind the failure."
+          "text": "Include the raw database stack trace and internal hostname in the error content, so the agent has the complete technical detail behind every failure."
         },
         {
           "id": "C",
-          "text": "Map every failure to one standard code, TOOL_ERROR, so the agent only has to handle a single, predictable error shape across all tools."
+          "text": "Map every failure to one standard code, TOOL_ERROR, so the agent only has to handle a single, predictable error shape across every tool."
         },
         {
           "id": "D",
-          "text": "Include an isRetryable flag and a short human-readable description, such as \"Order ID must match ORD-######; received 88123\"."
+          "text": "Include an isRetryable flag and a short human-readable description, such as \"Order ID must match ORD-######; received 88123\", on every failure."
         },
         {
           "id": "E",
-          "text": "Have the server retry every failed lookup five times before it responds, so the agent sees an error only after all retries are used up."
+          "text": "Have the server retry every failed lookup five times before it responds, so the agent sees an error only after all five attempts are used up."
         }
       ],
       "correct": [
@@ -299,7 +299,7 @@
       ],
       "explanation": "Structured error metadata is what lets an agent recover sensibly. **`errorCategory`** tells it whether to wait and retry (transient), fix its input (validation), or escalate (permission). **`isRetryable`** plus a **human-readable description** prevents wasted retries and shows exactly what to correct. Together they replace the uniform message that currently leaves the agent guessing.",
       "whyWrong": {
-        "B": "Stack traces and hostnames are noisy, low-signal context for the model and may leak internal details. They don't say what to do next.",
+        "B": "Stack traces and hostnames are noisy, low-signal context for the model and may leak internal details. They don't tell the agent what to do next.",
         "C": "A single uniform code is the same as \"Lookup error\" in a new format. The agent still can't tell a timeout from a bad ID from a permission block.",
         "E": "Blind server-side retries help only transient failures. They waste time on malformed IDs and permission blocks, which fail the same way every time."
       },
@@ -325,19 +325,19 @@
       "options": [
         {
           "id": "A",
-          "text": "Use Glob to list all .py files, then Read them in alphabetical order until the context window is nearly full, and summarize what was loaded."
+          "text": "Use Glob to list every .py file, then Read them one at a time in alphabetical order until the context window is nearly full, and summarize what was loaded."
         },
         {
           "id": "B",
-          "text": "Use Grep to find the route registrations or entry-point handlers, Read those files, then follow their imports with further Reads along the request path."
+          "text": "Use Grep to find the route registrations or entry-point handlers, Read those files, then follow imports with further Reads along the request path."
         },
         {
           "id": "C",
-          "text": "Read every file in the repository up front so the agent has a complete picture before it answers anything about the request flow."
+          "text": "Read every file in the repository up front so the agent has a complete picture of the code before it answers anything about the request flow."
         },
         {
           "id": "D",
-          "text": "Use Bash to print the directory tree, then infer the request flow from folder and file names without opening any of the source files."
+          "text": "Use Bash to print the full directory tree, then infer the request flow from folder and file names alone, without opening any of the source files."
         }
       ],
       "correct": [
@@ -345,9 +345,9 @@
       ],
       "explanation": "Large codebases call for **incremental** exploration. Grep finds the entry points (route decorators, handler registrations), and Read then follows imports step by step along the actual path. Context goes only to relevant code, and the trace is grounded in real source rather than guesses.",
       "whyWrong": {
-        "A": "Alphabetical reading fills context with whatever comes first, not with what is on the request path. The trace would likely be incomplete.",
+        "A": "Alphabetical reading fills the context with whatever comes first in the listing, not with what is on the request path. The trace would likely be incomplete.",
         "C": "Reading 1,200 modules up front can't fit and buries the relevant code. This is the anti-pattern the incremental approach exists to avoid.",
-        "D": "Folder names hint at structure but can't show the real call flow. An answer based only on them is speculation."
+        "D": "Folder names hint at structure but can't show the real call flow. An answer based only on the tree is speculation."
       },
       "difficulty": 2,
       "mindset": "Explore incrementally: Grep for entry points, then Read along the imports. Don't load everything.",
@@ -375,7 +375,7 @@
         },
         {
           "id": "B",
-          "text": "Have the subagent keep retrying silently until the call eventually succeeds, and never report failures upward, so the coordinator's context stays clean."
+          "text": "Have the subagent keep retrying silently until the call eventually succeeds, and never report failures upward, so the coordinator's context stays clean throughout the run."
         },
         {
           "id": "C",
@@ -383,7 +383,7 @@
         },
         {
           "id": "D",
-          "text": "Replace the MCP tool with a larger general-purpose fetch tool on the coordinator, so the coordinator can run the analysis itself whenever the subagent fails."
+          "text": "Replace the MCP tool with a larger general-purpose fetch tool on the coordinator, so the coordinator can run the analysis itself whenever the subagent reports a failure."
         }
       ],
       "correct": [
@@ -424,7 +424,7 @@
         },
         {
           "id": "C",
-          "text": "Read the wrapper modules to list every name and alias under which the helper is exported, including fmtMoney and money.format."
+          "text": "Read the two wrapper modules to list every name and alias under which the helper is exported, including fmtMoney and money.format."
         },
         {
           "id": "D",
@@ -432,7 +432,7 @@
         },
         {
           "id": "E",
-          "text": "Grep the codebase for each exported name and alias found in the wrappers, then combine the matches with the original four call sites."
+          "text": "Grep the codebase for each exported name and alias found in the wrapper modules, then combine those matches with the original four call sites."
         }
       ],
       "correct": [
@@ -474,7 +474,7 @@
         },
         {
           "id": "C",
-          "text": "Return isError: true with errorCategory \"transient\" and isRetryable: true, so the agent is encouraged to try the same call again rather than escalate."
+          "text": "Return isError: true with errorCategory \"transient\" and isRetryable: true, so the agent is encouraged to retry the same call rather than escalate to a human."
         },
         {
           "id": "D",
@@ -487,7 +487,7 @@
       "explanation": "A validation error is fixable by the caller, *if the caller knows what to fix*. An actionable error that names the field, the expected format, the value received and a corrected example lets the model rebuild the call right away. Anthropic's tool guidance says error responses should communicate specific, actionable improvements rather than opaque codes, and the API docs give the same advice: say what went wrong and what Claude should try next. The fix lives in the tool response, so it works on the very next turn without any prompt change.",
       "whyWrong": {
         "A": "A better description may reduce future mistakes, but when the error happens the agent still gets the opaque \"Invalid request\" and can't recover in this conversation.",
-        "C": "Calling it transient and retryable is false. The same malformed call fails again, so the agent wastes turns and then escalates anyway.",
+        "C": "Calling it transient and retryable is false. The same malformed call fails again, so the agent wastes turns and then escalates to a human anyway.",
         "D": "A numeric code plus a prompt rule still leaves the agent to work out what was wrong by itself. The error response should carry the correction; a general instruction to re-read the schema is slower and less reliable than being told the field, the format and a valid example."
       },
       "difficulty": 2,
@@ -556,7 +556,7 @@
         },
         {
           "id": "B",
-          "text": "The requested refund of $900 is above the $500 limit that company policy allows agents to approve."
+          "text": "The requested refund of $900 is above the $500 limit that company policy allows support agents to approve."
         },
         {
           "id": "C",
@@ -603,11 +603,11 @@
       "options": [
         {
           "id": "A",
-          "text": "Grep the codebase for a distinctive fragment of the message, such as \"signature mismatch for tenant\", to find the file and line that produce it."
+          "text": "Grep the codebase for a distinctive fragment like \"signature mismatch for tenant\" to find the file and line that produce it."
         },
         {
           "id": "B",
-          "text": "Glob for **/*webhook* and open each matching file in turn, since the error most likely comes from a file with \"webhook\" in its name."
+          "text": "Glob for **/*webhook* and open each matching file in turn, since the message most likely comes from a file with \"webhook\" in its name."
         },
         {
           "id": "C",

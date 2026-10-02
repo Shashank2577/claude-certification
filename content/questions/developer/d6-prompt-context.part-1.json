@@ -1,0 +1,694 @@
+{
+  "certId": "developer",
+  "domainId": "d6-prompt-context",
+  "questions": [
+    {
+      "id": "v-d6-g1-001",
+      "taskStatementId": "6.1",
+      "scenario": "A team is sizing the context budget for a long-running support agent that calls several tools per turn. The engineer estimates usage by adding up the visible text of the user and assistant messages and reports that the session is nowhere near the limit. Late in the session, responses degrade and requests start failing even though the estimate says there is plenty of room.",
+      "stem": "What is the most accurate explanation of what is filling the context window?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Only the visible text of user and assistant messages is retained in the window; tool payloads are streamed and discarded once the model has seen them."
+        },
+        {
+          "id": "B",
+          "text": "Everything in the request and response counts toward the window — system prompt, tool definitions, tool results, documents, retained thinking, and the model's own output — and cached tokens still occupy the window."
+        },
+        {
+          "id": "C",
+          "text": "Prompt caching removes the cached prefix from the context window, so the estimate is wrong only on requests where caching is disabled."
+        },
+        {
+          "id": "D",
+          "text": "Thinking tokens are billed as output tokens but are excluded from the context window, so the gap must come from message text alone."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "The context window is consumed by **everything** in the request and the response: the system prompt, tool definitions, all message content (including tool results and attached documents), retained thinking blocks, and the generated output itself. Cached tokens reduce cost and latency but still count toward the window. In agent transcripts, accumulated tool results and tool definitions are the hidden bulk a messages-only estimate never sees, which is why the estimate runs low.",
+      "whyWrong": {
+        "A": "Tool results are ordinary message content — they are appended to the conversation history and occupy the window like any other block; they are not streamed and discarded.",
+        "C": "Caching changes cost and latency, not window occupancy; a cached prefix is still sent, still part of the request, and still counts toward the limit.",
+        "D": "Thinking tokens are part of the context (they also count toward max_tokens); they are billed as output but are not excluded from the window."
+      },
+      "difficulty": 1,
+      "mindset": "Budget the window with everything the request and response contain, not just visible text.",
+      "tags": [
+        "context-window",
+        "token-accounting",
+        "agent-loops",
+        "tool-results"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/context-windows"
+      ]
+    },
+    {
+      "id": "v-d6-g1-002",
+      "taskStatementId": "6.1",
+      "scenario": "A research agent works through a long session, and its adherence to the original task instructions drifts as the transcript grows. A teammate proposes migrating to a model with a much larger context window and keeping the entire transcript intact.",
+      "stem": "Which response BEST addresses the root cause?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Migrate to the larger-context model and keep the full transcript, since a bigger window restores recall of the early instructions."
+        },
+        {
+          "id": "B",
+          "text": "Repeat the original instructions verbatim in every user turn so they are always the most recent text the model sees."
+        },
+        {
+          "id": "C",
+          "text": "Reduce what each turn carries — prune stale tool results, summarize older turns, keep key facts pinned — because recall degrades as context grows regardless of window size."
+        },
+        {
+          "id": "D",
+          "text": "Raise max_tokens so the model can restate its instructions before answering, refreshing them at the start of every response."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Recall and accuracy degrade as the number of tokens grows (**context rot**); capacity is not the cure — curation is. Pruning tool output, summarizing older turns, and pinning key facts outside the summary reduce the load and protect the instructions that matter. A larger window only moves the point at which degradation appears.",
+      "whyWrong": {
+        "A": "A bigger window delays but does not stop the decay; early-instruction recall still worsens as tokens accumulate.",
+        "B": "Verbatim repetition is a louder patch that adds tokens every turn and accelerates the bloat it is meant to fix.",
+        "D": "max_tokens is an output allowance; spending output on restating instructions does nothing for context health."
+      },
+      "difficulty": 2,
+      "mindset": "Curation beats capacity.",
+      "tags": [
+        "context-rot",
+        "tool-output-pruning",
+        "compaction",
+        "context-window"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/context-windows"
+      ]
+    },
+    {
+      "id": "v-d6-g1-003",
+      "taskStatementId": "6.1",
+      "scenario": "A customer-support agent calls an internal REST tool whose JSON responses include several hundred fields, vendor banners, and localized boilerplate. After a dozen calls the context balloons and answer quality drops. The team wants the smallest change, using no new services or beta features, that reduces what each call adds to the context.",
+      "stem": "What should they do FIRST?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Trim the tool results in their own integration code before appending them to the conversation, keeping only the high-signal fields the model needs such as case ID, status, and next actions."
+        },
+        {
+          "id": "B",
+          "text": "Adopt server-side context editing with the clear_tool_uses strategy so that older tool results are dropped from the prompt by rule."
+        },
+        {
+          "id": "C",
+          "text": "Add a system-prompt line instructing Claude to disregard verbose fields and banners when reading tool output."
+        },
+        {
+          "id": "D",
+          "text": "Cut the agent's tool set down to a smaller number of tools so the schema definitions stop consuming the window."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Pruning tool output **in your own code** is the cheapest and first fix for context bloat: truncate results to high-signal fields (with sensible defaults and steering text) before they are ever appended. It is deterministic, requires no new infrastructure, and shrinks what every call adds from the moment it lands.",
+      "whyWrong": {
+        "B": "Context editing is a real mechanism but it is a beta feature the stem excludes, and it operates on history that has already accumulated rather than shrinking each result at the source.",
+        "C": "A prompt rule is probabilistic — the model will sometimes cite the banners anyway — and the full payload still occupies the window and dilutes attention.",
+        "D": "Tool schemas do consume context, but they are small relative to result payloads; cutting tools does not shrink the responses that are causing the bloat."
+      },
+      "difficulty": 2,
+      "mindset": "Prune tool output at the source before reaching for server-side machinery.",
+      "tags": [
+        "tool-output-pruning",
+        "context-bloat",
+        "token-efficiency"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/writing-tools-for-agents",
+        "https://platform.claude.com/docs/en/build-with-claude/context-windows"
+      ]
+    },
+    {
+      "id": "v-d6-g1-004",
+      "taskStatementId": "6.1",
+      "scenario": "A platform team is evaluating server-side context-management features for a long-running agent. Compliance requires that the organization keep a full, unmodified record of the conversation on its own systems.",
+      "stem": "Which two statements accurately describe these features? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Context editing removes older turns from the conversation history stored on the client, so the compliance record would have to be rebuilt from server logs."
+        },
+        {
+          "id": "B",
+          "text": "The clear_tool_uses context-editing strategy clears older tool results from the prompt by rule, while the client retains the full history."
+        },
+        {
+          "id": "C",
+          "text": "Compaction truncates the oldest messages at a fixed token count; no summarization step is involved."
+        },
+        {
+          "id": "D",
+          "text": "With compaction, the returned compaction block must be passed back on subsequent requests, and custom compaction instructions replace the default summary prompt."
+        },
+        {
+          "id": "E",
+          "text": "Compaction preserves exact identifiers and amounts because the model re-reads the original transcript on every turn."
+        }
+      ],
+      "correct": [
+        "B",
+        "D"
+      ],
+      "explanation": "The two server-side mechanisms do different jobs. **Context editing** (clear_tool_uses) removes specific old tool results from the prompt according to a rule — the client keeps the complete history, which suits the audit requirement. **Compaction** summarizes older turns: the returned compaction block must be sent back in later requests (the API drops the prior content), and supplying custom instructions *replaces* the default summarization prompt rather than appending to it.",
+      "whyWrong": {
+        "A": "Editing changes what is sent to the model, never what the client stores; the local history is untouched.",
+        "C": "Compaction summarizes the conversation; it does not truncate at a fixed token count.",
+        "E": "Exact identifiers and amounts are precisely what summaries tend to lose; the original turns are dropped after compaction, not re-read."
+      },
+      "difficulty": 3,
+      "mindset": "Editing clears by rule and keeps the transcript; compaction replaces turns with a summary.",
+      "tags": [
+        "context-editing",
+        "compaction",
+        "context-window",
+        "audit"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/context-editing",
+        "https://platform.claude.com/docs/en/build-with-claude/compaction"
+      ]
+    },
+    {
+      "id": "v-d6-g1-005",
+      "taskStatementId": "6.1",
+      "scenario": "A claims-triage agent runs for hours, with older turns periodically summarized to stay within its context budget. After each summarization pass it starts misquoting policy limits, claim IDs, and payout amounts that it had cited correctly earlier in the session.",
+      "stem": "What is the MOST effective fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Instruct the summarization step to produce longer, more detailed summaries so that nothing important is left out."
+        },
+        {
+          "id": "B",
+          "text": "Raise max_tokens for the summarization step so the summary is never cut off mid-sentence."
+        },
+        {
+          "id": "C",
+          "text": "Stop summarizing and carry the complete transcript in context for the life of each case."
+        },
+        {
+          "id": "D",
+          "text": "Keep exact values (claim IDs, limits, amounts) in a pinned case-facts block or memory file outside the summarized history, re-injected on every request."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "Summarization is lossy, and precise values are lost first — exact amounts and IDs become vague paraphrases. The fix is to keep a **pinned facts block** (or a memory entry) outside the summarized portion of the history and re-inject it each turn, so the numbers the agent cites never depend on a summary surviving intact.",
+      "whyWrong": {
+        "A": "Longer summaries slow the loss and bloat the context at the same time; they do not make summarization exact.",
+        "B": "Truncation is not the failure mode — the values are being paraphrased away, not cut off mid-output.",
+        "C": "Keeping everything contradicts the context budget, accelerates context rot, and can still overflow the window on long cases."
+      },
+      "difficulty": 2,
+      "mindset": "Never let exact facts live only inside a summary.",
+      "tags": [
+        "compaction",
+        "memory",
+        "fact-pinning",
+        "long-running-agents"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/compaction",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/memory-tool"
+      ]
+    },
+    {
+      "id": "v-d6-g1-006",
+      "taskStatementId": "6.1",
+      "scenario": "A team enables the memory tool for a multi-session coding agent, expecting memories to be stored and served by Anthropic. Between sessions, nothing the agent saved is available, and no storage appears anywhere in their infrastructure.",
+      "stem": "Why does nothing persist, and what must the team do?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Memories are stored per organization on Anthropic servers; they need to request retention be enabled for their workspace."
+        },
+        {
+          "id": "B",
+          "text": "They must add the structured-outputs beta header so that memory commands route to the managed vector store."
+        },
+        {
+          "id": "C",
+          "text": "The memory tool is client-side: the team must implement the /memories storage themselves, executing the view/create/edit commands with path validation, size caps, and expiration."
+        },
+        {
+          "id": "D",
+          "text": "They should replace the memory tool with prompt caching, which persists selected facts across sessions at a lower cost."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "The memory tool is a **client-side** tool: when the model issues view/create/str_replace/insert/delete/rename commands under /memories, *your* code executes them against storage you own. Nothing persists here because no handler exists. Because you implement the store, you also own its security — validate paths against traversal, cap sizes, expire stale entries, and strip sensitive data.",
+      "whyWrong": {
+        "A": "There is no Anthropic-hosted memory store behind the tool; persistence is entirely the client's job.",
+        "B": "No header or managed store exists for this; the option describes a feature that is not real.",
+        "D": "Prompt caching caches request prefixes within a short TTL to cut cost and latency; it does not persist selected facts across sessions."
+      },
+      "difficulty": 2,
+      "mindset": "The memory tool is a protocol, not a database — you supply the storage.",
+      "tags": [
+        "memory-tool",
+        "client-side-tools",
+        "multi-session",
+        "security"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/memory-tool"
+      ]
+    },
+    {
+      "id": "v-d6-g1-007",
+      "taskStatementId": "6.1",
+      "scenario": "A coordinator agent spends several turns locating the three files that cause a build failure, then spawns a subagent to fix the imports. The subagent starts by re-searching the whole repository, repeats the investigation, and sometimes modifies the wrong files.",
+      "stem": "What is the BEST change to the delegation?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Put the file paths and the coordinator's findings directly in the delegation prompt — the subagent's only input channel."
+        },
+        {
+          "id": "B",
+          "text": "Enable shared memory between coordinator and subagent so the subagent inherits the coordinator's conversation history and tool results."
+        },
+        {
+          "id": "C",
+          "text": "Pass the coordinator's session ID to the subagent so it resumes and continues the same conversation."
+        },
+        {
+          "id": "D",
+          "text": "Require the subagent to return its full tool-call transcript so the coordinator can verify which files it examined."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Subagent context is isolated **by design**: no parent conversation history, no earlier tool results, no parent system prompt. The delegation prompt string is the only input channel, so everything the subagent needs — file paths, prior findings, decisions, constraints — must be written into that prompt. Only the subagent's final message returns, so the input side is where the fix belongs.",
+      "whyWrong": {
+        "B": "There is no shared-memory inheritance between coordinator and subagent; isolation is the feature, not a gap to patch.",
+        "C": "Resuming a session continues that session's own history; a subagent is a separate, fresh context, not a continuation of the coordinator.",
+        "D": "Auditing the output cannot fix missing input; the subagent still starts blind and re-does the work."
+      },
+      "difficulty": 2,
+      "mindset": "The prompt string is the subagent's entire world.",
+      "tags": [
+        "subagents",
+        "context-isolation",
+        "delegation",
+        "agent-loops"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/subagents"
+      ]
+    },
+    {
+      "id": "v-d6-g1-008",
+      "taskStatementId": "6.1",
+      "scenario": "At the end of a document pipeline, the coordinator agent already holds a clean, extracted 25-page text in its own context. The only remaining work is producing a short structured summary to hand to the next stage. An engineer proposes spawning a subagent 'for context isolation' and passing the text through the delegation prompt.",
+      "stem": "Which assessment is MOST accurate?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Spawning the subagent is correct, because isolation always reduces the number of tokens the main context carries."
+        },
+        {
+          "id": "B",
+          "text": "Do the pass in place: the coordinator already holds the text, and isolation pays off for noisy work whose raw output would pollute the main context."
+        },
+        {
+          "id": "C",
+          "text": "Spawning is correct because the subagent can read the document from the coordinator's transcript automatically instead of receiving it in the prompt."
+        },
+        {
+          "id": "D",
+          "text": "Writing the text to disk and spawning a subagent to re-read it is best, because that keeps the coordinator's context clean."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Isolation earns its cost when a step produces verbose, noisy intermediate output that would otherwise bloat the main context. Here the raw material is **already in** the coordinator's context and the deliverable is small, so a subagent only duplicates the content through the prompt — re-sending adds tokens without removing any. Multi-agent systems are expensive (Anthropic's research system measured multi-agent runs at roughly 15× the tokens of a single chat run; single agents already run about 4×), so spawn only when the work justifies it.",
+      "whyWrong": {
+        "A": "Isolation is not free; in this case it re-sends content that is already present and removes nothing.",
+        "C": "Subagents do not read the coordinator's transcript; without the text in the prompt they have nothing to summarize.",
+        "D": "The coordinator's context is already committed — writing to disk and re-reading adds file I/O and a second pass over the same tokens without cleaning anything."
+      },
+      "difficulty": 3,
+      "mindset": "Spawn subagents for noise you would otherwise carry, not for work you have already done.",
+      "tags": [
+        "subagents",
+        "context-isolation",
+        "token-economics",
+        "proportionality"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/subagents",
+        "https://www.anthropic.com/engineering/multi-agent-research-system"
+      ]
+    },
+    {
+      "id": "v-d6-g1-009",
+      "taskStatementId": "6.1",
+      "scenario": "A document-QA feature answers questions about contracts that exceed 20,000 tokens. The current prompt template places the question and the formatting instructions first, followed by several paragraphs of guidance, with the full contract text appended at the very end of the request.",
+      "stem": "Which change is MOST likely to improve answer quality?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Move the question into the system prompt so that it precedes every other element of the request."
+        },
+        {
+          "id": "B",
+          "text": "Insert a short model-generated summary before each contract section so the model is oriented before reading."
+        },
+        {
+          "id": "C",
+          "text": "Split the contract across alternating user and assistant messages so that no single message is too long."
+        },
+        {
+          "id": "D",
+          "text": "Put the full contract, wrapped in document tags, at the top of the request, with the question and instructions at the end of the final user message."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "For long-context inputs, put the **documents first** and the **query last**. Testing cited in the prompting guidance shows meaningful gains (up to roughly 30% on document tasks) from this ordering, especially with multiple documents — the model reads the material and then immediately encounters what it must do with it.",
+      "whyWrong": {
+        "A": "The system prompt is for stable role and rules; burying the question at the front of a long request is exactly the placement that hurts.",
+        "B": "Pre-summarizing adds tokens and can inject errors before the model ever sees the source text.",
+        "C": "Fragmenting the document across turns does not follow the placement guidance and makes the source harder to track."
+      },
+      "difficulty": 1,
+      "mindset": "Documents first, question last.",
+      "tags": [
+        "long-context",
+        "prompt-structure",
+        "document-qa",
+        "placement"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices"
+      ]
+    },
+    {
+      "id": "v-d6-g1-010",
+      "taskStatementId": "6.1",
+      "scenario": "In a multi-agent research system, subagents return their findings through the coordinator, which relays them to later stages. Downstream stages misreport details the subagents had gotten right, and the coordinator's own context bloats as it concatenates every full report.",
+      "stem": "Which change BEST addresses both the fidelity loss and the coordinator bloat?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Increase the coordinator's max_tokens so it can quote each subagent report in full when relaying findings."
+        },
+        {
+          "id": "B",
+          "text": "Have each subagent return its complete raw transcript to the coordinator so that nothing is summarized away in transit."
+        },
+        {
+          "id": "C",
+          "text": "Have subagents write their full outputs to files and report only distilled findings plus file references back to the coordinator."
+        },
+        {
+          "id": "D",
+          "text": "Move the coordinator to a model with a larger context window so it can hold every report verbatim."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Relaying full reports through the lead agent is the classic telephone game: each hop paraphrases and loses detail, and the coordinator's window fills with other agents' raw output. The documented fix is to have subagents **write full outputs to the filesystem** and pass forward only distilled findings plus references — the detail stays available on disk while the conversation carries pointers, not payloads.",
+      "whyWrong": {
+        "A": "max_tokens is an output allowance; quoting in full still funnels everything through the coordinator and bloats it further.",
+        "B": "Raw transcripts through the coordinator recreate the bloat exactly and still leave later stages reading second-hand text.",
+        "D": "A bigger window raises capacity, but the fidelity loss comes from relaying and paraphrasing, not from the limit — and the cost multiplies."
+      },
+      "difficulty": 3,
+      "mindset": "Pass pointers, not payloads, between agents.",
+      "tags": [
+        "multi-agent",
+        "context-isolation",
+        "token-economics",
+        "coordination"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/multi-agent-research-system"
+      ]
+    },
+    {
+      "id": "v-d6-g1-011",
+      "taskStatementId": "6.1",
+      "scenario": "A three-step pipeline — extract requirements from tickets, verify them against policy, then draft the customer reply — passes free-text blobs between steps. Downstream steps invent requirements that upstream never found, and nobody can trace a claim in the draft back to the ticket paragraph or policy clause it came from.",
+      "stem": "What should the team change?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Merge the three steps into a single prompt so that nothing can be lost or distorted between hand-offs."
+        },
+        {
+          "id": "B",
+          "text": "Keep the steps separate and define a compact structured hand-off format that carries distilled results plus source references back to the original text."
+        },
+        {
+          "id": "C",
+          "text": "Forward the entire transcript of every earlier step to the next step so that nothing is ever summarized away."
+        },
+        {
+          "id": "D",
+          "text": "Run the three steps as parallel subagents on the same ticket and select the most confident draft."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Multi-step pipelines isolate context per step, but only if each hand-off is a **defined contract**: a compact structured format carrying the distilled results and the source references (ticket IDs, paragraph or clause identifiers) that let the next step verify provenance. Free-text hand-offs are where drift and invention creep in, and provenance is what makes the output auditable.",
+      "whyWrong": {
+        "A": "One mega-prompt reintroduces bloat and drift, and you lose the ability to log, evaluate, and branch on each stage's output.",
+        "C": "Forwarding full transcripts defeats the isolation and bloats every later step — capacity is not the same as clarity.",
+        "D": "The steps are dependent and sequential; parallel voting does not fix hand-off loss, and confident tone is not evidence of correctness."
+      },
+      "difficulty": 2,
+      "mindset": "Define the hand-off contract before chaining steps.",
+      "tags": [
+        "pipelines",
+        "prompt-chaining",
+        "hand-off",
+        "provenance",
+        "context-isolation"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "v-d6-g1-012",
+      "taskStatementId": "6.1",
+      "scenario": "An agent's monitoring tools return verbose payloads: vendor banners, Unix timestamps from one tool and ISO 8601 from another, and long status arrays. A system-prompt line says to ignore banners and focus on status fields, yet the model still cites banners, mixes timestamp formats, and the context keeps growing. The team wants a reliable fix that does not add tokens.",
+      "stem": "Which approach is MOST effective?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add a PostToolUse hook that rewrites each tool result — dropping banners, normalizing timestamps — before it enters the context; hooks run outside the context window at no token cost."
+        },
+        {
+          "id": "B",
+          "text": "Strengthen the system-prompt instruction with two worked examples of correctly ignoring banners and reading only status fields."
+        },
+        {
+          "id": "C",
+          "text": "Ask the model to self-check each of its summaries against the raw tool payload before producing the final answer."
+        },
+        {
+          "id": "D",
+          "text": "Wrap every tool result in XML tags and raise max_tokens so the model has room to filter the payload while answering."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "A PostToolUse hook can rewrite or replace the tool output before the model sees it — dropping the banners and normalizing heterogeneous data (timestamps, status codes) into one shape. Hooks are **programmatic enforcement** that runs in your process, not in the context window, so the guarantee is deterministic and the cleanup mechanism itself costs zero tokens.",
+      "whyWrong": {
+        "B": "Prompt rules have a non-zero failure rate, and the full verbose payload still occupies the window and dilutes attention every turn.",
+        "C": "Self-checking adds turns and tokens and still ships the raw payload into context every single time.",
+        "D": "Tags delimit content but remove nothing, and max_tokens is an output cap — neither filters what the model receives."
+      },
+      "difficulty": 3,
+      "mindset": "Normalize tool output with code, not with pleas.",
+      "tags": [
+        "hooks",
+        "tool-output-pruning",
+        "context-bloat",
+        "deterministic-controls"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/hooks"
+      ]
+    },
+    {
+      "id": "v-d6-g1-013",
+      "taskStatementId": "6.1",
+      "scenario": "An agent's per-request token count keeps climbing as sessions run longer. The team lists candidate changes and wants to know which ones genuinely shrink what is sent to the model on each request.",
+      "stem": "Which two changes actually reduce the size of the input the model receives in each request? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Truncating tool results to the fields the model actually needs before they are appended to the conversation."
+        },
+        {
+          "id": "B",
+          "text": "Raising max_tokens on the requests so the model has room to finish its answers."
+        },
+        {
+          "id": "C",
+          "text": "Switching to a model with a larger context window while keeping the same transcript."
+        },
+        {
+          "id": "D",
+          "text": "Summarizing older turns and dropping the originals from the request, so each call carries a summary instead of the full history."
+        },
+        {
+          "id": "E",
+          "text": "Enabling prompt caching on the stable prefix of the request."
+        }
+      ],
+      "correct": [
+        "A",
+        "D"
+      ],
+      "explanation": "Only **removing content from the request** shrinks the input the model receives: trimming tool results at the source (A) and replacing old turns with a summary while dropping the originals (D) — the essence of compaction. The other options change output allowance, capacity, or cost without changing what is actually sent.",
+      "whyWrong": {
+        "B": "max_tokens bounds output; it has no effect on how large the input is.",
+        "C": "A larger window raises the ceiling; the same tokens are still sent and processed each turn.",
+        "E": "Caching cuts the cost and latency of a repeated prefix; the cached tokens are still sent, still part of the request, and still count toward the window."
+      },
+      "difficulty": 1,
+      "mindset": "Only removal reduces; everything else just relabels the cost.",
+      "tags": [
+        "context-bloat",
+        "tool-output-pruning",
+        "compaction",
+        "prompt-caching"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/context-windows",
+        "https://platform.claude.com/docs/en/build-with-claude/compaction",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching"
+      ]
+    },
+    {
+      "id": "v-d6-g1-014",
+      "taskStatementId": "6.1",
+      "scenario": "A team is writing internal standards for how a coordinator agent should delegate work to subagents in its research and coding workflows.",
+      "stem": "Which two practices should the standards require? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Assume subagents can consult the coordinator's earlier tool results whenever they need additional context mid-task."
+        },
+        {
+          "id": "B",
+          "text": "Put file paths, prior findings, and task constraints in the delegation prompt itself, because it is the only input channel into the subagent."
+        },
+        {
+          "id": "C",
+          "text": "Keep task descriptions broad and open-ended so subagents can explore the problem space freely."
+        },
+        {
+          "id": "D",
+          "text": "Have subagents return their full tool-call logs so the coordinator can audit every action each subagent took."
+        },
+        {
+          "id": "E",
+          "text": "Specify an explicit, compact output format for each subagent's final message, since that message is all the coordinator receives back."
+        }
+      ],
+      "correct": [
+        "B",
+        "E"
+      ],
+      "explanation": "Two facts define the delegation contract: the subagent's only input is the **prompt string** (fresh context, no parent history or tool results), and the coordinator receives back **only the final message**. So the standards must require (B) putting paths, findings, and constraints into the prompt, and (E) specifying a compact, explicit output format so the distilled result survives the return trip.",
+      "whyWrong": {
+        "A": "Subagents cannot see the coordinator's earlier tool results; assuming they can is what causes gaps and duplicate investigation.",
+        "C": "Vague, open-ended task descriptions are documented to produce duplicate work and coverage gaps; delegate with a clear objective, boundaries, and output format.",
+        "D": "Only the final message returns by default; demanding full logs just bloats the one channel that does come back."
+      },
+      "difficulty": 2,
+      "mindset": "Everything the subagent needs and everything it returns must be explicit.",
+      "tags": [
+        "subagents",
+        "delegation",
+        "output-format",
+        "context-isolation"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/subagents",
+        "https://www.anthropic.com/engineering/multi-agent-research-system"
+      ]
+    },
+    {
+      "id": "v-d6-g1-015",
+      "taskStatementId": "6.1",
+      "scenario": "An overnight agent intermittently fails with HTTP 400 'prompt is too long' once a session's transcript has grown large with accumulated tool output. The failures disappear when a fresh session starts and return as the transcript builds again.",
+      "stem": "Which two actions are correct? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Reduce the input — prune stale tool results and summarize older turns — before resending the request."
+        },
+        {
+          "id": "B",
+          "text": "Raise max_tokens on the failing requests so the model has room to finish within the window."
+        },
+        {
+          "id": "C",
+          "text": "Pin exact values that must survive the session, such as IDs and amounts, in a separate facts block so trimming and summarizing do not lose them."
+        },
+        {
+          "id": "D",
+          "text": "Enable prompt caching on the prefix so that the cached portion no longer counts against the context window."
+        },
+        {
+          "id": "E",
+          "text": "Retry the identical request with exponential backoff until the API accepts it."
+        }
+      ],
+      "correct": [
+        "A",
+        "C"
+      ],
+      "explanation": "A 400 'prompt is too long' means the **input alone exceeds the context window** — a client error, not a transient one. The remedy is to shrink the input (A): prune tool results and summarize older turns so the request fits. Because trimming and summarizing are lossy for exact values, pair the shrink with (C): a pinned facts block that preserves the IDs and amounts the session depends on.",
+      "whyWrong": {
+        "B": "max_tokens bounds output; the 400 fires because the input alone exceeds the window, so the output allowance is irrelevant to this failure.",
+        "D": "Cached tokens still count against the context window; caching changes cost and latency, not the size limit.",
+        "E": "400 errors are deterministic client errors — the identical request will fail every time, backoff or not."
+      },
+      "difficulty": 3,
+      "mindset": "When the prompt is too long, shrink the prompt — and pin what must survive.",
+      "tags": [
+        "context-window",
+        "error-handling",
+        "compaction",
+        "fact-pinning"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/context-windows",
+        "https://platform.claude.com/docs/en/api/errors"
+      ]
+    }
+  ]
+}

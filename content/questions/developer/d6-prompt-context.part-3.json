@@ -1,0 +1,698 @@
+{
+  "certId": "developer",
+  "domainId": "d6-prompt-context",
+  "questions": [
+    {
+      "id": "v-d6-g3-001",
+      "taskStatementId": "6.3",
+      "scenario": "A TypeScript service extracts product issues from support emails and passes Claude's reply straight to JSON.parse for a downstream routing system. The prompt ends with 'Respond ONLY with valid JSON matching this shape,' yet about one run in twenty the model wraps the JSON in a short preamble or markdown fences and the parser throws. The team wants the most reliable fix with the least ongoing prompt maintenance.",
+      "stem": "Which change best meets their need?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add three few-shot examples of correctly formatted JSON replies so the model imitates the exact format it sees in context."
+        },
+        {
+          "id": "B",
+          "text": "Generate the reply through structured outputs, supplying the JSON schema via output_config.format so responses are constrained to the schema before they reach the parser."
+        },
+        {
+          "id": "C",
+          "text": "Set temperature to 0 and repeat the JSON-only instruction in both the system prompt and the user turn so the formatting becomes deterministic."
+        },
+        {
+          "id": "D",
+          "text": "Append an instruction telling Claude to validate its own JSON against the schema and correct any problems before the response ends."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Prompt instructions and examples *improve* format consistency but never *guarantee* it. Structured outputs apply grammar-constrained sampling: the response provably conforms to the JSON schema, which is exactly what a downstream parser needs. This replaces prompt-level pleading with a mechanism, so it also minimizes ongoing prompt maintenance.",
+      "whyWrong": {
+        "A": "Few-shot examples are the strongest prompt-level fix for consistency, but the model can still deviate; they cost tokens and do not guarantee conformance.",
+        "C": "Temperature 0 reduces variation but does not constrain the output shape; repeating the instruction is 'louder,' not stronger.",
+        "D": "Self-validation within the same response is probabilistic and unverifiable — the parser still receives whatever the model produced."
+      },
+      "difficulty": 1,
+      "mindset": "Shape problems get schema enforcement, not stronger wording.",
+      "tags": [
+        "structured-outputs",
+        "json",
+        "defensive-parsing",
+        "format"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs",
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/increase-consistency"
+      ]
+    },
+    {
+      "id": "v-d6-g3-002",
+      "taskStatementId": "6.3",
+      "scenario": "A report generator asks Claude for a long JSON document summarizing quarterly risks. Every so often the reply ends mid-object — for example right after a partial field name — and the consumer logs 'Unexpected end of JSON input.' The API call itself returns HTTP 200, and in every failing case the response's stop_reason is max_tokens.",
+      "stem": "What is the best fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Shorten the schema so that responses reliably fit inside the current max_tokens budget without further changes."
+        },
+        {
+          "id": "B",
+          "text": "Instruct the model to emit more compact JSON — dropping whitespace and shortening field descriptions — so replies fit the existing limit."
+        },
+        {
+          "id": "C",
+          "text": "Check stop_reason before parsing, and retry truncated responses with a higher max_tokens so generation can complete."
+        },
+        {
+          "id": "D",
+          "text": "Have the parser strip the trailing incomplete fragment and fill any missing fields with sensible defaults before storing."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "`stop_reason: max_tokens` means the response was **truncated**, and truncated output may not match the schema even when structured outputs are used. The documented handling is to raise `max_tokens` (or continue) and retry; checking `stop_reason` first keeps malformed payloads out of the parser. The alternatives either degrade the deliverable or silently corrupt it.",
+      "whyWrong": {
+        "A": "Redesigning the schema shrinks the deliverable and treats the symptom; the token budget is the actual constraint.",
+        "B": "Compactness is not guaranteed, shortening content reduces report quality, and truncation can still occur.",
+        "D": "Inventing default values silently fabricates data — the worst failure mode for a consuming system."
+      },
+      "difficulty": 1,
+      "mindset": "Read stop_reason before parsing; truncation is a retryable condition, not a schema problem.",
+      "tags": [
+        "stop-reason",
+        "max-tokens",
+        "defensive-parsing",
+        "truncation"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons",
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs"
+      ]
+    },
+    {
+      "id": "v-d6-g3-003",
+      "taskStatementId": "6.3",
+      "scenario": "A claims pipeline extracts fields from invoice text into a schema where po_number is required. Some invoices genuinely contain no PO number, and on those the model fills the field with plausible-looking invented values. The existing validation loop retries up to five times with the error text fed back, but these cases never converge and staff end up cleaning them by hand.",
+      "stem": "Which change best addresses the root cause?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Make po_number nullable and instruct the model to return null whenever the field is absent from the source document."
+        },
+        {
+          "id": "B",
+          "text": "Extend the retry loop to ten attempts and make each retry's error message more emphatic that inventing values is unacceptable."
+        },
+        {
+          "id": "C",
+          "text": "Add few-shot examples of invoices whose PO numbers are present, so the model learns what a genuine PO number looks like."
+        },
+        {
+          "id": "D",
+          "text": "Add a verification pass that asks Claude to confirm each extracted PO number appears verbatim in the invoice text."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Retries recover *format* errors, not *missing information*: when the source has no PO number, no number of attempts can produce a true value, so the model invents one to satisfy a required field. A nullable (or optional) field gives the model an honest way out — return `null` — which is the root-cause fix. Downstream code then only has to distinguish null from present.",
+      "whyWrong": {
+        "B": "More attempts and stronger wording cannot conjure data that does not exist; cost rises while the outcome does not change.",
+        "C": "Examples of present PO numbers do nothing for invoices lacking one and can even encourage plausible fabrication.",
+        "D": "Verification catches fabrications after the fact but adds a call per record and still leaves every legitimate no-PO invoice failing the pipeline."
+      },
+      "difficulty": 3,
+      "mindset": "Retries cannot conjure missing data — let the model return null instead of inventing.",
+      "tags": [
+        "nullability",
+        "hallucination",
+        "validation",
+        "retry"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs",
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-hallucinations"
+      ]
+    },
+    {
+      "id": "v-d6-g3-004",
+      "taskStatementId": "6.3",
+      "scenario": "An expense tool uses structured outputs to receive line items (item, amount, category) plus a required total field. Every response is schema-valid JSON, yet auditors keep finding records where the line amounts do not sum to the stated total. The team lead is weighing fixes before the next release.",
+      "stem": "Which approach most reliably catches these defects before release?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add 'must equal the sum of the line amounts' to the total field's schema description so the constraint is applied during generation."
+        },
+        {
+          "id": "B",
+          "text": "Ask Claude to re-check its arithmetic and revise the JSON before returning it in the same response."
+        },
+        {
+          "id": "C",
+          "text": "Route this endpoint to a larger model with stronger arithmetic performance for all expense extraction."
+        },
+        {
+          "id": "D",
+          "text": "Recompute the total from the line items in application code and reject or flag any response where the two disagree."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "Schema conformance guarantees *syntax* — the fields exist with valid types — not *semantics* such as cross-field consistency. Descriptions are guidance to the model, not enforcement, and model-side re-checking stays probabilistic. A deterministic sum check in code catches every disagreement, whatever model or prompt produced it.",
+      "whyWrong": {
+        "A": "Descriptions improve behavior on average but nothing enforces them; the grammar only checks shape.",
+        "B": "Self-review may reduce arithmetic slips but cannot eliminate them, and nothing verifies the review happened.",
+        "C": "A larger model may err less often, but 'less often' is not a release gate and it raises cost."
+      },
+      "difficulty": 2,
+      "mindset": "Grammar guarantees syntax; code must guarantee semantics.",
+      "tags": [
+        "validation",
+        "business-rules",
+        "structured-outputs",
+        "skepticism"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/strict-tool-use"
+      ]
+    },
+    {
+      "id": "v-d6-g3-005",
+      "taskStatementId": "6.3",
+      "scenario": "A live assistant UI renders Claude's tool calls as they stream. On each input_json_delta event the UI runs JSON.parse on the fragment to preview the arguments, which throws constant 'invalid JSON' errors mid-call and occasionally renders wrong argument values before the call finishes.",
+      "stem": "What should they change?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Disable streaming for the session so the UI only ever parses complete, fully formed messages instead of fragments."
+        },
+        {
+          "id": "B",
+          "text": "Buffer the partial JSON from input_json_delta events and parse the arguments only once the tool_use block signals content_block_stop."
+        },
+        {
+          "id": "C",
+          "text": "Sanitize each delta by stripping unmatched braces and quotes before attempting to parse it in the preview."
+        },
+        {
+          "id": "D",
+          "text": "Instruct the model to emit tool arguments as several smaller sequential tool calls instead of one large object."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "In streaming, tool arguments arrive as **partial JSON strings by design**; they are only complete when the content block emits `content_block_stop`. Buffering deltas and parsing at the block boundary is the documented pattern — per-fragment parsing is guaranteed to fail because the fragments are not valid JSON on their own.",
+      "whyWrong": {
+        "A": "A blanket switch to non-streaming sacrifices the responsiveness streaming exists to provide and is unnecessary once parsing happens at the right moment.",
+        "C": "Patching fragments produces corrupt, lossy previews — the data is simply incomplete, not malformed.",
+        "D": "Argument size is not the cause, and fragmenting calls changes model behavior and adds round trips."
+      },
+      "difficulty": 3,
+      "mindset": "Streamed JSON is partial by design — parse only complete blocks.",
+      "tags": [
+        "streaming",
+        "tool-use",
+        "defensive-parsing"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/streaming"
+      ]
+    },
+    {
+      "id": "v-d6-g3-006",
+      "taskStatementId": "6.3",
+      "scenario": "A compliance assistant answers questions about uploaded PDF contracts. Regulators require both machine-readable finding fields and verifiable references to the exact pages supporting each finding. The team enabled structured outputs and citations (enabled: true on the document block) in the same request, and the API now returns an error whenever both are active.",
+      "stem": "Which design best preserves both the schema guarantee and verifiable references?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Retry the combined request with exponential backoff, since the error may reflect transient load rather than a real incompatibility."
+        },
+        {
+          "id": "B",
+          "text": "Drop citations and add page_number and quote fields to the JSON schema, trusting the model to fill them accurately from the PDF."
+        },
+        {
+          "id": "C",
+          "text": "Chain two requests: one with citations enabled to extract quotes with their page locations, then a structured-output call — or plain application code — that assembles the finding JSON from those quotes."
+        },
+        {
+          "id": "D",
+          "text": "Request plain prose with citations and extract the finding fields from the prose with regular expressions in the consumer."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Structured outputs and citations **cannot be combined in one request** — the API errors — so the two guarantees must be produced in separate steps. Chaining keeps both: the citation call returns guaranteed-valid pointers into the document, and the second call (or trivial code) builds schema-valid JSON from quotes you already hold.",
+      "whyWrong": {
+        "A": "The incompatibility is documented behavior, not transient load; retries reproduce the same error.",
+        "B": "Model-written page numbers are exactly the confident claim citations exist to verify — you lose the guarantee regulators asked for.",
+        "D": "Regex extraction over prose is fragile and surrenders the schema guarantee entirely."
+      },
+      "difficulty": 3,
+      "mindset": "When two guarantees conflict in one call, chain two calls.",
+      "tags": [
+        "citations",
+        "structured-outputs",
+        "grounding",
+        "pipeline"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/citations",
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs"
+      ]
+    },
+    {
+      "id": "v-d6-g3-007",
+      "taskStatementId": "6.3",
+      "scenario": "A team obtains guaranteed-shape JSON by defining a single extract_metadata tool and forcing it with tool_choice set to that specific tool, reading the JSON from tool_use input. After migrating to the newest Claude models, these requests fail with HTTP 400 while the rest of the pipeline is unchanged.",
+      "stem": "Which change restores schema-guaranteed extraction on the new models?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Use tool_choice auto with strict: true on the tool definition — or move to structured outputs — keeping the same schema."
+        },
+        {
+          "id": "B",
+          "text": "Keep the forced tool_choice and wrap the calls in a retry loop with exponential backoff to absorb the 400 responses."
+        },
+        {
+          "id": "C",
+          "text": "Prefill the assistant turn with the tool name so the request already begins inside the intended tool call."
+        },
+        {
+          "id": "D",
+          "text": "Remove the input schema from the tool definition and parse the arguments as free text, validating them only client-side after the call."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The newest models reject forced `tool_choice` (any or a specific tool) with a 400. The documented replacement is `auto` plus `strict: true`, which still guarantees **schema-valid tool inputs** without forcing the call, or structured outputs for pure JSON. The conformance guarantee moves to the strict flag rather than disappearing.",
+      "whyWrong": {
+        "B": "A 400 is a client error, not transient — retrying re-sends a request the API will always reject.",
+        "C": "Assistant prefill is itself rejected on Claude 4.6 and later, so this compounds the problem.",
+        "D": "Discarding the schema throws away the conformance guarantee and pushes everything onto fragile parsing."
+      },
+      "difficulty": 3,
+      "mindset": "When a feature is removed, replace its guarantee with the current equivalent.",
+      "tags": [
+        "tool-choice",
+        "strict-tool-use",
+        "migration",
+        "structured-outputs"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/strict-tool-use"
+      ]
+    },
+    {
+      "id": "v-d6-g3-008",
+      "taskStatementId": "6.3",
+      "scenario": "A triage pipeline's schema defines severity as an enum of low, medium, and high. The downstream router matches exact lowercase strings, and every so often it receives 'Low' or 'HIGH' — still schema-valid — falls through to an unhandled branch, and drops the record on the floor.",
+      "stem": "What is the best fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add 'always use lowercase' to the enum's description and include a lowercase-valued few-shot example in the prompt."
+        },
+        {
+          "id": "B",
+          "text": "Extend the enum to enumerate every casing variant and add a corresponding router case for each one."
+        },
+        {
+          "id": "C",
+          "text": "Insert a lightweight normalization call to Claude that lowercases the severity value before it reaches the router."
+        },
+        {
+          "id": "D",
+          "text": "Normalize the value in application code — for example lowercase it, or compare case-insensitively — before the router sees it."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "With structured outputs, enum **membership** is guaranteed but enum **casing** is not — the guidance is explicitly to compare case-insensitively. A one-line normalization where the value is consumed is deterministic, free, and immune to model variation. Every model-side alternative re-relies on the behavior that already proved unreliable.",
+      "whyWrong": {
+        "A": "A description nudges but does not constrain casing; the failures just become rarer.",
+        "B": "Enumerating variants bloats the schema and still misses unforeseen casings.",
+        "C": "Adding a model call to lowercase a string is over-engineering — this is a string operation, not a language task."
+      },
+      "difficulty": 2,
+      "mindset": "Normalize in code what the model cannot be trusted to normalize.",
+      "tags": [
+        "enum",
+        "defensive-parsing",
+        "normalization",
+        "structured-outputs"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs"
+      ]
+    },
+    {
+      "id": "v-d6-g3-009",
+      "taskStatementId": "6.3",
+      "scenario": "When Claude's output fails application-side validation — a malformed date, an out-of-range quantity — the current loop resends the identical request up to eight times. Occasionally one attempt passes, but token spend has tripled and some requests never converge no matter how many times they run.",
+      "stem": "Which change makes the retry loop most effective?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Set temperature to 0 on retries so the model produces more consistent output that eventually satisfies validation."
+        },
+        {
+          "id": "B",
+          "text": "Retry a bounded number of times, feeding the specific validation error back in the next user turn, then route to a fallback or human review if it still fails."
+        },
+        {
+          "id": "C",
+          "text": "Accept whatever the model produced after the third retry so throughput is protected, and flag the record for later sampling."
+        },
+        {
+          "id": "D",
+          "text": "Move the validation rules into the system prompt so the model never emits invalid values and retries become unnecessary."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "The established pattern is a **bounded validation-retry loop** that returns the *specific* error to the model in the next user turn — the model can fix what it is told about — with escalation after a fixed number of attempts. Resending an identical request mostly reproduces the same failure, and unbounded retries turn a data problem into a cost problem.",
+      "whyWrong": {
+        "A": "Temperature 0 makes retries *more* identical, so a failing response keeps failing.",
+        "C": "Accepting unvalidated output knowingly corrupts the pipeline; sampling does not repair it.",
+        "D": "Prompts are requests, not enforcement — code-side validation stays regardless, and 'never emits' is not achievable."
+      },
+      "difficulty": 2,
+      "mindset": "Feed the error back, bound the attempts, then escalate.",
+      "tags": [
+        "retry",
+        "validation",
+        "escalation",
+        "defensive-parsing"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices"
+      ]
+    },
+    {
+      "id": "v-d6-g3-010",
+      "taskStatementId": "6.3",
+      "scenario": "An ingestion service keys off HTTP status: 4xx and 5xx raise alerts, while any 200 is parsed as JSON and stored. Lately some 200 responses carry stop_reason refusal with empty or partial content; these are stored as successful extractions and silently distort downstream reports.",
+      "stem": "What should the team change?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Treat stop_reason as part of response handling: before parsing, detect refusal (reading stop_details where available) and route those responses to a fallback model or review path instead of storing them."
+        },
+        {
+          "id": "B",
+          "text": "Retry automatically whenever a 200 arrives with an empty content array, leaving HTTP status as the pipeline's only error signal."
+        },
+        {
+          "id": "C",
+          "text": "Treat these responses as platform overload and requeue them after a cooldown, exactly as the service handles 529 errors."
+        },
+        {
+          "id": "D",
+          "text": "Mark any response whose output is under a small token threshold as failed, regardless of its stop_reason value."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "A refusal is a **successful HTTP 200** whose content was declined — `stop_reason` is `refusal`, `stop_details` explains it, and the documented handling is to retry on a fallback model or modify the request. Status-code-only error handling structurally cannot see this, so `stop_reason` must be part of the parse path.",
+      "whyWrong": {
+        "B": "Retrying the same request with the same input reproduces the refusal and still ignores the signal that explains it.",
+        "C": "529 is platform overload — a different failure with different handling; misclassifying it wastes the cooldown.",
+        "D": "A length threshold is a proxy that also catches legitimately short answers and misses refusals with partial content."
+      },
+      "difficulty": 2,
+      "mindset": "HTTP 200 is not a validity signal — stop_reason is.",
+      "tags": [
+        "stop-reason",
+        "refusal",
+        "defensive-parsing",
+        "error-handling"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons",
+        "https://platform.claude.com/docs/en/api/errors"
+      ]
+    },
+    {
+      "id": "v-d6-g3-011",
+      "taskStatementId": "6.3",
+      "scenario": "A legacy summarizer forces JSON by prefilling the assistant turn with an opening brace, which also suppresses preamble. After upgrading to Claude 4.6-and-later models, every request fails with HTTP 400 stating that the model does not support assistant message prefill. The team wants the smallest sound migration.",
+      "stem": "Which change best fits?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Move the opening brace to the last line of the user message so the model still sees it as the expected start of its reply."
+        },
+        {
+          "id": "B",
+          "text": "Keep the prefill and add the structured-outputs beta header so schema enforcement re-enables prefilled responses."
+        },
+        {
+          "id": "C",
+          "text": "Replace prefill with structured outputs (or a strict tool) for format control, and put any continuation text the model needs into the user turn."
+        },
+        {
+          "id": "D",
+          "text": "Instruct the model to begin its reply with an opening brace and keep the rest of the pipeline unchanged."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Prefill is unsupported on Claude 4.6 and later — a prefilled final assistant message returns a 400 — and the documented migration is: format control via structured outputs or a strict tool, continuations via the user turn. Option C adopts the replacement mechanisms instead of imitating the removed one.",
+      "whyWrong": {
+        "A": "A brace in the user message is just text; it does not constrain the reply's shape.",
+        "B": "No header re-enables prefill, and prefill is incompatible with structured outputs anyway.",
+        "D": "An instruction is a request — the very probabilistic behavior prefill was working around."
+      },
+      "difficulty": 2,
+      "mindset": "Migrate removed features to their documented replacements.",
+      "tags": [
+        "prefill",
+        "migration",
+        "structured-outputs",
+        "format"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices",
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs"
+      ]
+    },
+    {
+      "id": "v-d6-g3-012",
+      "taskStatementId": "6.3",
+      "scenario": "A payments team consumes Claude's structured extraction output inside a fully automated flow with no human in the loop. They are reviewing how the consuming service should handle responses before turning the flow on.",
+      "stem": "Which two practices should be part of how they consume the output? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Have Claude append a brief self-assessment confirming the JSON is valid before the response ends."
+        },
+        {
+          "id": "B",
+          "text": "Check stop_reason before parsing, since refusal and max_tokens responses arrive with HTTP 200 and may not match the schema."
+        },
+        {
+          "id": "C",
+          "text": "Disable prompt caching so every stored record comes from a freshly generated response."
+        },
+        {
+          "id": "D",
+          "text": "Retry without bound until validation passes, so no invalid record can ever enter the pipeline."
+        },
+        {
+          "id": "E",
+          "text": "Validate business rules — cross-field consistency, ranges, totals — in application code, since schema conformance guarantees only the shape."
+        }
+      ],
+      "correct": [
+        "B",
+        "E"
+      ],
+      "explanation": "Two facts drive defensive consumption: **HTTP 200 does not mean the payload is usable** (refusal and truncation both surface through `stop_reason`), and **grammar-constrained output is schema-valid but not semantically correct**, so business rules need code-side validation. Together these checks form the gate an unattended pipeline needs.",
+      "whyWrong": {
+        "A": "Model self-assessment is unverifiable — the same process that made the error certifies the result.",
+        "C": "Caching affects cost and prefix reuse, not output validity; disabling it only raises spend.",
+        "D": "Unbounded retries guarantee cost blowups, and retries cannot recover information the source lacks."
+      },
+      "difficulty": 2,
+      "mindset": "Defensive consumption = check stop_reason, then validate business rules in code.",
+      "tags": [
+        "defensive-parsing",
+        "stop-reason",
+        "validation",
+        "automation"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs",
+        "https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons"
+      ]
+    },
+    {
+      "id": "v-d6-g3-013",
+      "taskStatementId": "6.3",
+      "scenario": "A research assistant answers questions about a 60-page technical manual. Reviewers found fluent, confident answers citing details that appear nowhere in the manual. The team wants the answers grounded strictly in the supplied document.",
+      "stem": "Which two changes best ground the answers? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Explicitly allow an 'I don't know' answer (or a null field) when the manual does not contain the information."
+        },
+        {
+          "id": "B",
+          "text": "Require each answer to end with a model-estimated confidence score and auto-publish anything above 90 percent."
+        },
+        {
+          "id": "C",
+          "text": "For the long manual, have Claude extract word-for-word quotes first, then write the answer using only those quotes."
+        },
+        {
+          "id": "D",
+          "text": "Let Claude fill gaps from its training knowledge when the manual is unclear, and tag those answers for review."
+        },
+        {
+          "id": "E",
+          "text": "Make the answer field required and non-empty in the JSON schema so the model can never decline to answer."
+        }
+      ],
+      "correct": [
+        "A",
+        "C"
+      ],
+      "explanation": "The documented anti-hallucination pattern for long documents is **quote-first**: extract verbatim quotes, then answer using only the quotes — combined with explicitly permitting 'I don't know' so the model is never forced to produce an answer the source cannot support. Both changes constrain output to the supplied document rather than to the model's fluency.",
+      "whyWrong": {
+        "B": "Self-reported confidence is poorly calibrated — exactly the confident-wrong answers reviewers already found.",
+        "D": "Allowing training-knowledge fill-in is the behavior causing the problem, with a tag as the only control.",
+        "E": "A forced non-empty answer obliges the model to produce something even when the manual supports nothing."
+      },
+      "difficulty": 2,
+      "mindset": "Grounding beats confidence: allow 'I don't know' and quote before answering.",
+      "tags": [
+        "grounding",
+        "hallucination",
+        "skepticism",
+        "long-context"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-hallucinations",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices"
+      ]
+    },
+    {
+      "id": "v-d6-g3-014",
+      "taskStatementId": "6.3",
+      "scenario": "An assistant turns change requests into structured instructions that an automation executes directly against a production billing system. Mistakes are expensive and hard to reverse, and recent audits show the drafts are fluent and confident even when they are wrong.",
+      "stem": "Which two safeguards are most appropriate before allowing automated execution? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Require the model to state its confidence for each instruction and auto-execute anything at or above 95 percent."
+        },
+        {
+          "id": "B",
+          "text": "Check deterministically in code whatever can be checked — IDs against the source system, totals, format tests — before execution."
+        },
+        {
+          "id": "C",
+          "text": "Add 'be careful and avoid mistakes' to the system prompt so the model hedges appropriately on risky changes."
+        },
+        {
+          "id": "D",
+          "text": "Run an independent second pass — a separate prompt or model verifying each instruction against the request and sources — and route disagreements to a human."
+        },
+        {
+          "id": "E",
+          "text": "Increase the number of few-shot examples of flawless instructions so the model pattern-matches them exactly."
+        }
+      ],
+      "correct": [
+        "B",
+        "D"
+      ],
+      "explanation": "For high-stakes output, verify with mechanisms that do not share the generator's failure modes: **deterministic checks** catch everything computable (IDs, totals, formats), and an **independent second pass** — with human review on disagreement — catches what code cannot. Fluent confidence is not evidence, so the safeguards must not depend on it.",
+      "whyWrong": {
+        "A": "Self-reported confidence is least calibrated exactly on the hard cases; automating on it automates the failure.",
+        "C": "Vague adjectives do not reliably change behavior — explicit, checkable criteria do, and hedging is not a control.",
+        "E": "More examples improve average quality but provide no gate; a confident near-miss still executes."
+      },
+      "difficulty": 3,
+      "mindset": "Route by stakes: deterministic checks plus an independent pass, not self-reported confidence.",
+      "tags": [
+        "skepticism",
+        "high-stakes",
+        "verification",
+        "deterministic-checks"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-hallucinations",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices"
+      ]
+    },
+    {
+      "id": "v-d6-g3-015",
+      "taskStatementId": "6.3",
+      "scenario": "A team is choosing how to obtain machine-readable output whose shape is guaranteed for a strict downstream parser, and has listed candidate approaches gathered from older internal notes.",
+      "stem": "Which two approaches guarantee schema-conformant output? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Structured outputs via output_config.format with a json_schema."
+        },
+        {
+          "id": "B",
+          "text": "A system prompt instructing 'Respond only with JSON matching this schema,' with the schema pasted in as text."
+        },
+        {
+          "id": "C",
+          "text": "Prefilling the assistant response with an opening brace so the output begins as JSON."
+        },
+        {
+          "id": "D",
+          "text": "Asking the model to validate its JSON against the schema before responding."
+        },
+        {
+          "id": "E",
+          "text": "A tool definition marked strict: true whose input schema is the desired shape."
+        }
+      ],
+      "correct": [
+        "A",
+        "E"
+      ],
+      "explanation": "Only two mechanisms use **grammar-constrained sampling** — structured outputs (`output_config.format`) and strict tool use (`strict: true`) — and together they define what 'guaranteed shape' means in the current API. Prompt instructions, prefill, and self-validation are probabilistic; prefill is in fact rejected on Claude 4.6 and later.",
+      "whyWrong": {
+        "B": "Instructions raise consistency but the model can still deviate from a pasted schema.",
+        "C": "Prefill nudges the start of the reply but constrains nothing after it — and now returns a 400 on current models.",
+        "D": "Self-validation is performed by the same sampling process and cannot certify grammar conformance."
+      },
+      "difficulty": 1,
+      "mindset": "Only grammar-constrained mechanisms guarantee shape: structured outputs and strict tools.",
+      "tags": [
+        "structured-outputs",
+        "strict-tool-use",
+        "guarantees",
+        "json"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/strict-tool-use"
+      ]
+    }
+  ]
+}

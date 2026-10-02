@@ -1,0 +1,695 @@
+{
+  "certId": "developer",
+  "domainId": "d5-model-optimization",
+  "questions": [
+    {
+      "id": "v-d5-g2-001",
+      "taskStatementId": "5.2",
+      "scenario": "A two-person startup ships a web app in which the browser JavaScript calls the Claude Messages API directly, embedding the API key in the client bundle so that streaming works without writing a backend. Within a week of launch, their usage dashboard shows requests they cannot explain, and the key appears in a public repository scan.",
+      "stem": "Which change fixes the exposure with minimal disruption to the product?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Obfuscate the key inside the bundle and rotate it weekly so any leaked copy expires quickly."
+        },
+        {
+          "id": "B",
+          "text": "Move the Claude calls behind their own backend: the browser authenticates to their server, the server holds the key and calls Claude, and it relays the streamed events back to the browser."
+        },
+        {
+          "id": "C",
+          "text": "Keep the client-side calls but ask the provider to restrict the key so it only accepts requests originating from the app's domain."
+        },
+        {
+          "id": "D",
+          "text": "Inject the key as a build-time environment variable that gets compiled into the client at release time."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Anything shipped to the browser — hard-coded, obfuscated, or build-time-injected — is extractable from the client bundle. The supported pattern is a backend that holds the key and relays the Server-Sent Events stream to the client, preserving the streaming UX while keeping the credential server-side.",
+      "whyWrong": {
+        "A": "Obfuscation and rotation are a treadmill, not a control: the key is still public every week and abuse continues between rotations.",
+        "C": "There is no domain-restriction mechanism for API keys; origin restrictions are browser policy, not authentication, and the key can be replayed from anywhere.",
+        "D": "A build-time variable still ends up compiled into the client bundle, so it is exactly as exposed as a hard-coded key."
+      },
+      "difficulty": 1,
+      "mindset": "Credentials stay server-side; the browser only ever talks to your backend.",
+      "tags": [
+        "security",
+        "api-keys",
+        "browser",
+        "backend-proxy"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/streaming"
+      ]
+    },
+    {
+      "id": "v-d5-g2-002",
+      "taskStatementId": "5.2",
+      "scenario": "A team building a collaborative writing tool wants token-by-token streaming rendered in the browser. Their tech lead proposes opening a WebSocket connection directly to the Claude API because \"websockets are the standard transport for real-time systems\" and sketches a bidirectional protocol on top of it.",
+      "stem": "Which assessment of this plan is technically accurate?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The plan is sound, and multiplexing several generations over a single WebSocket will also reduce connection overhead."
+        },
+        {
+          "id": "B",
+          "text": "WebSockets to the Claude API are possible but require a short-lived token exchanged on each frame for authentication."
+        },
+        {
+          "id": "C",
+          "text": "The Claude API has no WebSocket endpoint: streaming is Server-Sent Events over HTTP, so WebSockets belong — if anywhere — between the browser and their backend, which relays the SSE stream."
+        },
+        {
+          "id": "D",
+          "text": "Instead of streaming, poll a non-streaming endpoint every 100 ms and render newly added text; this is functionally equivalent to native streaming."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Claude streaming uses Server-Sent Events over plain HTTP (message_start, content_block_delta, message_delta, message_stop, and so on). There is no WebSocket endpoint on the Claude API. WebSockets are a legitimate transport for your own frontend↔backend channel; the backend consumes the SSE stream from Claude and relays deltas to the browser.",
+      "whyWrong": {
+        "A": "There is no WebSocket interface to multiplex over; the premise is wrong regardless of the overhead argument.",
+        "B": "This invents a protocol that does not exist; the API is a REST API with SSE streaming, not a frame-based socket protocol.",
+        "D": "Polling re-sends and re-processes whole completions, wastes quota, and gives chunky updates — it is not equivalent to consuming an SSE stream."
+      },
+      "difficulty": 1,
+      "mindset": "Know the actual transport: SSE over HTTP from the API; sockets only in your own stack.",
+      "tags": [
+        "streaming",
+        "sse",
+        "websockets",
+        "architecture"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/streaming"
+      ]
+    },
+    {
+      "id": "v-d5-g2-003",
+      "taskStatementId": "5.2",
+      "scenario": "A team wrote a thin custom HTTP client for POST /v1/messages using a generic request library, with fixed 5-second timeouts and no retry logic. In production, a few percent of requests fail on momentary connection resets and on 429/5xx responses, even though the underlying conditions clear within seconds. Users see hard errors.",
+      "stem": "What is the best minimal change to make these transient failures transparent to users?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Wrap every call in a tight loop that immediately retries each failed request up to 20 times, whatever the HTTP status."
+        },
+        {
+          "id": "B",
+          "text": "Remove the client timeout entirely so requests can never fail on transient slowness."
+        },
+        {
+          "id": "C",
+          "text": "Put a durable message queue in front of every call so failed requests can be reprocessed later by a worker."
+        },
+        {
+          "id": "D",
+          "text": "Adopt the official SDK (or replicate its behavior): retry connection errors, 429 and 5xx with capped exponential backoff honoring retry-after, and never retry other 4xx."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "The official SDKs wrap the REST API with exactly the resilience this integration lacks: typed errors, sane timeouts, streaming helpers, and automatic retries (2 by default) on connection errors, 429 and 5xx using exponential backoff that honors the retry-after header. Client errors other than 429 are not retried, because a malformed or unauthorized request cannot succeed on re-send.",
+      "whyWrong": {
+        "A": "Immediate, uncapped retries of every status hammer the API (worsening 429s) and deterministically re-fail 4xx requests.",
+        "B": "No timeout means hung requests hold connections and threads forever; timeouts exist to fail fast so retry logic can take over.",
+        "C": "Queuing is a structural fix for sustained rate-limit pressure, not for second-long transient blips — and the user is waiting, so deferring to a worker changes the product."
+      },
+      "difficulty": 2,
+      "mindset": "Use the SDK's built-in retry semantics before inventing your own; retry only what is transient.",
+      "tags": [
+        "sdks",
+        "retries",
+        "backoff",
+        "timeouts"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors"
+      ]
+    },
+    {
+      "id": "v-d5-g2-004",
+      "taskStatementId": "5.2",
+      "scenario": "A nightly import job logs repeated 400 invalid_request_error responses from the Messages API for a specific record type. The engineer, \"to be safe,\" configured the script to retry each failed request five times with growing delays, and every attempt fails with the identical error message. The job now runs 40 minutes longer and still processes none of the bad records.",
+      "stem": "What should the engineer do instead?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Stop retrying these requests: a 4xx error means the request itself is invalid, so log the request body and the error message and fix the malformed request."
+        },
+        {
+          "id": "B",
+          "text": "Lengthen the backoff intervals so the retries spread out over the full batch window."
+        },
+        {
+          "id": "C",
+          "text": "Retry the failing records against a smaller model in case the current model rejects the payload."
+        },
+        {
+          "id": "D",
+          "text": "Resubmit the failing records through the Message Batches API, which validates requests more leniently than the realtime API."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "4xx errors (other than 429) are client errors: the request must change before it can succeed. Retry logic with backoff exists for transient failures — connection errors, 429, 529 and 5xx — and re-sending a deterministic 400 only burns time and quota. The fix is to capture the request body and error detail, correct the payload, and re-run.",
+      "whyWrong": {
+        "B": "Spreading retries out does not help when every attempt deterministically fails with the same validation error; it just extends the outage.",
+        "C": "Request validation errors are not model-specific rejections; a 400 invalid_request_error reflects the shape of the request, not the model's capability.",
+        "D": "The Batch API does not relax request validation — the same 400 will come back asynchronously, just later and unbilled."
+      },
+      "difficulty": 2,
+      "mindset": "4xx = fix the request; only transient classes deserve retries.",
+      "tags": [
+        "errors",
+        "retries",
+        "http-status",
+        "debugging"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors"
+      ]
+    },
+    {
+      "id": "v-d5-g2-005",
+      "taskStatementId": "5.2",
+      "scenario": "A customer-facing assistant hits bursts of 429 rate_limit_error on weekday afternoons. The team already uses SDK retries with backoff honoring retry-after. Every request begins with the same ~8,000-token system prompt plus a stable document preamble, and a separate nightly job summarizes thousands of archived documents. A usage-tier upgrade is at least a month away, and the team will not accept quality loss.",
+      "stem": "Which change best relieves the rate-limit pressure and trims spend, without changing models or output quality and without waiting on a tier upgrade?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Raise max_retries so that more of the afternoon burst traffic eventually gets through on retry."
+        },
+        {
+          "id": "B",
+          "text": "Cache the stable prompt prefix — repeat requests then count mostly as cache reads, which most models exclude from input-tokens-per-minute — and move the nightly archival summarization to the Message Batches API."
+        },
+        {
+          "id": "C",
+          "text": "Create additional API keys under the same organization and round-robin requests across them to spread the limit."
+        },
+        {
+          "id": "D",
+          "text": "Disable streaming so each request completes in one response and frees capacity sooner."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Rate limits apply per organization in requests and tokens per minute, and retries are not a capacity fix — more retries add load during exactly the bursts you need to relieve. The structural levers are caching (an exact-prefix hit avoids reprocessing those input tokens, and cache reads do not count toward ITPM for most models, raising effective throughput), queueing, and Batches (which move latency-tolerant bulk work into the async queue at reduced cost). None of these change the model or the output quality.",
+      "whyWrong": {
+        "A": "Retries smooth transient 429s but consume quota themselves; turning them up during sustained bursts amplifies pressure and latency.",
+        "C": "Limits are enforced at the organization level, not per key — extra keys in the same org do not raise the ceiling and evading it this way is not a supported pattern.",
+        "D": "Streaming changes how output is delivered, not how many tokens are processed; disabling it does not reduce rate-limit consumption and hurts perceived latency and long-request support."
+      },
+      "difficulty": 3,
+      "mindset": "Rate-limit pressure is solved structurally — cache, queue, batch — never with more retries.",
+      "tags": [
+        "rate-limits",
+        "prompt-caching",
+        "batch-api",
+        "cost-optimization"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/rate-limits",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
+        "https://platform.claude.com/docs/en/build-with-claude/batch-processing"
+      ]
+    },
+    {
+      "id": "v-d5-g2-006",
+      "taskStatementId": "5.2",
+      "scenario": "An invoice-extraction service exposes several routes (quick lookup, deep extraction, chat) all backed by Claude. The monthly bill doubled, but the only thing logged per request is the HTTP status code, so nobody can say which route — or which kind of request — drove the increase. Some users also report truncated extractions.",
+      "stem": "What should the team add to their per-request logging to diagnose both problems?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Log the complete prompt and full completion text of every request so any cost can ultimately be traced back to content."
+        },
+        {
+          "id": "B",
+          "text": "Enable logging only for failed requests, since successful requests are billed identically regardless of route."
+        },
+        {
+          "id": "C",
+          "text": "Log the model, the request-id, the stop_reason, and token usage (input, output, and cache read/write) for every call, then aggregate cost per completed task by route."
+        },
+        {
+          "id": "D",
+          "text": "Infer token counts from response latency, which is proportional to tokens generated, and chart that per route."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "The standard observability baseline is to log model, request-id, stop_reason, and usage on every call. Usage splits into input_tokens, cache_creation_input_tokens and cache_read_input_tokens (total input is their sum), thinking counts as output, and stop_reason immediately exposes truncation issues such as max_tokens. Aggregating these per route yields cost per completed task — the number that actually explains a doubling bill — while request-id lets support correlate specific failing requests.",
+      "whyWrong": {
+        "A": "Full prompt/completion logging creates PII and retention risk and huge storage cost; cost attribution needs token counts, not content.",
+        "B": "Successful requests are the bill; logging only failures makes cost attribution impossible.",
+        "D": "Latency and token count are not reliably proportional (caching, thinking, streaming, model tier all decouple them); usage fields are returned exactly and for free."
+      },
+      "difficulty": 2,
+      "mindset": "Log model, request-id, stop_reason and usage on every call; measure cost per completed task.",
+      "tags": [
+        "observability",
+        "usage-tracking",
+        "cost-modeling",
+        "stop-reason"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
+        "https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons",
+        "https://platform.claude.com/docs/en/api/rate-limits"
+      ]
+    },
+    {
+      "id": "v-d5-g2-007",
+      "taskStatementId": "5.2",
+      "scenario": "A streaming integration tries to show tool arguments as they arrive. On every content_block_delta it calls json.loads on the partial tool input and renders the result; the parser throws on fragments like {\"recipient\": \"ops@acme and the feature renders garbage or nothing. The team wants to keep streaming and change as little as possible.",
+      "stem": "What is the correct minimal fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Wrap json.loads in try/except and silently skip any delta that fails to parse."
+        },
+        {
+          "id": "B",
+          "text": "Disable streaming for any request that includes tools, and parse the fully assembled message instead."
+        },
+        {
+          "id": "C",
+          "text": "Buffer only the most recent 200 characters of each block and parse whenever a brace-counting heuristic says the JSON looks balanced."
+        },
+        {
+          "id": "D",
+          "text": "Accumulate the input_json_delta strings emitted for the block and parse the concatenated input once that block's content_block_stop event arrives."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "In a stream, a tool's input arrives incrementally as input_json_delta partial-JSON string fragments. The documented pattern is to concatenate each block's deltas and parse the assembled input only after that block signals completion (content_block_stop). This keeps streaming intact and guarantees the parser sees complete JSON.",
+      "whyWrong": {
+        "A": "Skipping unparseable deltas discards fragments, so the accumulated text is wrong and the final input never parses correctly.",
+        "B": "This abandons streaming for the most common interactive case (tools) — a much larger change than fixing the parser's timing.",
+        "C": "Brace counting breaks on strings containing braces and on nested escapes; the protocol already tells you exactly when a block is complete."
+      },
+      "difficulty": 3,
+      "mindset": "Parse streamed tool input only after content_block_stop; deltas are fragments by design.",
+      "tags": [
+        "streaming",
+        "tool-use",
+        "json-parsing",
+        "sse"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/streaming"
+      ]
+    },
+    {
+      "id": "v-d5-g2-008",
+      "taskStatementId": "5.2",
+      "scenario": "A dashboard shows a 100% HTTP 2xx rate for the team's streaming integration, yet under heavy evening load some generations end abruptly with no message_stop and partial text. Support asks for the request-id of a failed generation, but the team logged only HTTP status codes and cannot reproduce the issue on demand.",
+      "stem": "Which explanation and handling step is correct?",
+      "options": [
+        {
+          "id": "A",
+          "text": "A stream that began successfully can still fail mid-flight — errors can arrive as SSE error events (for example overloaded_error) after the HTTP 200 — so the client must handle in-stream error events, log the request-id, and apply transient-error retries."
+        },
+        {
+          "id": "B",
+          "text": "HTTP 200 proves the API accepted and completed the work, so the truncation is a client rendering bug and the UI layer should be rewritten."
+        },
+        {
+          "id": "C",
+          "text": "The requests are silently hitting max_tokens; raise the output limit and the streams will terminate normally."
+        },
+        {
+          "id": "D",
+          "text": "Switch the integration to WebSockets, which deliver a guaranteed error frame and a clean close handshake."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "With streaming, an overloaded_error or other failure can occur after the HTTP 200, and it is delivered inside the stream as an error event rather than as an HTTP status. Status-code-only monitoring therefore reports success while generations die mid-stream. The fix is to treat in-stream error events as first-class failures — capture their details and the request-id, and handle them with the same transient retry policy used for 529/5xx responses.",
+      "whyWrong": {
+        "B": "A 200 only means the stream started; concluding the client is at fault ignores the documented mid-stream error channel and sends the team debugging the wrong layer.",
+        "C": "A max_tokens truncation still ends the stream cleanly with message_delta/message_stop and stop_reason max_tokens — it does not match an abrupt mid-stream termination.",
+        "D": "There is no WebSocket endpoint; this transport does not exist to switch to."
+      },
+      "difficulty": 3,
+      "mindset": "HTTP 200 is not success for a stream — handle SSE error events explicitly.",
+      "tags": [
+        "streaming",
+        "error-handling",
+        "529",
+        "monitoring"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/streaming",
+        "https://platform.claude.com/docs/en/api/errors"
+      ]
+    },
+    {
+      "id": "v-d5-g2-009",
+      "taskStatementId": "5.2",
+      "scenario": "A legal-tech service summarizes long contracts, and single generations regularly run 12–15 minutes. When the team enabled the feature, their SDK refused to even send the request: it rejects non-streaming calls that are expected to exceed the 10-minute window, and the feature cannot ship as-is.",
+      "stem": "Which change is the best supported fix for these long-running generations?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Raise the client's timeout setting so the SDK stops rejecting the non-streaming request."
+        },
+        {
+          "id": "B",
+          "text": "Send these requests with stream: true and consume the Server-Sent Events, since streaming is the recommended mode for long-running requests."
+        },
+        {
+          "id": "C",
+          "text": "Split every contract summary into six independent API calls executed in sequence and concatenate the results."
+        },
+        {
+          "id": "D",
+          "text": "Hold a WebSocket open for the duration of generation and keep it alive with heartbeat pings."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "For requests expected to run long (beyond ~10 minutes), the documented guidance is to use streaming — or the Batch API when the work is latency-tolerant. Streaming delivers deltas as they are produced and avoids the non-streaming long-request rejection, and it is the direct fix that leaves the request itself unchanged.",
+      "whyWrong": {
+        "A": "The rejection is based on the expected request duration, not the client timeout; raising a timeout does not change which requests the SDK will send non-streaming.",
+        "C": "Re-architecting the summarization task changes output quality and behavior far more than necessary; the request itself is fine — only its delivery mode is wrong.",
+        "D": "There is no WebSocket endpoint on the Claude API to hold open."
+      },
+      "difficulty": 2,
+      "mindset": "Long requests go over streaming (or Batch); a bigger timeout is not the lever.",
+      "tags": [
+        "streaming",
+        "long-requests",
+        "sdks",
+        "timeouts"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/streaming"
+      ]
+    },
+    {
+      "id": "v-d5-g2-010",
+      "taskStatementId": "5.2",
+      "scenario": "A team flips a configuration flag to point their pipeline at a newly released Claude model. CI immediately shows a subset of requests failing with HTTP 400 invalid_request_error: some code paths prefill an assistant message, some set a manual thinking budget via budget_tokens, and some force tool_choice. Requests without those patterns pass.",
+      "stem": "What is the best next step?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add exponential backoff and keep retrying the 400 responses until the new model stabilizes."
+        },
+        {
+          "id": "B",
+          "text": "Treat it as a provider outage and wait; 400 errors on newly released models are transient capacity issues."
+        },
+        {
+          "id": "C",
+          "text": "Treat it as a hard breaking change: check the migration guide for parameters the new model removed (prefill, manual thinking budgets, and forced tool_choice are common breaks), replace those call sites with supported equivalents, re-run evals, and roll out gradually."
+        },
+        {
+          "id": "D",
+          "text": "Copy the old model identifier into a constant in every request site and never migrate, since model IDs are permanent."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Model migrations can introduce hard breaks — HTTP 400s from parameters the new model no longer accepts — and prefill, budget_tokens-style manual thinking, and forced tool_choice are the classic culprits. The documented migration path is: read the migration guide, search the codebase for the affected patterns, replace them with supported alternatives (structured outputs, adaptive thinking, auto tool choice), re-run evals, and roll out gradually with model IDs pinned in configuration.",
+      "whyWrong": {
+        "A": "A 400 is a client error the server will return every time; retries re-fail deterministically.",
+        "B": "400s are request-level validation failures, never transient capacity errors (that class is 429/529/5xx).",
+        "D": "Pinning IDs in configuration is right, but every model ID is a snapshot that will eventually be deprecated; refusing to migrate forever guarantees a later forced, untested break."
+      },
+      "difficulty": 2,
+      "mindset": "Migration 400s mean removed parameters — find them, replace them, re-eval, then roll out slowly.",
+      "tags": [
+        "model-migration",
+        "breaking-changes",
+        "errors",
+        "config-management"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices",
+        "https://platform.claude.com/docs/en/build-with-claude/extended-thinking"
+      ]
+    },
+    {
+      "id": "v-d5-g2-011",
+      "taskStatementId": "5.2",
+      "scenario": "On the 28th of the month, every request from a team's production service suddenly returns 429 with error code enforced_spend_limit_reached and no retry-after header. Their careful exponential-backoff implementation fires all night and every retry fails with the same response. The team's notes say \"429s are always retryable.\"",
+      "stem": "What is actually happening, and what should they do?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The retry-after header was lost by their proxy; assume a 60-second default and keep backing off until limits free up."
+        },
+        {
+          "id": "B",
+          "text": "Route the remaining traffic through API keys from other accounts to stay under each account's ceiling."
+        },
+        {
+          "id": "C",
+          "text": "Reduce max_tokens on every request so each one fits under the per-request token limit that was breached."
+        },
+        {
+          "id": "D",
+          "text": "The tier's monthly spend cap was reached: this 429 deliberately carries no retry-after and clears only when the month rolls over or the tier changes, so alert, pause the retries, and address the cap."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "Distinct from an ordinary rate-limit 429 (which includes retry-after and clears in seconds to minutes), reaching the usage tier's monthly spend limit returns 429 with enforced_spend_limit_reached and no retry-after. Retrying cannot succeed until the monthly window resets or the tier/spend arrangement changes, so the correct response is to detect this specific error code, stop retrying, alert, and resolve the cap with the account owner.",
+      "whyWrong": {
+        "A": "The header is absent by design for spend-cap 429s, not stripped by a proxy; a guessed default just burns a night of futile retries.",
+        "B": "Limits and caps are enforced per organization; splitting traffic across accounts to evade a spend cap is not a supported or legitimate remedy.",
+        "C": "The spend cap is about accumulated spend, not per-request token length; shrinking max_tokens does not reset the monthly limit."
+      },
+      "difficulty": 3,
+      "mindset": "Read the 429's error code and headers: spend-cap 429s have no retry-after and no retry path.",
+      "tags": [
+        "rate-limits",
+        "429",
+        "spend-limits",
+        "error-handling"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/rate-limits"
+      ]
+    },
+    {
+      "id": "v-d5-g2-012",
+      "taskStatementId": "5.2",
+      "scenario": "A support agent runs on the standard SDK configuration with automatic retries enabled. One workflow calls a downstream billing tool; when a request times out after the charge has already succeeded, the retry re-executes the tool call and a customer is billed twice. The team wants to keep automatic retries for transient API failures.",
+      "stem": "Which TWO changes make the retry behavior both safe and effective? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Disable SDK retries globally so no action can ever be executed a second time."
+        },
+        {
+          "id": "B",
+          "text": "Retry failed requests immediately with no delay, minimizing the window in which a duplicate could land."
+        },
+        {
+          "id": "C",
+          "text": "Cap the number of attempts and use exponential backoff with jitter, honoring any retry-after header the API returns."
+        },
+        {
+          "id": "D",
+          "text": "Extend retry handling to all 4xx responses so that no failed request is ever silently dropped."
+        },
+        {
+          "id": "E",
+          "text": "Make side effects idempotent — for example, attach an idempotency key to each billing call so the downstream system can deduplicate replays."
+        }
+      ],
+      "correct": [
+        "C",
+        "E"
+      ],
+      "explanation": "Retries are a core part of a resilient Claude integration, but any request that can be replayed must tolerate replay: that means bounded attempts with exponential backoff plus jitter that honors retry-after, and idempotency keys (or equivalent deduplication) on every side effect so a retried call cannot double-charge. Together these keep the resilience benefits while removing the double-execution risk.",
+      "whyWrong": {
+        "A": "Disabling retries removes recovery from the transient failures (connection errors, 429, 529, 5xx) that retries exist for; it treats the symptom by breaking the cure.",
+        "B": "Immediate, no-delay retries increase collision probability and hammer rate limits; delay is what makes retries safe, not what creates duplicates.",
+        "D": "4xx responses other than 429 are deterministic client errors; retrying them cannot succeed and merely adds load and noise."
+      },
+      "difficulty": 2,
+      "mindset": "Backoff, caps, and idempotent side effects — retries and safety are complements, not alternatives.",
+      "tags": [
+        "retries",
+        "idempotency",
+        "backoff",
+        "error-handling"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://platform.claude.com/docs/en/api/rate-limits"
+      ]
+    },
+    {
+      "id": "v-d5-g2-013",
+      "taskStatementId": "5.2",
+      "scenario": "A platform team is standardizing the error-handling policy for an internal gateway that fronts all calls to the Claude Messages API. They want a single rule that says which failure classes may be retried automatically with backoff.",
+      "stem": "Which TWO failure classes should the policy mark as retryable with backoff? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "400 invalid_request_error responses from malformed request bodies."
+        },
+        {
+          "id": "B",
+          "text": "429 rate_limit_error responses, honoring the retry-after header when present."
+        },
+        {
+          "id": "C",
+          "text": "401 authentication_error responses from an invalid or revoked API key."
+        },
+        {
+          "id": "D",
+          "text": "529 overloaded_error responses indicating the API is temporarily over capacity."
+        },
+        {
+          "id": "E",
+          "text": "404 not_found_error responses from a misspelled model identifier."
+        }
+      ],
+      "correct": [
+        "B",
+        "D"
+      ],
+      "explanation": "The transient, retryable classes are 429 rate_limit_error (back off and honor retry-after), 529 overloaded_error, 5xx server errors, and connection errors. Everything else in the 4xx range — including 400, 401 and 404 — is a deterministic client error: the request will fail identically until a human or code changes the request, so the policy must route those to fixing, not retrying.",
+      "whyWrong": {
+        "A": "A malformed body returns the same 400 on every attempt; the request must be corrected.",
+        "C": "An invalid key fails every time until the credential is fixed; retrying delays the alert.",
+        "E": "An unknown model ID is a request bug, not a transient condition; correct the identifier."
+      },
+      "difficulty": 1,
+      "mindset": "Retry transience (429/529/5xx/connection); fix determinism (other 4xx).",
+      "tags": [
+        "errors",
+        "retries",
+        "http-status"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors"
+      ]
+    },
+    {
+      "id": "v-d5-g2-014",
+      "taskStatementId": "5.2",
+      "scenario": "After a rough week — some silently truncated outputs, a support investigation the team could not assist with, and an unexplained cost jump — an engineering team defines a standard per-request log for every Claude API call in their service.",
+      "stem": "Which TWO elements belong in that standard log? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "The model that served the request and the request-id returned with the response, so any individual failing request can be traced and escalated with support."
+        },
+        {
+          "id": "B",
+          "text": "Only requests that return 5xx, to keep log volume and cost low."
+        },
+        {
+          "id": "C",
+          "text": "The stop_reason and the token usage fields (input, output, cache read and cache write), so truncation is visible and cost per completed task can be computed."
+        },
+        {
+          "id": "D",
+          "text": "The complete system prompt and all user content for every request, retained indefinitely for full reproducibility."
+        },
+        {
+          "id": "E",
+          "text": "The SDK's package-version hash instead of the model name, since model identifiers change too often to be useful."
+        }
+      ],
+      "correct": [
+        "A",
+        "C"
+      ],
+      "explanation": "The baseline observability set is model, request-id, stop_reason and usage on every call. Model matters because different tiers price and behave differently; request-id is what support needs to trace a specific call; stop_reason surfaces truncation (max_tokens) and other end conditions; and the usage fields — including cache_read_input_tokens and cache_creation_input_tokens — are what let you compute true cost per completed task rather than guessing from billing totals.",
+      "whyWrong": {
+        "B": "Failures of truncation, cost and rate limiting occur on 2xx responses too; sampling only 5xx misses the entire class of silent issues.",
+        "D": "Indefinite retention of full prompts and user content creates serious PII and data-leakage exposure and high storage cost; reproducibility rarely requires content, only metadata.",
+        "E": "The library version does not identify which model actually served a request; model IDs should be pinned in configuration and logged explicitly on every call."
+      },
+      "difficulty": 2,
+      "mindset": "Every call logs model, request-id, stop_reason and usage — metadata, not content.",
+      "tags": [
+        "observability",
+        "logging",
+        "usage-tracking",
+        "privacy"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching"
+      ]
+    },
+    {
+      "id": "v-d5-g2-015",
+      "taskStatementId": "5.2",
+      "scenario": "During code review of a new streaming chat feature, the reviewer wants to confirm two specific behaviors of the streaming implementation before approving the merge.",
+      "stem": "Which TWO statements about how Claude API streaming works are correct? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Streamed responses are delivered over a WebSocket connection so the server can push frames bidirectionally."
+        },
+        {
+          "id": "B",
+          "text": "The final stop_reason and cumulative usage arrive on the message_delta event near the end of the stream."
+        },
+        {
+          "id": "C",
+          "text": "Streaming reduces the number of output tokens generated, so it lowers the cost of a response."
+        },
+        {
+          "id": "D",
+          "text": "The message_start event contains the complete final usage totals, so billing can be recorded as soon as the stream opens."
+        },
+        {
+          "id": "E",
+          "text": "A tool's input arrives incrementally as input_json_delta string fragments that must be concatenated and parsed only after that content block reports content_block_stop."
+        }
+      ],
+      "correct": [
+        "B",
+        "E"
+      ],
+      "explanation": "Streaming is a sequence of Server-Sent Events over HTTP. Terminal information — stop_reason and cumulative usage — is carried by message_delta just before message_stop, which is where final accounting and end-of-turn handling belong. Tool input streams as partial JSON strings in input_json_delta events; the fragments must be accumulated per block and parsed only after that block's content_block_stop, because any individual delta is not valid JSON.",
+      "whyWrong": {
+        "A": "The transport is SSE over HTTP; there is no WebSocket endpoint on the Claude API.",
+        "C": "Streaming changes delivery and perceived latency, not generation: the same tokens are produced and billed.",
+        "D": "message_start opens the stream; usage accumulates and is finalized on message_delta, so early reads undercount the response."
+      },
+      "difficulty": 2,
+      "mindset": "Know the event sequence: deltas are fragments, and the truth (stop_reason, usage) lands on message_delta.",
+      "tags": [
+        "streaming",
+        "sse",
+        "tool-use",
+        "usage-tracking"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/streaming"
+      ]
+    }
+  ]
+}

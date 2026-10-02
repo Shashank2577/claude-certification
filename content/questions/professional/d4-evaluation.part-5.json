@@ -1,0 +1,826 @@
+{
+  "certId": "professional",
+  "domainId": "d4-evaluation",
+  "questions": [
+    {
+      "id": "p-d4-x3-001",
+      "taskStatementId": "4.5",
+      "stem": "A field-service agent sends the same 14 tool definitions and a 6,000-token system prompt on every request, with a cache_control breakpoint at the end of the system prompt. Dashboards show the cache hit rate swinging between 0% and 90% from hour to hour although neither the prompt nor the tools have been edited in weeks. A code review finds the service builds the tools array by iterating over an unordered map of registered tools, so the serialized order differs between server instances. Which change would MOST reliably restore cache hits with the least effort?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Move the cache_control breakpoint to the first user message so the tools and system prompt are cached together as one longer prefix."
+        },
+        {
+          "id": "B",
+          "text": "Switch to the 1-hour cache duration so cached prefixes survive longer between requests that land on the same instance."
+        },
+        {
+          "id": "C",
+          "text": "Serialize the tools in a fixed, deterministic order (for example, sorted by name) on every instance so the prefix is byte-identical."
+        },
+        {
+          "id": "D",
+          "text": "Shorten the tool descriptions and system prompt so the prefix is cheaper to write each time the cache misses."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Prompt caching matches an **exact prefix**, processed in the order tools, then system, then messages, and any change to tool definitions invalidates the whole cache below them. If the tools array is serialized in a different order on different instances, each instance produces a different prefix, so a request only hits when it happens to land on an instance whose ordering was cached recently. Making the order deterministic fixes the root cause with a one-line change. The caching troubleshooting guidance makes the related point that key order inside `tool_use` blocks must be stable, because some languages randomize key order during JSON conversion and break caches; an unstable order of the tool definitions breaks the prefix in exactly the same way.",
+      "whyWrong": {
+        "A": "Moving the breakpoint later still includes the unstable tools array at the front of the prefix, so the prefix keeps changing and the cache keeps missing.",
+        "B": "A longer TTL does not help when the prefix itself differs between requests; a different prefix is a different cache entry no matter how long entries live.",
+        "D": "Making misses cheaper treats the symptom. The goal is to stop the misses, and shortening the prompt could also hurt quality."
+      },
+      "difficulty": 2,
+      "mindset": "Caching is exact-prefix matching: find what makes the prefix change before tuning anything else.",
+      "tags": [
+        "prompt-caching",
+        "cache-hit-rate",
+        "tool-definitions",
+        "cost"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching"
+      ]
+    },
+    {
+      "id": "p-d4-x3-002",
+      "taskStatementId": "4.5",
+      "scenario": "An insurer's claims assistant answers policyholder questions. Analysis of 5,000 logged questions shows about 80% are simple lookups (deductible amounts, claim status, document checklists) and about 20% require reasoning across policy clauses, endorsements and prior claims. The assistant currently uses the most capable model for every question. On the team's eval set, a smaller, faster model matches the large model on the simple category but scores 18 points lower on the complex category.",
+      "stem": "Leadership wants to cut cost per question substantially without lowering answer quality on complex questions. Which approach is MOST appropriate?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Route with a lightweight classifier: the small model takes the simple categories, complex or uncertain questions go to the large model, and the routed system is validated on the eval set."
+        },
+        {
+          "id": "B",
+          "text": "Move all traffic to the small model and add more few-shot examples of complex policy reasoning to its prompt until the complex-category score closes the gap on the eval set."
+        },
+        {
+          "id": "C",
+          "text": "Keep the large model for all questions and instruct it in the system prompt to answer simple questions in one short sentence, cutting output tokens on the majority of traffic."
+        },
+        {
+          "id": "D",
+          "text": "Send every question to both models in parallel and have the large model choose the better of the two answers, so that quality never drops below the current level."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The eval data already shows where each model is good enough. Routing sends the large majority of cheap, simple traffic to the small model and keeps the capable model for the 20% that needs it, which lowers *average* cost and latency while protecting complex-question quality. The important step is validating the routed system end to end, including how often the router misroutes complex questions, and sending uncertain cases to the larger model.",
+      "whyWrong": {
+        "B": "Hoping prompt examples will close an 18-point capability gap is a gamble, and it risks the exact quality loss leadership ruled out. Examples help, but they rarely substitute for model capability on multi-clause reasoning.",
+        "C": "Shorter answers trim some output cost, but every question still pays large-model input and output prices, so the main saving opportunity is left on the table.",
+        "D": "Running two models plus a selection step on every question increases cost and latency, the opposite of the goal."
+      },
+      "difficulty": 3,
+      "mindset": "Match model size to task difficulty, and let eval data, not intuition, decide where the line sits.",
+      "tags": [
+        "model-routing",
+        "model-selection",
+        "cost-performance",
+        "evals"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/about-claude/models/choosing-a-model",
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "p-d4-x3-003",
+      "taskStatementId": "4.5",
+      "stem": "A mortgage pipeline has two Claude steps: step 1 pulls about 15 fields (names, dates, amounts) from a standard application form, and step 2 assesses whether the applicant's documented income supports the requested loan under a 40-page underwriting guide. During development the team set both steps to the highest effort level. Step 1 now accounts for 60% of the pipeline's output tokens, mostly reasoning, and adds several seconds per file. On the eval set, step 1 scores the same at a low effort level as at the highest. What should the architect do?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Keep the highest effort on both steps, because reducing reasoning on any step of a regulated pipeline creates audit risk that outweighs the token savings."
+        },
+        {
+          "id": "B",
+          "text": "Lower the effort on both steps together so the pipeline is configured consistently, then rerun the eval only if users report problems."
+        },
+        {
+          "id": "C",
+          "text": "Set max_tokens on step 1 low enough that the model cannot spend many tokens on reasoning before it writes the fields."
+        },
+        {
+          "id": "D",
+          "text": "Lower the effort for step 1 only, keep the higher setting for the underwriting judgment in step 2, and confirm both steps still pass the eval."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "Reasoning tokens are billed as output and add latency, so they should be spent where they buy accuracy. The eval shows step 1 gains nothing from high effort, while step 2 is a genuine multi-document judgment where extra reasoning is likely to help. Tuning each step separately, and proving it with the eval, cuts the waste without touching quality where it matters.",
+      "whyWrong": {
+        "A": "The eval already shows the extra reasoning on step 1 adds no accuracy. Paying for it gives no audit benefit, and the quality controls belong in the evaluation, not in leaving effort at maximum everywhere.",
+        "B": "Step 2 is the hard judgment task. Lowering it without evidence risks quality, and waiting for user reports to find out swaps evaluation for production incidents.",
+        "C": "A tight max_tokens cap can cut the response off before the fields are written, producing truncated output. It is a blunt safety limit, not a way to tune how much the model reasons."
+      },
+      "difficulty": 2,
+      "mindset": "Spend reasoning budget per step where the eval shows it pays; a pipeline does not need one global setting.",
+      "tags": [
+        "effort",
+        "thinking",
+        "output-tokens",
+        "latency",
+        "pipeline"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/effort",
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-latency"
+      ]
+    },
+    {
+      "id": "p-d4-x3-004",
+      "taskStatementId": "4.5",
+      "stem": "A finance director reads that the Message Batches API halves the price of input and output tokens and asks the architect to move the company's in-app 'explain this invoice' feature to batches. Customers click the button and wait on the screen for the explanation, which currently takes 3 to 5 seconds. Which response BEST serves the business?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Agree, and add a loading message telling customers the explanation may take a little longer than before while their request is processed as part of a batch."
+        },
+        {
+          "id": "B",
+          "text": "Explain that batches can take up to 24 hours and suit work nobody waits for, and propose savings that keep it interactive, such as caching the shared prompt and right-sizing the model."
+        },
+        {
+          "id": "C",
+          "text": "Agree, but submit each customer click as its own one-item batch and poll it every second, so that most results still arrive within a few seconds of the click."
+        },
+        {
+          "id": "D",
+          "text": "Decline the change for now, because cost work on a customer-facing feature risks the experience and should wait until the next planning cycle, when it can be scoped properly."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "The Batches API trades latency for a 50% discount: most batches finish within an hour, but the only guarantee is completion within 24 hours. That fits evals, backfills and nightly jobs, not a button a customer is waiting on. A good architect says no to the wrong lever and offers levers that fit an interactive workload: caching the stable prompt prefix, using the smallest model that passes the eval, and keeping output concise.",
+      "whyWrong": {
+        "A": "A loading message does not fix a response that could take hours. Customers waiting on a screen cannot be served by an asynchronous queue.",
+        "C": "Batches have no latency guarantee, so polling faster does not make results arrive faster. This adds complexity and still risks very long waits.",
+        "D": "Deferring all optimization ignores real, low-risk savings such as caching and model right-sizing that do not change the user experience."
+      },
+      "difficulty": 1,
+      "mindset": "Pick the cost lever that fits the latency requirement; a discount on the wrong workload is not a saving.",
+      "tags": [
+        "batch-api",
+        "latency",
+        "cost",
+        "stakeholder-trade-off"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/batch-processing",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching"
+      ]
+    },
+    {
+      "id": "p-d4-x3-005",
+      "taskStatementId": "4.5",
+      "stem": "A team plans to move a high-volume document-summarization service to a newer model generation. To forecast next quarter's budget, an analyst multiplies last month's logged input and output token counts by the new model's per-token prices. The release notes say the new generation uses a different tokenizer. The budget must be accurate before the CFO signs off. What is the MOST reliable way to produce the forecast?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Count a representative sample of real requests with the token counting endpoint using the new model ID, pilot a small set to measure output length, and project from those figures."
+        },
+        {
+          "id": "B",
+          "text": "Keep the analyst's method but add a flat 10% contingency to the forecast, on the basis that tokenizer differences between model generations are usually small."
+        },
+        {
+          "id": "C",
+          "text": "Ask the new model to estimate how many tokens each document will take, using a prompt that includes the document text and the old model's token count for it."
+        },
+        {
+          "id": "D",
+          "text": "Divide the total character count of last month's documents by four to get a model-independent token estimate, then apply the new model's prices to that figure."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Token counts are model-specific. Anthropic's docs note that newer models use a tokenizer that can produce substantially more tokens for the same text (around 30% more for some generations) and advise recounting against the model you plan to use rather than reusing old counts. The token counting endpoint is free (rate-limited) and accepts the same inputs as a Messages request, so a representative sample gives a measured input figure. Output length can also change with a new model, so a small pilot measures that side too.",
+      "whyWrong": {
+        "B": "A guessed contingency is not a measurement. Tokenizer changes can exceed 10%, and the CFO asked for an accurate forecast.",
+        "C": "The model cannot reliably count its own tokens from a prompt. This asks a generative model to do a deterministic job that an API endpoint already does exactly.",
+        "D": "A characters-per-token rule of thumb is rough and model-agnostic by design, so it ignores the very tokenizer change that makes the old numbers unreliable."
+      },
+      "difficulty": 3,
+      "mindset": "Measure tokens with the target model's tokenizer; never carry token counts across model generations.",
+      "tags": [
+        "token-counting",
+        "cost-forecasting",
+        "model-migration",
+        "tokenizer"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/token-counting"
+      ]
+    },
+    {
+      "id": "p-d4-x3-006",
+      "taskStatementId": "4.5",
+      "scenario": "An HR policy assistant retrieves the top 20 chunks (about 1,000 tokens each) from a policy index for every question and places them before a stable 5,000-token block of instructions and worked examples, followed by the user's question. Time to first token averages 4 seconds and input tokens dominate the bill. An offline test shows that for 95% of eval questions, every chunk cited in the reference answer was ranked in the top 5 after a reranking step.",
+      "stem": "Which TWO changes would MOST effectively reduce input cost and time to first token while protecting answer groundedness? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Switch to a model with a larger context window so the 20 chunks can be sent with more surrounding text and fewer retrieval misses."
+        },
+        {
+          "id": "B",
+          "text": "Put the reranking step into the production path and send only the top five reranked chunks, confirming on the eval set that groundedness and accuracy hold."
+        },
+        {
+          "id": "C",
+          "text": "Add an instruction telling Claude to skim and ignore irrelevant chunks so it spends less effort processing them."
+        },
+        {
+          "id": "D",
+          "text": "Summarize each of the 20 retrieved chunks with a separate model call before passing the summaries to the answering step."
+        },
+        {
+          "id": "E",
+          "text": "Put the stable instructions and examples first, mark them for caching, and place the retrieved chunks and question after them."
+        }
+      ],
+      "correct": [
+        "B",
+        "E"
+      ],
+      "explanation": "Two independent wastes exist. First, 15 of the 20 chunks rarely matter, so reranking and sending fewer chunks cuts most of the input and processing time, as long as the eval confirms answers stay grounded. Second, the stable 5,000-token block sits *after* volatile retrieved content, so it can never be cached. Moving it to the front and caching it makes that part cheap and fast on every request. Together they cut cost and time to first token without reducing quality.",
+      "whyWrong": {
+        "A": "A bigger context window sends even more tokens, raising cost and time to first token. The offline test shows retrieval ranking, not window size, is the issue.",
+        "C": "Claude still has to read every token it is sent; an instruction to ignore chunks does not reduce billed input or processing time.",
+        "D": "Twenty extra model calls per question add cost and latency, and summarization can drop the exact details the answer needs to cite."
+      },
+      "difficulty": 3,
+      "mindset": "Cut tokens you do not need and cache the tokens you always need; prove both on the eval.",
+      "tags": [
+        "rag",
+        "reranking",
+        "prompt-caching",
+        "ttft",
+        "input-tokens"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/contextual-retrieval",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching"
+      ]
+    },
+    {
+      "id": "p-d4-x3-007",
+      "taskStatementId": "4.5",
+      "stem": "During weekday peaks, a contract-review service receives 429 rate_limit_error responses. Logs show the limit being hit is input tokens per minute. Every request carries the same 25,000-token block of clause library and instructions, followed by a contract excerpt of about 2,000 tokens, and nothing is cached today. Output is short and well below its limit. The team wants to serve peak traffic reliably with minimal architectural change. Which TWO actions are MOST effective? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Cache the shared 25,000-token block, since on most current models cached input reads do not count toward the input-tokens-per-minute limit."
+        },
+        {
+          "id": "B",
+          "text": "Lower max_tokens on every request so the service reserves less capacity and frees headroom under the rate limit."
+        },
+        {
+          "id": "C",
+          "text": "Create several more API keys in the same organization and rotate between them so each key receives its own rate limit."
+        },
+        {
+          "id": "D",
+          "text": "Queue requests on the client and retry 429s with backoff that honors the retry-after header, smoothing short bursts instead of failing them."
+        },
+        {
+          "id": "E",
+          "text": "Move peak-time contract reviews to the Message Batches API, because batch requests are processed without rate limits of any kind."
+        }
+      ],
+      "correct": [
+        "A",
+        "D"
+      ],
+      "explanation": "Over 90% of each request's input is the same block. Caching it cuts cost and, because cache reads do not count toward ITPM on most models, raises effective throughput sharply. A client-side queue with backoff that respects retry-after absorbs the remaining short bursts gracefully. Both are small changes that address the input-token limit directly.",
+      "whyWrong": {
+        "B": "Input tokens are the binding limit, not output. Output-token limits also count the tokens actually generated, not the max_tokens value, so lowering it buys no headroom here.",
+        "C": "Rate limits apply at the organization level (and optionally per workspace), not per key, so extra keys in the same organization do not add capacity.",
+        "E": "The Batches API has its own limits and no latency guarantee, so it does not fit reviews that need a timely answer during peak hours."
+      },
+      "difficulty": 3,
+      "mindset": "Identify which limit is binding, then remove repeated input from it before asking for more capacity.",
+      "tags": [
+        "rate-limits",
+        "itpm",
+        "prompt-caching",
+        "throughput",
+        "retries"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/rate-limits",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
+        "https://platform.claude.com/docs/en/api/errors"
+      ]
+    },
+    {
+      "id": "p-d4-x3-008",
+      "taskStatementId": "4.5",
+      "stem": "A product-tagging service returns JSON with three fields: `category`, `tags`, and `rationale`, a paragraph explaining the choice. Only `category` and `tags` are stored; no system or person ever reads `rationale`. Output tokens account for 70% of the service's cost, and most of them are in `rationale`. Which change is the BEST first step to cut cost?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Keep the schema and set a much lower max_tokens so the response is cut off soon after the category and tags have been written."
+        },
+        {
+          "id": "B",
+          "text": "Switch the whole service to the Message Batches API, which will halve output cost while leaving the schema unchanged."
+        },
+        {
+          "id": "C",
+          "text": "Remove the unused `rationale` field from the schema and prompt, then confirm on the eval set that category and tag accuracy hold."
+        },
+        {
+          "id": "D",
+          "text": "Ask the model in the prompt to keep its rationale under two sentences so it uses fewer output tokens per product."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Output tokens are the most expensive tokens and also drive total latency. Generating a paragraph nobody uses is pure waste, so removing it is the cleanest fix. Because written reasoning can sometimes help a model choose labels, the change should be checked against the eval before rollout; if accuracy drops, a shorter internal reasoning step can be weighed against the saving.",
+      "whyWrong": {
+        "A": "A low max_tokens cap risks cutting off the JSON mid-object, which breaks parsing. It caps the worst case rather than removing unneeded output.",
+        "B": "Batching may help if no one waits on results, but it still pays for the useless field. Removing waste comes before discounting it.",
+        "D": "Shortening an unused field still generates tokens nobody reads, and length instructions are followed less reliably than simply not asking for the field."
+      },
+      "difficulty": 1,
+      "mindset": "The cheapest output token is the one you never ask for.",
+      "tags": [
+        "output-tokens",
+        "structured-output",
+        "cost",
+        "evals"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-latency",
+        "https://platform.claude.com/docs/en/about-claude/models/optimizing-for-cost-and-intelligence"
+      ]
+    },
+    {
+      "id": "p-d4-x3-009",
+      "taskStatementId": "4.5",
+      "stem": "A B2B analytics assistant caches a 40,000-token block of each tenant's data dictionary using the default cache lifetime. Usage logs show that within a working day each tenant sends a question roughly every 10 to 25 minutes, and that `cache_read_input_tokens` is almost always zero while `cache_creation_input_tokens` is large on nearly every request. Which change is MOST likely to lower cost?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Remove caching for these tenants, because paying the higher cache-write price on every request costs more than sending uncached input."
+        },
+        {
+          "id": "B",
+          "text": "Use the 1-hour cache duration for the data-dictionary block, so it survives the gaps between a tenant's questions and is read at the discounted rate."
+        },
+        {
+          "id": "C",
+          "text": "Send a background request for every tenant every four minutes all day to keep the default cache warm between real questions."
+        },
+        {
+          "id": "D",
+          "text": "Split the 40,000-token block across four cache breakpoints so each smaller piece is more likely to stay in the cache."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "The default cache lives for 5 minutes, refreshed on each hit. With 10 to 25 minutes between a tenant's requests, every entry expires first, so the team pays the cache-write premium every time and never gets a read. The 1-hour option costs more per write but stays alive across those gaps, so most requests become cheap cache reads. Removing caching (A) would be the fallback only if traffic were too sparse even for the 1-hour lifetime.",
+      "whyWrong": {
+        "A": "Removing caching stops the write premium but gives up the large read discount that a longer cache lifetime would deliver for this traffic pattern.",
+        "C": "Keep-alive requests all day for every tenant add many paid calls, including idle hours, and add operational complexity when a supported longer lifetime exists.",
+        "D": "Expiry is time-based. Splitting the block does not make any part live longer, so every piece still expires between questions."
+      },
+      "difficulty": 2,
+      "mindset": "Match cache lifetime to the real gap between requests, using the usage fields as evidence.",
+      "tags": [
+        "prompt-caching",
+        "cache-ttl",
+        "cost",
+        "usage-metrics"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching"
+      ]
+    },
+    {
+      "id": "p-d4-x3-010",
+      "taskStatementId": "4.6",
+      "stem": "A support platform's dashboard has a single 'LLM errors' line, and the on-call runbook says to request a higher rate limit whenever it spikes. Last night's spike was made up mostly of 529 overloaded_error responses, plus some 500 api_error responses; the organization was well under its rate limits. Which monitoring change would MOST improve how on-call responds?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Raise the alert threshold on the combined error line so short spikes like last night's no longer page anyone."
+        },
+        {
+          "id": "B",
+          "text": "Add an LLM step that reads each error message and writes a short explanation for the on-call engineer."
+        },
+        {
+          "id": "C",
+          "text": "Keep the combined line but log every error's full prompt and response so engineers can inspect them during incidents."
+        },
+        {
+          "id": "D",
+          "text": "Break errors out by HTTP status and error type, and map each to its own runbook action, logging the request ID for each failure."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "Different error types need different responses. A 429 rate_limit_error means your organization hit a limit (smooth traffic, back off, or request more capacity). A 529 overloaded_error means the API is temporarily overloaded across users, and a 500 api_error is an unexpected internal error: both call for retries with exponential backoff and, if persistent, a support case citing the request ID. One combined line led on-call to the wrong action. Segmenting by type and logging request IDs makes the response correct and the escalation precise.",
+      "whyWrong": {
+        "A": "Raising the threshold hides real incidents and still lumps unlike errors together, so the wrong action follows the next spike.",
+        "B": "Error types are already structured in the response; a model summarizing them adds cost and latency for information a simple breakdown gives directly.",
+        "C": "Logging full content raises privacy exposure and does not tell on-call which error class occurred or what to do about it."
+      },
+      "difficulty": 1,
+      "mindset": "Monitor by cause, not by bucket: each error type should point to its own action.",
+      "tags": [
+        "error-monitoring",
+        "429",
+        "529",
+        "runbooks",
+        "request-id"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors"
+      ]
+    },
+    {
+      "id": "p-d4-x3-011",
+      "taskStatementId": "4.6",
+      "stem": "Four product teams share one API key for their Claude features. Finance now wants each team's monthly Claude spend reported automatically and an alert when any team's daily spend exceeds its budget. An engineer proposes putting the team name in each request's `metadata.user_id` field and summing it from application logs. What is the MOST appropriate approach?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Put the team name in metadata.user_id as proposed, and ask Anthropic support for a monthly export of spend grouped by that field."
+        },
+        {
+          "id": "B",
+          "text": "Give each team its own workspace and API key, then pull cost and usage grouped by workspace from the Usage & Cost Admin API into the alerting system."
+        },
+        {
+          "id": "C",
+          "text": "Keep the shared key and estimate each team's share each month from the number of requests each team's services sent."
+        },
+        {
+          "id": "D",
+          "text": "Have each team's code ask Claude at the end of every response to report how many tokens it used, and sum those numbers per team."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Workspaces and separate API keys give a clean, enforced cost boundary per team. The Usage & Cost Admin API (called with an Admin API key) reports usage and cost that can be grouped by workspace or API key, which feeds automated reports and daily budget alerts without custom accounting. Workspaces also allow per-team limits.",
+      "whyWrong": {
+        "A": "metadata.user_id is meant to identify end users (for example, for abuse detection), not to drive cost reporting, and relying on manual support exports does not give automated daily alerts.",
+        "C": "Request counts ignore that teams send very different token volumes and models, so the split would be inaccurate.",
+        "D": "The model does not reliably know its own token usage. The exact figures are already in each response's usage object and in the Admin API."
+      },
+      "difficulty": 2,
+      "mindset": "Build cost attribution into the account structure, then read it from the platform's reporting API.",
+      "tags": [
+        "cost-attribution",
+        "workspaces",
+        "usage-cost-api",
+        "alerting"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/manage-claude/usage-cost-api",
+        "https://platform.claude.com/docs/en/manage-claude/workspaces"
+      ]
+    },
+    {
+      "id": "p-d4-x3-012",
+      "taskStatementId": "4.6",
+      "scenario": "A telehealth company's triage assistant handles patient messages that often include symptoms, medications and contact details. Engineers currently log the full prompt and response for every request to a shared log platform that all 300 engineers can search, kept for two years. The privacy officer has asked for a change, but the engineering lead insists the team must still be able to debug bad answers and track cost and latency.",
+      "stem": "Which TWO logging practices BEST balance debuggability, cost tracking and privacy? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Stop logging anything about model requests, and rely on patient complaints to find bad answers that need debugging."
+        },
+        {
+          "id": "B",
+          "text": "Add a system-prompt instruction telling Claude never to repeat personal details in its responses, so the logs no longer contain them."
+        },
+        {
+          "id": "C",
+          "text": "Log structured metadata for every request: request ID, trace ID, prompt and model version, token usage, latency, stop_reason and tool calls."
+        },
+        {
+          "id": "D",
+          "text": "Keep logging full text for every request, but hash the patient's name so the logs are considered de-identified."
+        },
+        {
+          "id": "E",
+          "text": "Capture full text only for a sampled or flagged subset, with redaction, restricted access and a defined retention period."
+        }
+      ],
+      "correct": [
+        "C",
+        "E"
+      ],
+      "explanation": "Metadata for every request supports cost, latency, error and version tracking and lets engineers find a specific bad call without exposing patient content. Full text is still needed to debug some answers, so it is captured only for a sampled or flagged subset under redaction, need-to-know access and limited retention. This mirrors how Anthropic describes its own production tracing: monitor decision patterns and interaction structure broadly, while keeping conversation contents out of routine monitoring. Logging content is a governance decision, and this split gives the team what it needs while shrinking exposure.",
+      "whyWrong": {
+        "A": "No logs means no cost tracking, no latency monitoring and no way to debug; relying on complaints catches problems late and incompletely.",
+        "B": "Patient messages themselves contain the sensitive data, and a prompt instruction is not a reliable control over what ends up in logs.",
+        "D": "Hashing one field leaves symptoms, medications and other identifiers in every log, still searchable by 300 engineers for two years."
+      },
+      "difficulty": 2,
+      "mindset": "Log metadata for everything, content for a controlled sample: observability and privacy are designed together.",
+      "tags": [
+        "logging",
+        "privacy",
+        "pii",
+        "observability",
+        "governance"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/multi-agent-research-system",
+        "https://platform.claude.com/docs/en/manage-claude/api-and-data-retention"
+      ]
+    },
+    {
+      "id": "p-d4-x3-013",
+      "taskStatementId": "4.6",
+      "stem": "A contract-analysis chat promises enterprise customers that 95% of responses will start appearing within 3 seconds. The dashboard shows average time to first token of 1.4 seconds, comfortably inside the target, yet two large customers say the tool is often slow. Their users typically paste long contracts into the conversation. What should the architect change in monitoring FIRST?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Track time to first token and total latency at p95 and p99, segmented by customer and input-token size, and alert on the percentile the commitment uses."
+        },
+        {
+          "id": "B",
+          "text": "Send the two customers a report showing the 1.4-second average and the measurement method, since the commitment is being met across the platform as a whole."
+        },
+        {
+          "id": "C",
+          "text": "Switch the dashboard from time to first token to total response time, since total time is the number users actually experience when reading a long answer."
+        },
+        {
+          "id": "D",
+          "text": "Add a user survey at the end of each conversation asking whether the response felt fast enough, and adopt that score as the main latency metric going forward."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Averages hide tails. The commitment is a 95th-percentile promise, so it must be measured at that percentile. Time to first token grows with the amount of input processed, so customers who paste long contracts likely sit in the slow tail that the mean blurs out. Segmenting by customer and input size reveals who is affected and points to fixes such as caching the long contract across turns.",
+      "whyWrong": {
+        "B": "The average does not measure a p95 commitment, and the affected customers may well be outside it. This dismisses real evidence.",
+        "C": "Both metrics matter, especially with streaming, but swapping one average for another still hides the tail and the affected segment.",
+        "D": "Surveys are slow, sparse and subjective. They can complement measured latency but cannot replace percentile tracking for an SLA."
+      },
+      "difficulty": 2,
+      "mindset": "Measure latency the way the commitment is written: percentiles, segmented by who and what is slow.",
+      "tags": [
+        "latency",
+        "percentiles",
+        "ttft",
+        "segmentation",
+        "sla"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-latency",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching"
+      ]
+    },
+    {
+      "id": "p-d4-x3-014",
+      "taskStatementId": "4.6",
+      "stem": "A sampled LLM-judge score for a benefits-answering assistant dropped from 91% to 84% over one week. During that week, the prompt was edited twice, the retrieval index was rebuilt, and an upstream eligibility API changed its response format. Request logs contain timestamps, the request ID and the user's question, but nothing about which configuration served each request. Which change would MOST help attribute this and future regressions quickly?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Increase the judge sample size from 2% to 20% of traffic so the score reacts faster to changes in quality and the weekly drop can be confirmed sooner."
+        },
+        {
+          "id": "B",
+          "text": "Roll back all three changes at once, confirm the score recovers to 91%, then re-apply the changes together after a further round of offline testing."
+        },
+        {
+          "id": "C",
+          "text": "Record the prompt version, model, retrieval index version and upstream API schema version on every request log, and mark deploys on the quality dashboards."
+        },
+        {
+          "id": "D",
+          "text": "Ask the judge model to explain, for each low-scoring answer, which of the three changes it believes caused the problem, and tally its answers."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "When several things change at once, quality data can only be attributed if each request records exactly which configuration produced it. With versions on every log line and deploy markers on the dashboards, the team can split scores by version and see which change moved them. The judge sample can then be sliced by version too.",
+      "whyWrong": {
+        "A": "A bigger sample makes the score less noisy, but without configuration data it still cannot show which change caused the drop.",
+        "B": "Rolling everything back may stop the bleeding, but re-applying all three together repeats the attribution problem and teaches nothing.",
+        "D": "The judge sees only the question and answer. It has no visibility into deployments, so its guesses about causes are speculation."
+      },
+      "difficulty": 2,
+      "mindset": "You cannot attribute what you did not record: version every moving part on every request.",
+      "tags": [
+        "observability",
+        "versioning",
+        "regression-attribution",
+        "llm-judge"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests",
+        "https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents"
+      ]
+    },
+    {
+      "id": "p-d4-x3-015",
+      "taskStatementId": "4.6",
+      "stem": "A research agent can call search, fetch and code-execution tools. Monthly spend jumped 40% with flat traffic. Investigation shows that about 1% of sessions run for hundreds of steps, repeatedly fetching the same pages, and these sessions account for most of the increase; nobody noticed until the invoice arrived. Which TWO changes BEST prevent this from happening silently again? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add a system-prompt instruction asking the agent not to fetch the same page twice and to stop when it has enough information."
+        },
+        {
+          "id": "B",
+          "text": "Track per-session step count, tool calls, tokens and cost, and alert on sessions that are outliers against the normal distribution."
+        },
+        {
+          "id": "C",
+          "text": "Move the agent to the most capable model available, since a smarter model is less likely to get stuck in loops."
+        },
+        {
+          "id": "D",
+          "text": "Enforce a per-session step and token budget in the orchestrator that stops the run and flags it for review when exceeded."
+        },
+        {
+          "id": "E",
+          "text": "Review the invoice weekly instead of monthly so that spending increases are discovered sooner."
+        }
+      ],
+      "correct": [
+        "B",
+        "D"
+      ],
+      "explanation": "The failure was invisible because spend was only seen in aggregate, after the fact. Per-session telemetry with outlier alerts surfaces runaway sessions within minutes, and the same traces show *why* they looped. A deterministic budget in the orchestrator caps the damage of any single session regardless of model behavior. Together they give detection and containment.",
+      "whyWrong": {
+        "A": "A prompt instruction may reduce looping, but it is not guaranteed and gives no visibility when it fails.",
+        "C": "A larger model costs more per step and still needs monitoring; it does not guarantee loops stop.",
+        "E": "Weekly invoices are still aggregate and delayed, so a looping session can burn budget for days before anyone sees it."
+      },
+      "difficulty": 3,
+      "mindset": "Observe agents per session and back the observation with a hard budget; aggregates and prompts alone hide runaways.",
+      "tags": [
+        "agent-observability",
+        "cost-anomaly",
+        "tracing",
+        "budgets"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/multi-agent-research-system",
+        "https://code.claude.com/docs/en/agent-sdk/cost-tracking"
+      ]
+    },
+    {
+      "id": "p-d4-x3-016",
+      "taskStatementId": "4.6",
+      "stem": "A tax-guidance assistant attaches a confidence label to each answer. To save reviewer time, the quality team's weekly human review covers only answers labeled low-confidence, and the low-confidence error rate is steadily improving. A regulator's audit then finds several confidently stated but wrong answers about filing deadlines. How should the review process change?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Lower the threshold for the low-confidence label so that a larger share of answers is routed into the existing review queue each week."
+        },
+        {
+          "id": "B",
+          "text": "Review a stratified random sample across confidence levels and topics, over-sampling high-risk topics such as deadlines, alongside the flagged answers."
+        },
+        {
+          "id": "C",
+          "text": "Have the model re-check each high-confidence answer in a second pass and lower its own confidence label whenever it finds a possible problem."
+        },
+        {
+          "id": "D",
+          "text": "Stop human review and replace it with an LLM judge on every answer, since a judge can cover all traffic instead of a weekly sample."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Reviewing only low-confidence answers creates a blind spot exactly where the most damaging errors live: confident and wrong. A stratified random sample across confidence bands and topics measures the true error rate, and over-sampling high-risk topics catches the costly failures sooner. Flagged answers can still be reviewed, but they cannot be the only sample.",
+      "whyWrong": {
+        "A": "A lower threshold still samples by the same confidence signal, so confident errors stay outside the review.",
+        "C": "Self-checking by the same model tends to repeat its own mistakes and is not an independent measurement.",
+        "D": "An LLM judge is valuable for coverage, but it needs human review to calibrate it and to catch what it misses; removing humans removes that check."
+      },
+      "difficulty": 2,
+      "mindset": "Sample to find the errors you are not looking for: confident mistakes need random, stratified review.",
+      "tags": [
+        "human-review",
+        "sampling",
+        "stratification",
+        "confident-errors"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests",
+        "https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents"
+      ]
+    },
+    {
+      "id": "p-d4-x3-017",
+      "taskStatementId": "4.6",
+      "stem": "A retail chatbot shows thumbs-up and thumbs-down buttons, but fewer than 1% of conversations get a rating, and those come mostly from very happy or very angry users. The product manager wants a production quality signal that covers most conversations. What is the BEST addition?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Make the rating buttons mandatory before a user can close the chat window, so that every conversation ends with an explicit score."
+        },
+        {
+          "id": "B",
+          "text": "Report the thumbs ratio as the main quality metric anyway, since it comes directly from real customers and needs no extra engineering."
+        },
+        {
+          "id": "C",
+          "text": "Log implicit outcome signals such as escalation to a human, repeated or rephrased questions and task completion, plus a sampled automated grader."
+        },
+        {
+          "id": "D",
+          "text": "Ask the chatbot to end each conversation by stating whether it believes it resolved the customer's issue, and log that statement as the outcome."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Explicit ratings are sparse and biased toward extremes. Implicit outcome signals exist for nearly every conversation and connect model behavior to business results, while a sampled automated grader adds a consistent quality score. Together they form a broad, timely quality signal, and the thumbs data remains a useful supplement.",
+      "whyWrong": {
+        "A": "Forcing ratings annoys customers and produces low-effort clicks that add noise rather than signal.",
+        "B": "A tiny, self-selected sample does not represent overall quality, no matter how direct its source.",
+        "D": "The model's own judgment of success is not independent evidence and tends to be optimistic."
+      },
+      "difficulty": 1,
+      "mindset": "Measure what users do, not only what the few who click say.",
+      "tags": [
+        "outcome-signals",
+        "user-feedback",
+        "quality-monitoring",
+        "llm-judge"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests",
+        "https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents"
+      ]
+    },
+    {
+      "id": "p-d4-x3-018",
+      "taskStatementId": "4.6",
+      "scenario": "A bank's internal policy assistant passes its full eval suite in CI before every release. Last month, answer quality dropped for six days with no release on the assistant's side. The cause turned out to be a separate data team re-indexing the policy store with a new chunking setting, which the assistant's team was not told about. Production metrics for errors and latency looked normal throughout.",
+      "stem": "Which monitoring addition would MOST reliably catch this class of problem, changes made outside the assistant's own releases, within hours?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Run the CI eval suite more often, by requiring the assistant's team to cut a release every week even when nothing has changed."
+        },
+        {
+          "id": "B",
+          "text": "Ask the data team to post in a shared channel before any future re-index, and have the assistant team re-test when they see a message."
+        },
+        {
+          "id": "C",
+          "text": "Add alerts for error rate and latency on the retrieval service, so any problem with the policy store pages the assistant team."
+        },
+        {
+          "id": "D",
+          "text": "Run a fixed golden set of questions with known answers against the live production system on a schedule, and alert when its scores drop."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "CI evals only run when *this* team releases, but production depends on things other teams change: indexes, upstream APIs, configurations. A scheduled canary that sends known questions through the real production path detects any quality change, whatever caused it, within one run interval. Error and latency metrics stayed green here, which is exactly why a quality probe is needed.",
+      "whyWrong": {
+        "A": "Releasing on a timer still tests the assistant in CI, not the live indexes and APIs in production, and leaves gaps of up to a week.",
+        "B": "Process agreements help but depend on people remembering; a missed message repeats the six-day gap with no detection.",
+        "C": "The re-index did not cause errors or slowdowns, so these alerts would have stayed quiet, just as the existing ones did."
+      },
+      "difficulty": 3,
+      "mindset": "Probe live quality continuously, because production changes even when your code does not.",
+      "tags": [
+        "canary",
+        "golden-set",
+        "drift",
+        "production-monitoring",
+        "rag"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests",
+        "https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents"
+      ]
+    }
+  ]
+}

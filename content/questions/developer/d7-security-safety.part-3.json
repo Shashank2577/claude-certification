@@ -1,0 +1,701 @@
+{
+  "certId": "developer",
+  "domainId": "d7-security-safety",
+  "questions": [
+    {
+      "id": "v-d7-g3-001",
+      "taskStatementId": "7.3",
+      "scenario": "A production support agent has Bash and file-editing tools. After an incident in which a malformed ticket led the agent to attempt a destructive cleanup command, the team added a strict system-prompt rule: 'Never delete anything under /var/data.' In the next pen-test round, the agent still attempted the deletion roughly one time in fifty.",
+      "stem": "With minimal changes, which action gives the team a guarantee that commands targeting /var/data never execute?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Rewrite the rule more forcefully and add three few-shot examples of the agent refusing destructive requests."
+        },
+        {
+          "id": "B",
+          "text": "Add a PreToolUse hook on the Bash and Edit tools that denies any call targeting /var/data, exiting with code 2 and a reason."
+        },
+        {
+          "id": "C",
+          "text": "Upgrade to a larger model that follows system-prompt instructions more reliably."
+        },
+        {
+          "id": "D",
+          "text": "Move the rule into CLAUDE.md so it is re-injected into context on every request."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "**Prompts are probabilistic; hooks are deterministic.** A system-prompt rule (or CLAUDE.md) is guidance with a non-zero failure rate — exactly what 'one time in fifty' reveals. A **PreToolUse** hook runs before the tool executes, and **exit code 2** blocks the call and feeds the reason back to Claude, so the destructive command cannot run no matter what the prompt or the incoming text contains.",
+      "whyWrong": {
+        "A": "Stronger wording and few-shot examples reduce but do not eliminate violations; a prompt remains a probabilistic control.",
+        "C": "Model choice is not a security control; more instruction-following models can be equally or more susceptible to injected instructions.",
+        "D": "CLAUDE.md is context, not enforcement — it is delivered as guidance and carries the same non-zero failure rate as the system prompt."
+      },
+      "difficulty": 1,
+      "mindset": "When 'occasionally ignores' shows up, replace the prompt with a hook.",
+      "tags": [
+        "hooks",
+        "pretooluse",
+        "deterministic-enforcement",
+        "prompt-injection"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/hooks",
+        "https://code.claude.com/docs/en/agent-sdk/hooks"
+      ]
+    },
+    {
+      "id": "v-d7-g3-002",
+      "taskStatementId": "7.3",
+      "scenario": "An engineer writes a PreToolUse guard script for Bash that checks each command against a policy list. On violation it prints 'Blocked by policy: destructive migration' and exits with status 1. In testing, a forbidden DROP TABLE command executed anyway, even though the script's message appeared in the logs.",
+      "stem": "What is the MOST direct fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Keep exit code 1 but print the violation as a JSON object, since any non-zero exit blocks a PreToolUse call."
+        },
+        {
+          "id": "B",
+          "text": "Exit with status 127 so the failure is unambiguous to the harness and the session halts."
+        },
+        {
+          "id": "C",
+          "text": "Print the violation to stdout and rely on Claude reading the message and stopping itself."
+        },
+        {
+          "id": "D",
+          "text": "Exit with status 2 on violations so the call is blocked and stderr is returned to Claude."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "**Only exit code 2 (or an explicit JSON decision) blocks.** For PreToolUse, exit 2 is the blocking error: the tool call is stopped and stderr is fed back to Claude as the reason. Any other non-zero code — 1, 127 — is a non-blocking error and the action proceeds, which is exactly what the test showed.",
+      "whyWrong": {
+        "A": "Stdout is parsed as JSON on success (exit 0); exit 1 is treated as a non-blocking error regardless of what was printed.",
+        "B": "127 is just another non-blocking non-zero exit code; the call still goes through.",
+        "C": "Claude never reliably sees or acts on free-form output from a failing script; this is a probabilistic hand-off, not a control."
+      },
+      "difficulty": 1,
+      "mindset": "Exit 2 blocks; every other non-zero exit is noise.",
+      "tags": [
+        "hooks",
+        "exit-codes",
+        "pretooluse"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/hooks"
+      ]
+    },
+    {
+      "id": "v-d7-g3-003",
+      "taskStatementId": "7.3",
+      "scenario": "Compliance requires an append-only record of every shell command the CI agent actually executes, shipped to an external audit service. The record must reflect executed commands, not intent, and must not change the agent's behavior.",
+      "stem": "Which hook design BEST meets the requirement?",
+      "options": [
+        {
+          "id": "A",
+          "text": "A PreToolUse hook that logs each intended command and exits 0, leaving everything else untouched."
+        },
+        {
+          "id": "B",
+          "text": "A Stop hook that parses the session transcript at the end of the run and extracts the commands that appear in it."
+        },
+        {
+          "id": "C",
+          "text": "A PostToolUse hook on Bash that ships tool_name, tool_input, and session_id to the audit service and returns no decision."
+        },
+        {
+          "id": "D",
+          "text": "A PostToolUse hook that exits 2 whenever the executed command matches a risky pattern."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "**PostToolUse runs after execution — use it for audit and feedback, not prevention.** The hook receives session_id, tool_name, and tool_input on stdin and can forward them to the audit service without altering behavior, and every entry corresponds to a command that actually ran. PreToolUse only sees intent (a call might still be denied or rewritten), and a Stop-hook transcript scrape is fragile and late.",
+      "whyWrong": {
+        "A": "PreToolUse fires before execution, so it logs calls that may never run — denied by other rules or rewritten by another hook.",
+        "B": "Stop fires when Claude finishes its turn; mining the transcript afterward is fragile and records events long after execution, if it captures them at all.",
+        "D": "Exit 2 on PostToolUse does not block — the tool already ran — so it prevents nothing and only injects stderr noise into the session."
+      },
+      "difficulty": 1,
+      "mindset": "Audit what ran with PostToolUse; prevent with PreToolUse.",
+      "tags": [
+        "hooks",
+        "posttooluse",
+        "auditing"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/hooks"
+      ]
+    },
+    {
+      "id": "v-d7-g3-004",
+      "taskStatementId": "7.3",
+      "scenario": "A team implements its destructive-command guard as a PostToolUse hook that exits 2 whenever it detects a forbidden pattern such as 'rm -rf' in the command. During a drill the hook fired — the message appeared — but the command had already deleted a shared cache directory.",
+      "stem": "What should they change?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Keep the PostToolUse hook but return updatedToolOutput so Claude knows the command was bad and undoes the damage."
+        },
+        {
+          "id": "B",
+          "text": "Add the same pattern check to a Stop hook so violations are caught before the session can do more damage."
+        },
+        {
+          "id": "C",
+          "text": "Move the check to a PreToolUse hook that denies (exit 2 or a deny decision) before the command executes."
+        },
+        {
+          "id": "D",
+          "text": "Convert the guard to a prompt-type hook so a model reviews each command as it happens."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "**PostToolUse cannot prevent or undo anything — the tool has already run.** Exit 2 there is surfaced to Claude but changes nothing about the executed action. The guardrail event is **PreToolUse**, which runs before execution and can block the call outright; that is where a destructive-command guard belongs.",
+      "whyWrong": {
+        "A": "updatedToolOutput rewrites the tool result in context; it cannot roll back filesystem effects that already happened.",
+        "B": "Stop fires only when Claude tries to end its turn — long after the damage — and exit 2 there just keeps Claude working.",
+        "D": "A prompt-type hook is a single-turn model evaluation: probabilistic, and the wrong mechanism for a deterministic block."
+      },
+      "difficulty": 2,
+      "mindset": "Prevention must happen before execution: PreToolUse, not PostToolUse.",
+      "tags": [
+        "hooks",
+        "pretooluse",
+        "posttooluse",
+        "prevention"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/hooks"
+      ]
+    },
+    {
+      "id": "v-d7-g3-005",
+      "taskStatementId": "7.3",
+      "scenario": "An agent's Write and Edit calls occasionally use relative paths that resolve outside the project root, and its deploy tool sometimes receives a stray --force flag. The team wants these arguments corrected automatically rather than blocking the calls, with minimal friction.",
+      "stem": "Which mechanism meets this need?",
+      "options": [
+        {
+          "id": "A",
+          "text": "A system-prompt reminder to always use absolute paths inside the project and never pass --force."
+        },
+        {
+          "id": "B",
+          "text": "A PostToolUse hook returning updatedToolOutput that appends a warning about the bad arguments to what Claude sees."
+        },
+        {
+          "id": "C",
+          "text": "disallowed_tools entries that remove Write, Edit, and the deploy tool from the session entirely."
+        },
+        {
+          "id": "D",
+          "text": "A PreToolUse hook returning JSON with hookSpecificOutput.updatedInput that rewrites the input — absolute paths under the project root, --force stripped — before execution."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "**PreToolUse can rewrite the call, not just block it.** A PreToolUse hook's JSON output supports **updatedInput** (inside hookSpecificOutput), which replaces the tool's arguments before the tool runs — a deterministic poka-yoke that fixes arguments without adding friction or removing the capability.",
+      "whyWrong": {
+        "A": "A reminder is guidance with a non-zero failure rate — the same class of fix that already let bad arguments through.",
+        "B": "PostToolUse runs after execution; updatedToolOutput edits what Claude reads, not what the tool already did with the bad arguments.",
+        "C": "disallowed_tools removes the tools entirely, blocking all work rather than correcting arguments — disproportionate, and it never fixes a path."
+      },
+      "difficulty": 2,
+      "mindset": "Hooks can repair arguments (updatedInput), not just veto them.",
+      "tags": [
+        "hooks",
+        "updatedinput",
+        "pretooluse",
+        "poka-yoke"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/hooks",
+        "https://code.claude.com/docs/en/agent-sdk/hooks"
+      ]
+    },
+    {
+      "id": "v-d7-g3-006",
+      "taskStatementId": "7.3",
+      "scenario": "A refunds agent exposes get_customer and process_refund tools. Policy says process_refund may only run after a successful get_customer in the same session. Despite a detailed system prompt ('Always look up the customer before issuing any refund'), an audit found sessions in which process_refund ran with no prior lookup.",
+      "stem": "What is the MOST reliable way to enforce the ordering?",
+      "options": [
+        {
+          "id": "A",
+          "text": "A PreToolUse hook on process_refund that checks session state for a completed customer lookup and exits 2 with an instruction to look the customer up first."
+        },
+        {
+          "id": "B",
+          "text": "Three few-shot examples in the system prompt showing get_customer followed by process_refund."
+        },
+        {
+          "id": "C",
+          "text": "Setting tool_choice to force the get_customer tool on the first request of every session."
+        },
+        {
+          "id": "D",
+          "text": "Recording the ordering rule in CLAUDE.md and expanding the regression eval suite until it passes consistently."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "**Guaranteed ordering is business logic, so it needs programmatic enforcement.** Prompt instructions — in the system prompt, in examples, or in CLAUDE.md — have a non-zero failure rate, which the audit already demonstrated. A **PreToolUse prerequisite gate** deterministically blocks process_refund whenever the lookup has not completed in that session.",
+      "whyWrong": {
+        "B": "Few-shot examples improve typical behavior but remain probabilistic guidance; they cannot guarantee ordering.",
+        "C": "tool_choice forces one call within a single request; it cannot verify that a lookup succeeded in this session nor stop process_refund later in the conversation.",
+        "D": "CLAUDE.md is context, not enforcement, and a passing eval suite does not guarantee runtime ordering."
+      },
+      "difficulty": 2,
+      "mindset": "Ordering and prerequisite rules get a gate, not a paragraph.",
+      "tags": [
+        "hooks",
+        "prerequisite-gate",
+        "ordering",
+        "deterministic-enforcement"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/hooks",
+        "https://code.claude.com/docs/en/agent-sdk/hooks"
+      ]
+    },
+    {
+      "id": "v-d7-g3-007",
+      "taskStatementId": "7.3",
+      "scenario": "An agent issues SQL commands to the production data warehouse. Read-only queries should run without friction, but any command matching destructive patterns (DROP, TRUNCATE, DELETE without a WHERE clause) must pause for a human to approve before it can execute.",
+      "stem": "Which PreToolUse hook design BEST fits this policy?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Return a deny decision for destructive matches and allow for everything else, telling Claude to ask the user to run denied commands manually."
+        },
+        {
+          "id": "B",
+          "text": "Return an allow decision for read-only commands and an ask decision for destructive matches, so the call pauses for human approval before execution."
+        },
+        {
+          "id": "C",
+          "text": "Return a defer decision for every call and review the deferred batch at the end of the turn."
+        },
+        {
+          "id": "D",
+          "text": "Use a prompt-type PreToolUse hook that lets a model judge whether each command is safe enough to allow."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "**'Ask' is the built-in human-approval decision.** A PreToolUse hook can return allow, deny, ask, or defer; routing destructive matches to **ask** pauses that call for a human while read-only commands proceed — the exact split the policy describes, enforced deterministically by the harness rather than left to model judgment.",
+      "whyWrong": {
+        "A": "deny stops the call but creates no approval path — the model may retry, rephrase, or route around it; the requirement is human approval, not refusal.",
+        "C": "defer postpones tool calls rather than gating the destructive subset, and it stalls read-only traffic too.",
+        "D": "A prompt-type hook is a model evaluation — probabilistic — so a destructive command can still be approved."
+      },
+      "difficulty": 2,
+      "mindset": "Human-in-the-loop for high-impact actions is the 'ask' decision.",
+      "tags": [
+        "hooks",
+        "permission-decision",
+        "human-approval",
+        "pretooluse"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/hooks",
+        "https://code.claude.com/docs/en/agent-sdk/hooks"
+      ]
+    },
+    {
+      "id": "v-d7-g3-008",
+      "taskStatementId": "7.3",
+      "scenario": "A team configures a PreToolUse hook with the matcher 'Edit(/var/data/**)' to guard a protected directory. They report that the hook 'never seems to run': Claude edits files under /var/data and nothing fires, even though the hook script itself works when tested directly.",
+      "stem": "What is the cause, and what is the correct fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Tool-event matchers compare against the tool name only, so the pattern never matches Edit; match on Edit|Write and inspect tool_input.file_path inside the hook, exiting 2 for protected paths."
+        },
+        {
+          "id": "B",
+          "text": "The glob needs different escaping; rewrite the matcher as 'Edit(/var/data/*)' so it resolves against the file path correctly."
+        },
+        {
+          "id": "C",
+          "text": "PostToolUse supports path-aware matchers, so move the guard there and keep the path pattern as the matcher."
+        },
+        {
+          "id": "D",
+          "text": "Hooks cannot see tool arguments at all; put the protected paths in CLAUDE.md and rely on Claude honoring them."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "**Tool-event matchers match the tool name, not file paths or arguments.** 'Edit(/var/data/**)' is compared against the tool name and never matches, so the hook silently never fires. The documented pattern is to match broadly (e.g., Edit|Write or a regex) and **filter the specific path inside the hook callback** using the tool_input delivered on stdin, then deny with exit 2.",
+      "whyWrong": {
+        "B": "No amount of escaping makes a path match a tool name; the matcher's semantics are the problem, not the glob syntax.",
+        "C": "PostToolUse matchers are also name-based — and by the time it fires, the edit has already happened.",
+        "D": "Hooks receive the full tool_input on stdin; and CLAUDE.md is guidance, not enforcement, so protected paths would remain unguarded."
+      },
+      "difficulty": 2,
+      "mindset": "Matchers select tools; your code inspects arguments.",
+      "tags": [
+        "hooks",
+        "matchers",
+        "pretooluse",
+        "tool-input"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/hooks",
+        "https://code.claude.com/docs/en/agent-sdk/hooks"
+      ]
+    },
+    {
+      "id": "v-d7-g3-009",
+      "taskStatementId": "7.3",
+      "scenario": "A platform hook returns a permissionDecision of allow for Bash commands that pass its formatting checks. A separate security hook configured for the same Bash matcher returns deny for commands matching destructive patterns. Both hooks fire for a given command.",
+      "stem": "Which outcome is correct, and why?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The allow stands, because a platform-level hook definition outranks one defined in project settings."
+        },
+        {
+          "id": "B",
+          "text": "The call is allowed, because hooks run in parallel and the last hook to write its output wins."
+        },
+        {
+          "id": "C",
+          "text": "Both decisions are surfaced to Claude, which chooses whether to proceed with the command."
+        },
+        {
+          "id": "D",
+          "text": "The call is denied: with multiple hooks matching the same tool, deny takes precedence over defer, ask, and allow."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "**Among simultaneous hook decisions, deny > defer > ask > allow.** Hooks run in parallel, and when several PreToolUse hooks match the same tool, the most restrictive decision wins — a security deny is never outvoted by another hook's allow. The precedence is over decision values, not over which settings file a hook was defined in.",
+      "whyWrong": {
+        "A": "Conflicting hook outputs are resolved by decision-value precedence (deny over allow); an allow from a 'higher' source does not override a deny.",
+        "B": "Parallel execution has no last-writer; the outcome follows a fixed precedence order among the decision values.",
+        "C": "Claude never arbitrates hook decisions — they are enforced by the harness, not by the model."
+      },
+      "difficulty": 3,
+      "mindset": "When hooks disagree, the most restrictive answer wins.",
+      "tags": [
+        "hooks",
+        "precedence",
+        "multiple-hooks",
+        "pretooluse"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/hooks",
+        "https://code.claude.com/docs/en/hooks"
+      ]
+    },
+    {
+      "id": "v-d7-g3-010",
+      "taskStatementId": "7.3",
+      "scenario": "To screen shell commands, a team configures a prompt-type PreToolUse hook: a single-turn model evaluation that reads each command and outputs allow/block. It blocks most dangerous commands, but it approved a destructive one during a drill, and leadership now requires a guarantee rather than a low error rate.",
+      "stem": "What should the team do?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Improve the evaluation prompt with few-shot examples of dangerous commands and re-run the drill."
+        },
+        {
+          "id": "B",
+          "text": "Raise the hook's timeout so the evaluation has more time to consider each command."
+        },
+        {
+          "id": "C",
+          "text": "Replace it with a command-type hook whose script applies deterministic policy checks — pattern lists, parsing, allowlists — and exits 2 on violations."
+        },
+        {
+          "id": "D",
+          "text": "Chain two prompt-type hooks in series and deny the command if either one flags it."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "**A prompt-type hook is still a model judgment — probabilistic.** The hook type determines the mechanism: a **command** hook runs your code in the harness, so policy checks block deterministically via exit 2. Tuning the evaluation prompt or stacking model evaluations lowers the failure rate but cannot deliver the guarantee leadership asked for.",
+      "whyWrong": {
+        "A": "Better examples reduce misses; they cannot make a model evaluation deterministic.",
+        "B": "The timeout (30s for prompt-type hooks versus 600s for command hooks) bounds runtime, not accuracy.",
+        "D": "Two probabilistic checks in series never reach a zero failure rate, and they add latency to every call."
+      },
+      "difficulty": 3,
+      "mindset": "For guarantees, the hook's type matters: command hooks enforce, prompt hooks advise.",
+      "tags": [
+        "hooks",
+        "hook-types",
+        "deterministic-enforcement"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/hooks"
+      ]
+    },
+    {
+      "id": "v-d7-g3-011",
+      "taskStatementId": "7.3",
+      "scenario": "A security team ships mandatory PreToolUse guardrail hooks company-wide using each repository's project settings. A developer discovers that setting \"disableAllHooks\": true in their own user settings turns the guardrails off for their sessions, and the team must ensure no individual developer or repository can disable the org-wide safety hooks.",
+      "stem": "How should the team deploy the guardrail hooks?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Keep the hooks in each repository's .claude/settings.json and rely on code review to catch anyone tampering with them."
+        },
+        {
+          "id": "B",
+          "text": "Define the guardrail hooks in managed settings; hooks delivered at the managed level cannot be disabled from lower scopes, including by disableAllHooks."
+        },
+        {
+          "id": "C",
+          "text": "Duplicate the hook definitions into every developer's user-level settings and audit them quarterly."
+        },
+        {
+          "id": "D",
+          "text": "Convert the guardrails into CLAUDE.md rules, which individual developers cannot override in their own checkouts."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "**Managed settings are the level that lower scopes cannot override.** disableAllHooks in user or project settings disables hooks deployed at those levels, but **managed hooks cannot be disabled from lower scopes** — making managed settings the correct vehicle for org-mandated safety hooks. Project-level deployment leaves the off switch within reach of exactly the people the policy must cover.",
+      "whyWrong": {
+        "A": "Project settings can be overridden or disabled locally, and code review is a process control, not a technical guarantee.",
+        "C": "User settings are precisely the scope individuals control; duplicating the hooks there surrenders enforcement to each developer.",
+        "D": "CLAUDE.md is guidance rather than a hook, copies in developer checkouts are editable, and it enforces nothing."
+      },
+      "difficulty": 3,
+      "mindset": "Org-mandated controls live in managed settings, where no one below can switch them off.",
+      "tags": [
+        "hooks",
+        "managed-settings",
+        "governance",
+        "disableAllHooks"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/settings",
+        "https://code.claude.com/docs/en/managed-settings",
+        "https://code.claude.com/docs/en/hooks"
+      ]
+    },
+    {
+      "id": "v-d7-g3-012",
+      "taskStatementId": "7.3",
+      "scenario": "To keep pipelines fast, a team runs Claude Code in CI containers with bypassPermissions. Security must confirm which controls still prevent destructive commands when the agent operates in that mode.",
+      "stem": "Which two controls remain enforced under bypassPermissions? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Permission deny rules such as Bash(rm *), since deny rules apply in every permission mode, including bypassPermissions."
+        },
+        {
+          "id": "B",
+          "text": "A PreToolUse hook that returns a deny decision, since hook denies hold even in bypassPermissions."
+        },
+        {
+          "id": "C",
+          "text": "An allow list in allowedTools naming only the safe commands, because allowedTools restricts which tools Claude can call."
+        },
+        {
+          "id": "D",
+          "text": "A system-prompt rule forbidding destructive commands, which is honored regardless of permission mode."
+        },
+        {
+          "id": "E",
+          "text": "Temperature set to 0, which prevents the model from deviating from its instructions."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "**Deny holds everywhere.** Deny rules apply in every permission mode — including bypassPermissions, where allow rules have no effect — and a hook's deny decision is likewise enforced by the harness regardless of mode. That is why destructive-action guardrails belong in deny rules and PreToolUse hooks rather than in prompts or allow lists.",
+      "whyWrong": {
+        "C": "allowedTools (and allow rules) auto-approve matches; they do not restrict the tool set — and allow rules are not even consulted in bypassPermissions.",
+        "D": "Prompt rules are probabilistic guidance; a permission mode says nothing about them, and they are not an enforcement mechanism.",
+        "E": "Temperature is a sampling control, not a security boundary; it prevents nothing deterministically."
+      },
+      "difficulty": 2,
+      "mindset": "In permissive modes, deny rules and hook denies are what still hold.",
+      "tags": [
+        "hooks",
+        "permissions",
+        "bypasspermissions",
+        "deny-rules"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/permission-modes",
+        "https://code.claude.com/docs/en/agent-sdk/permissions",
+        "https://code.claude.com/docs/en/hooks"
+      ]
+    },
+    {
+      "id": "v-d7-g3-013",
+      "taskStatementId": "7.3",
+      "scenario": "After a guardrail rollout, the platform team reviews how hooks actually behave before writing the design doc. Several statements are proposed for inclusion.",
+      "stem": "Which two statements are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "A PreToolUse deny is only advisory — a sufficiently manipulated model can choose to ignore it."
+        },
+        {
+          "id": "B",
+          "text": "Exit code 2 blocks in every hook event, so a PostToolUse hook can roll back a tool that has already run."
+        },
+        {
+          "id": "C",
+          "text": "Hooks run in your process rather than in the context window, so their deterministic checks add no per-turn token cost."
+        },
+        {
+          "id": "D",
+          "text": "Once a PreToolUse hook is configured, permission deny rules for the same tool are redundant because hooks replace permission evaluation."
+        },
+        {
+          "id": "E",
+          "text": "A UserPromptSubmit hook that exits 2 blocks the submitted prompt before Claude processes it."
+        }
+      ],
+      "correct": [
+        "C",
+        "E"
+      ],
+      "explanation": "**C** — hooks execute in your process, outside the conversation, so their checks cost no context tokens, unlike prompt-based rules re-sent every turn. **E** — UserPromptSubmit exit 2 is a blocking event: the prompt never reaches Claude, making hooks a useful input-screening layer. Hook and permission decisions are enforced by the harness, not the model, and hooks are one layer in the permission evaluation order rather than a replacement for deny rules.",
+      "whyWrong": {
+        "A": "Hook decisions are enforced by the harness, not by the model — a manipulated model cannot simply ignore a deny.",
+        "B": "Exit 2 does not block PostToolUse: the tool has already run, and the code is surfaced to Claude only; nothing is rolled back.",
+        "D": "Hooks and permission rules are evaluated together (hooks run ahead of deny/ask/allow rules); defense in depth keeps both in place."
+      },
+      "difficulty": 3,
+      "mindset": "Hooks are harness-enforced, zero-token, and layered with permissions — not model-vetoable.",
+      "tags": [
+        "hooks",
+        "mechanics",
+        "context-cost",
+        "userpromptsubmit",
+        "posttooluse"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/hooks",
+        "https://code.claude.com/docs/en/agent-sdk/hooks",
+        "https://code.claude.com/docs/en/agent-sdk/permissions"
+      ]
+    },
+    {
+      "id": "v-d7-g3-014",
+      "taskStatementId": "7.3",
+      "scenario": "A refunds agent calls tools exposed by an MCP server named payments (tool names such as mcp__payments__issue_refund). Policy requires that no refund over $500 execute without human escalation, and that every refund which does execute be recorded for audit.",
+      "stem": "Which two measures give deterministic control over refunds? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "A system-prompt rule capping refunds at $500, illustrated with three examples of correctly refused oversized requests."
+        },
+        {
+          "id": "B",
+          "text": "A PreToolUse hook matching mcp__payments__.* that exits 2 when the refund amount exceeds $500, with stderr telling Claude to escalate to a human."
+        },
+        {
+          "id": "C",
+          "text": "A routing classifier that rewrites any refund request over $500 before it reaches the agent."
+        },
+        {
+          "id": "D",
+          "text": "A PostToolUse hook on the same matcher that logs each executed refund to an append-only audit store."
+        },
+        {
+          "id": "E",
+          "text": "Relying on the payments server's API rate limits to cap total refund volume."
+        }
+      ],
+      "correct": [
+        "B",
+        "D"
+      ],
+      "explanation": "**B prevents:** MCP tools are named mcp__<server>__<tool>, so a PreToolUse matcher like mcp__payments__.* gates every payments call, and exit 2 deterministically blocks over-cap refunds with an escalation instruction. **D records:** PostToolUse fires after execution, producing an audit entry for every refund that actually ran. Together they cover the guarantee (block) and the evidence (log).",
+      "whyWrong": {
+        "A": "A prompt cap has a non-zero failure rate, and it does nothing for the audit requirement.",
+        "C": "A classifier can be bypassed or mismatch and never gates the tool call itself — over-engineering that misses the enforcement point.",
+        "E": "Rate limits bound request counts, not amounts, and enforce nothing about per-refund caps, human escalation, or audit."
+      },
+      "difficulty": 2,
+      "mindset": "Gate MCP tools by name at PreToolUse; record what ran at PostToolUse.",
+      "tags": [
+        "hooks",
+        "mcp",
+        "pretooluse",
+        "posttooluse",
+        "audit"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/hooks",
+        "https://code.claude.com/docs/en/agent-sdk/hooks",
+        "https://code.claude.com/docs/en/mcp"
+      ]
+    },
+    {
+      "id": "v-d7-g3-015",
+      "taskStatementId": "7.3",
+      "scenario": "An agent reads user-submitted documents, some of which contain hidden text instructing it to delete project files, and it holds Bash and file-write tools. The team accepts that injections may occasionally steer the model; the stated goal is that a successful injection cannot cause real damage.",
+      "stem": "Which two measures achieve that goal? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "A PreToolUse hook on Bash and the write tools that returns an ask decision for destructive commands — rm patterns and writes outside the designated output directory — putting a human in the loop before execution."
+        },
+        {
+          "id": "B",
+          "text": "Upgrading to a larger model that resists injected instructions more reliably."
+        },
+        {
+          "id": "C",
+          "text": "A system-prompt instruction to treat document contents as untrusted data, relied on as the sole safeguard against embedded commands."
+        },
+        {
+          "id": "D",
+          "text": "Least-privilege scoping with permission deny rules that confine Bash and file edits to a single working directory with no access to credentials."
+        },
+        {
+          "id": "E",
+          "text": "Setting temperature to 0 so the agent cannot be steered by text inside the documents."
+        }
+      ],
+      "correct": [
+        "A",
+        "D"
+      ],
+      "explanation": "**Make a successful injection harmless, not impossible.** A deterministic gate — the PreToolUse hook routing destructive calls to human approval (**A**) — and least privilege via deny-rule scoping (**D**) mean that even a fully fooled model cannot execute an unapproved destructive action: the harness blocks it or a human approves it, and the blast radius is one sandboxed directory. Prompts are one layer and never the only control for a high-impact action.",
+      "whyWrong": {
+        "B": "Model choice is not a security control; injection resistance is statistical, and this threat model explicitly assumes the model gets fooled.",
+        "C": "Labeling untrusted content is good hygiene, but a prompt is a probabilistic layer — as the sole safeguard it leaves the destructive tools unguarded.",
+        "E": "Temperature governs sampling variety; it is not a defense against an agent following instructions embedded in input."
+      },
+      "difficulty": 2,
+      "mindset": "Assume the model gets fooled; gate the action and shrink the blast radius.",
+      "tags": [
+        "prompt-injection",
+        "hooks",
+        "least-privilege",
+        "defense-in-depth",
+        "permission-decision"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/hooks",
+        "https://code.claude.com/docs/en/permissions"
+      ]
+    }
+  ]
+}

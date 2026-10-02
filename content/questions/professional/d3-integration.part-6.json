@@ -1,0 +1,813 @@
+{
+  "certId": "professional",
+  "domainId": "d3-integration",
+  "questions": [
+    {
+      "id": "p-d3-x3-001",
+      "taskStatementId": "3.5",
+      "stem": "A building-products distributor indexes 3,000 product data sheets for a sales assistant. Most of the useful facts sit in specification tables (model, load rating, fire rating, dimensions). The pipeline extracts PDF text and splits it into fixed 500-token chunks. Salespeople report that answers to 'What is the fire rating of model FR-220?' are often wrong, and inspection shows chunks containing table rows of numbers with no column headers and no model name. What is the MOST effective change to the pipeline?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Raise the chunk size to 2,000 tokens so that each table is more likely to land in one chunk together with its column headers and its rows."
+        },
+        {
+          "id": "B",
+          "text": "Parse tables as tables and chunk them by row or record, repeating the column headers and the product model name in every chunk."
+        },
+        {
+          "id": "C",
+          "text": "Keep the fixed chunks and add an instruction telling Claude to infer each column's name from the position of the numbers in each row."
+        },
+        {
+          "id": "D",
+          "text": "Switch to a larger embedding model so that the numeric rows produce richer vectors that match the salespeople's questions more closely."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "The failure is created at **ingestion**: a fixed-size splitter cuts tables so that rows lose the headers and product name that give them meaning. Structure-aware chunking for tables, one row or record per chunk with headers and the identifying entity repeated, makes every chunk self-describing. It then retrieves well for both lexical and semantic search, and Claude can read it correctly. This follows the same idea as Anthropic's contextual retrieval work: a chunk must carry enough context to stand on its own.",
+      "whyWrong": {
+        "A": "Bigger chunks only make it more likely that a table fits. Long tables still split, and every chunk now mixes many topics, which dilutes relevance for all the other questions.",
+        "C": "A prompt instruction cannot recover information the chunk never contained. Guessing column meaning from the position of the numbers is exactly how wrong ratings get produced.",
+        "D": "The embedding model is not the problem. A row of bare numbers has no headers or model name to embed, so no embedding model can match it reliably to the question."
+      },
+      "difficulty": 1,
+      "mindset": "Fix lost meaning where it is lost: at chunking, by making each chunk self-describing.",
+      "tags": [
+        "rag",
+        "chunking",
+        "tables",
+        "ingestion"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/news/contextual-retrieval"
+      ]
+    },
+    {
+      "id": "p-d3-x3-002",
+      "taskStatementId": "3.5",
+      "stem": "A research team runs RAG over 2 million indexed passages. To improve semantic matching, they plan to switch to a newer embedding model. To avoid downtime and cost, an engineer proposes using the new model only for incoming queries and newly added documents, and leaving existing vectors as they are until documents are next edited. Which approach should the architect require?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Accept the proposal, because both models encode meaning, so vectors for a passage and a query on the same subject will stay close."
+        },
+        {
+          "id": "B",
+          "text": "Accept the proposal, but add a system-prompt note telling Claude that some retrieved passages may be less relevant during the transition."
+        },
+        {
+          "id": "C",
+          "text": "Keep the old model for all queries permanently and embed only new documents with the new model, so current search behavior is unchanged."
+        },
+        {
+          "id": "D",
+          "text": "Re-embed the whole corpus with the new model into a separate index, validate retrieval quality on a test set, and switch queries over in a single cutover."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "Vectors from different embedding models live in different vector spaces, so similarity scores between a query embedded with one model and documents embedded with another are not meaningful. Queries and documents must use **the same model and preprocessing**. The safe migration is to build a parallel index with the new model, check retrieval quality on a labeled set, and cut over all queries at once. Downtime is avoided because the old index serves traffic until the switch.",
+      "whyWrong": {
+        "A": "Two models encoding the same meaning still produce vectors in unrelated spaces. Mixed-model similarity scores are close to random, so retrieval would silently degrade.",
+        "B": "A warning in the prompt does nothing to fix the retrieval itself. Claude would still receive the wrong passages, just with a caveat attached.",
+        "C": "This also mixes models, just in the other direction. New documents embedded with the new model would never match queries embedded with the old one."
+      },
+      "difficulty": 3,
+      "mindset": "Query and document vectors must come from the same embedding model, so a model change means a full re-index.",
+      "tags": [
+        "rag",
+        "embeddings",
+        "indexing",
+        "migration"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/embeddings",
+        "https://www.anthropic.com/news/contextual-retrieval"
+      ]
+    },
+    {
+      "id": "p-d3-x3-003",
+      "taskStatementId": "3.5",
+      "stem": "A medical-device company's support assistant retrieves from field-safety notices synced from a document system every hour. Last month a notice was withdrawn and deleted at the source because it contained an incorrect instruction, yet the assistant still quoted it this week. The sync job inserts and updates chunks keyed by document ID but never processes deletions. What is the MOST reliable fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Make the sync process handle deletions and withdrawals, removing or tombstoning every chunk for that document ID so it cannot be retrieved."
+        },
+        {
+          "id": "B",
+          "text": "Add a system prompt rule telling Claude that it must never quote a notice that has been withdrawn or that looks like it contains a wrong instruction."
+        },
+        {
+          "id": "C",
+          "text": "Rebuild the entire index from scratch once a quarter, so that deleted notices are eventually cleared out along with everything else."
+        },
+        {
+          "id": "D",
+          "text": "Lower the similarity threshold so the withdrawn notice ranks below the newer notices that cover the same device and the same subject."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Index freshness has two halves: adding new content **and removing stale content**. If the pipeline cannot delete, withdrawn documents stay retrievable forever. For safety content, the fix must be deterministic and fast: the sync handles deletion events (or reconciles the source list against the index) and removes or tombstones all chunks for that document ID, so retrieval can never surface them.",
+      "whyWrong": {
+        "B": "Claude cannot tell from the chunk alone that a notice was withdrawn, so a prompt rule cannot enforce this. A safety control belongs in the pipeline, not in the prompt.",
+        "C": "A quarterly rebuild leaves a withdrawn safety notice live for up to three months. That window is unacceptable for incorrect safety instructions.",
+        "D": "Ranking tweaks cannot remove a document. When no newer notice exists, the withdrawn one would still rank first, and the threshold change would harm other queries."
+      },
+      "difficulty": 2,
+      "mindset": "A fresh index must remove stale content as reliably as it adds new content.",
+      "tags": [
+        "rag",
+        "indexing",
+        "freshness",
+        "safety"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/news/contextual-retrieval",
+        "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents"
+      ]
+    },
+    {
+      "id": "p-d3-x3-004",
+      "taskStatementId": "3.5",
+      "stem": "A company is adding an employee assistant over its intranet, which includes HR investigation files and executive compensation papers that only certain groups may read. The prototype put every document into one shared vector index, and the system prompt says 'Do not reveal confidential HR or compensation information.' A security review flags this before launch and requires access to be enforced deterministically. How should the architect redesign the index and retrieval, with the least added complexity?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Keep the shared index, retrieve the top 10 chunks per question, and drop any chunk the signed-in user may not read before the prompt is built."
+        },
+        {
+          "id": "B",
+          "text": "Build one separate vector index per employee, holding only the documents that employee is permitted to read, rebuilt in full every night."
+        },
+        {
+          "id": "C",
+          "text": "Store each document's access-control groups as metadata on its chunks, and filter retrieval by the signed-in user's groups before ranking."
+        },
+        {
+          "id": "D",
+          "text": "Remove the HR and compensation documents from the assistant entirely, and route any question about them to the HR team by email instead."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Authorization must be enforced **before content reaches the model**. Once a confidential chunk is in the context, a prompt instruction is the only barrier, and prompt injection or simple rephrasing can get around it. Storing ACL labels on chunks at index time and applying a hard filter based on the authenticated user's identity **before ranking** is deterministic, auditable, keeps one shared index, and never wastes the top-k budget on chunks that will be thrown away.",
+      "whyWrong": {
+        "A": "Filtering after ranking is deterministic, but it only works when enough permitted chunks survive. When the best matches are all restricted, the user gets little or nothing relevant, so the system soon needs over-fetch-and-retry logic. Filtering before ranking avoids that with less machinery.",
+        "B": "Per-user indexes would enforce access, but they multiply storage and rebuild work by the number of employees and go stale between nightly rebuilds. Metadata filtering gets the same result far more simply.",
+        "D": "This avoids the risk by removing value that permitted users legitimately need. Proper access filtering lets authorized staff use those documents safely."
+      },
+      "difficulty": 3,
+      "mindset": "Enforce document permissions in retrieval, not in the prompt.",
+      "tags": [
+        "rag",
+        "access-control",
+        "metadata",
+        "security"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents",
+        "https://www.anthropic.com/news/contextual-retrieval"
+      ]
+    },
+    {
+      "id": "p-d3-x3-005",
+      "taskStatementId": "3.5",
+      "stem": "An airline's maintenance assistant indexes technical manuals in small chunks of about 150 tokens, which retrieve precisely: the top result usually contains the exact step the engineer asked about. However, answers often leave out the safety precautions and the steps just before and after, which sit in the same procedure section of the manual. Which change BEST keeps retrieval precise while giving Claude the context it needs?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Raise top-k from 5 to 50 so that the neighbouring steps of the procedure are more likely to appear somewhere in the retrieved set."
+        },
+        {
+          "id": "B",
+          "text": "Re-chunk the entire corpus at 2,000 tokens so that each chunk usually holds one complete procedure, including all of its safety precautions."
+        },
+        {
+          "id": "C",
+          "text": "Instruct Claude to remind engineers to check the manual for precautions whenever a procedure step is mentioned in one of its answers."
+        },
+        {
+          "id": "D",
+          "text": "Match on the small chunks, then pass Claude the full parent procedure section each matched chunk belongs to, with duplicates removed."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "This is the classic case for **hierarchical (parent-child) retrieval**. Small child chunks give precise matching, and expanding each hit to its parent section gives Claude the complete procedure with its precautions. It keeps the precision the team already has and fixes the missing-context problem directly, without re-tuning everything else.",
+      "whyWrong": {
+        "A": "A much larger top-k pulls in many unrelated chunks and still does not guarantee the neighbouring steps are included. It adds noise and cost instead of fixing the structure.",
+        "B": "Large chunks would include precautions, but the embeddings average many steps together, so the precise matching the team relies on would get worse.",
+        "C": "A generic reminder does not put the actual precautions in the answer. In a safety-critical procedure, the steps need to be retrieved, not hinted at."
+      },
+      "difficulty": 2,
+      "mindset": "Match on small units for precision, and hand the model the larger unit for context.",
+      "tags": [
+        "rag",
+        "chunking",
+        "parent-child",
+        "hierarchical-retrieval"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/news/contextual-retrieval",
+        "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents"
+      ]
+    },
+    {
+      "id": "p-d3-x3-006",
+      "taskStatementId": "3.5",
+      "stem": "A team wants to use contextual retrieval: before indexing, Claude writes a short note placing each chunk in its document (for example, which company, report and quarter it belongs to). Their documents are long annual reports of about 150 pages, each split into several hundred chunks. The finance lead objects that sending the full report with each chunk will be far too expensive. Which approach addresses the cost concern MOST effectively while keeping the benefit?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Generate each note from the chunk alone, without the report, since Claude can usually work out the company and period from the chunk text."
+        },
+        {
+          "id": "B",
+          "text": "Put the full report in a cached prompt prefix and vary only the chunk after it, so each later call reads the report from the cache."
+        },
+        {
+          "id": "C",
+          "text": "Skip the notes and simply prepend the file name to each chunk, because the file name already shows which report every chunk belongs to."
+        },
+        {
+          "id": "D",
+          "text": "Generate a context note only for the first chunk of every report and copy that same note onto all the remaining chunks of that report."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Anthropic's contextual retrieval write-up recommends exactly this pattern: load the document into the **cache once**, then run the per-chunk context call with only the chunk changing. Each later call reads the large, unchanged prefix from the cache, which cuts cost and latency sharply while each note can still use the whole document.",
+      "whyWrong": {
+        "A": "The whole point is that a chunk on its own lacks the context (which company, which period). Without the document, Claude cannot reliably write that context.",
+        "C": "A file name gives some document-level identity, but it is not chunk-specific. It says nothing about which section, period or topic the chunk covers.",
+        "D": "A single shared note is no longer chunk-specific. Chunks from different sections would carry the same context, losing most of the retrieval gain."
+      },
+      "difficulty": 2,
+      "mindset": "Make per-chunk enrichment affordable by caching the shared document, not by dropping the context.",
+      "tags": [
+        "rag",
+        "contextual-retrieval",
+        "prompt-caching",
+        "cost"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/news/contextual-retrieval",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching"
+      ]
+    },
+    {
+      "id": "p-d3-x3-007",
+      "taskStatementId": "3.5",
+      "stem": "An insurer indexes 20,000 policy documents exported as PDFs. Many are two-column layouts, and each page carries the same 120-token legal footer and company header. Retrieval quality is poor: top results are often chunks made mostly of the repeated footer, and some chunks read as nonsense because sentences from the left and right columns are interleaved. Which TWO changes should the architect make FIRST? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Strip repeated page headers, footers and legal boilerplate during cleaning, so they are never chunked or embedded together with the content."
+        },
+        {
+          "id": "B",
+          "text": "Raise the chunk size to roughly 1,500 tokens, so that the repeated footer becomes a small share of each chunk and carries less weight in its embedding."
+        },
+        {
+          "id": "C",
+          "text": "Tell Claude in the system prompt to ignore any repeated footer text and to reorder jumbled sentences from both columns before answering."
+        },
+        {
+          "id": "D",
+          "text": "Add a reranking step after retrieval, so that chunks made mostly of repeated footer text are pushed down before anything reaches Claude."
+        },
+        {
+          "id": "E",
+          "text": "Use a layout-aware parser that keeps each page's columns in reading order and preserves its headings, before any chunking is done."
+        }
+      ],
+      "correct": [
+        "A",
+        "E"
+      ],
+      "explanation": "Both symptoms come from **parsing and cleaning**, the first stage of the pipeline, so they should be fixed there. Removing repeated boilerplate stops near-identical chunks crowding the top results and distorting embeddings. A layout-aware parser preserves reading order and headings, so chunks are coherent and structure-aware chunking becomes possible. Every later stage depends on clean input.",
+      "whyWrong": {
+        "B": "Bigger chunks dilute the footer but also dilute the policy content, and they do nothing about interleaved columns. The boilerplate is still embedded and still indexed; it should simply not be there.",
+        "C": "Claude never sees the chunks that failed to be retrieved, and a prompt cannot fix embeddings that were computed from boilerplate and jumbled text.",
+        "D": "A reranker can demote footer chunks it is shown, but it cannot repair interleaved sentences or recover the good chunks that never made the candidate set. It is a downstream patch for an upstream defect."
+      },
+      "difficulty": 3,
+      "mindset": "Garbage in, garbage retrieved: fix quality at parse and clean before tuning anything downstream.",
+      "tags": [
+        "rag",
+        "ingestion",
+        "parsing",
+        "cleaning"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/news/contextual-retrieval",
+        "https://platform.claude.com/docs/en/build-with-claude/pdf-support"
+      ]
+    },
+    {
+      "id": "p-d3-x3-008",
+      "taskStatementId": "3.5",
+      "stem": "A developer-tools company is building one RAG index over a mixed corpus: a large FAQ, API reference pages full of code samples, long conceptual guides, and release notes. The first version used one fixed-size splitter for everything. Which TWO chunking choices are BEST matched to their content? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "API reference: split at a fixed 300 tokens with a 50-token overlap, so no sample is lost at a boundary and each chunk stays precise."
+        },
+        {
+          "id": "B",
+          "text": "FAQ: make each question together with its full answer a single chunk, so that a match on the question brings the answer back with it."
+        },
+        {
+          "id": "C",
+          "text": "Conceptual guides: index each guide as one chunk, because guides are written to be read as a whole and an argument should never be cut partway through."
+        },
+        {
+          "id": "D",
+          "text": "Code samples: keep each function or complete example intact in one chunk, with the page and section heading attached as its context."
+        },
+        {
+          "id": "E",
+          "text": "Release notes: keep one chunk per product covering every version, so that a question about a change can see what came before and after it."
+        }
+      ],
+      "correct": [
+        "B",
+        "D"
+      ],
+      "explanation": "Good chunking follows the **natural unit of meaning** of each content type. For an FAQ, the unit is a question with its answer. For code, it is a function or complete example; splitting mid-function produces fragments that neither retrieve well nor make sense to Claude. Long guides would typically be split on headings, and release notes per version or entry, with the version kept as metadata.",
+      "whyWrong": {
+        "A": "Overlap softens the boundary but a fixed split still cuts samples mid-function, so most chunks hold fragments that are neither searchable nor usable. Code needs syntax-aware boundaries.",
+        "C": "A whole guide in one chunk dilutes its embedding across many topics and wastes context when only one section is relevant. Split on headings instead, and keep the guide title as context.",
+        "E": "One chunk per product buries a specific version's change among every other release. Per-version chunks with version metadata support precise and filtered retrieval."
+      },
+      "difficulty": 2,
+      "mindset": "Chunk along each content type's natural unit, not one splitter for everything.",
+      "tags": [
+        "rag",
+        "chunking",
+        "mixed-corpus",
+        "code"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/news/contextual-retrieval"
+      ]
+    },
+    {
+      "id": "p-d3-x3-009",
+      "taskStatementId": "3.5",
+      "stem": "A sales-enablement team indexes 30,000 recorded sales-call transcripts so managers can ask questions like 'How did reps respond when customers raised the data-residency objection?' The pipeline splits transcripts into fixed 400-token chunks with no overlap and no metadata. Results frequently contain the customer's objection but not the rep's reply, or the reply without the objection, and managers cannot tell which call a passage came from. Which redesign is MOST appropriate?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Index each complete call transcript as one chunk, so that every objection and every reply is always retrieved together with the other."
+        },
+        {
+          "id": "B",
+          "text": "Keep the 400-token chunks but add a 50% overlap between neighbouring chunks, so that most objections share a chunk with the reply that follows them."
+        },
+        {
+          "id": "C",
+          "text": "Chunk on speaker-turn boundaries within overlapping windows, and attach call ID, date, rep name and timestamp as metadata to every chunk."
+        },
+        {
+          "id": "D",
+          "text": "Shrink the chunks to 100 tokens so that each one holds a single sentence, which makes the similarity match on the objection sharper."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "For conversational data, the meaningful unit is an **exchange across speaker turns**. Cutting on turn boundaries with overlapping windows keeps an objection and its reply together, and metadata (call ID, date, rep, timestamp) supplies provenance for citations and filters such as date range or rep. This addresses both reported failures directly.",
+      "whyWrong": {
+        "A": "A whole call can be long and cover many topics, so its embedding is diluted, retrieval is imprecise, and context fills with irrelevant talk.",
+        "B": "Overlap reduces how often an exchange is cut, but the cut still falls mid-sentence rather than on a speaker turn, and it does nothing for the second complaint: chunks still carry no call ID, date or rep, so managers cannot trace a passage.",
+        "D": "Smaller chunks make the split-exchange problem worse: the objection and the reply end up even further apart."
+      },
+      "difficulty": 2,
+      "mindset": "Chunk boundaries should follow how the content is structured, and metadata should make every chunk traceable.",
+      "tags": [
+        "rag",
+        "chunking",
+        "overlap",
+        "metadata",
+        "transcripts"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/news/contextual-retrieval"
+      ]
+    },
+    {
+      "id": "p-d3-x3-010",
+      "taskStatementId": "3.5",
+      "stem": "A public-sector agency's policy assistant must show citizens which official page each part of an answer came from, with its title and URL. Today the index stores only raw chunk text, and retrieved chunks are pasted into the prompt as one plain block with an instruction to 'cite your sources'. Answers often cite page titles that do not exist. Which design is BEST?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Store source URL, title and section with each chunk, and pass retrieved chunks as search result content blocks with citations enabled."
+        },
+        {
+          "id": "B",
+          "text": "Keep the plain block of retrieved text and add few-shot examples showing exactly how citations to official agency pages should be formatted."
+        },
+        {
+          "id": "C",
+          "text": "Ask Claude to check each of its citations against the context in a second pass and remove any citation that it judges to be invalid."
+        },
+        {
+          "id": "D",
+          "text": "Drop citations from answers and instead add a general link to the agency's website at the bottom of every response the assistant gives."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Two things are missing: **provenance metadata in the index**, and a **structured way to pass sources** to Claude. Search result content blocks carry a `source` and `title` for each result, and with citations enabled Claude's answer includes citations that point back to those provided sources, instead of free-text references it might invent. Metadata stored at index time is what makes this possible.",
+      "whyWrong": {
+        "B": "Examples improve citation format, but the model still has no titles or URLs to cite, because the index never stored them. Invented titles would continue.",
+        "C": "A self-check pass is probabilistic and cannot recover sources that were never provided. It adds cost without fixing the root cause.",
+        "D": "This gives up the stated requirement. Citizens need to trace each statement to the official page it came from."
+      },
+      "difficulty": 2,
+      "mindset": "Citations are only as good as the provenance you index and pass in a structured form.",
+      "tags": [
+        "rag",
+        "citations",
+        "metadata",
+        "search-results"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/search-results",
+        "https://platform.claude.com/docs/en/build-with-claude/citations"
+      ]
+    },
+    {
+      "id": "p-d3-x3-011",
+      "taskStatementId": "3.6",
+      "stem": "A benefits chatbot answers well when a user asks a complete question, but fails on follow-ups. After 'What is the dental coverage for full-time staff?', the user asks 'And for contractors?' The system embeds only the latest message as the search query, and retrieval returns generic pages about contractor onboarding. What is the BEST fix with minimal changes?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Embed the entire conversation history as the search query, so that every earlier question is reflected in the retrieved results."
+        },
+        {
+          "id": "B",
+          "text": "Increase top-k to 30 so that the dental coverage pages for contractors are more likely to appear somewhere in the results."
+        },
+        {
+          "id": "C",
+          "text": "Have Claude rewrite each follow-up into a standalone query using the conversation, such as 'dental coverage for contractors', before retrieval."
+        },
+        {
+          "id": "D",
+          "text": "Ask users through an on-screen banner to restate the full question in each message instead of asking short follow-up questions."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "The query pattern is **conversational, with references that depend on earlier turns**. Query rewriting turns the follow-up into a self-contained search ('dental coverage for contractors') before retrieval. It is a small change in front of the existing retriever and directly fixes the cause: the search string lacked the topic.",
+      "whyWrong": {
+        "A": "Embedding the whole conversation mixes several topics into one vector, which drifts toward earlier questions and gets worse as conversations grow.",
+        "B": "A bigger top-k still searches with the wrong query. The relevant pages may not be in the results at all, and more noise reaches the model.",
+        "D": "This pushes the system's job onto users, who will not change how they naturally ask questions. The failure would continue."
+      },
+      "difficulty": 1,
+      "mindset": "Retrieval is only as good as the query: rewrite conversational follow-ups into standalone searches.",
+      "tags": [
+        "retrieval",
+        "query-rewriting",
+        "conversational"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents",
+        "https://www.anthropic.com/news/contextual-retrieval"
+      ]
+    },
+    {
+      "id": "p-d3-x3-012",
+      "taskStatementId": "3.6",
+      "stem": "A telecom's plan-advisor assistant retrieves the top 5 chunks for each question from an index of plan documents. Questions like 'Compare roaming charges, early-termination fees and data caps across the Basic, Plus and Max plans' get answers that cover only one or two plans, while single-plan questions work well. Which TWO changes BEST address this query pattern? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Have Claude break a comparison question into sub-queries, such as one per plan or per attribute, and retrieve for each one separately."
+        },
+        {
+          "id": "B",
+          "text": "Tell Claude to state clearly in the answer whenever it has not managed to find information about one or more of the plans."
+        },
+        {
+          "id": "C",
+          "text": "Raise top-k to 100 for every single question, so that all the plans are almost always represented somewhere in the retrieved results."
+        },
+        {
+          "id": "D",
+          "text": "Tag every chunk with plan-name metadata, so each sub-query can be filtered to its plan and no plan is crowded out by another."
+        },
+        {
+          "id": "E",
+          "text": "Switch to a larger, more capable model for the comparison questions, since comparing several items at once clearly demands stronger reasoning."
+        }
+      ],
+      "correct": [
+        "A",
+        "D"
+      ],
+      "explanation": "A comparison is really **several lookups in one question**. A single top-5 search is dominated by whichever plan matches the query best, so the others are crowded out. Decomposing into sub-queries gives each plan its own retrieval, and plan-name metadata filters make each sub-query return chunks for its own plan only. Claude then compares complete information.",
+      "whyWrong": {
+        "B": "Admitting gaps is good hygiene but does not fill them. The user still gets an incomplete comparison.",
+        "C": "A very large top-k for every question adds cost and noise to the many single-plan questions and still does not guarantee balanced coverage.",
+        "E": "The model never sees the missing plans' chunks, so stronger reasoning cannot compare them. This is a retrieval gap, not a reasoning gap."
+      },
+      "difficulty": 2,
+      "mindset": "Multi-part questions need multi-part retrieval: decompose, then filter each part.",
+      "tags": [
+        "retrieval",
+        "query-decomposition",
+        "metadata-filtering"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/multi-agent-research-system",
+        "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents"
+      ]
+    },
+    {
+      "id": "p-d3-x3-013",
+      "taskStatementId": "3.6",
+      "stem": "A logistics company's customer assistant answers 'Where is my shipment?' from a vector index of shipment records rebuilt every night. Customers complain that the assistant says parcels are 'in transit' when the tracking page already shows 'delivered'. Each question includes a tracking number. What is the BEST retrieval approach for this query pattern?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Rebuild the vector index every hour instead of every night, so that the shipment records are at most one hour out of date when retrieved."
+        },
+        {
+          "id": "B",
+          "text": "Add a sentence to every answer warning customers that the shipment status shown may be up to a day old and could have changed."
+        },
+        {
+          "id": "C",
+          "text": "Use hybrid lexical and vector search over the shipment index, so that the tracking number is matched exactly in the stored record."
+        },
+        {
+          "id": "D",
+          "text": "Give Claude a tool that looks up the tracking number in the live shipment system at question time and returns the current status."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "The data shape is **fast-changing records keyed by an identifier**, and the query is an exact lookup about the current state. That calls for a direct key lookup against the system of record at question time. An index is a snapshot and is stale by design; no embedding is needed when the user already supplies the key.",
+      "whyWrong": {
+        "A": "Hourly rebuilds shrink the staleness window but do not remove it, and they add constant re-indexing load for data the live system already serves exactly.",
+        "B": "A disclaimer admits the problem rather than fixing it. Customers asking about their parcel need the current status.",
+        "C": "Exact matching finds the right record, but it is still yesterday's record. The problem is freshness, not matching."
+      },
+      "difficulty": 1,
+      "mindset": "Live data with a known key should be looked up live, not searched in a snapshot.",
+      "tags": [
+        "retrieval",
+        "live-data",
+        "tool-use",
+        "freshness"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview",
+        "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents"
+      ]
+    },
+    {
+      "id": "p-d3-x3-014",
+      "taskStatementId": "3.6",
+      "stem": "A manufacturer's maintenance assistant retrieves from service manuals that were converted to plain text for a vector index. Questions about written procedures work well, but technicians' questions about wiring diagrams and exploded-parts figures, such as 'Which connector sits between the pump relay and terminal 4 in figure 7-3?', almost always fail. Inspection shows the figures were dropped during text extraction, leaving only their captions in the index. Which approach BEST serves this query pattern?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Enlarge the chunks around each caption so that the paragraphs discussing a figure are retrieved with the caption and can stand in for the figure."
+        },
+        {
+          "id": "B",
+          "text": "At ingestion, have Claude describe each figure as structured text (labels, connections, callouts) with page and figure number; index it, and attach the image when retrieved."
+        },
+        {
+          "id": "C",
+          "text": "Run OCR over each figure and append the recognized label text, such as connector and terminal names, to the caption chunk so those names become searchable terms."
+        },
+        {
+          "id": "D",
+          "text": "Move answer generation to a model with stronger reasoning, since working out a diagram's layout from its caption and surrounding text is mainly a reasoning task."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "The failing queries are about **visual content that was never indexed**. No retrieval setting can find information the pipeline discarded. Claude can read diagrams, charts and figures, so the fix is to turn each figure into searchable text at ingestion: a structured description with labels, connections and callouts, tagged with page and figure number so it is traceable. At answer time, the original figure image is passed to Claude alongside the description, so it answers from the diagram itself rather than from a summary of it.",
+      "whyWrong": {
+        "A": "Prose around a figure rarely spells out what the figure shows. A question about which connector lies between two others needs the diagram's content, which larger text chunks still do not contain.",
+        "C": "OCR captures the label text but not the relationships between the labels. Knowing that 'terminal 4' and 'pump relay' appear somewhere on the page cannot answer what sits between them, and the figure itself is still not available at answer time.",
+        "D": "Stronger reasoning cannot recover what was never extracted. The caption and surrounding text do not contain the layout, so the model would still be guessing."
+      },
+      "difficulty": 2,
+      "mindset": "Match retrieval to the data shape: visual content must become searchable, and viewable, before any query can reach it.",
+      "tags": [
+        "retrieval",
+        "multimodal",
+        "figures",
+        "ingestion"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/vision",
+        "https://platform.claude.com/docs/en/build-with-claude/pdf-support"
+      ]
+    },
+    {
+      "id": "p-d3-x3-015",
+      "taskStatementId": "3.6",
+      "stem": "An IT-operations agent handles long, multi-turn incident sessions. On every turn, the application retrieves the top 10 runbook chunks for the latest message and injects them into context, even when the user is just confirming a step or saying thanks. Sessions hit context limits quickly, and the agent sometimes follows a runbook that was retrieved for an earlier message. Which change is MOST appropriate?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Expose runbook search as a tool the agent calls when it needs information, and let it keep runbook IDs as references until then."
+        },
+        {
+          "id": "B",
+          "text": "Reduce the injected chunks from 10 to 3 on every turn, so that each turn adds less text and the context fills more slowly."
+        },
+        {
+          "id": "C",
+          "text": "Move to a model with a larger context window, so that a session can carry many more injected runbook chunks before hitting the limits."
+        },
+        {
+          "id": "D",
+          "text": "Inject all of the runbooks into the system prompt once at the start of every session, so that retrieval is never needed during the session."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The query pattern is **intermittent need in a long agentic session**, not one question per turn. Anthropic's context-engineering guidance favours **just-in-time retrieval**: keep lightweight references in context and let the agent load content through a tool when it decides it needs it. That stops irrelevant chunks piling up and stops stale runbooks steering later steps.",
+      "whyWrong": {
+        "B": "Fewer chunks per turn slows the growth but keeps injecting irrelevant material on turns that need none, and stale runbooks still accumulate.",
+        "C": "A bigger window delays the limit but keeps filling context with noise, which can make it harder for the agent to focus on what matters.",
+        "D": "Loading every runbook up front is the monolithic extreme. It wastes context on runbooks the incident will never need, and the library may not fit."
+      },
+      "difficulty": 2,
+      "mindset": "Let agents pull context when they need it, instead of pushing retrieval on every turn.",
+      "tags": [
+        "retrieval",
+        "just-in-time",
+        "agentic-retrieval",
+        "context-engineering"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents"
+      ]
+    },
+    {
+      "id": "p-d3-x3-016",
+      "taskStatementId": "3.6",
+      "stem": "A SaaS company's account-management assistant must answer questions like 'Which Enterprise-plan customers in EMEA complained about export performance in the last 60 days, and what did they say?' Account data (plan, region) lives in the CRM. Free-text tickets live in a ticket index that already stores customer ID and created date as chunk metadata. The current prototype runs one vector search over the tickets with the whole question. Which TWO steps together form the BEST retrieval strategy? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Embed the whole CRM account table into the ticket vector index, so that a single similarity search covers plan, region and complaints together."
+        },
+        {
+          "id": "B",
+          "text": "Query the CRM through a tool for the IDs of Enterprise-plan customers in EMEA, since plan and region are exact structured attributes."
+        },
+        {
+          "id": "C",
+          "text": "Ask Claude to read through the top 50 tickets returned by vector search and keep only the ones it believes are EMEA Enterprise customers."
+        },
+        {
+          "id": "D",
+          "text": "Run keyword search for 'Enterprise' and 'EMEA' over the ticket text, since customers usually mention their plan and region when they complain."
+        },
+        {
+          "id": "E",
+          "text": "Run semantic search over the tickets for export-performance complaints, filtered by metadata to those customer IDs and the last 60 days."
+        }
+      ],
+      "correct": [
+        "B",
+        "E"
+      ],
+      "explanation": "The question mixes **structured filters** (plan, region, date) with a **fuzzy, meaning-based** part (complaints about export performance). The structured part belongs in the system of record: a CRM tool returns the exact customer set. The unstructured part suits semantic search, constrained by hard metadata filters on customer ID and date so only relevant tickets are ranked. Each part of the query uses the method suited to its data shape.",
+      "whyWrong": {
+        "A": "Embeddings blur exact attributes like plan and region, and copying CRM records into a vector index creates a stale duplicate of structured data.",
+        "C": "Claude cannot know a ticket's plan or region from the text, and top-50 by similarity may not contain all the right customers. This is a probabilistic filter where an exact one exists.",
+        "D": "Ticket text rarely states the customer's plan and region, so keyword matching on those words would miss most of the right tickets and catch wrong ones."
+      },
+      "difficulty": 3,
+      "mindset": "Split a mixed query by data shape: exact filters from structured systems, meaning from semantic search.",
+      "tags": [
+        "retrieval",
+        "structured-data",
+        "metadata-filtering",
+        "hybrid-strategy"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview"
+      ]
+    },
+    {
+      "id": "p-d3-x3-017",
+      "taskStatementId": "3.6",
+      "stem": "A consultancy wants its assistant to answer questions from project documents stored in a cloud document platform. Documents change many times a day, each folder has its own sharing permissions, and the platform already offers a permission-aware search API. An engineer proposes nightly copying of every document into the company's own vector database for retrieval. Which approach should the architect recommend for the first release?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Build the nightly copy as proposed, and add a system prompt rule stating that the assistant must respect each folder's sharing settings."
+        },
+        {
+          "id": "B",
+          "text": "Build the nightly copy and also mirror every folder's permissions into the vector database, re-syncing the permissions on the same schedule."
+        },
+        {
+          "id": "C",
+          "text": "Give Claude a tool that calls the platform's search API as the signed-in user at question time, then fetches the matching documents."
+        },
+        {
+          "id": "D",
+          "text": "Ask users to download the relevant documents themselves and upload them into the chat whenever they have a question about one of them."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "The data is **fast-changing and permissioned**, and the source system already provides permission-aware search. Querying it at question time as the signed-in user gives current results and enforces access with no duplicate store to keep in sync. A copied index would be stale for most of the day and would need its own access-control model. If later evaluation shows the platform's search quality is not good enough, a custom index can be justified then.",
+      "whyWrong": {
+        "A": "A nightly copy is stale for most of a day, and a prompt rule does not enforce permissions. Confidential documents could still be retrieved into context.",
+        "B": "This rebuilds what the platform already does, and permissions synced nightly can lag behind real changes. It is over-engineered for a first release.",
+        "D": "This hands retrieval to users, who must already know which document is relevant, and it scales poorly for frequent questions."
+      },
+      "difficulty": 3,
+      "mindset": "When the source system already searches well and enforces permissions, query it rather than copying it.",
+      "tags": [
+        "retrieval",
+        "freshness",
+        "permissions",
+        "integration"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview",
+        "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents"
+      ]
+    },
+    {
+      "id": "p-d3-x3-018",
+      "taskStatementId": "3.6",
+      "stem": "A bank's product-information assistant always passes the top 5 retrieved chunks to Claude. Logs show many out-of-scope questions, such as 'What's the best index fund to buy?', for which the top chunks are only loosely related product pages. Claude then writes confident answers stitched together from those pages. The bank wants these questions recognized and handled safely, with the least disruption to in-scope answers. What should the architect do?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Increase top-k to 20 so that, for out-of-scope questions, Claude has more material from which to build a complete answer."
+        },
+        {
+          "id": "B",
+          "text": "Set a relevance threshold on the retrieval scores, pass no chunks below it, and tell Claude to say when it lacks information and offer a handoff."
+        },
+        {
+          "id": "C",
+          "text": "Switch to a larger, more capable model, since it is better at noticing when the retrieved chunks do not really answer the question."
+        },
+        {
+          "id": "D",
+          "text": "Add more few-shot examples of good in-scope answers to the prompt, so that Claude learns the style of answer the bank expects."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Top-k retrieval **always returns something**, even when nothing relevant exists. For an out-of-scope query pattern, the system needs a way to recognize 'no good match': a calibrated relevance threshold stops weak chunks reaching Claude, and an explicit instruction to admit missing information (with a handoff path) gives a safe response. In-scope questions with strong matches are unaffected.",
+      "whyWrong": {
+        "A": "More loosely related chunks give Claude more material to stitch into a confident but unsupported answer, which makes the problem worse.",
+        "C": "A larger model may notice some mismatches, but it is still handed weak chunks with no permission to decline. A deterministic threshold plus explicit permission is more reliable.",
+        "D": "More in-scope examples do nothing for out-of-scope questions, which is where the failure happens."
+      },
+      "difficulty": 2,
+      "mindset": "Retrieval must be able to say 'nothing relevant', and the model must be allowed to say 'I don't know'.",
+      "tags": [
+        "retrieval",
+        "relevance-threshold",
+        "hallucination",
+        "out-of-scope"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-hallucinations",
+        "https://www.anthropic.com/news/contextual-retrieval"
+      ]
+    }
+  ]
+}

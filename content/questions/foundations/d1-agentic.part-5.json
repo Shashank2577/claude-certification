@@ -1,0 +1,643 @@
+{
+  "certId": "foundations",
+  "domainId": "d1-agentic",
+  "questions": [
+    {
+      "id": "f-d1-x1-001",
+      "taskStatementId": "1.1",
+      "scenario": "Developer Productivity with Claude: you are building an Agent SDK agent that helps engineers explore unfamiliar codebases, understand legacy systems and automate repetitive tasks using the built-in tools (Read, Write, Bash, Grep, Glob) plus MCP servers.",
+      "stem": "To keep requests small, a developer's hand-written Messages API loop sends only the original prompt, the latest assistant response and its tool_result on each iteration, dropping all earlier turns. Engineers report the agent re-reads files it already opened and \"forgets\" a grep match it found a few steps earlier. Which change MOST directly fixes this behavior?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Append every assistant response and its matching tool_result message to a running history, so each request carries the full sequence of calls and results."
+        },
+        {
+          "id": "B",
+          "text": "Add a system-prompt line telling the agent to keep track of which files it has already read and never open the same file a second time."
+        },
+        {
+          "id": "C",
+          "text": "Switch to a model with a larger context window so the agent has more room to hold on to the files it read earlier in the task."
+        },
+        {
+          "id": "D",
+          "text": "Store each tool result in a vector database and give the agent a retrieval tool it can call whenever it needs something from earlier steps."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The Messages API is stateless: the model only knows what is in the request. The agentic loop works because each iteration appends Claude's `tool_use` turn and the matching `tool_result` to the conversation history, so the next request lets Claude reason over **everything** it has learned. This loop deletes that history itself, so the fix is simply to stop discarding it. If context growth becomes a real problem later, trim oversized tool outputs or rely on compaction, rather than dropping whole turns.",
+      "whyWrong": {
+        "B": "An instruction cannot restore information the request no longer contains. The model has no way to know which files it read once those turns are removed.",
+        "C": "Capacity is not the problem. The dropped turns never reach the model, so a bigger window changes nothing.",
+        "D": "Over-engineered: it adds a retrieval layer to recover information the loop threw away itself, and the model still has to guess when to look things up."
+      },
+      "difficulty": 2,
+      "mindset": "Tool results become the model's working memory only if you append them to history on every iteration.",
+      "tags": [
+        "agentic-loop",
+        "conversation-history",
+        "tool_result",
+        "stateless-api"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls",
+        "https://code.claude.com/docs/en/agent-sdk/agent-loop"
+      ]
+    },
+    {
+      "id": "f-d1-x1-002",
+      "taskStatementId": "1.1",
+      "scenario": "Customer Support Resolution Agent: you are building a support agent with the Claude Agent SDK that handles returns, billing disputes and account issues through custom MCP tools (get_customer, lookup_order, process_refund, escalate_to_human), targeting 80%+ first-contact resolution while knowing when to escalate.",
+      "stem": "In the agent's custom loop, when lookup_order throws a timeout exception, the code catches it, logs it, and immediately ends the conversation with \"Something went wrong, please try again later.\" The team wants more issues resolved on first contact without hiding genuine outages. What should the loop do when a tool call fails?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Retry the call silently until it succeeds, so that Claude does not see the failure and the customer conversation simply continues."
+        },
+        {
+          "id": "B",
+          "text": "Return a tool_result for that call with is_error set to true and an instructive message, then let Claude decide its next step."
+        },
+        {
+          "id": "C",
+          "text": "Remove the failed call from the history and resend the previous request, so Claude regenerates its plan without the failure in view."
+        },
+        {
+          "id": "D",
+          "text": "Add a system-prompt rule telling Claude to avoid lookup_order when the backend is slow and to ask the customer for order details instead."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "A tool failure is information the model can act on. The documented pattern is to send back a `tool_result` with `is_error: true` and an instructive message (what failed, whether a retry makes sense). Claude can then retry, try another route, explain the delay, or call `escalate_to_human`. Anthropic's research-system write-up notes that letting the agent know a tool is failing and letting it adapt \"works surprisingly well\", combined with deterministic safeguards such as bounded retry logic in code.",
+      "whyWrong": {
+        "A": "Unbounded silent retries can hang the conversation during a real outage and hide the failure from the model, which then cannot adapt or escalate. Bounded retries in code are fine, but the model must eventually be told.",
+        "C": "An assistant tool_use without a matching tool_result breaks the required message structure, and Claude, lacking the failure context, will likely just make the same call again.",
+        "D": "Claude cannot know in advance that the backend is slow, and this prompt-only workaround discourages a tool the agent genuinely needs."
+      },
+      "difficulty": 2,
+      "mindset": "Feed tool errors back as structured results so the model can adapt; don't end the loop or hide the failure.",
+      "tags": [
+        "agentic-loop",
+        "error-handling",
+        "is_error",
+        "tool_result"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls",
+        "https://www.anthropic.com/engineering/multi-agent-research-system"
+      ]
+    },
+    {
+      "id": "f-d1-x1-003",
+      "taskStatementId": "1.1",
+      "stem": "A teammate's loop is written as `while response.stop_reason != \"end_turn\": run_tools(response); response = call_api(history)`. In production a few sessions spin until the gateway's request quota cuts them off. Logs show these responses have stop_reason \"refusal\" and contain no tool_use blocks. What is the MOST robust fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add \"refusal\" to the while condition so the loop also exits on refusals, while every other non-end_turn value still means run tools."
+        },
+        {
+          "id": "B",
+          "text": "Add a hard cap of 25 iterations to the while loop so that any unexpected state eventually terminates without further code changes."
+        },
+        {
+          "id": "C",
+          "text": "Exit the loop whenever a response contains no tool_use blocks, whatever value the response's stop_reason happens to report."
+        },
+        {
+          "id": "D",
+          "text": "Branch explicitly on each stop_reason: continue only on \"tool_use\", finish on \"end_turn\", and route other values to dedicated handling."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "The bug is treating \"not end_turn\" as \"run tools\". `stop_reason` has several values (`tool_use`, `end_turn`, `max_tokens`, `stop_sequence`, `pause_turn`, `refusal`, `model_context_window_exceeded`) and each needs its own action. For example, `max_tokens` means truncation, `pause_turn` means send the assistant content back to continue, and `refusal` comes back as a normal HTTP 200 and needs its own path (inform the user, fall back, or escalate). An explicit branch per value makes the loop continue only when there really are tools to run.",
+      "whyWrong": {
+        "A": "It patches one value. The next unhandled value (for example max_tokens or pause_turn) falls back into the same spin, because the faulty \"anything else means run tools\" logic remains.",
+        "B": "An iteration cap as the primary control hides the bug: affected sessions still burn 25 calls and end with no clear outcome. Caps belong as a safety net, not as the fix.",
+        "C": "Truncated (max_tokens) and paused (pause_turn) responses can also lack tool_use blocks, yet they are not finished. This rule would cut them off and still handle refusals as if they were normal completions."
+      },
+      "difficulty": 3,
+      "mindset": "Drive loop control from explicit stop_reason handling, never from a catch-all \"else\" branch.",
+      "tags": [
+        "agentic-loop",
+        "stop_reason",
+        "refusal",
+        "control-flow"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons"
+      ]
+    },
+    {
+      "id": "f-d1-x1-004",
+      "taskStatementId": "1.1",
+      "stem": "An early prototype still runs a hand-written Messages API loop. Its fetch_docs tool pulls third-party library documentation. To make Claude \"take the docs seriously\", the developer's loop copies each fetched page into the system prompt for the next request and sends back an empty tool_result for the call. A security review notes that a documentation page could carry hidden instructions. With MINIMAL changes to the loop, how should fetched content reach the model?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Keep placing the page in the system prompt, but first run a keyword filter that strips sentences resembling instructions before every request."
+        },
+        {
+          "id": "B",
+          "text": "Put the page text in the content of the tool_result block for that tool_use_id, so it arrives as untrusted data rather than as instructions."
+        },
+        {
+          "id": "C",
+          "text": "Send the page as a plain user text block placed ahead of the tool_result, with a note explaining that the text came from an external website."
+        },
+        {
+          "id": "D",
+          "text": "Keep the current flow but add a system-prompt rule telling Claude to ignore any instructions it finds inside fetched documentation pages."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Tool output is **data**, not instructions. The documented pattern is to return what a tool fetched inside the `tool_result` block that matches the `tool_use_id`, and to keep third-party content out of the `system` prompt and out of plain user `text` blocks. Claude is trained to treat instructions that appear inside tool results with skepticism, so this placement is the primary defence against indirect prompt injection, and it is also how the normal agentic loop is supposed to work. Extra layers (an untrusted-content policy in the system prompt, screening tool output with a small classifier, least-privilege tools) add defence in depth on top of this, not instead of it.",
+      "whyWrong": {
+        "A": "A keyword filter is brittle and easy to phrase around, and the content still lands in the system prompt, the most trusted position in the request. The structural problem is untouched.",
+        "C": "Text blocks must come after tool_result blocks in the same user message, so this ordering is rejected with a 400 error; and the docs say third-party content should not be sent as plain user text in the first place.",
+        "D": "Stating the policy is a recommended extra layer, but on its own it leaves the injected content sitting in the system prompt. A prompt rule cannot undo a trust boundary the loop itself has crossed."
+      },
+      "difficulty": 2,
+      "mindset": "Tool output is untrusted data: return it inside tool_result blocks and never promote it to system or user instructions.",
+      "tags": [
+        "agentic-loop",
+        "tool_result",
+        "prompt-injection",
+        "security"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls",
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/mitigate-jailbreaks"
+      ],
+      "scenario": "Developer Productivity with Claude: you are building an Agent SDK agent that helps engineers explore unfamiliar codebases, understand legacy systems and automate repetitive tasks using the built-in tools (Read, Write, Bash, Grep, Glob) plus MCP servers."
+    },
+    {
+      "id": "f-d1-x1-005",
+      "taskStatementId": "1.1",
+      "scenario": "Customer Support Resolution Agent: you are building a support agent with the Claude Agent SDK that handles returns, billing disputes and account issues through custom MCP tools (get_customer, lookup_order, process_refund, escalate_to_human), targeting 80%+ first-contact resolution while knowing when to escalate.",
+      "stem": "The process_refund tool returns only the string \"OK\" on success. Transcripts show Claude often calls lookup_order right after a refund \"to confirm it went through\", and it sometimes tells customers the wrong refund amount. Which change BEST improves the agent's next-step reasoning?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add a few-shot example to the system prompt showing the agent replying to the customer as soon as process_refund returns \"OK\"."
+        },
+        {
+          "id": "B",
+          "text": "Add a hook that blocks any lookup_order call made in the turn right after process_refund, to stop the redundant lookups."
+        },
+        {
+          "id": "C",
+          "text": "Return a structured tool_result containing the refund ID, amount, method and expected timing, so Claude can rely on it directly."
+        },
+        {
+          "id": "D",
+          "text": "Instruct Claude in the system prompt to treat \"OK\" as proof the refund succeeded and to skip any further order check after a refund call."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Each `tool_result` is appended to the conversation and becomes the evidence for Claude's next decision. A bare \"OK\" gives the model nothing to report, so it either re-checks (an extra call) or guesses (wrong amounts). Returning the meaningful facts of the action fixes both symptoms at the source. Anthropic's tool-writing guidance says tools should return high-signal information that directly informs the agent's next action.",
+      "whyWrong": {
+        "A": "Examples can teach Claude to stop re-checking, but it still has no amount or reference to quote, so incorrect amounts persist.",
+        "B": "Blocking the follow-up call removes the agent's only way to get the facts it is missing; the wrong-amount problem gets worse.",
+        "D": "Treating \"OK\" as proof of success is unsafe when refunds can fail, and it still leaves Claude without the amount or reference it needs to answer the customer correctly."
+      },
+      "difficulty": 2,
+      "mindset": "Tool results are the model's evidence for the next step; make them informative, not just acknowledgments.",
+      "tags": [
+        "agentic-loop",
+        "tool_result",
+        "tool-design",
+        "customer-support"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/writing-tools-for-agents",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls"
+      ]
+    },
+    {
+      "id": "f-d1-x1-006",
+      "taskStatementId": "1.1",
+      "scenario": "Multi-Agent Research System: a coordinator agent built on the Claude Agent SDK delegates to specialized subagents (web search, document analysis, synthesis, report generation) and produces comprehensive, cited research reports.",
+      "stem": "The coordinator runs on the Agent SDK's managed loop with no limits set. A few open-ended topics spawn many subagents and run up large bills, but the team does not want to cut off runs that are finishing normally. Which TWO changes BEST bound cost while keeping natural completion as the main stopping signal? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Set a low max_tokens on every model response, so that each coordinator and subagent turn costs less overall."
+        },
+        {
+          "id": "B",
+          "text": "Add a system-prompt rule telling the coordinator to stop after a fixed number of searches, and treat that as the stop rule."
+        },
+        {
+          "id": "C",
+          "text": "Set max_budget_usd for the run; it counts subagent spend too and blocks new subagent spawns once the cap is reached."
+        },
+        {
+          "id": "D",
+          "text": "Check the ResultMessage subtype, and treat error_max_budget_usd or error_max_turns runs as incomplete rather than publishing them."
+        },
+        {
+          "id": "E",
+          "text": "Read whole-run cost from the usage field on ResultMessage, since that field already totals tokens across every subagent."
+        }
+      ],
+      "correct": [
+        "C",
+        "D"
+      ],
+      "explanation": "In the Agent SDK the loop ends naturally when Claude responds without tool calls. Limits are safety nets. `max_budget_usd` caps spend, **including subagents' spend**, and once the cap is reached further subagent spawns fail. When any limit is hit, the SDK returns a `ResultMessage` with an error subtype (`error_max_budget_usd`, `error_max_turns`) and no `result` field, so code must check `subtype` and handle the run as incomplete instead of shipping a half-finished report.",
+      "whyWrong": {
+        "A": "max_tokens limits the length of each response, not the number of turns or subagents. It mainly causes truncated outputs (stop_reason max_tokens) without bounding the run.",
+        "B": "A prompt-only, arbitrary search count as the primary stop rule is the iteration-cap anti-pattern: it cuts off broad topics and isn't enforced deterministically.",
+        "E": "The usage field covers only the main agent loop. Whole-tree accounting comes from modelUsage (model_usage in Python), so this would understate cost."
+      },
+      "difficulty": 3,
+      "mindset": "Let the model decide when it's done, put a hard budget behind it, and detect when that budget fired.",
+      "tags": [
+        "agent-sdk",
+        "max_budget_usd",
+        "ResultMessage",
+        "cost-control",
+        "subagents"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/agent-loop"
+      ]
+    },
+    {
+      "id": "f-d1-x1-007",
+      "taskStatementId": "1.1",
+      "stem": "A product manager watching an agent demo asks how the agent \"remembers\" that it already found the customer's order two steps earlier, given that each API call is independent. Which explanation is MOST accurate?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The model keeps a private memory of each session on Anthropic's servers and recalls earlier tool results automatically."
+        },
+        {
+          "id": "B",
+          "text": "The app runs a separate summary job after each step and stores that summary in the system prompt for the next call."
+        },
+        {
+          "id": "C",
+          "text": "The tool server caches its own earlier responses and re-sends them to the model whenever they become relevant again."
+        },
+        {
+          "id": "D",
+          "text": "Each new request resends the conversation so far, including Claude's tool calls and their results, so the model sees them all."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "Each request in the agentic loop carries the growing conversation: the user's request, each assistant turn with its `tool_use` blocks, and each `tool_result`. That accumulated history is how Claude \"remembers\" earlier findings and picks a sensible next action. The Agent SDK does this for you, and its docs note that context accumulates across turns within a session.",
+      "whyWrong": {
+        "A": "The Messages API does not keep conversation state between calls; anything not in the request is unknown to the model.",
+        "B": "Some systems add summarization (for example compaction near the context limit), but that isn't how the basic loop works; earlier turns are sent as they are.",
+        "C": "Tool servers just answer the calls they receive; they do not push past results into the model's context."
+      },
+      "difficulty": 1,
+      "mindset": "In an agent loop, the conversation history is the memory; nothing is remembered unless it's sent.",
+      "tags": [
+        "agentic-loop",
+        "conversation-history",
+        "fundamentals",
+        "non-technical"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/agent-loop",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls"
+      ]
+    },
+    {
+      "id": "f-d1-x1-008",
+      "taskStatementId": "1.2",
+      "stem": "A market-intelligence coordinator is asked to assess \"barriers to heat-pump adoption in European homes.\" Across several runs, reports focus almost entirely on upfront cost, while installer shortages, building suitability and regulation barely appear. Traces show each subagent researched its assigned subtopic well. Which change to the coordinator is MOST likely to prevent this pattern on future topics?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Instruct each search subagent to widen its own queries beyond its assigned subtopic whenever it notices related areas."
+        },
+        {
+          "id": "B",
+          "text": "Add a synthesis instruction requiring every report to cover installer shortages, building suitability and regulation."
+        },
+        {
+          "id": "C",
+          "text": "Have the coordinator first map the question's distinct dimensions, assign subagents across them, and check the plan covers each one."
+        },
+        {
+          "id": "D",
+          "text": "Raise the number of parallel search subagents from three to eight so that more ground gets covered on every single run."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "When subagents do their assigned work well but coverage is still missing, the gap was created upstream: the coordinator's decomposition was too narrow. The durable fix is in how the coordinator plans. It should enumerate the dimensions a broad question involves, partition subagents across them, and check the plan against the question before delegating. This works for any future topic, not just this one.",
+      "whyWrong": {
+        "A": "It pushes scope decisions down to subagents that can't see the overall plan, which causes overlap and boundary violations while leaving the coordinator's narrow split unchanged.",
+        "B": "It hardcodes the missing dimensions for one topic, and synthesis cannot properly cover areas nobody researched, which invites unsupported claims.",
+        "D": "More agents spread over the same narrow partition mostly duplicate the cost subtopic, at higher cost, without adding the missing dimensions."
+      },
+      "difficulty": 3,
+      "mindset": "Coverage gaps with healthy subagents point to the coordinator's decomposition; fix the plan, not the workers.",
+      "tags": [
+        "coordinator",
+        "task-decomposition",
+        "coverage",
+        "multi-agent"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/multi-agent-research-system"
+      ]
+    },
+    {
+      "id": "f-d1-x1-009",
+      "taskStatementId": "1.2",
+      "scenario": "Multi-Agent Research System: a coordinator agent built on the Claude Agent SDK delegates to specialized subagents (web search, document analysis, synthesis, report generation) and produces comprehensive, cited research reports.",
+      "stem": "For one report the coordinator runs four search subagents in parallel. The one covering academic sources hits repeated rate-limit errors from its search API and cannot finish; the other three succeed. How should the system handle this?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Abort the whole run and return an error to the user, because a report missing any assigned source type is unreliable."
+        },
+        {
+          "id": "B",
+          "text": "Have the failed subagent return a structured error with its partial results; the coordinator then re-delegates or reports the gap."
+        },
+        {
+          "id": "C",
+          "text": "Continue straight to synthesis with the three successful results and leave out any mention of the missing academic coverage."
+        },
+        {
+          "id": "D",
+          "text": "Have the synthesis subagent fill the academic gap from the model's own background knowledge, so the report stays complete."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "In hub-and-spoke designs, error handling is the coordinator's job. The subagent should handle transient errors locally with bounded retries, then return what it could not resolve as structured context: failure type, what it attempted, and any partial results. The coordinator can then decide: re-delegate later or through another source, or proceed while clearly flagging the coverage gap in the report.",
+      "whyWrong": {
+        "A": "Discarding three good results because of one partial failure wastes work and gives the user nothing, when a recoverable or clearly flagged gap would do.",
+        "C": "Silently dropping a source type misleads readers about the report's coverage; the gap must at least be stated.",
+        "D": "Filling in with uncited background knowledge breaks the system's promise of cited findings and can introduce fabricated claims."
+      },
+      "difficulty": 2,
+      "mindset": "Subagents report failures with context; the coordinator decides how to recover, and never hides the gap.",
+      "tags": [
+        "coordinator",
+        "error-handling",
+        "partial-failure",
+        "multi-agent"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/multi-agent-research-system",
+        "https://code.claude.com/docs/en/agent-sdk/subagents"
+      ]
+    },
+    {
+      "id": "f-d1-x1-010",
+      "taskStatementId": "1.2",
+      "scenario": "Multi-Agent Research System: a coordinator agent built on the Claude Agent SDK delegates to specialized subagents (web search, document analysis, synthesis, report generation) and produces comprehensive, cited research reports.",
+      "stem": "The document-analysis subagent returns its full working transcript (every excerpt it read plus its reasoning) to the coordinator. After a few delegations the coordinator's context is crowded, later turns lose track of earlier findings, and citations get attached to the wrong sources. Which TWO changes BEST address this? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Have the subagent return a concise structured result: key findings, each with source metadata (URL, document, page) in separate fields."
+        },
+        {
+          "id": "B",
+          "text": "Move the coordinator to a model with a larger context window so it can hold the full transcripts of every subagent it uses."
+        },
+        {
+          "id": "C",
+          "text": "Ask the coordinator to re-read all subagent transcripts at the end and work out which excerpt came from which source."
+        },
+        {
+          "id": "D",
+          "text": "Merge document analysis into the coordinator itself, so that results never need to be handed between agents at all."
+        },
+        {
+          "id": "E",
+          "text": "For large outputs, have the subagent write them to a shared store or file and return a short reference the coordinator can pass on."
+        }
+      ],
+      "correct": [
+        "A",
+        "E"
+      ],
+      "explanation": "Subagents give the coordinator **condensed** results: only the final response returns to the parent, so the coordinator's context grows by a summary rather than the full subtask transcript. Structuring each finding with its source metadata in separate fields preserves attribution through aggregation. For bulky artifacts, Anthropic's research system has subagents persist outputs outside the conversation and pass lightweight references back to the coordinator.",
+      "whyWrong": {
+        "B": "A bigger window postpones the crowding but keeps flooding the coordinator with low-signal detail, and does nothing for the citation mix-ups.",
+        "C": "Adding another reconciliation pass over the same bloated transcripts adds cost and is unreliable; attribution should be kept from the start.",
+        "D": "It removes the context isolation that keeps the coordinator lean, so the coordinator ends up with all the raw detail anyway."
+      },
+      "difficulty": 2,
+      "mindset": "Subagents should return compact, attributed results (or references), not their whole working history.",
+      "tags": [
+        "coordinator",
+        "result-aggregation",
+        "context-isolation",
+        "provenance"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/agent-loop",
+        "https://www.anthropic.com/engineering/multi-agent-research-system"
+      ]
+    },
+    {
+      "id": "f-d1-x1-011",
+      "taskStatementId": "1.2",
+      "stem": "A platform team proposes splitting a code-migration agent into a coordinator with five subagents, one per layer (schema, data access, API, UI, tests). Every change in one layer depends on decisions made in the others, and edits must stay consistent across the whole repository. The budget is tight. Which recommendation is MOST appropriate?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Keep the five-subagent design, but run every subagent in parallel to offset the coordination latency it introduces."
+        },
+        {
+          "id": "B",
+          "text": "Use the multi-agent design, but give every subagent the full shared history so that each one sees all of the decisions."
+        },
+        {
+          "id": "C",
+          "text": "Add a sixth reviewer subagent that checks the other five subagents' edits for consistency before anything is committed."
+        },
+        {
+          "id": "D",
+          "text": "Use a single agent working through the migration in one context, since tightly coupled work gains little from subagents."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "Coordinator-subagent designs pay off when work splits into independent, parallelizable pieces. Anthropic notes that multi-agent systems use far more tokens than chat (about 15x in their measurements) and that domains where all agents need the same context or have many dependencies between them are a poor fit today. They name most coding tasks as having fewer truly parallelizable parts. With tight coupling and a tight budget, one agent with a coherent context is the proportionate choice.",
+      "whyWrong": {
+        "A": "Running interdependent layers in parallel makes conflicting edits more likely and doesn't reduce the token overhead of splitting the work.",
+        "B": "Sharing the full history with every subagent removes the context-isolation benefit while keeping all the multi-agent cost.",
+        "C": "Adding another agent to repair consistency problems that the split itself created is over-engineering on a tight budget."
+      },
+      "difficulty": 3,
+      "mindset": "Use multi-agent orchestration for parallelizable, separable work, not for tightly coupled tasks.",
+      "tags": [
+        "multi-agent",
+        "architecture-tradeoffs",
+        "cost",
+        "single-agent"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/multi-agent-research-system"
+      ]
+    },
+    {
+      "id": "f-d1-x1-012",
+      "taskStatementId": "1.2",
+      "scenario": "Multi-Agent Research System: a coordinator agent built on the Claude Agent SDK delegates to specialized subagents (web search, document analysis, synthesis, report generation) and produces comprehensive, cited research reports.",
+      "stem": "To cut latency, the coordinator now spawns the web-search, document-analysis and synthesis subagents all in the same turn. Synthesis often comes back with \"no findings were provided\" or a generic overview of the topic. What is the BEST fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Run the independent search and analysis subagents in parallel, then invoke synthesis afterward with their findings in its prompt."
+        },
+        {
+          "id": "B",
+          "text": "Tell the synthesis subagent in its prompt to wait until the other subagents finish and then read their results itself."
+        },
+        {
+          "id": "C",
+          "text": "Give the synthesis subagent its own web-search tool so that it can gather whatever findings it needs without waiting."
+        },
+        {
+          "id": "D",
+          "text": "Spawn synthesis twice per run and keep whichever of the two outputs turns out to be longer and more detailed."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The coordinator owns ordering. Parallelize only the subagents that are truly independent (search and analysis), and invoke dependent ones (synthesis) once their inputs exist. Subagents start with a fresh context and cannot see their siblings, so the coordinator must pass the gathered findings into the synthesis delegation explicitly.",
+      "whyWrong": {
+        "B": "A non-fork subagent starts with a fresh context and receives only its delegation prompt; it has no view of sibling results, so a prompt telling it to \"wait\" gives it nothing to wait on. Sequencing is the coordinator's job.",
+        "C": "It duplicates the search subagent's job, blurs specialization, and produces a synthesis based on different evidence than the rest of the pipeline.",
+        "D": "Neither copy has the findings it needs; a longer guess is still a guess, at double the cost."
+      },
+      "difficulty": 2,
+      "mindset": "Parallelize independent subagents; sequence dependent ones and hand them their inputs explicitly.",
+      "tags": [
+        "coordinator",
+        "sequencing",
+        "parallel-subagents",
+        "context-passing"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/subagents",
+        "https://www.anthropic.com/engineering/multi-agent-research-system"
+      ]
+    },
+    {
+      "id": "f-d1-x1-013",
+      "taskStatementId": "1.2",
+      "scenario": "Multi-Agent Research System: a coordinator agent built on the Claude Agent SDK delegates to specialized subagents (web search, document analysis, synthesis, report generation) and produces comprehensive, cited research reports.",
+      "stem": "The search and analysis subagents already return findings with source metadata, and the synthesis subagent writes well-argued narrative reports. In the published reports, however, many claims carry no citation, and where citations do appear they are sometimes attached to the wrong sentence. Editors want every claim traceable to a source without making the writing worse. Which change to the aggregation stage is MOST effective?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add a rule to the synthesis prompt that every sentence must end with a citation, and have the coordinator reject any draft that does not comply."
+        },
+        {
+          "id": "B",
+          "text": "Have each search subagent write a fully cited section on its own subtopic, and have the coordinator concatenate the sections into the final report."
+        },
+        {
+          "id": "C",
+          "text": "After synthesis produces the draft, run a dedicated citation step that receives the draft plus the source findings and attaches citations to specific claims."
+        },
+        {
+          "id": "D",
+          "text": "Have the coordinator delete any sentence in the draft that synthesis did not cite, so that only sourced statements ever reach the reader."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Writing a coherent argument and attributing every claim are different jobs, and asking one subagent to do both at once degrades both. Anthropic's research system separates them: once research is complete, the findings and the drafted report go to a dedicated CitationAgent that works out where each citation belongs. In the aggregation stage the coordinator therefore runs synthesis first, then a citation pass that has both the draft and the structured source findings in front of it. Attribution becomes a focused, checkable step instead of a side-task competing with prose quality.",
+      "whyWrong": {
+        "A": "A per-sentence rule is a prompt-only constraint that fights the writing task, and it does nothing about citations attached to the wrong claim; the draft gets choppier, not more accurate.",
+        "B": "Concatenated sections skip synthesis altogether: no cross-source reasoning, duplicated or contradictory statements across sections, and the coherent narrative the editors value is lost.",
+        "D": "Deleting uncited sentences throws away real findings instead of attributing them, and the citations that are already misplaced stay wrong."
+      },
+      "difficulty": 2,
+      "mindset": "Separate concerns in aggregation: let one step write, and a dedicated step attribute.",
+      "tags": [
+        "coordinator",
+        "result-aggregation",
+        "citations",
+        "provenance",
+        "multi-agent"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/multi-agent-research-system"
+      ]
+    },
+    {
+      "id": "f-d1-x1-014",
+      "taskStatementId": "1.2",
+      "stem": "A non-technical sponsor asks why a research system uses a coordinator with specialized subagents instead of a single agent holding every tool. Which TWO are the STRONGEST reasons to give? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Subagents work from the coordinator's memory, so each one can see what the others have already found during the run."
+        },
+        {
+          "id": "B",
+          "text": "Each subagent works in its own fresh context, so the coordinator receives a condensed result rather than every step taken."
+        },
+        {
+          "id": "C",
+          "text": "Several agents tend to cost less overall than one agent, because each of them handles a smaller slice of the work."
+        },
+        {
+          "id": "D",
+          "text": "Independent parts of a broad question can be researched in parallel, which can substantially cut how long a run takes."
+        },
+        {
+          "id": "E",
+          "text": "Splitting the work across agents makes results more accurate, because each agent reviews the other agents' answers."
+        }
+      ],
+      "correct": [
+        "B",
+        "D"
+      ],
+      "explanation": "The two core benefits are **context isolation** (each subagent explores in its own context, and only its final result returns to the coordinator, keeping the coordinator focused) and **parallelism** for independent subtasks, which Anthropic reports cut research time substantially. The trade-off is cost: multi-agent runs use many more tokens, so they suit broad, separable work.",
+      "whyWrong": {
+        "A": "The opposite is true: a subagent starts with a fresh context, does not see the coordinator's history or its siblings' work, and receives only what the coordinator puts in its delegation prompt.",
+        "C": "Multi-agent systems typically use far more tokens than a single agent (Anthropic measured roughly 15x a chat); cost is the trade-off you accept, not a benefit.",
+        "E": "Nothing in the pattern makes agents review one another; verification has to be designed in explicitly, and splitting work can introduce new coordination errors."
+      },
+      "difficulty": 1,
+      "mindset": "Multi-agent buys context isolation and parallelism, at a real token cost.",
+      "tags": [
+        "multi-agent",
+        "hub-and-spoke",
+        "context-isolation",
+        "non-technical"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/multi-agent-research-system",
+        "https://code.claude.com/docs/en/agent-sdk/subagents"
+      ]
+    }
+  ]
+}

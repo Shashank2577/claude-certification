@@ -1,0 +1,463 @@
+{
+  "certId": "professional",
+  "domainId": "d3-integration",
+  "questions": [
+    {
+      "id": "p-d3-x4-001",
+      "taskStatementId": "3.7",
+      "stem": "An insurance company runs one backend service that receives about 8,000 claim notes per hour. For each note, Claude must look up the policy's coverage tier in an internal database and return a routing decision in a fixed JSON shape. No other application or person will use the lookup, and the service has a strict per-request latency budget. An engineer proposes publishing the database lookup as a remote MCP server so that it is \"future proof\". Which approach is MOST appropriate?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Define the lookup as a function tool in the service's own Messages API requests, run it in the service's code, and return the result as a tool_result."
+        },
+        {
+          "id": "B",
+          "text": "Publish the lookup as a remote MCP server over Streamable HTTP and connect the service to it through the Messages API's MCP connector."
+        },
+        {
+          "id": "C",
+          "text": "Have a coordinator agent hand each claim note to a lookup subagent, which queries the database and returns the coverage tier to the coordinator."
+        },
+        {
+          "id": "D",
+          "text": "Run Claude Code in non-interactive mode for every claim note, giving it shell access to a script that queries the coverage database."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Count the consumers and read the qualifiers. There is **one** application, the capability is not shared, and latency matters. A function tool defined directly in the Messages API request gives the service full control over the schema, execution, errors and timing, with no extra network hop or protocol layer. MCP pays off when the **same** capability must be reused across many hosts or teams; \"future proof\" is not a requirement the scenario actually states. If a second consumer appears later, the lookup can be wrapped in an MCP server then.",
+      "whyWrong": {
+        "B": "MCP adds a separately hosted service, another network hop and its own authentication for a capability with exactly one consumer. It solves a reuse problem the scenario does not have, at a latency cost it cannot afford.",
+        "C": "A subagent runs its own reasoning loop and context just to perform one deterministic lookup. That multiplies tokens and latency where a single tool call is enough.",
+        "D": "Launching a full agent session per note, with shell access, is heavy, slow and grants far more capability than a single database lookup needs."
+      },
+      "difficulty": 1,
+      "mindset": "One consumer and a tight latency budget point to a direct API tool; reach for MCP when reuse across hosts is a real requirement.",
+      "tags": [
+        "integration-mechanism",
+        "messages-api",
+        "function-tools",
+        "mcp",
+        "latency"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview",
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "p-d3-x4-002",
+      "taskStatementId": "3.7",
+      "stem": "A product team calls the Messages API from its backend. A partner has a public, OAuth-protected MCP server reachable over HTTPS. The server exposes search tools, and it also publishes its product catalogue as MCP resources and offers MCP prompts that encode the partner's approved answer templates. The team needs all three primitives, and it wants the least custom integration code that will actually work. Which approach should the architect recommend?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add the partner server to the `mcp_servers` parameter of the MCP connector and reference the catalogue and the templates by name in the request's system prompt."
+        },
+        {
+          "id": "B",
+          "text": "Use the MCP connector for the tools and ask the partner to re-publish the catalogue and the templates as additional tools so the connector exposes them too."
+        },
+        {
+          "id": "C",
+          "text": "Run an MCP client in the backend using an MCP SDK, read resources and prompts through it, and use the SDK's helpers to convert them into Messages API content and tools."
+        },
+        {
+          "id": "D",
+          "text": "Fetch the catalogue and the templates once with a script, store the text in the backend, and send it in the system prompt alongside the tools exposed through the MCP connector."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "The MCP connector (`mcp_servers`) is the least-code path, but its documented limitation decides this question: of the MCP feature set, **only tool calls** are supported. Resources and prompts are not reached through the connector. Anthropic's docs point to client-side MCP helpers for this case: run your own MCP client with an MCP SDK, then convert MCP prompts, resources and tools into Messages API types. That is the smallest design that meets all three needs without asking the partner to change anything.",
+      "whyWrong": {
+        "A": "The connector only supports tool calls. Naming resources or prompts in the system prompt does not fetch them; the model would see only the names, not the catalogue or the templates.",
+        "B": "This forces a partner to redesign its server around one client's limitation, and turning application-driven context into model-invoked tools changes who controls when it is loaded.",
+        "D": "A one-time copy turns a maintained, authenticated source of truth into static text that goes stale, and prompt templates with arguments cannot be filled in as plain text. It also leaves two integration paths to keep in sync."
+      },
+      "difficulty": 3,
+      "mindset": "Know the boundary of each mechanism: the API's MCP connector is tools-only, so resources and prompts need your own MCP client.",
+      "tags": [
+        "mcp-connector",
+        "mcp-resources",
+        "mcp-prompts",
+        "messages-api",
+        "integration-mechanism"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/mcp-connector"
+      ]
+    },
+    {
+      "id": "p-d3-x4-003",
+      "taskStatementId": "3.7",
+      "stem": "A software vendor ships an MCP server that customers run alongside their own Claude-based hosts, all of which declare the MCP `sampling` capability. One of its tools needs a short language-model summary of a long log excerpt before returning. Customers' security teams insist that every model call must go through their own governed host, with their chosen model, their logging and the user's ability to review or deny the request, and the vendor does not want to manage API keys for each customer. What is the MOST appropriate design?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Bundle an Anthropic API key with each server installation so that the tool can call the Messages API directly and return the finished summary to the host."
+        },
+        {
+          "id": "B",
+          "text": "Have the server issue an MCP sampling request mid-call, so the generation is performed by the connected client under its own configuration rather than by the server."
+        },
+        {
+          "id": "C",
+          "text": "Return the full log excerpt as the tool result and add a line to the tool's description asking Claude to summarize the log before using it further."
+        },
+        {
+          "id": "D",
+          "text": "Run a separate summarization agent at the vendor's site and have the MCP server forward every log excerpt to that agent over the vendor's own API."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "MCP **sampling** exists for exactly this: a server asks the client to run an LLM generation (`sampling/createMessage`). The spec says this lets clients keep control over model access, selection and permissions, with **no server API keys necessary**, and it recommends a human in the loop who can review and deny sampling requests. The customer's host stays the single governed path for model calls, and the vendor ships no credentials.",
+      "whyWrong": {
+        "A": "Embedding keys in a distributed server creates a credential-management and leakage problem, and the model call bypasses the customer's governed host, which is exactly what security forbids.",
+        "C": "Pushing the whole excerpt back inflates context and relies on a description hint instead of a defined mechanism. The server's own logic never gets the summary it needs before returning.",
+        "D": "Sending customer logs to the vendor's infrastructure moves data outside the customer's boundary and bypasses their chosen model and logging. It is more architecture and more risk."
+      },
+      "difficulty": 3,
+      "mindset": "When a server needs model output but the host must govern every model call, use the protocol feature that hands generation back to the client.",
+      "tags": [
+        "mcp-sampling",
+        "governance",
+        "mcp",
+        "security-boundary",
+        "integration-mechanism"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-06-18/client/sampling"
+      ]
+    },
+    {
+      "id": "p-d3-x4-004",
+      "taskStatementId": "3.7",
+      "stem": "A team's MCP server exposes a `deploy_service` tool, and the hosts it targets declare the MCP `elicitation` capability. Partway through a call, the server sometimes discovers that it needs one more piece of input from the person using the host, for example which of three target regions to deploy to, or a yes/no confirmation that a maintenance window is acceptable. Today the tool simply fails, and the user has to restart the whole task. The team is evaluating MCP elicitation for this. Which TWO statements describe a correct use of elicitation here? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "The server can send an elicitation request with a flat schema, such as an enum of the three regions and a boolean confirmation, and continue the call with the user's answer."
+        },
+        {
+          "id": "B",
+          "text": "The server can use elicitation to ask the user for the cloud provider's access key when its stored credentials have expired, so that the deployment can still finish."
+        },
+        {
+          "id": "C",
+          "text": "The server can send a deeply nested schema containing an array of objects that describe every service setting, so the user fills in the full deployment manifest at once."
+        },
+        {
+          "id": "D",
+          "text": "The server should treat a decline or a cancel from the user as a normal outcome and handle each one, for example by stopping the deployment and returning a clear message."
+        },
+        {
+          "id": "E",
+          "text": "Elicitation lets the server make the choice on the user's behalf by asking the client's model to pick a region, so no person has to be interrupted during the call."
+        }
+      ],
+      "correct": [
+        "A",
+        "D"
+      ],
+      "explanation": "Elicitation lets a server request structured input from the **user** through the client in the middle of an operation. The spec limits the requested schema to **flat objects with primitive properties** (string, number, boolean, enum), which fits a region choice plus a confirmation. Responses use three actions, **accept, decline and cancel**, and the spec says servers should handle each state appropriately, so a decline or cancel must lead to a safe, clear outcome rather than a crash.",
+      "whyWrong": {
+        "B": "The spec states that servers must not use elicitation to request sensitive information. Credentials belong in a proper authorization flow, not a form prompt.",
+        "C": "Elicitation schemas deliberately exclude nested structures and arrays of objects. A full manifest belongs in tool parameters or configuration, not an elicitation form.",
+        "E": "Asking the client's model to generate something is sampling, not elicitation. Elicitation exists to get input from the person, which is the point of the confirmation."
+      },
+      "difficulty": 2,
+      "mindset": "Pick the protocol feature by who must answer: elicitation asks the user for small, non-sensitive input; it is not a credential channel or a model call.",
+      "tags": [
+        "mcp-elicitation",
+        "human-in-the-loop",
+        "mcp",
+        "integration-mechanism"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-06-18/client/elicitation"
+      ]
+    },
+    {
+      "id": "p-d3-x4-005",
+      "taskStatementId": "3.7",
+      "stem": "A team is building an internal agent with the Claude Agent SDK in Python. The agent needs three custom tools that call functions already living in the same service: an account lookup, a refund-eligibility check and a ticket note writer. Nothing else in the company will use these tools. An engineer proposes packaging them as a standalone MCP server, deploying it as its own HTTP service with authentication, and pointing the agent at its URL. What should the architect recommend, with the least operational overhead?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Deploy the proposed HTTP server anyway, because keeping tool code out of the agent process gives the team a clean place to add authentication and reuse later."
+        },
+        {
+          "id": "B",
+          "text": "Give the agent unrestricted Bash access and a set of Python scripts that call the three functions, and let it choose which script to run for each step."
+        },
+        {
+          "id": "C",
+          "text": "Create one subagent per function so each tool runs in an isolated context, and have the main agent delegate to the right subagent for each request."
+        },
+        {
+          "id": "D",
+          "text": "Define the tools with the SDK's tool helper, wrap them in an in-process SDK MCP server, pass it in `mcp_servers`, and allow only those tools by name."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "The Agent SDK supports **in-process SDK MCP servers**: define each tool (name, description, input schema, handler) with the `@tool` decorator or `tool()` helper, wrap them with `create_sdk_mcp_server` / `createSdkMcpServer`, and pass the server in `mcp_servers`. The docs state the server runs inside your application, not as a separate process. The tools call your existing functions directly, there is nothing new to deploy or secure, and `allowed_tools` can name each `mcp__<server>__<tool>` explicitly.",
+      "whyWrong": {
+        "A": "That is building for a consumer that does not exist. In-process SDK servers expose the same descriptions and schemas to Claude, and a separate deployment adds hosting, networking and authentication work now for a reuse need the scenario rules out.",
+        "B": "Unrestricted Bash grants far more capability than three function calls require and loses typed input schemas. It is the opposite of least privilege.",
+        "C": "Each subagent runs its own model loop, so three simple function calls become three extra agent runs. Delegation is for sub-tasks that need their own reasoning, not single calls."
+      },
+      "difficulty": 2,
+      "mindset": "Match the mechanism to where the code lives: tools for functions inside your own SDK app belong in-process, not in a new service.",
+      "tags": [
+        "agent-sdk",
+        "sdk-mcp-server",
+        "custom-tools",
+        "integration-mechanism",
+        "operational-overhead"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/custom-tools"
+      ]
+    },
+    {
+      "id": "p-d3-x4-006",
+      "taskStatementId": "3.7",
+      "stem": "Every developer on a team already has the GitHub CLI (`gh`) installed and authenticated. They want Claude Code to read issue details, open pull requests and check CI status during normal coding sessions. The platform lead asks for the simplest setup that keeps context usage low and does not create a new service to maintain. Which approach BEST meets this goal?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Build a custom MCP server that wraps the GitHub REST API, host it internally over HTTP, and register it in the project's `.mcp.json` file for the whole team."
+        },
+        {
+          "id": "B",
+          "text": "Tell Claude Code to use `gh` for GitHub work, and add permission rules that allow the specific `gh` commands the team is comfortable running without prompts."
+        },
+        {
+          "id": "C",
+          "text": "Create a GitHub subagent that receives every GitHub-related request and turns it into REST calls with the WebFetch tool, keeping that work in its own context."
+        },
+        {
+          "id": "D",
+          "text": "Paste the GitHub REST API reference into CLAUDE.md so that Claude can construct correct calls to the API with curl in each session."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Claude Code's best-practices guide says CLI tools are **the most context-efficient way to interact with external services**, and that Claude already knows how to use `gh` to create issues, open pull requests and read comments. The CLI is installed and authenticated, so nothing new is built or hosted. Permission rules let the team pre-approve the specific `gh` commands it trusts while keeping anything else behind a prompt.",
+      "whyWrong": {
+        "A": "Building and hosting a custom server duplicates what an existing, authenticated CLI already does, and it adds a service to maintain, which the lead explicitly wants to avoid.",
+        "C": "A subagent that hand-builds REST calls adds a reasoning loop and token cost, and it bypasses the CLI's existing authentication for no benefit.",
+        "D": "A large API reference in CLAUDE.md loads into every session and wastes context. The docs advise keeping CLAUDE.md short and linking to documentation instead."
+      },
+      "difficulty": 1,
+      "mindset": "Before building an integration, check whether a well-known, authenticated CLI already does the job with less context and no new service.",
+      "tags": [
+        "claude-code",
+        "cli-tools",
+        "gh",
+        "permissions",
+        "integration-mechanism"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/best-practices",
+        "https://code.claude.com/docs/en/permissions"
+      ]
+    },
+    {
+      "id": "p-d3-x4-007",
+      "taskStatementId": "3.7",
+      "stem": "A due-diligence agent reviews acquisition targets. The team is deciding, step by step, which work should be delegated to a separate agent and which should stay as ordinary tool calls in the main agent, because delegation multiplies token usage and latency. Which TWO steps MOST clearly justify agent-to-agent delegation rather than a direct tool call? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Converting each reported revenue figure from the target's local currency into US dollars, using the company's internal exchange-rate service."
+        },
+        {
+          "id": "B",
+          "text": "Computing the standard set of financial ratios for the past five years from the target's filed statements, using the company's existing analytics service that returns the full table."
+        },
+        {
+          "id": "C",
+          "text": "Investigating the target's litigation history across dozens of court filings, deciding what to read next, and returning a condensed risk summary."
+        },
+        {
+          "id": "D",
+          "text": "Checking whether the target appears on a sanctions list by passing its legal name and country to an existing screening endpoint."
+        },
+        {
+          "id": "E",
+          "text": "Reading the target's entire 300-page data room, which would not fit in the main agent's context alongside the rest of the task, and returning only the material findings."
+        }
+      ],
+      "correct": [
+        "C",
+        "E"
+      ],
+      "explanation": "Delegation earns its cost when a sub-task needs **its own reasoning loop** over a lot of material (open-ended investigation whose next step depends on what it finds) or when the raw material is **too large for the caller's context**, so a separate context must read it and return only a condensed result. Anthropic's multi-agent research work names information that exceeds a single context window as a case where multi-agent systems earn their roughly 15x token cost, and the subagent docs describe isolating high-volume output so only the summary returns. Single, deterministic calls, however large their output table, should stay as tools.",
+      "whyWrong": {
+        "A": "A currency conversion is one deterministic call to an existing service. A subagent adds a reasoning loop, tokens and latency for no gain.",
+        "B": "The ratio table is large, but producing it is one deterministic call to an existing service with a known input and output. Size of output alone does not need a reasoning loop; a plain tool is simpler and cheaper.",
+        "D": "A sanctions check against an existing endpoint is a direct lookup. It needs a well-described tool, not a separate agent with its own context."
+      },
+      "difficulty": 3,
+      "mindset": "Delegate to another agent for open-ended reasoning or material that must be read outside the caller's context; keep deterministic calls as tools.",
+      "tags": [
+        "agent-to-agent",
+        "subagents",
+        "delegation",
+        "context-isolation",
+        "cost"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/sub-agents",
+        "https://www.anthropic.com/engineering/multi-agent-research-system"
+      ]
+    },
+    {
+      "id": "p-d3-x4-008",
+      "taskStatementId": "3.7",
+      "stem": "A platform team wants Claude Code to inspect and restart containers in each developer's own local Docker environment during debugging sessions. Every developer runs the same container setup on their own laptop. The team proposes one central remote MCP server over Streamable HTTP so that \"everyone shares one integration\". Which approach is MOST appropriate for this capability?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Run a local MCP server over stdio on each laptop, defined once in the repository's project-scoped `.mcp.json` so every developer gets the same configuration."
+        },
+        {
+          "id": "B",
+          "text": "Build the proposed central server, and give it network access to every developer's laptop so it can reach each local Docker daemon remotely."
+        },
+        {
+          "id": "C",
+          "text": "Connect the central server through the Messages API's MCP connector so the integration works the same way across all of the team's laptops."
+        },
+        {
+          "id": "D",
+          "text": "Ask each developer to add their own personal server in user scope, with their own launch command, so that each setup can differ as needed."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Where the resource lives decides the transport. Each developer's Docker daemon is **local**, so a server launched as a local subprocess over **stdio** can reach it directly. Sharing comes from configuration, not hosting: a project-scoped `.mcp.json` checked into the repository gives the whole team the same server definition (with environment-variable expansion for anything machine-specific), and in interactive sessions Claude Code asks for approval before using project-scoped servers from `.mcp.json`.",
+      "whyWrong": {
+        "B": "Opening every laptop's Docker daemon to a central service creates a large, risky network exposure just to reach resources that are already local to each session.",
+        "C": "The MCP connector is a Messages API feature for public remote servers; it does not configure Claude Code and does not reach local resources on developer machines.",
+        "D": "User-scope servers are for personal tools. Letting each developer configure their own breaks the team's wish for one consistent, shared setup."
+      },
+      "difficulty": 2,
+      "mindset": "Choose the transport by where the resource lives, and share the integration through checked-in configuration rather than a central host.",
+      "tags": [
+        "mcp-transports",
+        "stdio",
+        "claude-code",
+        "mcp-json",
+        "integration-mechanism"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/mcp",
+        "https://modelcontextprotocol.io/specification/2025-06-18/basic/transports"
+      ]
+    },
+    {
+      "id": "p-d3-x4-009",
+      "taskStatementId": "3.7",
+      "stem": "A finance operations team runs a nightly job with fixed steps: pull yesterday's invoices from the ERP, validate totals against bank records, summarize unusual invoices in plain English for the controller, and email the report. Only the summary step needs language understanding; every other step is already reliable code. A consultant proposes an orchestrator agent that delegates each step to a subagent, with every system wrapped as an MCP server. Which TWO design choices are MOST appropriate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Let an orchestrator agent decide the order of the steps each night, so the job adapts when invoices arrive late or the bank records change format."
+        },
+        {
+          "id": "B",
+          "text": "Keep the fetch, validation and email steps as ordinary code in the existing job, since they are deterministic and already work reliably."
+        },
+        {
+          "id": "C",
+          "text": "Wrap the ERP, bank and email systems as MCP servers first, so that the summary step can call them later if the job ever needs it."
+        },
+        {
+          "id": "D",
+          "text": "Replace the scheduled job with a Claude Code run in non-interactive mode that is given the ERP, bank and email credentials and a prompt describing all four steps."
+        },
+        {
+          "id": "E",
+          "text": "Call the Messages API from the job for the summary step only, passing the flagged invoices and requesting output in a defined structured format."
+        }
+      ],
+      "correct": [
+        "B",
+        "E"
+      ],
+      "explanation": "Anthropic's *Building effective agents* guidance separates **workflows** (LLMs and tools orchestrated through predefined code paths) from **agents** (LLMs dynamically directing their own process), and advises starting with the simplest solution and adding complexity only when it demonstrably helps. Here the path is fixed and only one step needs a model. Keep the deterministic steps as code, and make one direct API call with a defined output format for the summary.",
+      "whyWrong": {
+        "A": "Letting a model decide the order of a fixed sequence adds unpredictability, cost and new failure modes to steps that never change. Late data is better handled in code.",
+        "C": "Building MCP servers for a speculative future need adds services to host and secure with no current consumer. That is over-engineering by definition.",
+        "D": "Handing a model four steps, three of which already work as deterministic code, trades reliability for nondeterminism and grants broad credentials to an agent that only needs to write one summary. Headless Claude Code is for tasks that need judgment, not for replacing working code."
+      },
+      "difficulty": 2,
+      "mindset": "Use the model only where judgment is needed; fixed steps stay as code, and the model is called directly at that one point.",
+      "tags": [
+        "workflows-vs-agents",
+        "messages-api",
+        "over-engineering",
+        "integration-mechanism"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "p-d3-x4-010",
+      "taskStatementId": "3.7",
+      "stem": "A company is building a hosted service in which Claude must autonomously work on customer repositories: read and edit files, run test commands, recover from failures, and resume a task later from where it stopped. A senior engineer plans to write the agent loop from scratch on the Messages API, including file tools, command execution, permission checks and session storage. The team wants a production-ready result soon and the most reliable foundation. What should the architect recommend?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Build the loop on the Messages API as planned, since owning the loop end to end gives the team the tightest control over tools, permissions and session storage."
+        },
+        {
+          "id": "B",
+          "text": "Expose each repository as a remote MCP server and let the Messages API's MCP connector drive file edits and test runs through tool calls alone."
+        },
+        {
+          "id": "C",
+          "text": "Build on the Claude Agent SDK, which provides Claude Code's agent loop, built-in file and command tools, permissions, hooks and sessions as a library."
+        },
+        {
+          "id": "D",
+          "text": "Run a fresh `claude -p` command for every user message and rebuild the task state from scratch in the prompt each time the customer returns."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "The Agent SDK exposes the same agent loop, tools and context management that power Claude Code as a library (Python and TypeScript). It already includes built-in file and command tools, permission controls, hooks, subagents, MCP support and **sessions** that can be resumed. Rebuilding all of that on the raw Messages API is slower and riskier, and it gains no control the SDK's options and hooks do not already provide.",
+      "whyWrong": {
+        "A": "The SDK already exposes control through allowed and disallowed tools, permission modes and hooks. Rebuilding the loop takes longer and recreates solved problems such as tool execution and session storage.",
+        "B": "The connector only gives the model tool calls on remote servers. You would still need to build the file, test and resume behaviour, plus a server per repository.",
+        "D": "Rebuilding state from scratch each time discards the agent's history and ignores existing session resume support, so long tasks become fragile and expensive."
+      },
+      "difficulty": 2,
+      "mindset": "Do not rebuild a production agent loop when a supported library already provides the loop, tools, permissions and sessions.",
+      "tags": [
+        "agent-sdk",
+        "messages-api",
+        "build-vs-buy",
+        "sessions",
+        "integration-mechanism"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/overview"
+      ]
+    }
+  ]
+}

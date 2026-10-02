@@ -1,0 +1,870 @@
+{
+  "certId": "professional",
+  "domainId": "d3-integration",
+  "questions": [
+    {
+      "id": "p-d3-x2-001",
+      "taskStatementId": "3.3",
+      "stem": "A law firm's internal contract assistant runs every question on its largest model. About 70% of questions are simple lookups (\"What is the renewal date?\") and 30% need reasoning across several clauses. Users complain about the wait, and the general counsel insists that accuracy on the complex questions must not drop. Evals show a smaller model scores 97% on the simple set but only 74% on the complex set. Which configuration BEST cuts typical latency while meeting the counsel's requirement?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Move all traffic to the smaller model and add a system-prompt line telling it to reason step by step and double-check its answer on any question spanning several clauses."
+        },
+        {
+          "id": "B",
+          "text": "Add a lightweight routing step that sends simple lookups to the smaller model and complex or uncertain questions to the larger model, tracking accuracy per route."
+        },
+        {
+          "id": "C",
+          "text": "Keep the larger model for every question but lower its effort setting across the board, since lower effort shortens responses and the model is accurate enough."
+        },
+        {
+          "id": "D",
+          "text": "Run three instances of the smaller model on each question in parallel and return the majority answer, which raises accuracy and avoids a routing classifier."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "This is the **routing / cascade** pattern: a cheap, fast path for the easy majority and the strong model for the hard tail. The eval numbers justify it directly. The smaller model is good enough on simple lookups (97%) and clearly not on complex ones (74%), so routing protects the counsel's requirement while cutting median latency. Sending *uncertain* cases to the larger model and measuring accuracy per route keeps the decision defensible over time.",
+      "whyWrong": {
+        "A": "A prompt instruction does not close a 23-point capability gap on complex questions. The eval already shows the smaller model is not good enough there, and that is the requirement that must not slip.",
+        "C": "Lowering effort for every request also cuts deliberation on the 30% of questions that need it, risking the exact accuracy the counsel protected. It treats easy and hard traffic the same.",
+        "D": "Majority voting triples cost and adds orchestration, and three copies of a model that scores 74% on complex questions still lack the reasoning those questions need. It is over-engineered and doesn't meet the bar."
+      },
+      "difficulty": 2,
+      "mindset": "Match model strength to task difficulty with a router, and justify each route with eval numbers.",
+      "tags": [
+        "routing",
+        "cascade",
+        "model-selection",
+        "latency",
+        "evals"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents",
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-latency"
+      ]
+    },
+    {
+      "id": "p-d3-x2-002",
+      "taskStatementId": "3.3",
+      "stem": "A travel-planning assistant answers \"Plan my trip to Lisbon next week\" by calling four tools one after another: flight search, hotel availability, weather forecast and entry-requirements lookup. None of the calls depends on another's result, and each takes about two seconds. Answer quality is good. Which change will MOST reduce the user's wait with the least effect on quality?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Switch to a smaller, faster model, since a lighter model will decide which tools to call more quickly and draft the final trip plan in less time overall."
+        },
+        {
+          "id": "B",
+          "text": "Cache the tool definitions and system prompt with prompt caching, so each of the four sequential model turns spends less time reprocessing the same static prefix."
+        },
+        {
+          "id": "C",
+          "text": "Ask the model to keep its final trip plan under 150 words so the closing response generates faster, shortening the overall time the user spends waiting."
+        },
+        {
+          "id": "D",
+          "text": "Let the model request all four independent tools in one turn and execute the calls concurrently, returning all the results together in the next message."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "The time is dominated by **four independent two-second tool calls run in sequence**. Claude can emit several `tool_use` blocks in one turn; running them concurrently and returning all `tool_result` blocks together turns about eight seconds of tool time into about two. That also removes three extra model round trips. Quality is unchanged because the same tools return the same data.",
+      "whyWrong": {
+        "A": "A smaller model barely changes the eight seconds spent waiting on sequential tools, and it may lower planning quality. It targets the wrong bottleneck.",
+        "B": "Caching helps with large repeated prefixes, but the main cost here is tool execution time and sequential round trips, which caching doesn't remove.",
+        "C": "Shortening the final answer trims a little generation time and risks leaving out useful detail. It doesn't touch the sequential tool calls that dominate the wait."
+      },
+      "difficulty": 1,
+      "mindset": "Find the real bottleneck first; independent work should run in parallel.",
+      "tags": [
+        "parallel-tool-use",
+        "latency",
+        "tool-use"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/parallel-tool-use",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview",
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "p-d3-x2-003",
+      "taskStatementId": "3.3",
+      "stem": "A consulting firm's report generator produces 3,000-token structured analyses on a top-tier model. The analyses must keep their current accuracy, which a smaller model failed to match in evals. A downstream service renders the report to PDF only after the complete text arrives, and clients wait on that screen. Finance has approved a higher per-request cost if it clearly reduces wait time. Which TWO changes are MOST appropriate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Turn on the model's fast mode where it is supported, raising output speed on the same model while accepting the premium per-request price finance approved."
+        },
+        {
+          "id": "B",
+          "text": "Enable streaming on the request so that tokens start arriving sooner, showing the client partial text earlier while the full report is still generating."
+        },
+        {
+          "id": "C",
+          "text": "Switch to the smallest available model and add three worked examples of high-quality reports to the prompt, hoping the examples recover the lost accuracy."
+        },
+        {
+          "id": "D",
+          "text": "Submit each report request through the Message Batches API, which lowers the per-request cost and frees budget for additional capacity at busy periods."
+        },
+        {
+          "id": "E",
+          "text": "Tighten the report template to cut the repeated background sections that readers skip, so the model produces fewer output tokens per report."
+        }
+      ],
+      "correct": [
+        "A",
+        "E"
+      ],
+      "explanation": "Here the bottleneck is **total generation time for a long output**, not time to first token, because the PDF step waits for the full text. Two levers help without touching accuracy. **Fast mode** (a research preview on supported top-tier models) runs the *same* model weights with a faster inference configuration, raising output tokens per second at a premium price, which finance has approved. Its gain is in output speed rather than time to first token, which is exactly the metric that matters here. **Generating fewer output tokens**, by dropping sections nobody reads, shortens generation directly. Both keep the model that passed the eval.",
+      "whyWrong": {
+        "B": "Streaming improves *perceived* latency by showing tokens early, but the PDF renderer waits for the complete text, so the client's wait barely changes.",
+        "C": "The smaller model already failed the accuracy eval. Adding examples is a hopeful prompt fix, not evidence, and it breaks the stated accuracy requirement.",
+        "D": "Batch processing is asynchronous and can take much longer to return, which is unacceptable when a client is waiting on screen."
+      },
+      "difficulty": 3,
+      "mindset": "Know which latency you are fixing: total generation time needs fewer or faster output tokens, not streaming.",
+      "tags": [
+        "fast-mode",
+        "output-length",
+        "latency",
+        "ttft-vs-total"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/fast-mode",
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-latency",
+        "https://platform.claude.com/docs/en/build-with-claude/batch-processing"
+      ]
+    },
+    {
+      "id": "p-d3-x2-004",
+      "taskStatementId": "3.3",
+      "stem": "In one release, a team cut their claims assistant's p95 latency by half by changing four things at once: a smaller model, lower effort, a shorter prompt and fewer retrieved documents. The VP of Operations now asks them to justify the new configuration before it goes to all regions, because a few adjusters say answers \"feel thinner\". What should the team do to produce the MOST defensible justification?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Cite public benchmark results showing the smaller model performs well on reasoning and comprehension tasks, alongside the 50% latency gain and cost savings."
+        },
+        {
+          "id": "B",
+          "text": "Ask Claude to compare a sample of old and new answers and state whether quality changed, then present its assessment to the VP alongside the latency charts."
+        },
+        {
+          "id": "C",
+          "text": "Run the old and new setups on a representative eval set, applying one change at a time while recording accuracy, latency and cost, keeping only changes above the quality bar."
+        },
+        {
+          "id": "D",
+          "text": "Roll the configuration out to all regions and watch thumbs-down feedback for a month, reverting only if negative ratings rise above the previous baseline."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "A defensible accuracy-latency decision is **measured against the task's own eval set and attributed lever by lever**. Changing four things at once hides which one caused the \"thinner\" answers. Measuring a baseline, then changing one lever at a time while recording quality, p95 latency and cost, lets the team keep the safe gains (for example, a shorter prompt) and drop the harmful one (for example, too few retrieved documents). The result is a written rationale the VP can trust.",
+      "whyWrong": {
+        "A": "Public benchmarks don't measure this team's claims task, and they say nothing about the other three changes. The adjusters' complaint stays unexplained.",
+        "B": "LLM grading can be part of an eval, but an ad hoc comparison on a small sample, with no defined rubric, baseline or representative test set, isn't a calibrated measurement, and it still can't say which of the four changes caused any drop.",
+        "D": "Shipping first and waiting for complaints exposes every region to a possible regression. Feedback signals are also slow, sparse and not tied to a specific lever."
+      },
+      "difficulty": 2,
+      "mindset": "Justify configuration with your own evals, one lever at a time, against a stated quality bar.",
+      "tags": [
+        "evals",
+        "justification",
+        "latency",
+        "methodology"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-latency",
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests"
+      ]
+    },
+    {
+      "id": "p-d3-x2-005",
+      "taskStatementId": "3.3",
+      "stem": "An online electronics store's shopping assistant answers comparison questions (\"Which of these laptops is better for video editing?\"). Each request currently includes the full manufacturer spec sheets for up to 30 products, often more than 60,000 tokens, and answers take over 15 seconds. Spec sheets change about once a week, and most questions concern a handful of key attributes. Which approach BEST reduces latency while keeping answers accurate?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Pre-compute compact structured summaries of each spec sheet whenever it changes, serve those at request time, and fetch a full sheet only when a detail is missing."
+        },
+        {
+          "id": "B",
+          "text": "Remove the spec sheets from the request entirely and rely on the model's general product knowledge, which covers most popular laptops and answers far faster."
+        },
+        {
+          "id": "C",
+          "text": "Switch to the smallest available model so that reading the 60,000-token context takes less time, and add an instruction to focus on the attributes asked about."
+        },
+        {
+          "id": "D",
+          "text": "Send the complete catalogue of spec sheets rather than only the 30 selected products, so the static prefix is identical on every request and can be served from the prompt cache."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "**Move work off the hot path.** The spec sheets change weekly but are re-read on every request. Summarizing them offline (for example, with a batch job when a sheet changes) means the interactive request reads a few thousand tokens instead of 60,000+. Accuracy is protected by keeping the source data and fetching full detail on demand. This trades a little pipeline complexity for a big cut in input tokens and latency, without throwing away the context the answer depends on.",
+      "whyWrong": {
+        "B": "Dropping the source data trades accuracy for speed. The model's general knowledge may be outdated or wrong about the store's exact models and prices.",
+        "C": "A smaller model still has to read 60,000+ tokens, and it may reason less well on comparisons. It changes the wrong lever without eval evidence.",
+        "D": "A much larger static prefix could be cached, but it adds even more context per request, the cache is rewritten whenever any sheet changes, and irrelevant products crowd the context."
+      },
+      "difficulty": 2,
+      "mindset": "Pre-compute what rarely changes; keep the interactive path small without discarding needed context.",
+      "tags": [
+        "precompute",
+        "context-size",
+        "latency",
+        "batch"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-latency",
+        "https://platform.claude.com/docs/en/build-with-claude/batch-processing"
+      ]
+    },
+    {
+      "id": "p-d3-x2-006",
+      "taskStatementId": "3.3",
+      "stem": "A benefits-policy Q&A system retrieved the top 20 chunks for every question. To cut latency, the team reduced it to the top 3, and answer accuracy fell by 12 points. Analysis shows the chunk containing the answer usually ranks somewhere between 4th and 15th in the vector search results. The team wants to keep most of the latency gain. What is the MOST effective change?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Return to the top 20 chunks but switch to a larger model, so that the stronger model can recover the lost accuracy while the team searches elsewhere for latency savings."
+        },
+        {
+          "id": "B",
+          "text": "Keep the top 3 chunks and instruct the model to say \"I don't know\" when the answer is not in them, turning wrong answers into honest refusals instead of errors."
+        },
+        {
+          "id": "C",
+          "text": "Make each chunk three times longer so that the top 3 results cover roughly the same amount of text that the top 20 shorter chunks covered before the change."
+        },
+        {
+          "id": "D",
+          "text": "Retrieve a wider candidate set from the index, re-rank it with a relevance model, and pass only the top few re-ranked chunks to Claude, tracking recall."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "The problem is **ranking quality, not the number of chunks Claude reads**. A first-pass vector search finds the right chunk but ranks it low. Retrieving broadly (cheap) and then **re-ranking** to keep only the few most relevant chunks puts the answer chunk in front of Claude while keeping the prompt small. Measuring recall at each cut-off makes the chosen number defensible. Anthropic's contextual retrieval work shows re-ranking reducing retrieval failures further.",
+      "whyWrong": {
+        "A": "Going back to 20 chunks gives up the latency gain, and a larger model adds more latency. It sidesteps the real issue, which is poor ranking.",
+        "B": "Honest refusals are better than wrong answers, but accuracy still falls by 12 points. It accepts the failure rather than fixing retrieval.",
+        "C": "Longer chunks bring back most of the input tokens and dilute relevance with surrounding text, and the answer chunk may still rank outside the top 3."
+      },
+      "difficulty": 3,
+      "mindset": "When fewer chunks hurt accuracy, fix the ranking (retrieve wide, re-rank narrow) rather than the model.",
+      "tags": [
+        "rag",
+        "reranking",
+        "top-k",
+        "latency",
+        "recall"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/contextual-retrieval",
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-latency"
+      ]
+    },
+    {
+      "id": "p-d3-x2-007",
+      "taskStatementId": "3.3",
+      "stem": "To make a customer FAQ bot respond faster, an engineer lowered `max_tokens` from 1,024 to 150. Responses are now quicker, but about one in six answers stops mid-sentence, and support tickets about \"broken answers\" have risen. The product owner wants short answers but no truncation. Which TWO actions BEST meet this goal? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Instruct the model to write exactly 50 words per answer, since a precise word count gives a predictable length that reliably fits inside the 150-token cap."
+        },
+        {
+          "id": "B",
+          "text": "Raise `max_tokens` back to a generous safety ceiling and ask for brevity in the prompt with sentence limits, such as \"answer in at most three sentences\"."
+        },
+        {
+          "id": "C",
+          "text": "Detect each truncated answer and automatically send a follow-up \"continue\" request, then join the two parts before showing the user the complete reply."
+        },
+        {
+          "id": "D",
+          "text": "Track the share of responses ending with `stop_reason` `max_tokens` in evals and production, treating any rise as a defect to fix rather than a trade-off."
+        },
+        {
+          "id": "E",
+          "text": "Set the temperature to 0 so that the model gives its most likely phrasing, which tends to be shorter, keeping answers under the 150-token cap more often than not."
+        }
+      ],
+      "correct": [
+        "B",
+        "D"
+      ],
+      "explanation": "`max_tokens` is a **blunt hard stop**: it cuts the response off wherever the limit falls. Anthropic's latency guidance is to shape length in the prompt with **sentence or paragraph limits** (models count tokens, not words, so word counts are unreliable), and keep `max_tokens` as a safety net. Monitoring the `max_tokens` stop-reason rate gives a direct, measurable signal that truncation has really stopped, so the trade-off stays visible.",
+      "whyWrong": {
+        "A": "Word-count targets are imprecise because the model works in tokens. A 50-word answer can still overrun 150 tokens, so truncation continues.",
+        "C": "A second request adds a full round trip, which undoes the latency win, and joining the two parts can produce awkward answers. It treats the symptom, not the cause.",
+        "E": "Temperature controls randomness. A lower value can *sometimes* produce more focused, shorter output, but it is not a dependable length control, and \"most likely\" does not mean \"shortest\". Answers would still hit the 150-token cap."
+      },
+      "difficulty": 2,
+      "mindset": "Control length with instructions; keep hard caps as a safety net and watch the truncation rate.",
+      "tags": [
+        "max-tokens",
+        "output-length",
+        "stop-reason",
+        "latency"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-latency",
+        "https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons"
+      ]
+    },
+    {
+      "id": "p-d3-x2-008",
+      "taskStatementId": "3.3",
+      "stem": "A back-office pipeline extracts invoice fields into JSON; the next step validates and posts the JSON only after the full object arrives. End-to-end latency is 14 seconds, and traces show most of that is output generation: the schema asks for a free-text \"reasoning\" note beside every one of 40 fields, which nothing downstream uses. Extraction accuracy currently meets its target. What is the BEST way to reduce latency with minimal risk to accuracy?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Enable streaming on the extraction request so that the JSON starts arriving within the first second, letting the pipeline show live progress while the rest generates."
+        },
+        {
+          "id": "B",
+          "text": "Move the extraction requests to the Message Batches API, which is cheaper per invoice and processes many invoices in bulk instead of one at a time."
+        },
+        {
+          "id": "C",
+          "text": "Remove the unused per-field reasoning notes from the output schema so the model generates far fewer tokens, then re-run the eval to confirm accuracy holds."
+        },
+        {
+          "id": "D",
+          "text": "Switch to the smallest available model, since extraction is simple pattern matching and a lighter model will produce the same 40 fields and notes much faster."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "The downstream step needs the **complete** object, so the relevant metric is **total latency**, and that is dominated by output tokens. Most of those tokens are reasoning notes nobody reads. Removing them from the schema cuts generation time sharply without changing the model or its inputs. Re-running the extraction eval confirms accuracy still meets the target, which makes the change measurable and defensible.",
+      "whyWrong": {
+        "A": "Streaming improves time to first token, but the validator waits for the whole JSON object, so end-to-end latency barely changes.",
+        "B": "Batch processing is asynchronous and can take far longer than 14 seconds per invoice. It optimises cost, not latency.",
+        "D": "A smaller model would still generate the same bloated output, and swapping models without an eval risks the accuracy target that is currently being met."
+      },
+      "difficulty": 3,
+      "mindset": "When a downstream step needs the whole output, cut output tokens; streaming only helps perceived latency.",
+      "tags": [
+        "output-length",
+        "ttft-vs-total",
+        "structured-output",
+        "latency"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-latency",
+        "https://platform.claude.com/docs/en/build-with-claude/streaming"
+      ]
+    },
+    {
+      "id": "p-d3-x2-009",
+      "taskStatementId": "3.4",
+      "stem": "A team runs short Agent SDK tasks (about 10 to 20 seconds each) in serverless containers that are frozen or terminated as soon as the handler returns. They enabled OpenTelemetry export to their collector. Traces arrive for some runs, metrics almost never arrive, and the application shows no errors. What should they do FIRST to get reliable telemetry from these runs?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Shorten the metric, log and trace export intervals so data is sent while the task runs, and turn on the CLI's OpenTelemetry diagnostics to surface exporter errors."
+        },
+        {
+          "id": "B",
+          "text": "Switch the exporters to the console exporter and let the container platform scrape standard output into its logs, avoiding dependence on network delivery."
+        },
+        {
+          "id": "C",
+          "text": "Add an instruction to the agent's system prompt telling it to write a summary of its token usage and tool calls to a log file just before each task finishes."
+        },
+        {
+          "id": "D",
+          "text": "Raise the trace sampling rate to 100% and add more resource attributes, so that every run is guaranteed to be recorded and easy to find in the collector."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The CLI that the SDK runs **batches telemetry and exports on an interval**. By default metrics go every 60 seconds and logs and traces every 5 seconds, and the flush on exit is bounded by a short timeout. A 15-second run that gets frozen or killed loses whatever is still buffered, and **export errors fail silently** by default. Lowering the export intervals and enabling exporter diagnostics (read through the SDK's stderr callback) fixes the delivery problem and makes future failures visible.",
+      "whyWrong": {
+        "B": "The docs warn against the console exporter with the SDK, because standard output is the SDK's message channel. It would corrupt the agent's output stream.",
+        "C": "A model-written summary isn't measured telemetry, may be inaccurate, and is still lost when the container is killed. It doesn't fix the buffering problem.",
+        "D": "Sampling doesn't drop these runs; the buffered data is lost before export. More attributes don't help data that never leaves the process."
+      },
+      "difficulty": 2,
+      "mindset": "Make sure telemetry actually leaves short-lived processes before analysing what it says.",
+      "tags": [
+        "opentelemetry",
+        "serverless",
+        "agent-sdk",
+        "telemetry-delivery"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/observability"
+      ]
+    },
+    {
+      "id": "p-d3-x2-010",
+      "taskStatementId": "3.4",
+      "stem": "A web service instrumented with OpenTelemetry calls the Agent SDK's `query()` inside each HTTP request handler. To \"connect the traces\", a developer computed a `TRACEPARENT` value once at service startup and placed it in the options `env` for every call. Now every agent run, from every request across several days, appears nested under one stale startup trace, and nobody can link an agent run to the HTTP request that caused it. What is the BEST fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Put the HTTP request ID into each prompt and instruct the agent to repeat it in its final answer, so that engineers can search for the ID and match runs to requests."
+        },
+        {
+          "id": "B",
+          "text": "Remove the static `TRACEPARENT` from the options and call `query()` inside the active request span, so the SDK injects the current trace context automatically."
+        },
+        {
+          "id": "C",
+          "text": "Set a different `OTEL_SERVICE_NAME` value for each incoming request, so that each agent run appears as a separate service in the tracing backend and is easy to isolate."
+        },
+        {
+          "id": "D",
+          "text": "Add a `PreToolUse` hook that creates a new random trace ID for every tool call, so that each tool invocation becomes its own independent and searchable trace."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "The SDK **propagates W3C trace context automatically**. When `query()` runs while an application span is active, it injects `TRACEPARENT`/`TRACESTATE` into the CLI subprocess, so the agent's `claude_code.interaction` span becomes a child of the request span. Auto-injection is **skipped when you set `TRACEPARENT` explicitly** in `options.env`, which is why the static value pinned every run to the startup trace. Removing it and calling within the active span restores per-request linkage.",
+      "whyWrong": {
+        "A": "Relying on the model to echo an ID is fragile and unstructured, and it gives no timing or parent/child spans. It also adds tokens to every response.",
+        "C": "Service name is meant to identify an application, not a request. One service per request explodes cardinality and still doesn't link to the HTTP span.",
+        "D": "Random trace IDs per tool call break the nesting that makes traces useful. Tool spans would no longer connect to their run or to the request."
+      },
+      "difficulty": 3,
+      "mindset": "Correlate with standard trace-context propagation, not hand-rolled IDs or model output.",
+      "tags": [
+        "opentelemetry",
+        "trace-context",
+        "agent-sdk",
+        "correlation"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/observability"
+      ]
+    },
+    {
+      "id": "p-d3-x2-011",
+      "taskStatementId": "3.4",
+      "stem": "A health-insurance company runs an Agent SDK agent that reads member records. Engineers want enough telemetry to debug slow or wrong tool choices across the whole fleet. Compliance prohibits protected health information (PHI) in the shared observability backend, though it has approved one restricted, access-controlled collector for short debugging investigations. Which TWO choices BEST meet both needs? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Enable full raw API request and response body logging across the fleet, and run a nightly script in the shared backend that finds and deletes any records containing PHI."
+        },
+        {
+          "id": "B",
+          "text": "Add a system-prompt rule telling the agent never to include member names or identifiers in its tool arguments, so that the telemetry it generates stays free of PHI."
+        },
+        {
+          "id": "C",
+          "text": "Run the default structural telemetry fleet-wide, covering tool names, durations, token counts and errors, which records no prompt or tool content by default."
+        },
+        {
+          "id": "D",
+          "text": "Disable all telemetry for the agent and rely on member complaints and support tickets to reveal when tool choices are slow or wrong in production."
+        },
+        {
+          "id": "E",
+          "text": "Turn on the opt-in content variables, such as tool details or tool content logging, only for a sampled debug deployment that exports to the restricted collector."
+        }
+      ],
+      "correct": [
+        "C",
+        "E"
+      ],
+      "explanation": "Agent SDK telemetry is **structural by default**: durations, model names and tool names are recorded, while prompt text, tool inputs and tool output are **not** recorded unless you opt in with variables such as `OTEL_LOG_USER_PROMPTS`, `OTEL_LOG_TOOL_DETAILS` or `OTEL_LOG_TOOL_CONTENT`. So the fleet gets debuggable structure without PHI (C). Content capture goes only to the pipeline approved to hold it, on a sampled deployment (E). This tiered approach is both safe and useful.",
+      "whyWrong": {
+        "A": "Raw bodies contain the entire conversation, so PHI lands in the shared backend before any cleanup runs. Deleting it afterwards is still a compliance breach.",
+        "B": "A prompt instruction is a probabilistic control, not a guarantee. Content capture is already off by default; the risk comes from turning it on in the wrong pipeline.",
+        "D": "Turning telemetry off removes the ability to debug at all. Complaints are slow, sparse and can't show which tool call failed."
+      },
+      "difficulty": 2,
+      "mindset": "Collect structure everywhere and content only where it is approved; privacy is a monitoring design constraint.",
+      "tags": [
+        "opentelemetry",
+        "privacy",
+        "pii",
+        "agent-sdk",
+        "sampling"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/observability",
+        "https://code.claude.com/docs/en/monitoring-usage"
+      ]
+    },
+    {
+      "id": "p-d3-x2-012",
+      "taskStatementId": "3.4",
+      "stem": "After a routine release, a document assistant's API spend rose about 40% and time to first token increased, although traffic, error rates and answer quality were unchanged. The assistant uses prompt caching on a large static system prompt. The team wants a monitoring signal that would have caught this immediately and pointed to its cause. Which signal is MOST appropriate?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Call the token-counting endpoint before every request and alert when the counted input size grows, since a larger prompt would explain both the spend and the slowness."
+        },
+        {
+          "id": "B",
+          "text": "Alert on the overall HTTP error rate and p99 total latency for the endpoint, since any caching problem would also appear as failures or timeouts in those metrics."
+        },
+        {
+          "id": "C",
+          "text": "Raise the cache time-to-live and add the maximum number of cache breakpoints, then watch the monthly invoice to confirm that spend returns to its usual level."
+        },
+        {
+          "id": "D",
+          "text": "Track the cache-read share of input tokens from each response's usage fields, segmented by prompt version, and alert when it drops after a deployment."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "Each response reports `cache_read_input_tokens`, `cache_creation_input_tokens` and `input_tokens`. The **cache-read share** is a direct health metric for caching. Segmenting by prompt version ties a drop to the release that caused it, which typically means something changed in the prefix, such as a timestamp in the system prompt or reordered tools. Cost and TTFT both rise when the cache stops hitting, while errors and quality stay flat. That is exactly this incident's signature.",
+      "whyWrong": {
+        "A": "Token counting is an estimate and does not use or simulate caching. The prompt may be the same size; what changed is whether the prefix is served from cache.",
+        "B": "Cache misses don't produce errors or timeouts. The error rate stayed flat in this incident, so the alert would never fire.",
+        "C": "These are guesses rather than monitoring. If the prefix is changing on every request, a longer TTL or more breakpoints won't restore hits, and a monthly invoice is far too slow."
+      },
+      "difficulty": 2,
+      "mindset": "Monitor the mechanism (cache hit share per version), not just the symptoms (cost, latency).",
+      "tags": [
+        "prompt-caching",
+        "usage-fields",
+        "cost-monitoring",
+        "regression-detection"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
+        "https://platform.claude.com/docs/en/build-with-claude/token-counting"
+      ]
+    },
+    {
+      "id": "p-d3-x2-013",
+      "taskStatementId": "3.4",
+      "stem": "A utility company's customer-support assistant has a dashboard showing request volume, HTTP errors and latency. All three look normal, yet customer satisfaction dropped sharply in the two weeks after the knowledge base was reorganised. Managers want to catch this kind of problem in days, not weeks. What is the MOST effective monitoring addition?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Lower the alert thresholds on HTTP 5xx errors and latency so that smaller deviations trigger a page, catching subtler problems with the assistant much earlier."
+        },
+        {
+          "id": "B",
+          "text": "Continuously sample production conversations and score them with automated graders for groundedness and policy compliance, add human review, and feed failures into the eval set."
+        },
+        {
+          "id": "C",
+          "text": "Have the assistant append a self-rated confidence score from 1 to 10 to each answer, and alert the team when the day's average confidence falls below its usual level."
+        },
+        {
+          "id": "D",
+          "text": "Have the support team read every conversation from the previous day each morning and log any answer that looks wrong into a shared tracking spreadsheet."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "LLM failures often **return HTTP 200 with a fluent, wrong answer**, so operational metrics can't see them. **Online evaluation** scores a sample of real traffic with automated graders (and humans for calibration), which detects quality drift within days. Feeding failures back into the offline eval set keeps the regression from recurring. That closes the loop between production monitoring and testing.",
+      "whyWrong": {
+        "A": "Errors and latency were normal; the problem is answer quality. Tighter thresholds on the wrong metrics just add noise.",
+        "C": "A model's self-reported confidence is not calibrated against correctness. A confidently wrong answer scores high.",
+        "D": "Reading everything doesn't scale, is slow and inconsistent, and produces no structured signal for alerting or regression tests."
+      },
+      "difficulty": 1,
+      "mindset": "Monitor quality directly with sampled online evals; status codes can't see wrong answers.",
+      "tags": [
+        "online-evaluation",
+        "quality-monitoring",
+        "drift",
+        "llm-judge"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests",
+        "https://www.anthropic.com/engineering/multi-agent-research-system"
+      ]
+    },
+    {
+      "id": "p-d3-x2-014",
+      "taskStatementId": "3.4",
+      "stem": "A B2B platform's agent serves three product lines and about 200 tenants. A new prompt version was rolled out to 10% of traffic. The weekly fleet-wide quality score and cost per task barely moved, but one large tenant reports worse answers, and nobody can tell whether the new prompt, a recent index rebuild or a model update is responsible. Which TWO changes BEST make such regressions visible and attributable? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Attach the prompt version, model ID, tool-set version and index build to every trace and event as attributes, so each request records which configuration served it."
+        },
+        {
+          "id": "B",
+          "text": "Increase the sample size for the weekly fleet-wide quality score and shorten its window to daily, so the overall average grows more precise and smaller drops show sooner."
+        },
+        {
+          "id": "C",
+          "text": "Ask the agent to state its prompt version and model name at the end of every answer, so that tenants can report the exact configuration when they complain."
+        },
+        {
+          "id": "D",
+          "text": "Break the quality, cost and latency dashboards down by version attributes and by tenant and product line, comparing the 10% canary against the control group."
+        },
+        {
+          "id": "E",
+          "text": "Email a daily summary of total token usage and total cost to the engineering team, so that any unusual change in overall spend is noticed within a single day."
+        }
+      ],
+      "correct": [
+        "A",
+        "D"
+      ],
+      "explanation": "Regressions in one slice get **averaged away** in fleet-wide metrics. Two things fix this. **Versioning everything** (prompt, model, tools, index build) on each trace makes \"what changed?\" answerable (A). **Segmenting** dashboards by those versions and by tenant or product line, with a canary-versus-control comparison, makes a slice-specific drop visible and attributes it to one change (D). Resource attributes such as `service.version` on OpenTelemetry data are a natural carrier for this.",
+      "whyWrong": {
+        "B": "A more precise fleet average is still an average; a regression limited to one tenant or the canary can remain invisible.",
+        "C": "Putting configuration details in answers pollutes the user experience and relies on customers to do the attribution. It is unstructured and unreliable.",
+        "E": "Total spend is aggregated across every slice, and this regression didn't move cost in any obvious way. It can't attribute the problem to a version."
+      },
+      "difficulty": 2,
+      "mindset": "Version every component on every trace and segment metrics, so regressions can't hide in averages.",
+      "tags": [
+        "segmentation",
+        "versioning",
+        "canary",
+        "opentelemetry",
+        "multi-tenant"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/observability",
+        "https://code.claude.com/docs/en/monitoring-usage"
+      ]
+    },
+    {
+      "id": "p-d3-x2-015",
+      "taskStatementId": "3.4",
+      "stem": "A company exports Claude Code OpenTelemetry metrics from about 3,000 developers to a central metrics backend. The platform team recently added department and team identifiers through resource attributes so finance can group spend, and some engineers now blame those new labels for a cost spike. The backend bill has tripled, dashboards time out, and the backend reports that the number of distinct metric series grows every day, roughly in step with the number of sessions started. Finance still needs per-team totals from this backend. Engineering has agreed it no longer needs to drill into individual sessions from metrics dashboards. Which change BEST brings the metrics pipeline back under control while keeping the finance view?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Lengthen the metric export interval from the default to ten minutes, so that each series receives far fewer data points per day and the backend stores and queries less."
+        },
+        {
+          "id": "B",
+          "text": "Stop attaching the custom resource attributes as labels on metric datapoints, since the department and team labels were added just before the bill started climbing."
+        },
+        {
+          "id": "C",
+          "text": "Turn off the session identifier on exported metrics, and keep the department and team keys as metric labels so dashboards can still group spend by team."
+        },
+        {
+          "id": "D",
+          "text": "Enable tool-detail logging so the metrics carry real agent, skill and MCP server names instead of placeholders, letting dashboards aggregate on meaningful groups."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "The symptom is **metric cardinality**: the number of distinct series grows with the number of sessions. By default Claude Code attaches `session.id` to metrics, so every new session creates a fresh set of series on every counter. The Monitoring reference provides cardinality controls for exactly this, and `OTEL_METRICS_INCLUDE_SESSION_ID=false` drops the per-session attribute. Department and team keys from `OTEL_RESOURCE_ATTRIBUTES` have only a handful of values each, so keeping them as datapoint labels (the default) adds little cardinality and preserves finance's per-team grouping. The docs note that lower cardinality means better performance and lower storage cost at the price of less granular data. Note that this setting also removes `session.id` from events and spans, which is why the stem says engineering has given up per-session drill-down here.",
+      "whyWrong": {
+        "A": "A longer interval reduces data points per series, not the number of series, so the series count keeps growing. It also makes dashboards staler and increases the data lost when a short session ends before the next export.",
+        "B": "This confuses timing with cause. Department and team have few distinct values, so they cannot make series grow with every session; removing them from datapoints mainly breaks finance's grouping in many backends while the session-driven growth continues.",
+        "D": "Tool-detail logging adds more distinct label values, which raises cardinality further, and it also exports tool arguments such as file paths and commands, which is a privacy decision rather than a cost fix."
+      },
+      "difficulty": 3,
+      "mindset": "At fleet scale, find the label whose distinct values grow without bound and remove it; keep low-cardinality labels that the business needs.",
+      "tags": [
+        "claude-code",
+        "opentelemetry",
+        "cardinality",
+        "metrics",
+        "scale"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/monitoring-usage"
+      ]
+    },
+    {
+      "id": "p-d3-x2-016",
+      "taskStatementId": "3.4",
+      "stem": "A company runs an Agent SDK coding agent in CI on every pull request. Finance discovered at month end that a handful of runs cost 30 times the median, and logs suggest the agent got stuck repeatedly running the same failing test and editing the same file. No alert fired, because each run eventually exited successfully. Which TWO measures BEST detect and contain this in future? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add a system-prompt instruction telling the agent to stop and summarise its progress if it notices that it has repeated the same action more than a few times."
+        },
+        {
+          "id": "B",
+          "text": "Record per-run tokens, cost, turns and tool calls from the SDK's result messages or telemetry, and alert when a run exceeds a multiple of its recent baseline."
+        },
+        {
+          "id": "C",
+          "text": "Have the finance team review the monthly invoice broken down by cost centre and pipeline, opening an investigation whenever CI spend exceeds the prior month by ten percent."
+        },
+        {
+          "id": "D",
+          "text": "Move the CI agent runs to the Message Batches API so that each run costs half as much, keeping the occasional runaway run within the monthly budget."
+        },
+        {
+          "id": "E",
+          "text": "Set a maximum number of turns on the agent so a stuck run ends deterministically, and flag any run that ends by hitting that limit for human review."
+        }
+      ],
+      "correct": [
+        "B",
+        "E"
+      ],
+      "explanation": "Runaway loops show up first as **cost and behaviour signals**, not errors. Per-run metrics (tokens, cost, turns, tool calls) compared against a baseline catch outliers on the same day (B). A **deterministic turn limit** caps the damage regardless of what the model decides, and surfacing runs that hit it turns silent waste into a reviewable event (E). Detection plus a hard guardrail is the standard pairing.",
+      "whyWrong": {
+        "A": "A prompt instruction is advisory; a looping agent is by definition not noticing its own repetition. Use a deterministic limit instead.",
+        "C": "A monthly invoice review is far too slow and too aggregated. It can't point to which run or loop caused the spend.",
+        "D": "Batch processing halves price but is meant for asynchronous single requests, not interactive multi-turn agent loops in CI. A loop that costs half as much is still a loop."
+      },
+      "difficulty": 3,
+      "mindset": "Treat cost and turn counts as reliability signals, and back alerts with deterministic limits.",
+      "tags": [
+        "runaway-loops",
+        "cost-monitoring",
+        "agent-sdk",
+        "guardrails",
+        "ci"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/cost-tracking",
+        "https://code.claude.com/docs/en/agent-sdk/observability"
+      ]
+    },
+    {
+      "id": "p-d3-x2-017",
+      "taskStatementId": "3.4",
+      "stem": "An enterprise rolled out Claude Code to 1,500 developers and exports its OpenTelemetry metrics to a central dashboard. Leadership now wants token and cost usage broken down by department and team for chargeback. The platform team wants to avoid issuing new credentials, and the security team does not want prompt text collected. Which approach BEST meets these requirements?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Set department and team values as OpenTelemetry resource attributes through centrally managed settings, so every exported metric and event carries them for grouping."
+        },
+        {
+          "id": "B",
+          "text": "Enable user-prompt logging and have an analyst manually classify each session by department based on what developers asked, then total the token usage per inferred department."
+        },
+        {
+          "id": "C",
+          "text": "Issue a separate API key to every team and compare the per-key totals in the billing console each month, then rebuild the chargeback report by hand."
+        },
+        {
+          "id": "D",
+          "text": "Ask every developer to start each Claude Code session by typing their team name, so that it appears in the session history and can be tallied at each month end."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Claude Code's monitoring supports **multi-team attribution through `OTEL_RESOURCE_ATTRIBUTES`** (for example, department and team identifiers). Administrators can set these centrally in managed settings. Every metric, such as token usage and cost, then carries the attributes, so the existing dashboard can group by them. That meets all three requirements: no new credentials, no prompt content, and it works with the current pipeline.",
+      "whyWrong": {
+        "B": "It collects exactly the prompt text that security prohibits, and inferring departments from content is unreliable.",
+        "C": "It requires the new credentials the platform team wants to avoid, makes the chargeback a manual monthly process, and bypasses the existing telemetry dashboard.",
+        "D": "It depends on every developer remembering a manual step, puts metadata in conversation content, and produces no structured attribute for the dashboard."
+      },
+      "difficulty": 2,
+      "mindset": "Attribute usage with structured metadata configured centrally, not with content or manual tagging.",
+      "tags": [
+        "claude-code",
+        "opentelemetry",
+        "cost-attribution",
+        "managed-settings"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/monitoring-usage"
+      ]
+    },
+    {
+      "id": "p-d3-x2-018",
+      "taskStatementId": "3.4",
+      "stem": "A transcription-summary service sees intermittent HTTP 500 `api_error` responses from the Claude API, several dozen a day. When the team contacts Anthropic support, they are asked to identify specific failing requests. Their logs show only a timestamp and \"API call failed\". What should they add to their logging FIRST?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The full prompt and response text for every request, so that support can see exactly what content was being processed whenever one of these intermittent errors occurs."
+        },
+        {
+          "id": "B",
+          "text": "A count of how many retries each request needed, so the team can show support how often failures are recovered automatically by the client's retry logic."
+        },
+        {
+          "id": "C",
+          "text": "Screenshots of the provider status page captured whenever an error occurs, so the team can show support whether a platform incident was underway at the time."
+        },
+        {
+          "id": "D",
+          "text": "The `request-id` header from each API response, with the error type and timestamp, so any failure can be identified exactly when working with support."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "Every API response includes a **`request-id` header** that uniquely identifies the request. Logging it with the error type and timestamp lets support trace specific failures on their side. It is cheap, structured and avoids storing content. This is a baseline operational field for any production Claude integration.",
+      "whyWrong": {
+        "A": "Full content is bulky and may be sensitive, and it still doesn't give support a key to find the request in their systems.",
+        "B": "Retry counts are useful operational metrics, but they don't identify which requests failed for the people investigating.",
+        "C": "A status-page snapshot gives general context at best. It can't tie a particular failed request to anything support can look up."
+      },
+      "difficulty": 1,
+      "mindset": "Log stable correlation IDs for every external call so you can trace failures across system boundaries.",
+      "tags": [
+        "request-id",
+        "errors",
+        "logging",
+        "support"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors"
+      ]
+    },
+    {
+      "id": "p-d3-x2-019",
+      "taskStatementId": "3.4",
+      "stem": "A pharmaceutical company's RAG assistant answers questions about internal SOPs. After the weekly index rebuild, some answers became confidently wrong while still citing real documents, though error rates and latency are flat. Current traces capture only the model call (prompt size, tokens, latency), so engineers cannot tell whether retrieval or generation is at fault. Which monitoring strategy is MOST effective?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Instruct the model to state clearly whenever it is unsure about an answer, and monitor how often that phrase appears so the team knows when retrieval has degraded."
+        },
+        {
+          "id": "B",
+          "text": "Upgrade to a larger model for answer generation, since a stronger model is more likely to notice when retrieved passages are outdated or contradictory and correct for them."
+        },
+        {
+          "id": "C",
+          "text": "Trace retrieval as its own step, recording the query, the retrieved chunk IDs, their scores and the index build version, and run a sampled groundedness check of answers against the chunks."
+        },
+        {
+          "id": "D",
+          "text": "Log only the final answers and their citations, and have the documentation team review a random sample each quarter to confirm that answers still match the SOPs."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "A RAG system has **two failure points**, and the trace must separate them. Recording retrieval as a distinct step (query, chunk IDs, scores, index build) shows whether the rebuild changed *what* was retrieved. A sampled **groundedness check** shows whether answers are faithful to what was retrieved. Tagging the index build version makes the weekly rebuild an attributable change rather than a mystery.",
+      "whyWrong": {
+        "A": "Models aren't reliably calibrated about their own uncertainty, and these answers were *confidently* wrong. It is a prompt fix, not monitoring.",
+        "B": "A larger model doesn't show whether retrieval broke, and it can't fix wrong or missing chunks. It adds cost without diagnosis.",
+        "D": "Quarterly review is far too slow, and logging only final answers still can't distinguish a retrieval failure from a generation failure."
+      },
+      "difficulty": 3,
+      "mindset": "Instrument each stage of the pipeline separately so a failure can be located, not just noticed.",
+      "tags": [
+        "rag",
+        "retrieval-tracing",
+        "groundedness",
+        "index-versioning"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/contextual-retrieval",
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests",
+        "https://platform.claude.com/docs/en/build-with-claude/citations"
+      ]
+    }
+  ]
+}

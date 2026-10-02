@@ -1,0 +1,811 @@
+{
+  "certId": "professional",
+  "domainId": "d1-solution-design",
+  "questions": [
+    {
+      "id": "p-d1-x2-001",
+      "taskStatementId": "1.3",
+      "stem": "A fund administrator uses Claude to produce a monthly investor letter. Today one call receives the raw fund data and writes the whole letter. Reviewers often find that return figures in the narrative do not match the accounting system, and the mismatch is only caught at final sign-off, after hours of editing. The steps never change: pull the figures, compute returns, write the commentary, format the letter. Which design MOST reliably stops letters with mismatched figures from reaching reviewers?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Keep the single call but add an instruction to double-check every figure against the source data before finishing, plus two worked examples of correct letters to copy"
+        },
+        {
+          "id": "B",
+          "text": "Use a prompt chain: one call extracts the figures, code checks them against the accounting system and halts on a mismatch, then a second call writes from the verified figures"
+        },
+        {
+          "id": "C",
+          "text": "Replace the call with an autonomous agent that has read access to the accounting system and decides for itself which figures to verify, in what order, and when the letter is finished"
+        },
+        {
+          "id": "D",
+          "text": "Run the single call three times in parallel and send reviewers whichever letter the most runs agree on, on the basis that agreement indicates the figures are right"
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "The task has **fixed, known steps**, which is exactly where **prompt chaining** fits. Breaking it up creates an intermediate output (the extracted figures) that **code can check** before the next step runs. Anthropic calls this a programmatic check or **gate**. Figures that don't match the system of record are stopped by a deterministic comparison, not by asking the model to be careful, and the commentary call only ever sees verified numbers.",
+      "whyWrong": {
+        "A": "Asking the model to self-check is a prompt-only fix for a rule that must always hold. It lowers the error rate at best, and gives no guarantee that a mismatch is caught before review.",
+        "C": "The steps are fully predictable, so an agent adds cost, variance and testing burden without a benefit. Whether figures get verified would still depend on the model's choices.",
+        "D": "Voting measures agreement, not correctness. Several runs can repeat the same wrong figure, and it triples cost without ever comparing against the accounting system."
+      },
+      "difficulty": 2,
+      "mindset": "When steps are fixed, chain them and put a code gate where correctness can be checked deterministically.",
+      "tags": [
+        "prompt-chaining",
+        "gate",
+        "workflow",
+        "deterministic-validation"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "p-d1-x2-002",
+      "taskStatementId": "1.3",
+      "stem": "A bank built an agent that onboards new business customers. Compliance defines a fixed procedure: verify company registration, screen against sanctions lists, verify beneficial owners, then open the account. The agent chooses its own tool calls. An audit finds that in about 2% of runs it opened the account without verifying beneficial owners, apparently because the registry data \"looked clearly fine.\" Which change BEST addresses this with the most reliable result?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Rewrite the system prompt so the four-step rule is stated more forcefully near the top, and add several few-shot examples showing the agent completing all four checks before opening an account"
+        },
+        {
+          "id": "B",
+          "text": "Move the agent to the most capable model available, since better judgement should stop it from deciding that a required check is unnecessary for low-risk companies"
+        },
+        {
+          "id": "C",
+          "text": "Add a reviewer call after each run that reads the full transcript, flags any run where a check was skipped, and puts those accounts on a list for follow-up by the compliance team"
+        },
+        {
+          "id": "D",
+          "text": "Rebuild it as a workflow where code runs the four checks in order and opens the account only after all pass, using Claude inside steps that need judgement"
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "The order of steps is **dictated by compliance and never varies**, so the model should not be the one deciding it. A **workflow** puts the sequence in code: account opening simply cannot be reached until every check has passed. Claude still adds value **inside** steps, for example interpreting registry filings, but control flow is deterministic. Agents are for problems whose steps can't be predicted, and this isn't one.",
+      "whyWrong": {
+        "A": "Stronger wording and examples are still prompt guidance with a non-zero failure rate. A regulatory sequence needs enforcement, not persuasion.",
+        "B": "A larger model may skip the step less often, but it doesn't remove the agent's freedom to skip it. The root cause is the pattern choice, not model capability.",
+        "C": "This is a detective control. It finds the violation after the account is already open, when the requirement is to prevent it."
+      },
+      "difficulty": 2,
+      "mindset": "If the sequence is mandated, encode it in code; give the model judgement inside steps, not control over them.",
+      "tags": [
+        "workflow-vs-agent",
+        "compliance",
+        "programmatic-enforcement"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "p-d1-x2-003",
+      "taskStatementId": "1.3",
+      "stem": "A travel company wants to show a short packing-tips paragraph on each booking page, tailored to the destination and the travel dates. The only outside information needed is the forecast from the company's internal weather API, and one forecast lookup is always enough. An engineer proposes an autonomous agent with a planning loop, web search and long-term memory. Which design is the BEST fit?",
+      "options": [
+        {
+          "id": "A",
+          "text": "An augmented LLM: fetch the forecast with a single API call and pass it, with the destination and dates, into one Claude call that writes the paragraph"
+        },
+        {
+          "id": "B",
+          "text": "An autonomous agent with web search so it can cross-check the internal forecast against several public weather sites before writing the tips"
+        },
+        {
+          "id": "C",
+          "text": "A lead agent with three subagents, one for weather, one for local customs and one for writing, whose results the lead combines into the final paragraph"
+        },
+        {
+          "id": "D",
+          "text": "A model fine-tuned on past packing-tips paragraphs so it can write tips for any destination without needing to look up a forecast at all"
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The task is a **single, well-defined generation** with one predictable piece of retrieved data. An **augmented LLM**, meaning one model call enhanced with retrieval or a tool, is the building block Anthropic recommends starting with, and here it is enough on its own. It gives the lowest cost and latency and the most predictable behaviour.",
+      "whyWrong": {
+        "B": "There is no open-ended discovery to do. The forecast source is known and trusted, so an agent loop only adds cost, latency and variability.",
+        "C": "Multi-agent systems use many times more tokens than chat and are justified only for broad, high-value, parallelisable work. A short paragraph is none of those.",
+        "D": "Fine-tuning can't know future weather. Without the forecast the tips would be generic or wrong, and fine-tuning adds cost and upkeep for no gain."
+      },
+      "difficulty": 1,
+      "mindset": "Use the simplest pattern that meets the need; one augmented call beats an agent for a predictable task.",
+      "tags": [
+        "augmented-llm",
+        "simplicity",
+        "pattern-selection"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "p-d1-x2-004",
+      "taskStatementId": "1.3",
+      "stem": "An IT help desk uses a routing workflow: a classifier sends each ticket to one of six fixed handlers (password reset, VPN, printer and so on), each a short prompt chain. These resolve about 85% of tickets well. The other 15% fall into an \"other\" bucket that goes to human staff. Analysis shows these are multi-step problems whose diagnostic steps differ per ticket, such as checking logs and then configuration depending on what turns up. Leadership wants to automate more of that 15% **without putting the 85% that already works at risk**. What should the architect do?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Replace the router and all six handlers with one general-purpose agent that has every diagnostic tool, so that a single design covers both the known and the unknown tickets"
+        },
+        {
+          "id": "B",
+          "text": "Keep adding categories to the router, each with its own fixed chain, until the \"other\" bucket is empty and every ticket type has a predefined handler"
+        },
+        {
+          "id": "C",
+          "text": "Keep the router and six handlers; send only the \"other\" bucket to a new agent path with scoped tools, iteration limits and escalation, widening it as evals allow"
+        },
+        {
+          "id": "D",
+          "text": "Add an evaluator-optimizer loop to each of the six existing handlers so that, after critique and revision, they can also take on the tickets in the \"other\" bucket"
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Patterns can be **combined**. The predictable 85% stays on the cheap, testable workflow. The agentic pattern is added **only where its strength is needed**: tickets whose steps depend on what the diagnosis finds. Scoped tools, iteration limits, escalation and evals manage the extra risk of agents and leave the working path untouched.",
+      "whyWrong": {
+        "A": "This puts the 85% that works at risk and raises its cost and variance, which is the opposite of the stated constraint. Autonomy isn't needed for tickets with known steps.",
+        "B": "Those tickets vary in their steps by nature, so new fixed chains can't cover them. The category list grows without end and stays brittle.",
+        "D": "Evaluator-optimizer refines an output against clear criteria. It doesn't give a handler the ability to run an open-ended diagnosis it was never built for."
+      },
+      "difficulty": 3,
+      "mindset": "Add agentic complexity only to the slice of traffic that needs it, and protect what already works.",
+      "tags": [
+        "routing",
+        "hybrid-architecture",
+        "agents",
+        "incremental-complexity"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "p-d1-x2-005",
+      "taskStatementId": "1.3",
+      "stem": "After analysis, a team has decided that an agent is justified for diagnosing failing integration tests across many repositories: the steps can't be predicted, and test runs give clear feedback at each step. Before the agent touches production repositories, the architect wants safeguards aimed at the **specific risks of the agentic pattern**, namely compounding errors, runaway cost and unpredictable actions. Which TWO additions BEST meet this goal? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Stopping conditions such as a maximum number of iterations or a spend budget, plus checkpoints where the agent pauses for human review before merging or when it gets stuck"
+        },
+        {
+          "id": "B",
+          "text": "A long set of few-shot transcripts showing the exact sequence of tool calls the agent should make for every known category of test failure, so its behaviour stays predictable"
+        },
+        {
+          "id": "C",
+          "text": "Extensive testing in a sandboxed environment with isolated copies of the repositories and CI, so mistakes are found before the agent is given access to the real ones"
+        },
+        {
+          "id": "D",
+          "text": "Replacing the test-run feedback with the agent's own assessment of whether each fix is correct, so that CI time is saved on every iteration of the diagnostic loop"
+        },
+        {
+          "id": "E",
+          "text": "Organisation-wide administrator credentials for the agent, so that a permission error cannot interrupt a long diagnostic run part way through and force a manual restart"
+        }
+      ],
+      "correct": [
+        "A",
+        "C"
+      ],
+      "explanation": "Anthropic's guidance for agents names these controls: **stopping conditions** (for example a maximum number of iterations) to keep cost and loops bounded, **human checkpoints** at high-impact moments or when blocked, and **extensive testing in sandboxed environments** with guardrails. Together they contain compounding errors and unpredictable actions without removing the autonomy that justified the agent.",
+      "whyWrong": {
+        "B": "Scripting the exact tool sequence turns the agent back into a brittle workflow. If the steps could be scripted, an agent wasn't needed in the first place.",
+        "D": "Ground-truth feedback from the environment is what makes an agent reliable. Self-assessment is poorly calibrated and removes the most important check.",
+        "E": "Broad credentials widen the blast radius of any mistake or injection. Least privilege is the right default, especially for an autonomous system."
+      },
+      "difficulty": 2,
+      "mindset": "When you choose autonomy, bound it: iteration caps, human checkpoints and sandboxed testing.",
+      "tags": [
+        "agents",
+        "guardrails",
+        "stopping-conditions",
+        "sandbox",
+        "human-in-the-loop"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "p-d1-x2-006",
+      "taskStatementId": "1.3",
+      "stem": "A brand team uses Claude to suggest campaign taglines. To improve quality, an engineer added an evaluator-optimizer loop: a second call judges \"is this tagline good enough?\" and the generator revises up to five times. Cost has tripled and latency is four times higher, yet the marketing panel's preference for final taglines over first drafts hasn't changed. Logs show the evaluator's feedback is vague and inconsistent between runs. What is the BEST next step?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Pause the loop, define concrete, checkable criteria with the brand team from past panel feedback, and restore an evaluator only if evals show revisions help"
+        },
+        {
+          "id": "B",
+          "text": "Raise the iteration limit from five to ten so that the generator and the evaluator have more rounds in which to converge on a tagline the panel will prefer"
+        },
+        {
+          "id": "C",
+          "text": "Move the evaluator to the largest available model so that its critiques become sharper and more consistent, while keeping the current loop and iteration limit"
+        },
+        {
+          "id": "D",
+          "text": "Replace the loop with an autonomous agent that searches the web for currently trending slogans and then writes taglines inspired by what it finds"
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Evaluator-optimizer works when there are **clear evaluation criteria** and when feedback **demonstrably improves** the output. Neither is true here: the criterion is \"good enough\", and measured preference hasn't moved. The disciplined fix is to stop paying for a loop that isn't working, define criteria that can be checked, and reintroduce iteration only if evals show it helps.",
+      "whyWrong": {
+        "B": "More rounds of vague feedback add cost and latency without a signal to converge on. The problem is the missing criteria, not too few iterations.",
+        "C": "A bigger evaluator still has no defined standard to judge against. It throws capacity at a design problem.",
+        "D": "Web search doesn't fix the lack of criteria and adds a new risk: copying other brands' slogans. It also adds agent cost to a simple generation task."
+      },
+      "difficulty": 3,
+      "mindset": "Evaluator-optimizer is only as good as its criteria; no measurable gain means no loop.",
+      "tags": [
+        "evaluator-optimizer",
+        "evaluation-criteria",
+        "cost",
+        "pattern-misuse"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents",
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests"
+      ]
+    },
+    {
+      "id": "p-d1-x2-007",
+      "taskStatementId": "1.3",
+      "stem": "A legal-tech team built a fixed three-step chain (classify the contract, extract key clauses, draft a summary) on top of a heavyweight agent framework. When a summary cites the wrong clause, engineers can't easily see the exact prompts and responses the framework sends at each step, so each bug takes days to trace. The steps themselves never change. What should they do to make the system debuggable **with the least ongoing complexity**?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add a second framework for observability on top of the first so that its hidden prompts are captured, while leaving the chain's existing structure exactly as it is"
+        },
+        {
+          "id": "B",
+          "text": "Convert the chain into an autonomous agent inside the same framework so that the model can notice when it picked the wrong clause and correct its own earlier steps"
+        },
+        {
+          "id": "C",
+          "text": "Re-implement the steps as direct Claude API calls in their own code so every prompt and response is visible, using a framework only if they understand its internals"
+        },
+        {
+          "id": "D",
+          "text": "Move every step to the largest available model so that the summaries cite the wrong clause less often and the framework's hidden prompts matter less in practice"
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Anthropic recommends **starting with LLM APIs directly**: most patterns, a fixed chain included, take only a few lines of code. Frameworks can add layers of abstraction that **hide the underlying prompts and responses** and make debugging harder. If you do use one, make sure you understand what it does under the hood. A plain implementation makes every step visible and unit-testable with less moving machinery.",
+      "whyWrong": {
+        "A": "It adds yet another layer of abstraction to compensate for the first. Ongoing complexity goes up, not down.",
+        "B": "The steps are fixed, so autonomy adds variance and cost and makes behaviour harder, not easier, to trace.",
+        "D": "Swapping in a bigger model may hide symptoms but leaves the system just as opaque. The next bug will be equally hard to find."
+      },
+      "difficulty": 2,
+      "mindset": "Prefer transparent, direct implementations; abstraction you can't see into is a debugging liability.",
+      "tags": [
+        "frameworks",
+        "transparency",
+        "prompt-chaining",
+        "simplicity"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "p-d1-x2-008",
+      "taskStatementId": "1.3",
+      "stem": "A coding agent edits files through an `edit_file` tool that takes a file path. Logs show that after the agent changes into subdirectories, it often edits the wrong file or gets \"file not found\", because it keeps passing relative paths. Some engineers argue that the agentic pattern is unreliable and the system should become a fixed workflow. What is the MOST effective fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Replace the agent with a fixed workflow that hard-codes which files get edited and in what order, so that the model never has to work with paths at all"
+        },
+        {
+          "id": "B",
+          "text": "Change the tool so it requires absolute paths, rejecting relative ones with a clear validation error, and update the tool description to say so"
+        },
+        {
+          "id": "C",
+          "text": "Add a line to the system prompt reminding the agent to keep track of its current working directory before every call it makes to the file-editing tool"
+        },
+        {
+          "id": "D",
+          "text": "Add a second agent that watches the first agent's tool calls and rewrites any relative path into the absolute path it thinks was intended"
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "This is an **agent-computer interface (ACI)** problem, not a pattern problem. Anthropic describes this exact failure and fixes it by **poka-yoke**: changing the tool so that it **requires absolute paths**, which removes the whole class of mistakes. Tool definitions deserve as much engineering care as prompts, and a design that makes errors impossible beats asking the model to avoid them.",
+      "whyWrong": {
+        "A": "Which files a fix needs is discovered during the work and can't be predicted, so a fixed workflow throws away what justified the agent instead of fixing the faulty tool.",
+        "C": "A reminder lowers the rate of mistakes but still allows them. The tool's design invites the error and should be changed instead.",
+        "D": "A second agent adds cost and a new guessing step that can itself be wrong. Fix the interface instead of supervising its misuse."
+      },
+      "difficulty": 2,
+      "mindset": "Fix the agent-computer interface so mistakes are impossible before you blame the architecture.",
+      "tags": [
+        "agent-computer-interface",
+        "poka-yoke",
+        "tool-design",
+        "agents"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents",
+        "https://www.anthropic.com/engineering/writing-tools-for-agents"
+      ]
+    },
+    {
+      "id": "p-d1-x2-009",
+      "taskStatementId": "1.3",
+      "stem": "An online retailer's support conversations wander: a customer may ask about an order, then a refund, then an exchange, in any order. Resolving one conversation can need several lookups (order history, shipping status, return policy) and actions (issue a refund, update the ticket), and which steps are needed only becomes clear as the conversation goes on and as each lookup returns. The business measures success as the share of conversations fully resolved without a human, and finance requires that any refund above $200 be approved by a person. Which design BEST fits these requirements?",
+      "options": [
+        {
+          "id": "A",
+          "text": "A fixed prompt chain that always runs the same steps in the same order (look up the order, check the policy, decide, reply), chosen because fixed steps are easier to test and cost less"
+        },
+        {
+          "id": "B",
+          "text": "A router that classifies each incoming message into one of eight intents and sends it to a scripted reply template for that intent, with no tool calls, so behaviour stays predictable"
+        },
+        {
+          "id": "C",
+          "text": "A lead agent with separate subagents for orders, refunds and exchanges that all run in parallel on every message, so that every possible customer need is covered up front"
+        },
+        {
+          "id": "D",
+          "text": "A single agent with scoped lookup and action tools that works through the conversation, pauses for human approval on refunds above $200, and is scored on resolution rate"
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "Anthropic names **customer support** as a natural fit for the **agent** pattern: it follows a conversation flow, needs external information (customer data, order history, knowledge base) and actions (refunds, ticket updates), and success can be **measured through resolutions**. The number and order of steps can't be predicted, and each tool result gives the agent **ground truth** for its next decision. Scoped tools and a **human checkpoint** on high-value refunds supply the guardrails that autonomy needs.",
+      "whyWrong": {
+        "A": "The steps and their order change from one conversation to the next, so a fixed chain either fails on the cases it didn't anticipate or grows an endless tangle of branches.",
+        "B": "Templates can't look anything up or take any action, so most conversations could not be resolved without a human, which is the metric the business cares about.",
+        "C": "The work is one sequential conversation with shared context, not independent parallel research. Multi-agent systems cost many times more tokens and add coordination problems for no gain here."
+      },
+      "difficulty": 2,
+      "mindset": "Pick the agent pattern when steps are unpredictable, each step yields feedback, and success is measurable; then bound it with scoped tools and human checkpoints.",
+      "tags": [
+        "agents",
+        "pattern-selection",
+        "customer-support",
+        "human-in-the-loop"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "p-d1-x2-010",
+      "taskStatementId": "1.4",
+      "stem": "A platform team uses a lead agent that splits a database schema migration across parallel subagents, one per service. Every service's change depends on a shared ORM model and on naming decisions made in the others, such as which columns get renamed. Runs produce conflicting edits to the shared model and inconsistent renames, and untangling them takes longer than doing the migration by hand. What is the BEST redesign?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Use a single agent or sequential workflow that holds the shared decisions in one context, with subagents only for independent read-only lookups such as column usages"
+        },
+        {
+          "id": "B",
+          "text": "Increase the parallelism further, giving each file rather than each service its own subagent, so that every conflict between subagents becomes smaller and easier to resolve"
+        },
+        {
+          "id": "C",
+          "text": "Keep the parallel design and add a final merge subagent that reads all of the conflicting edits once every service subagent has finished and reconciles them into one change"
+        },
+        {
+          "id": "D",
+          "text": "Move every subagent to the most capable model available so that each one is better at anticipating the naming decisions the other subagents are likely to make"
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Multi-agent systems are a poor fit when **agents need the same context or have many dependencies on each other**. Anthropic notes that most coding tasks have fewer truly parallel parts than research does. Here the shared model and renames are tightly coupled, so one context should own them. Subagents are still useful for **independent, read-only** investigation whose results feed that single owner.",
+      "whyWrong": {
+        "B": "Finer splitting multiplies the coordination problem. More agents make more decisions in isolation about the same shared model.",
+        "C": "A merge step deals with the symptom after the fact. The conflicts come from parallelising coupled work in the first place.",
+        "D": "Subagents can't see each other's context. A stronger model still can't reliably guess decisions made elsewhere."
+      },
+      "difficulty": 3,
+      "mindset": "Parallelise only independent work; tightly coupled changes need a single owner of shared state.",
+      "tags": [
+        "multi-agent",
+        "coupling",
+        "when-not-to-parallelize",
+        "coding"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/multi-agent-research-system"
+      ]
+    },
+    {
+      "id": "p-d1-x2-011",
+      "taskStatementId": "1.4",
+      "stem": "A research assistant's lead agent and its subagents can call more than 30 MCP tools: web search plus connectors for the company wiki, ticketing system, Slack and shared drives. Reviewers find that subagents often run web searches for facts that exist only in Slack or the wiki, and sometimes spend turns on a tool whose vague description made it sound relevant when it wasn't. The team wants better tool use across all subagents without removing any connector. Which TWO changes are MOST effective? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Remove every connector except web search and the wiki, so that each subagent has only two tools to choose between and can no longer pick the wrong one for a query"
+        },
+        {
+          "id": "B",
+          "text": "Move every subagent to the most capable model tier, so that each one reads the existing tool descriptions more carefully before deciding which tool to call"
+        },
+        {
+          "id": "C",
+          "text": "Add tool-selection heuristics to subagent prompts: examine available tools first, match the tool to the intent, and prefer specialised connectors over generic web search"
+        },
+        {
+          "id": "D",
+          "text": "Instruct each subagent to call every available tool in turn for each query and keep whichever result looks best, so that no relevant internal source is ever missed"
+        },
+        {
+          "id": "E",
+          "text": "Run a tool-testing agent against each MCP tool to find confusing descriptions and parameters, then rewrite those descriptions based on the failures it records"
+        }
+      ],
+      "correct": [
+        "C",
+        "E"
+      ],
+      "explanation": "Anthropic found that an agent **searching the web for context that only exists in Slack is doomed from the start**, and fixed it in two ways. First, **explicit heuristics in the prompt**: examine all available tools first, match tool usage to user intent, use web search for broad external exploration, and prefer specialised tools over generic ones. Second, better **tool descriptions**: a tool-testing agent that tried each MCP tool and rewrote flawed descriptions cut task completion time for later agents by about 40%.",
+      "whyWrong": {
+        "A": "It breaks the stated constraint and throws away the connectors (Slack, tickets, drives) that hold many of the answers. The problem is choosing badly, not having choices.",
+        "B": "A stronger model is still reasoning from a misleading description. Capability doesn't repair bad tool documentation, and it raises cost on every subagent call.",
+        "D": "Calling every tool multiplies tool calls and tokens on every query and still gives the subagent no principle for choosing. Thoroughness by brute force is not tool selection."
+      },
+      "difficulty": 1,
+      "mindset": "Agent-tool interfaces matter as much as prompts: give agents a selection heuristic and tools that describe themselves accurately.",
+      "tags": [
+        "multi-agent",
+        "tool-selection",
+        "mcp",
+        "tool-descriptions"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/multi-agent-research-system",
+        "https://www.anthropic.com/engineering/writing-tools-for-agents"
+      ]
+    },
+    {
+      "id": "p-d1-x2-012",
+      "taskStatementId": "1.4",
+      "stem": "A research product runs a lead agent and six subagents, all on the most capable and most expensive model tier. Monthly cost is 40% over budget. Evals show the subagents' work is focused search and summarising, while nearly all quality problems arise in the lead's planning and final synthesis. Which change is MOST likely to cut cost while preserving quality?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Move the lead agent and every subagent to the smallest, cheapest model tier at once, so that the per-token saving applies across the whole system immediately"
+        },
+        {
+          "id": "B",
+          "text": "Collapse the system into a single agent on the most capable tier, so that only one context is billed and the subagent overhead disappears entirely"
+        },
+        {
+          "id": "C",
+          "text": "Cap every subagent at two tool calls, so each one finishes quickly and spends far fewer tokens regardless of how complex its assigned subtopic turns out to be"
+        },
+        {
+          "id": "D",
+          "text": "Keep the lead on the capable tier for planning and synthesis, run the subagents on a cheaper tier, and confirm the result with the same evals"
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "Model choice can be **set per role**. Anthropic's research system paired a more capable lead with lighter subagents, and the Agent SDK lets each subagent definition set its own `model`. Put the expensive model where the evals say quality is decided (planning and synthesis) and a cheaper tier where the work is narrower, then check the result with the same evals.",
+      "whyWrong": {
+        "A": "Downgrading the lead hits exactly the steps where the evals locate the quality problems.",
+        "B": "This gives up the parallel breadth that justified the design. The task's coverage needs may not fit in one context.",
+        "C": "An arbitrary cap cuts thoroughness on hard subtopics. Effort should scale with complexity, not be fixed low."
+      },
+      "difficulty": 2,
+      "mindset": "Match model tier to each role's job, and let evals decide where capability matters.",
+      "tags": [
+        "multi-agent",
+        "model-selection",
+        "cost",
+        "evals"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/multi-agent-research-system",
+        "https://code.claude.com/docs/en/agent-sdk/subagents",
+        "https://platform.claude.com/docs/en/about-claude/models/choosing-a-model"
+      ]
+    },
+    {
+      "id": "p-d1-x2-013",
+      "taskStatementId": "1.4",
+      "stem": "A developer is deep into a long refactoring session in Claude Code. They now need to know which of roughly 400 test files touch the payments module, but that search would pull large amounts of file content into the conversation and crowd out the refactoring context they have built up. What is the BEST approach?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Run a broad search in the main conversation and paste all of the matching file contents in, so the main session can judge for itself which files matter"
+        },
+        {
+          "id": "B",
+          "text": "Delegate the search to a subagent, such as the built-in Explore subagent, which searches in its own context and returns only a short list of relevant files"
+        },
+        {
+          "id": "C",
+          "text": "Clear the conversation, run the search in a fresh session, and then rebuild the refactoring context from memory once the list of files is known"
+        },
+        {
+          "id": "D",
+          "text": "Switch to a model with a larger context window so that the search output and the refactoring history both fit in the same conversation"
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Subagents run in their **own context window**, so a noisy exploration task doesn't fill up the main conversation. Only the subagent's final, condensed result comes back. Claude Code's built-in Explore subagent is designed for exactly this kind of read-only search, which keeps the main session focused on the refactor.",
+      "whyWrong": {
+        "A": "This is exactly the context pollution the developer wants to avoid. Hundreds of file contents crowd out what matters.",
+        "C": "It throws away the valuable context the developer built up and makes them rebuild it by hand.",
+        "D": "More capacity doesn't fix clutter. Irrelevant content still dilutes attention and costs tokens on every later turn."
+      },
+      "difficulty": 1,
+      "mindset": "Use subagents to isolate noisy exploration and return only the distilled answer.",
+      "tags": [
+        "subagents",
+        "context-isolation",
+        "claude-code"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/sub-agents",
+        "https://code.claude.com/docs/en/agent-sdk/subagents"
+      ]
+    },
+    {
+      "id": "p-d1-x2-014",
+      "taskStatementId": "1.4",
+      "stem": "A multi-agent assistant at a healthcare provider behaves unpredictably: the same kind of query sometimes spawns two subagents and sometimes nine, and a few runs loop until they hit limits. Engineers can't reproduce the failures locally. The provider's privacy policy forbids engineers from reading patient conversation content. Which approach BEST lets the team diagnose these failures?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add production tracing of agent decision patterns and interaction structure (subagents spawned, tool calls, turns, errors) without recording conversation content"
+        },
+        {
+          "id": "B",
+          "text": "Record full transcripts, patient content included, and grant engineers a temporary written exception to the privacy policy while they investigate the looping runs"
+        },
+        {
+          "id": "C",
+          "text": "Lower the sampling temperature for all agents so that each run becomes deterministic and any failure seen in production can then be reproduced locally"
+        },
+        {
+          "id": "D",
+          "text": "Have the lead agent write a self-explanation at the end of each run describing why it spawned the subagents it did, and review those explanations weekly"
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Agents are non-deterministic across runs, which makes ordinary debugging hard. Anthropic added **full production tracing** and monitored **agent decision patterns and interaction structures without monitoring the contents of individual conversations**, which kept user privacy intact. Structural traces show where plans go wrong (over-spawning, loops, failing tools) without exposing patient data.",
+      "whyWrong": {
+        "B": "It breaks a stated governance constraint. A design that needs a policy exception is the wrong design.",
+        "C": "Lower temperature doesn't make a multi-step agent with changing tool results reproducible, and it records nothing about where runs go wrong.",
+        "D": "Self-explanations are unreliable and generated after the fact. They are no substitute for recorded traces of what actually happened."
+      },
+      "difficulty": 2,
+      "mindset": "Make multi-agent behaviour observable through structural traces, and respect privacy constraints by design.",
+      "tags": [
+        "multi-agent",
+        "observability",
+        "tracing",
+        "privacy"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/multi-agent-research-system"
+      ]
+    },
+    {
+      "id": "p-d1-x2-015",
+      "taskStatementId": "1.4",
+      "stem": "A multi-agent due-diligence job runs for about three hours. Today, when a subagent's tool call fails transiently or the orchestration process crashes, the whole job restarts from the beginning. That wastes spend and sometimes misses client deadlines. Which TWO changes BEST address this? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Limit every subagent to a single tool call so that each one finishes quickly and the whole job becomes short enough that restarting it is cheap"
+        },
+        {
+          "id": "B",
+          "text": "Raise every tool timeout to thirty minutes so that slow or briefly unavailable services have more time to respond before a call is counted as failed"
+        },
+        {
+          "id": "C",
+          "text": "Persist the plan, completed subtasks and their outputs to durable storage at checkpoints, so the job resumes from where it stopped instead of starting over"
+        },
+        {
+          "id": "D",
+          "text": "Add retry logic for transient tool errors and surface persistent failures to the calling agent, so it can adapt its approach rather than failing the entire job"
+        },
+        {
+          "id": "E",
+          "text": "Launch two complete copies of every job in parallel and keep whichever copy finishes first, so that one crash no longer delays delivery to the client"
+        }
+      ],
+      "correct": [
+        "C",
+        "D"
+      ],
+      "explanation": "In long-running, stateful agent systems **errors compound**, and restarting from scratch is costly. Anthropic's approach combines **durable state that lets agents resume from where an error occurred** with **letting the agent know a tool is failing so it can adapt**. Checkpointing removes the wasted rework, and handling errors locally keeps transient failures from escalating into a full restart.",
+      "whyWrong": {
+        "A": "Starving subagents of tool calls lowers the quality of the analysis to make failures cheaper, and treats the symptom rather than the cause.",
+        "B": "Longer timeouts don't help with crashes and stretch out every real outage. A failure still triggers a full restart because nothing was saved.",
+        "E": "It doubles the cost of every job and still loses all progress whenever a copy fails. It is redundancy instead of recoverability."
+      },
+      "difficulty": 2,
+      "mindset": "Long-running agents need checkpoints and local error handling, not restarts.",
+      "tags": [
+        "multi-agent",
+        "resumability",
+        "checkpoints",
+        "error-handling"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/multi-agent-research-system"
+      ]
+    },
+    {
+      "id": "p-d1-x2-016",
+      "taskStatementId": "1.4",
+      "stem": "A research system's lead agent spawns a batch of subagents and waits for all of them before it continues, so one slow subagent stalls the whole run. The team plans asynchronous execution in which the lead keeps working and spawns new subagents as results arrive. Which TWO design concerns are MOST important to solve before making this change? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Coordinating results and keeping shared state consistent when subagents finish in unpredictable order while the lead is still changing its plan"
+        },
+        {
+          "id": "B",
+          "text": "Making sure that every subagent uses exactly the same model tier as the lead agent, so that results arriving out of order are all of equal quality"
+        },
+        {
+          "id": "C",
+          "text": "Giving every subagent the lead agent's full conversation history, so that results that return out of order can be interpreted correctly by the subagent that produced them"
+        },
+        {
+          "id": "D",
+          "text": "Moving the subagents' requests onto the Message Batches API, since it is designed for asynchronous processing and costs less per token"
+        },
+        {
+          "id": "E",
+          "text": "Propagating errors from subagents running in the background, so a failure is noticed and handled instead of being silently lost"
+        }
+      ],
+      "correct": [
+        "A",
+        "E"
+      ],
+      "explanation": "Anthropic notes that synchronous execution is simpler but creates bottlenecks, and that asynchronous execution **adds challenges in result coordination, state consistency and error propagation** across subagents. Those are the problems to design for before switching: how results are merged into a plan that keeps changing, and how background failures surface.",
+      "whyWrong": {
+        "B": "Using the same model tier is neither necessary nor what makes async hard. Many systems deliberately mix tiers.",
+        "C": "Sharing the lead's whole history bloats every subagent's context and doesn't address coordination at all: the lead, not the subagent, has to reconcile results that arrive out of order.",
+        "D": "The Batches API is meant for offline work with results that can take up to 24 hours. It would make the research slower, not unblock it."
+      },
+      "difficulty": 3,
+      "mindset": "Async orchestration trades a bottleneck for coordination, consistency and error-propagation problems; plan for them.",
+      "tags": [
+        "multi-agent",
+        "asynchronous-execution",
+        "state-consistency",
+        "error-propagation"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/multi-agent-research-system",
+        "https://platform.claude.com/docs/en/build-with-claude/batch-processing"
+      ]
+    },
+    {
+      "id": "p-d1-x2-017",
+      "taskStatementId": "1.4",
+      "stem": "A team has just built a multi-agent research assistant and wants to start evaluating it. For the same query, its agents often take different but equally valid paths, using different searches and different subagents. Which TWO evaluation approaches are BEST at this stage? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Wait until a set of more than a thousand labelled queries has been assembled, so that the very first round of results is statistically meaningful"
+        },
+        {
+          "id": "B",
+          "text": "Start right away with a small set of around twenty queries that reflect real usage, since early changes tend to have large and easily visible effects"
+        },
+        {
+          "id": "C",
+          "text": "Grade each run against a fixed reference sequence of tool calls and subagent spawns, failing any run that departs from the expected path"
+        },
+        {
+          "id": "D",
+          "text": "Judge outcomes such as factual accuracy, citations, completeness and source quality with a rubric-based LLM judge, plus human review for what it misses"
+        },
+        {
+          "id": "E",
+          "text": "Rely only on the share of users who click thumbs-up, because user satisfaction is the outcome that ultimately matters to the business"
+        }
+      ],
+      "correct": [
+        "B",
+        "D"
+      ],
+      "explanation": "Anthropic recommends **starting evals early with a small sample** (about 20 queries representing real usage), because early prompt changes produce large effects. Since agents can take different valid routes, judge **outcomes** with a rubric-based LLM judge (factual and citation accuracy, completeness, source quality, tool efficiency) and keep **human testers** to catch issues automation misses, such as a preference for low-quality, SEO-optimised sources.",
+      "whyWrong": {
+        "A": "Waiting for a big dataset delays learning. Small samples are enough to detect the large early effects.",
+        "C": "Valid runs take different paths, so grading against one path fails good runs and rewards copying a script.",
+        "E": "Thumbs-up rates are sparse, biased and slow to arrive, and can't separate accuracy from tone or tell you why a run failed."
+      },
+      "difficulty": 2,
+      "mindset": "Evaluate agents early, on outcomes rather than paths, with both LLM judges and humans.",
+      "tags": [
+        "multi-agent",
+        "evaluation",
+        "llm-as-judge",
+        "human-review"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/multi-agent-research-system",
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests"
+      ]
+    },
+    {
+      "id": "p-d1-x2-018",
+      "taskStatementId": "1.4",
+      "stem": "A company runs multi-agent analysis jobs that can each take several hours. Releases of new prompts and tool code ship several times a week, and every release restarts the servers. Jobs running at the time either break or end up mixing old and new behaviour part way through. What is the BEST deployment approach?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Allow releases only on weekends, when fewer jobs are running, and accept that any job still running at release time will break and need a manual restart"
+        },
+        {
+          "id": "B",
+          "text": "Use rainbow deployments: keep the old version running for jobs already in progress while gradually moving new jobs onto the new version"
+        },
+        {
+          "id": "C",
+          "text": "Add an instruction to every agent's prompt telling it to notice when its tools or prompts have changed mid-run and to adapt its plan to the new behaviour"
+        },
+        {
+          "id": "D",
+          "text": "Cancel every running job automatically at each release and restart it from the beginning on the new version, so that no job ever mixes two versions"
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Agents are long-running and stateful, so a deployment can catch them part way through a task. Anthropic uses **rainbow deployments**, which shift traffic gradually from old to new versions while **both run side by side**, so running agents finish on the version they started with. Releases keep shipping and in-flight work is protected.",
+      "whyWrong": {
+        "A": "It slows delivery and still breaks any job that happens to be running at release time.",
+        "C": "A prompt can't make a model reliably detect or reconcile code changes under it. This is an infrastructure problem.",
+        "D": "It avoids mixed versions by throwing away hours of work and spend on every release."
+      },
+      "difficulty": 3,
+      "mindset": "Long-running agents need deployment strategies that let in-flight work finish on its own version.",
+      "tags": [
+        "multi-agent",
+        "deployment",
+        "rainbow-deployments",
+        "production"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/multi-agent-research-system"
+      ]
+    }
+  ]
+}

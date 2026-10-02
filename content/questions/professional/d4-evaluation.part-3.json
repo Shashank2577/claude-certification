@@ -1,0 +1,811 @@
+{
+  "certId": "professional",
+  "domainId": "d4-evaluation",
+  "questions": [
+    {
+      "id": "p-d4-x1-001",
+      "taskStatementId": "4.1",
+      "stem": "A travel-planning assistant holds conversations of 10 to 20 turns. Early on, travelers state constraints such as \"no overnight flights\" or \"I need a wheelchair-accessible hotel\". The eval scores every assistant reply in isolation for factual correctness and passes at 94%, yet beta testers complain that after a few turns the assistant proposes red-eye flights and hotels without step-free access. Which metric should the architect add so that this failure is measured before release?",
+      "options": [
+        {
+          "id": "A",
+          "text": "A relevance metric: an LLM judge scores how directly each reply addresses the question asked in the immediately preceding user turn."
+        },
+        {
+          "id": "B",
+          "text": "A consistency metric: cosine similarity between successive assistant replies in a conversation, flagging conversations where it drops sharply."
+        },
+        {
+          "id": "C",
+          "text": "A context-utilization metric: scripted multi-turn conversations that state constraints early, with later replies checked against every constraint so far."
+        },
+        {
+          "id": "D",
+          "text": "A conversation-length metric: the average number of turns needed to reach a confirmed itinerary, since ignored constraints make travelers repeat themselves."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Anthropic's success-criteria guidance lists **context utilization**, how well the model uses earlier conversation history, as its own dimension, separate from task fidelity. An eval that scores each reply alone can never see it, because a reply can be factually correct and still ignore a constraint from turn two. Scripted conversations that plant constraints early and check later replies against all of them (by code where the data allows, such as departure times or an accessibility flag, or by a rubric judge) measure the failure directly.",
+      "whyWrong": {
+        "A": "Relevance to the last question is a different dimension. A reply can be perfectly relevant to \"which hotel do you suggest?\" while violating a constraint stated several turns earlier.",
+        "B": "Similarity between successive replies measures drift in wording, not whether constraints are honored. Replies to different questions legitimately differ, so this flags the wrong conversations.",
+        "D": "Turn count is an indirect, noisy proxy. Conversations run long for many reasons, and a traveler who gives up after a bad suggestion makes the metric look better, not worse."
+      },
+      "difficulty": 2,
+      "mindset": "Score what the user experiences across the whole conversation, not each reply in isolation.",
+      "tags": [
+        "context-utilization",
+        "multi-turn",
+        "success-criteria",
+        "conversation-evals"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests"
+      ]
+    },
+    {
+      "id": "p-d4-x1-002",
+      "taskStatementId": "4.1",
+      "stem": "A support team is piloting two configurations of a ticket-resolution agent. Config X uses a smaller model and costs about 40% less per API call than Config Y, and the finance sponsor wants the cheaper option. Traces show Config X averages 14 calls per ticket and resolves 71% of tickets. Config Y averages 6 calls and resolves 88%. Unresolved tickets go to a human agent. Which cost metric should the architect use to frame the decision?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Total cost per successfully resolved ticket, counting model spend plus the human handling cost of tickets the agent fails to resolve."
+        },
+        {
+          "id": "B",
+          "text": "Cost per API call, because it is the unit the provider bills on and it directly reflects the 40% per-call price difference between the two configurations."
+        },
+        {
+          "id": "C",
+          "text": "Total monthly token spend for each configuration, since the finance team budgets for the model provider on a monthly basis."
+        },
+        {
+          "id": "D",
+          "text": "Output tokens per call, because output tokens are priced higher than input tokens and drive most of the per-call bill."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "For agents, per-call price misleads. Config X makes more than twice as many calls per ticket and sends more tickets to humans, so its cheaper calls may still cost more **per unit of business value**. The defensible metric is **cost per resolved task**, including the downstream cost of failures (human handling). It ties cost to outcome, which is what the sponsor actually cares about.",
+      "whyWrong": {
+        "B": "Per-call price ignores how many calls each configuration needs and how often it fails. That is the classic trap of optimizing the billing unit instead of the business unit.",
+        "C": "Monthly token spend leaves out the human cost of unresolved tickets and does not normalize for work done, so it cannot show which configuration is cheaper per outcome.",
+        "D": "Output tokens are one component of cost, but tracking them alone ignores call count, input tokens and failure handling. It cannot compare the two configurations fairly."
+      },
+      "difficulty": 2,
+      "mindset": "Measure cost per successful outcome, including the cost of failures, not cost per API call.",
+      "tags": [
+        "cost-metrics",
+        "agent-metrics",
+        "business-value",
+        "model-selection"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents",
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests"
+      ]
+    },
+    {
+      "id": "p-d4-x1-003",
+      "taskStatementId": "4.1",
+      "stem": "A compliance team uses Claude to label outbound trader messages as \"needs review\" or \"no action\". About 3% of messages truly need review. The vendor demo reports 96% accuracy, and the compliance head asks whether that is good enough to launch. What should the architect point out FIRST?",
+      "options": [
+        {
+          "id": "A",
+          "text": "96% is above most human-reviewer baselines, so the system is ready for a limited launch backed by periodic spot checks."
+        },
+        {
+          "id": "B",
+          "text": "Accuracy should be recalculated with an LLM judge instead of the labels, because compliance labels are inherently subjective."
+        },
+        {
+          "id": "C",
+          "text": "The eval set should be grown to 50,000 messages so that the 96% figure has a narrower and more trustworthy confidence interval."
+        },
+        {
+          "id": "D",
+          "text": "A model that labels everything \"no action\" would score about 97%, so recall and precision on \"needs review\" must be measured."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "With a 3% positive class, overall accuracy is close to meaningless: a model that never flags anything scores about 97%, **higher** than the demo. For imbalanced tasks the success criteria must target the class that matters, using **recall** (how many true review cases are caught) and **precision** (how many flags are real) on \"needs review\", with thresholds the compliance team agrees to.",
+      "whyWrong": {
+        "A": "Comparing 96% to a human baseline assumes accuracy is informative here. It is not, because the trivial \"never flag\" model beats it.",
+        "B": "Switching graders does not fix the problem. The labels are categorical and code-checkable; the issue is which metric is computed, not who computes it.",
+        "C": "A bigger sample makes the 96% more precise, but it is still the wrong metric for a rare-class detection task."
+      },
+      "difficulty": 1,
+      "mindset": "Before trusting a headline score, ask what a trivial baseline would score on the same data.",
+      "tags": [
+        "class-imbalance",
+        "precision-recall",
+        "accuracy-metrics",
+        "success-criteria"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests"
+      ]
+    },
+    {
+      "id": "p-d4-x1-004",
+      "taskStatementId": "4.1",
+      "stem": "An HR policy assistant retrieves passages from a policy library and answers employee questions. Its only metric is an end-to-end \"answer correct\" score, currently 78%. When the score dropped after a library re-index, nobody could tell whether retrieval or answer generation had caused it. Which TWO metrics should the architect add so failures can be traced to the right stage? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "ROUGE-L overlap between each generated answer and the top retrieved passage, used as a combined retrieval and answer-quality score."
+        },
+        {
+          "id": "B",
+          "text": "Retrieval recall@k: for test questions with labeled relevant passages, the share whose relevant passages appear in the top k results."
+        },
+        {
+          "id": "C",
+          "text": "The average number of passages retrieved per question, tracked over time as an indicator of retrieval health after each re-index."
+        },
+        {
+          "id": "D",
+          "text": "Groundedness: the share of claims in each answer supported by the passages actually given to the model, scored by a rubric-based judge."
+        },
+        {
+          "id": "E",
+          "text": "The production thumbs-up rate on answers, broken down by policy area, used as a replacement for the offline correctness score."
+        }
+      ],
+      "correct": [
+        "B",
+        "D"
+      ],
+      "explanation": "A RAG system has two stages that fail differently, so each needs its own metric. **Retrieval recall@k** against labeled relevant passages shows whether the right material reached the model; Anthropic's contextual-retrieval work measures retrieval this way. **Groundedness** shows whether the answer stays faithful to what was retrieved. Together they localize a drop: low recall points to the index or chunking, while good recall with low groundedness points to the prompt or model.",
+      "whyWrong": {
+        "A": "ROUGE-L rewards surface word overlap, not correctness or support, and blending both stages into one number recreates the attribution problem.",
+        "C": "The count of retrieved passages says nothing about whether the *relevant* ones were found. A re-index can return the same number of wrong passages.",
+        "E": "User ratings are a useful production signal, but they are noisy, delayed and end-to-end. They cannot separate retrieval failures from generation failures, and they should not replace the offline eval."
+      },
+      "difficulty": 3,
+      "mindset": "Instrument each stage of a pipeline separately so a regression points to its cause.",
+      "tags": [
+        "rag",
+        "retrieval-metrics",
+        "groundedness",
+        "multi-select"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/contextual-retrieval",
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-hallucinations"
+      ]
+    },
+    {
+      "id": "p-d4-x1-005",
+      "taskStatementId": "4.1",
+      "stem": "A bank uses Claude to screen loan-application notes for signs of possible elder financial abuse. Flagged cases go to a specialist queue that can review about 400 cases a week. A missed case can lead to regulatory action and real harm to a customer. The team must choose the success criterion that will gate the prompt. Which criterion is MOST appropriate?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Maximize overall F1 on the labeled set, because F1 balances precision and recall and is the standard single metric for classifiers."
+        },
+        {
+          "id": "B",
+          "text": "Recall of at least 0.95 on confirmed abuse cases, with total flag volume required to stay within the specialists' weekly capacity."
+        },
+        {
+          "id": "C",
+          "text": "Precision of at least 0.95 on flagged cases, so that specialists spend their limited time only on cases that are almost certainly abuse."
+        },
+        {
+          "id": "D",
+          "text": "Overall accuracy of at least 0.98, measured on a random sample of applications drawn from last year's production traffic."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Good success criteria reflect the **asymmetric cost of errors** and the real operating constraints. A miss is far costlier than a false alarm, so **recall** is the primary target. The specialist queue is a hard capacity limit, so false positives are bounded by a **volume constraint** instead of being ignored. Together they make a specific, measurable criterion the business can defend.",
+      "whyWrong": {
+        "A": "F1 weights precision and recall equally, which does not match a domain where misses are much worse than extra reviews. It also ignores the queue-capacity constraint.",
+        "C": "High precision makes reviewers efficient but tolerates missed abuse cases, which is the expensive error here. It optimizes the wrong side of the trade-off.",
+        "D": "Abuse cases are rare, so overall accuracy is dominated by easy negatives and can look excellent while missing most real cases."
+      },
+      "difficulty": 3,
+      "mindset": "Set the primary metric by which error is most expensive, then bound the other error with the real operating constraint.",
+      "tags": [
+        "precision-recall",
+        "success-criteria",
+        "risk-weighting",
+        "thresholds"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests"
+      ]
+    },
+    {
+      "id": "p-d4-x1-006",
+      "taskStatementId": "4.1",
+      "stem": "A media company generates metadata (summary, topics, content warnings) for about 60,000 archived articles each night. Results must be ready for the editorial dashboard by 07:00, and nobody waits on any single article. A draft spec copied from the company's chat product sets \"p95 time to first token under 800 ms\" as the latency criterion. What should the architect replace it with?",
+      "options": [
+        {
+          "id": "A",
+          "text": "p99 time to first token under 500 ms, because a stricter tail target protects the dashboard from occasional slow outliers."
+        },
+        {
+          "id": "B",
+          "text": "Average output tokens per second per request, because streaming speed determines when each individual article is finished."
+        },
+        {
+          "id": "C",
+          "text": "Completion of the full nightly job before the 07:00 deadline, leaving per-request latency free to be traded for lower cost."
+        },
+        {
+          "id": "D",
+          "text": "p95 total latency per request under 3 seconds, so that each article is processed fast enough to keep the queue moving."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Latency metrics must match the user experience. Time to first token matters when a person is watching a response appear. Here no one waits on an individual request; the business requirement is that the **whole job finishes before 07:00**. Defining latency that way frees the team to optimize cost, for example with asynchronous processing such as the Message Batches API, as long as the job reliably completes inside the window.",
+      "whyWrong": {
+        "A": "A tighter TTFT target is an even stronger version of the wrong metric. It adds cost and engineering effort for a property no user experiences.",
+        "B": "Streaming speed per request matters for interactive use. For an overnight job, what counts is total completion against the deadline.",
+        "D": "A per-request latency cap still constrains the wrong thing and may rule out cheaper asynchronous options that would meet the actual deadline."
+      },
+      "difficulty": 2,
+      "mindset": "Define latency by who is waiting and for what; for batch work, that is the job deadline, not per-request speed.",
+      "tags": [
+        "latency-metrics",
+        "batch",
+        "ttft",
+        "cost-trade-off"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-latency",
+        "https://platform.claude.com/docs/en/build-with-claude/batch-processing"
+      ]
+    },
+    {
+      "id": "p-d4-x1-007",
+      "taskStatementId": "4.1",
+      "stem": "A benefits-enrollment assistant passes its accuracy eval. QA then notices that \"Can I add my partner mid-year?\" and \"Is it possible to add a domestic partner outside open enrollment?\" sometimes get opposite answers, and that rerunning the same question occasionally flips the answer too. The team wants a metric that will catch this before release. Which is BEST?",
+      "options": [
+        {
+          "id": "A",
+          "text": "A consistency metric: paraphrase groups with one expected answer, each run several times, scored by the share of groups fully correct."
+        },
+        {
+          "id": "B",
+          "text": "A higher threshold on the existing accuracy eval, raised from 90% to 97%, since inconsistent answers eventually show up as lower accuracy."
+        },
+        {
+          "id": "C",
+          "text": "Add a system-prompt rule that questions with the same meaning must always receive the same answer, and keep the current accuracy metric unchanged."
+        },
+        {
+          "id": "D",
+          "text": "A readability score for each answer, because unclearly worded questions get unclear answers and the paraphrases differ in clarity."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Consistency is its own success dimension in Anthropic's guidance: similar inputs should get similar answers. A single-pass accuracy eval with one phrasing per question cannot see paraphrase sensitivity or run-to-run flips. Grouping **paraphrases** and running **several trials** each, then requiring the whole group to be correct, measures exactly the failure QA found.",
+      "whyWrong": {
+        "B": "A higher threshold on the same single-phrasing, single-run eval still cannot observe paraphrase or run-to-run disagreement.",
+        "C": "This is a prompt fix, not a measurement. The single-phrasing, single-run eval still cannot tell whether paraphrase or run-to-run disagreement remains after the instruction is added.",
+        "D": "Readability says nothing about whether the answers agree with each other or with the policy."
+      },
+      "difficulty": 2,
+      "mindset": "If the failure is inconsistency, measure consistency directly with paraphrases and repeated trials.",
+      "tags": [
+        "consistency",
+        "paraphrase",
+        "success-criteria",
+        "repeated-trials"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests",
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/increase-consistency"
+      ]
+    },
+    {
+      "id": "p-d4-x1-008",
+      "taskStatementId": "4.1",
+      "stem": "A SaaS vendor runs one Claude-based analytics assistant for many client companies. Each request should include only that tenant's documents, but the retrieval layer and the index are shared. The security lead wants a release-gating metric for cross-tenant data leakage that can be computed automatically on every build. Which approach gives the MOST reliable measurement?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Count how many retrieval requests the tenant filter rejects on each build, treating a steady or rising count as evidence that isolation is working as designed."
+        },
+        {
+          "id": "B",
+          "text": "Have an LLM judge read a sample of responses from each build and decide whether any appear to contain information that belongs to a different client."
+        },
+        {
+          "id": "C",
+          "text": "Seed each test tenant's documents with unique marker strings, run tenant-scoped and adversarial queries, and count outputs that contain another tenant's markers."
+        },
+        {
+          "id": "D",
+          "text": "Add a final step in which the assistant confirms that it used only the requesting tenant's documents, and count how often it reports that it did not."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "A security metric should count **confirmed exposures of the asset at risk**, detected by a check that does not depend on judgment. Unique markers planted in each test tenant's data give ground truth: any foreign marker in a response or in the retrieved context is a proven leak, and a string match finds it. Including adversarial queries that try to pull other tenants' data, as Anthropic's guidance on red-teaming your own agent suggests, exercises the attack path; the gate is that the rate stays at zero.",
+      "whyWrong": {
+        "A": "Counting filter rejections measures activity, not outcome. A misconfigured filter that never fires looks quiet, and a filter that fires often may still let some documents through.",
+        "B": "The judge has no ground truth about which data belongs to which tenant, so it misses subtle leaks such as a single figure or account name and adds grading noise to a metric that must be exact.",
+        "D": "This is self-report. The component that leaked the data is not a reliable witness to the leak, and a confident wrong confirmation would pass the gate."
+      },
+      "difficulty": 2,
+      "mindset": "Measure security as confirmed exposures of the protected asset, detected by code, not as defensive activity or self-report.",
+      "tags": [
+        "security-metrics",
+        "multi-tenant",
+        "data-leakage",
+        "red-team"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/mitigate-jailbreaks",
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests"
+      ]
+    },
+    {
+      "id": "p-d4-x1-009",
+      "taskStatementId": "4.1",
+      "stem": "A product-manual Q&A tool is instructed to answer only from the supplied manual pages. Its eval has 500 questions, all answerable from the manuals, and it scores 94%. After launch, customers ask about products the manuals don't cover and receive confident, made-up specifications. Which change to the success criteria would have caught this BEFORE launch?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Raise the accuracy threshold on the 500 answerable questions from 90% to 97%, so the model has to be more precise overall."
+        },
+        {
+          "id": "B",
+          "text": "Add unanswerable questions and measure correct abstention: how often the tool says the manuals don't cover it instead of answering."
+        },
+        {
+          "id": "C",
+          "text": "Track average answer length, since fabricated specifications tend to be longer and more detailed than answers grounded in the manual."
+        },
+        {
+          "id": "D",
+          "text": "Have the model attach a 1–10 confidence score to every answer and require the average confidence to stay above 8 before release."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "An eval made only of answerable questions cannot detect fabrication on unanswerable ones. Anthropic's hallucination guidance recommends explicitly allowing Claude to say it doesn't know, and the eval guidance lists missing or irrelevant input data as an edge case to cover. A **correct-abstention rate** on out-of-scope questions measures that behavior directly.",
+      "whyWrong": {
+        "A": "A higher bar on answerable questions still tests none of the out-of-scope questions where the fabrication happened.",
+        "C": "Length is at best a weak proxy. Fabricated answers can be short, and good answers can be long.",
+        "D": "Self-reported confidence is not a reliable signal of correctness. A model that fabricates confidently would pass this gate."
+      },
+      "difficulty": 1,
+      "mindset": "Test the cases where the right answer is \"I don't know\", or you will never measure fabrication.",
+      "tags": [
+        "hallucination",
+        "abstention",
+        "edge-cases",
+        "success-criteria"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-hallucinations",
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests"
+      ]
+    },
+    {
+      "id": "p-d4-x1-010",
+      "taskStatementId": "4.2",
+      "stem": "A telecom is building an eval for the escalation step of its support agent. The agent should hand off to a human only when a customer is at risk of cancelling or reports a safety issue. The 150 eval cases were collected from past escalations, and a new prompt scores 100%. In a shadow run on live traffic, the agent escalates almost half of all conversations. What is the MOST important flaw in the eval set?",
+      "options": [
+        {
+          "id": "A",
+          "text": "150 cases is far too few; the set should be expanded to several thousand past escalations before any more prompt tuning happens."
+        },
+        {
+          "id": "B",
+          "text": "The grader should be an LLM judge rather than a label match, because escalation decisions involve nuance that labels miss."
+        },
+        {
+          "id": "C",
+          "text": "The cases are too old; past escalations should be replaced with conversations sampled from only the most recent 30 days."
+        },
+        {
+          "id": "D",
+          "text": "It contains only cases where escalation is correct, so it cannot detect over-escalation; it needs cases that should not escalate."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "An eval made only of positive cases rewards a system that always says yes. Anthropic's agent-eval guidance calls for **balanced problem sets** that test both when a behavior should happen and when it should not. Adding realistic non-escalation conversations, especially near-misses such as angry customers who are not cancelling, would have exposed the over-escalation before the shadow run.",
+      "whyWrong": {
+        "A": "More cases of the same one-sided kind would still score 100% for an agent that escalates everything.",
+        "B": "Escalate or don't escalate is a categorical decision that a code check grades well. The grader is not the problem; the case mix is.",
+        "C": "Recency does not fix the missing negative class. Recent escalations are still all positives."
+      },
+      "difficulty": 2,
+      "mindset": "An eval must contain cases where the behavior should not happen, or \"always do it\" scores perfectly.",
+      "tags": [
+        "dataset-design",
+        "balanced-sets",
+        "escalation",
+        "edge-cases"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents"
+      ]
+    },
+    {
+      "id": "p-d4-x1-011",
+      "taskStatementId": "4.2",
+      "stem": "A team evaluates a coding agent on 80 repository tasks. To save setup time, all trials run one after another in the same container. Results swing widely between runs, and transcripts show the agent sometimes finding files and installed packages left behind by earlier tasks. What should the architect change in the test framework?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Start every trial from a fresh, identical environment so that each result reflects only that trial, accepting the extra setup cost."
+        },
+        {
+          "id": "B",
+          "text": "Run each task more times in the shared container and average the scores so that the effects of leftover state cancel out."
+        },
+        {
+          "id": "C",
+          "text": "Add an instruction to the agent's prompt telling it to ignore any files or packages that it did not create during the current task."
+        },
+        {
+          "id": "D",
+          "text": "Switch the grader from running unit tests to an LLM judge that reviews the diff, since a judge isn't affected by leftover state."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Anthropic's agent-eval guidance says each trial should be **isolated** and start from a clean environment. Shared state such as leftover files or installed packages creates correlated failures and artificial successes, so scores reflect run order instead of agent ability. A fresh, identical environment per trial is the only way to make results comparable.",
+      "whyWrong": {
+        "B": "Averaging cannot remove a systematic bias that depends on run order. It just blurs the noise into a misleading number.",
+        "C": "A prompt instruction does not remove the contamination, and the agent may still benefit from or be confused by it. The fix belongs in the harness.",
+        "D": "The leftover state changes what the agent *does*, not only how it is graded. A different grader still scores contaminated runs."
+      },
+      "difficulty": 1,
+      "mindset": "Make trials independent in the harness; don't ask the model to ignore a broken test environment.",
+      "tags": [
+        "test-harness",
+        "isolation",
+        "agent-evals",
+        "reproducibility"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents"
+      ]
+    },
+    {
+      "id": "p-d4-x1-012",
+      "taskStatementId": "4.2",
+      "stem": "A team grades a research assistant with an LLM judge that must answer \"correct\" or \"incorrect\" by comparing each answer with a reference answer. While reviewing disagreements, the architect finds that the judge confidently grades items where the reference is missing, the transcript was truncated, or the question is ambiguous, and that these items account for most of the eval's noise. Which change to the grading framework is MOST appropriate?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Replace the binary verdict with a 1–10 confidence-weighted score so that items the judge is unsure about contribute less to the aggregate."
+        },
+        {
+          "id": "B",
+          "text": "Allow the judge to return \"cannot determine\" with a reason, route those items to human review, and track that rate as a health signal for the eval set."
+        },
+        {
+          "id": "C",
+          "text": "Run the judge three times on each item and keep only verdicts on which all three runs agree, silently dropping the remaining items from the aggregate score."
+        },
+        {
+          "id": "D",
+          "text": "Instruct the judge to be conservative and to grade \"incorrect\" whenever it is unsure, so that doubtful answers can never inflate the reported score."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Anthropic's agent-eval guidance recommends giving an LLM judge **a way out**, such as returning \"Unknown\" when it lacks enough information, to avoid hallucinated verdicts. A judge forced to choose between two labels will invent one. An explicit abstention output, routed to people who can repair the reference or the item, removes the noise, and the abstention rate itself becomes a signal: when it climbs, references are missing or transcripts are being truncated.",
+      "whyWrong": {
+        "A": "A numeric score is still a fabricated verdict on an item that cannot be graded. Weighting hides the problem in the aggregate and gives nobody a list of items to fix.",
+        "C": "Agreement across runs is not correctness. A judge that confidently mis-grades a truncated transcript will do so three times, and silently dropping items shrinks the eval without anyone knowing why.",
+        "D": "Defaulting to \"incorrect\" biases the score downward and penalizes correct answers that happen to lack a reference. \"Be conservative\" is also a vague instruction that is hard to verify."
+      },
+      "difficulty": 3,
+      "mindset": "A grader that cannot say \"I can't tell\" will say something false instead; give it an exit and watch how often it takes it.",
+      "tags": [
+        "llm-judge",
+        "grader-design",
+        "abstention",
+        "human-review"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents",
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests"
+      ]
+    },
+    {
+      "id": "p-d4-x1-013",
+      "taskStatementId": "4.2",
+      "stem": "An employee-onboarding agent must complete a twelve-step flow: verify the new hire's identity, create the directory account, assign licences, enrol the laptop and schedule orientation. The eval marks a task as passed only when the whole flow completes, and every prompt variant the team has tried scores between 0% and 4%. The team cannot tell whether any variant is getting closer. What should the architect change in the grading framework?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Shorten every task to its first three steps until the pass rate rises, then add the remaining steps back into the tasks one at a time."
+        },
+        {
+          "id": "B",
+          "text": "Report pass@10 instead of single-trial pass rate, so that a variant that occasionally completes the flow receives credit for the capability."
+        },
+        {
+          "id": "C",
+          "text": "Have an LLM judge rate each transcript's \"overall effort and progress\" from 1 to 10 and compare the variants on their average rating."
+        },
+        {
+          "id": "D",
+          "text": "Add milestone checks on the environment state (identity verified, account exists, licences assigned) scored alongside end-to-end completion."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "Anthropic's agent-eval guidance notes that an agent which verifies the customer and identifies the problem but fails at the final step is meaningfully better than one that fails immediately, and that a binary end-to-end grade hides that difference. **Milestone checks on state** (the account exists, the licences are assigned) are objective and code-verifiable, so they turn a flat zero into a gradient without prescribing the tool order. End-to-end completion stays as the release gate.",
+      "whyWrong": {
+        "A": "This changes the task instead of the measurement. A three-step pass says nothing about the full flow, and the suite stops reflecting the production job while the steps are missing.",
+        "B": "pass@10 rewards rare luck and tells the team nothing about where runs fail. For an agent that must complete the flow unattended, it is also the wrong reliability metric.",
+        "C": "A vague holistic rating is noisy and unverifiable. The guidance favors structured rubrics for specific dimensions, and here those dimensions are concrete state milestones a code check can confirm."
+      },
+      "difficulty": 2,
+      "mindset": "When everything fails, measure how far it got: objective state milestones give a gradient that a binary pass cannot.",
+      "tags": [
+        "agent-evals",
+        "partial-credit",
+        "milestones",
+        "grader-design"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents"
+      ]
+    },
+    {
+      "id": "p-d4-x1-014",
+      "taskStatementId": "4.2",
+      "stem": "In an agent eval with 10 trials per task, six of the 90 tasks score 0 out of 10 for every model and prompt variant the team has tried, including the most capable model available. Engineers propose building a new tool and lengthening the system prompt to \"finally crack\" these tasks. What should the architect do FIRST?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Build the proposed tool first, since persistent 0% scores across every model and prompt show a missing capability that only new tooling can provide."
+        },
+        {
+          "id": "B",
+          "text": "Drop the six tasks from the suite, because tasks no model can pass add noise to the aggregate score without adding any signal."
+        },
+        {
+          "id": "C",
+          "text": "Run the six tasks with 50 trials each to confirm that their true success rate is actually zero rather than just very low."
+        },
+        {
+          "id": "D",
+          "text": "Read the transcripts and check each task's specification and grader, since a task no attempt ever passes is often ambiguous or mis-graded."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "Anthropic's agent-eval guidance notes that a 0% pass rate across many trials is more often a sign of a **broken task** than an incapable agent: an ambiguous specification, a missing reference solution, or a grader that rejects valid answers. Reading transcripts and checking the task and grader is cheap and should come before investing in tools or prompts.",
+      "whyWrong": {
+        "A": "Building tooling assumes the agent is the problem. If the grader is wrong, no tool will move the score.",
+        "B": "Deleting the tasks hides whatever is wrong with them and may discard important coverage. Diagnose first, then fix or remove.",
+        "C": "More trials only confirm the zero more precisely. They say nothing about why every attempt fails."
+      },
+      "difficulty": 3,
+      "mindset": "When everything fails, suspect the test before the system: read the transcripts and validate the task and grader.",
+      "tags": [
+        "agent-evals",
+        "grader-validation",
+        "transcripts",
+        "task-design"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents"
+      ]
+    },
+    {
+      "id": "p-d4-x1-015",
+      "taskStatementId": "4.2",
+      "stem": "A team improves a claims-triage prompt by adding the 12 cases it failed most often as few-shot examples, and the eval score jumps from 84% to 95%. A reviewer notices that those 12 cases are still in the 200-case eval set, and that this eval set is also the only set the team has ever tuned against. What is the MOST appropriate fix to the test framework?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Keep a held-out set that is never used for tuning or few-shot examples, remove the demonstrated cases from it, and report quality on it."
+        },
+        {
+          "id": "B",
+          "text": "Leave the 12 cases in the eval set, because removing past failures would make the eval easier and hide weaknesses already found."
+        },
+        {
+          "id": "C",
+          "text": "Swap the few-shot examples for synthetic ones generated by Claude, so the eval set can stay as it is and the 95% remains valid."
+        },
+        {
+          "id": "D",
+          "text": "Double the eval set to 400 cases from the same source, so that the 12 overlapping cases have a much smaller effect on the overall reported score."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The 95% is inflated twice: the model sees the answers to 12 test cases in its prompt, and every change was tuned against the same set used to report quality. A **held-out set** that is never used for tuning or example selection gives an honest estimate. The tuning set can keep the hard cases; the reported score must come from data the prompt never saw.",
+      "whyWrong": {
+        "B": "Keeping the cases is fine for a tuning set, but reporting quality on cases that appear verbatim in the prompt measures memorization, not generalization.",
+        "C": "Synthetic examples remove the literal overlap but not the deeper problem: the team still tuned against the only set it reports on.",
+        "D": "Dilution reduces the leak's effect without removing it, and the set is still the one being tuned against."
+      },
+      "difficulty": 1,
+      "mindset": "Never report quality on data the prompt was tuned on or shown; keep a held-out set.",
+      "tags": [
+        "held-out-set",
+        "data-leakage",
+        "few-shot",
+        "overfitting"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests"
+      ]
+    },
+    {
+      "id": "p-d4-x1-016",
+      "taskStatementId": "4.2",
+      "stem": "A logistics firm's document classifier must handle 14 document types. Production logs have thousands of examples of the common types but only a handful of customs-hold notices and hazardous-goods declarations, which are the costliest to misroute. The team needs an eval set that covers these rare types within two weeks. Which TWO steps are MOST appropriate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Leave the rare types out of the eval set until enough real examples accumulate, and report accuracy only on common types for now."
+        },
+        {
+          "id": "B",
+          "text": "Use Claude to generate synthetic examples of the rare types from templates and redacted real samples, with an expert spot-checking them."
+        },
+        {
+          "id": "C",
+          "text": "Copy each rare real example 50 times into the eval set so that the rare types carry the same weight as the common types do."
+        },
+        {
+          "id": "D",
+          "text": "Report rare-type results as a separate slice, and replace synthetic cases with real ones as they arrive from production traffic."
+        },
+        {
+          "id": "E",
+          "text": "Have the classifier label a large batch of unlabeled production documents and add its labels to the eval set as ground truth."
+        }
+      ],
+      "correct": [
+        "B",
+        "D"
+      ],
+      "explanation": "Anthropic's eval guidance encourages using Claude to generate test cases, especially for edge cases that are rare in real data. Synthetic data can be unrealistic, so a **domain expert spot-check** is the quality control. Reporting the rare types as their **own slice** keeps them visible instead of buried in the aggregate, and swapping in **real examples** over time keeps the set anchored to production.",
+      "whyWrong": {
+        "A": "Excluding the costliest categories leaves the riskiest behavior untested for the launch period, which is the opposite of what the business needs.",
+        "C": "Duplicates add no new information; the score swings on one example's result while looking like broad coverage.",
+        "E": "Using the system under test as its own ground truth is circular: the eval would grade the classifier against its own mistakes."
+      },
+      "difficulty": 2,
+      "mindset": "Fill rare-case gaps with reviewed synthetic data, report them as their own slice, and replace them with real data over time.",
+      "tags": [
+        "synthetic-data",
+        "edge-cases",
+        "slicing",
+        "dataset-design",
+        "multi-select"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests"
+      ]
+    },
+    {
+      "id": "p-d4-x1-017",
+      "taskStatementId": "4.2",
+      "stem": "A clinical-documentation product uses an LLM judge to score whether visit summaries leave out clinically important findings. The judge passes 97% of summaries, but in a physician spot-check of 60 summaries the physicians disagree with the judge on 15. In most of those, the judge passed a summary that omitted a medication change. Which TWO actions BEST improve the evaluation framework? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Have physicians label a calibration set, measure judge–physician agreement on it, and revise the rubric until agreement meets a set threshold."
+        },
+        {
+          "id": "B",
+          "text": "Switch the judge to the same model that writes the summaries, so that it understands the generator's style and grades it more accurately."
+        },
+        {
+          "id": "C",
+          "text": "Rewrite the rubric to list required elements, such as any medication change, as explicit pass/fail checks instead of an overall judgment."
+        },
+        {
+          "id": "D",
+          "text": "Run the current judge five times per summary and take the majority vote, so that random grading errors are averaged out of the score."
+        },
+        {
+          "id": "E",
+          "text": "Replace the judge with physician grading of every summary on every release, because automated grading is unsuitable for clinical text."
+        }
+      ],
+      "correct": [
+        "A",
+        "C"
+      ],
+      "explanation": "A judge is a measuring instrument, and it must be **calibrated against expert humans**: label a sample, measure agreement, and fix the rubric where they disagree. The disagreements here are systematic (missed medication changes), which points to a vague rubric. Turning the critical elements into **explicit, specific checks** is the kind of clear rubric Anthropic's grading guidance recommends.",
+      "whyWrong": {
+        "B": "Anthropic's guidance suggests using a different model from the one being evaluated where possible. Using the same model risks sharing its blind spots.",
+        "D": "Majority voting reduces random noise, but these errors are systematic. Five runs of a judge that ignores medication changes will agree on the same wrong verdict.",
+        "E": "Full physician grading on every release is slow and expensive and does not scale. Physicians are better used to calibrate and audit the judge."
+      },
+      "difficulty": 3,
+      "mindset": "Calibrate an LLM judge against experts and make the rubric explicit about what must never be missed.",
+      "tags": [
+        "llm-judge",
+        "calibration",
+        "rubric-design",
+        "human-review",
+        "multi-select"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests",
+        "https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents"
+      ]
+    },
+    {
+      "id": "p-d4-x1-018",
+      "taskStatementId": "4.2",
+      "stem": "A health-insurance company wants to build its member-chat eval set from six months of real chat logs that contain names, member IDs and diagnoses. Most chats are simple balance questions. Complaints and appeals, the riskiest category, make up about 2% of traffic. Which TWO practices should the architect require? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Sample chats uniformly at random so the eval set mirrors production exactly, without adding extra cases from any single category."
+        },
+        {
+          "id": "B",
+          "text": "Copy the logs into the eval store unchanged so graders see the exact context, and restrict access to the eval engineering team."
+        },
+        {
+          "id": "C",
+          "text": "Redact or replace personal and health identifiers before cases enter the eval store, keeping only what is needed to grade each case."
+        },
+        {
+          "id": "D",
+          "text": "Use only synthetic chats written by Claude, since any real log data creates an unacceptable privacy exposure for an eval set."
+        },
+        {
+          "id": "E",
+          "text": "Stratify the sample so complaints, appeals and known past failures are deliberately over-represented relative to their traffic share."
+        }
+      ],
+      "correct": [
+        "C",
+        "E"
+      ],
+      "explanation": "Real logs are the most realistic source of eval cases, but they bring two obligations. **Privacy:** minimize and redact identifiers before data is stored for testing, because access controls alone still leave raw health data spread to a new system. **Coverage:** a uniform sample yields only a handful of complaints and appeals, so **stratify** to over-sample the risky categories and past failures, and report results per category.",
+      "whyWrong": {
+        "A": "Uniform sampling gives about 2% complaints, too few to measure the riskiest behavior reliably. Keep a representative slice, but deliberately add the high-risk cases.",
+        "B": "Restricting access is good but not enough. Copying unredacted health data into another store expands exposure when the grading does not need those identifiers.",
+        "D": "Synthetic-only sets lose real phrasing and failure patterns. Redaction allows real data to be used safely, with synthetic data filling gaps."
+      },
+      "difficulty": 2,
+      "mindset": "Use real traffic for realism, but redact it, and over-sample the rare, high-risk cases you most need to measure.",
+      "tags": [
+        "dataset-design",
+        "privacy",
+        "stratified-sampling",
+        "production-logs",
+        "multi-select"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests"
+      ]
+    }
+  ]
+}

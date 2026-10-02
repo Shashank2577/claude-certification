@@ -1,0 +1,832 @@
+{
+  "certId": "foundations",
+  "domainId": "d5-context",
+  "questions": [
+    {
+      "id": "f-d5-x2-001",
+      "taskStatementId": "5.3",
+      "scenario": "You are building a multi-agent research system using the Claude Agent SDK. A coordinator agent delegates to specialized subagents: one searches the web, one analyzes documents, one synthesizes findings, and one generates reports. The system researches topics and produces comprehensive, cited reports.",
+      "stem": "The document-analysis subagent receives 40 PDFs about offshore wind permitting. Three of them are password-protected. Right now the subagent's file tool raises an exception on the first locked file and the subagent stops. The coordinator receives only \"analysis failed\" and throws away the 12 documents that were already analyzed. What change makes the system MOST reliable with the least redesign?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add a line to the subagent's prompt telling it to take extra care with password-protected files and to try several more approaches before it reports any failure."
+        },
+        {
+          "id": "B",
+          "text": "Have the subagent skip files it cannot open, finish the rest, and return its findings plus a list of failed files with the reason and what it tried."
+        },
+        {
+          "id": "C",
+          "text": "Have the coordinator re-run the whole document-analysis task from scratch on a larger model that is better at handling unusual or protected file formats."
+        },
+        {
+          "id": "D",
+          "text": "Have the subagent return a successful result with findings for the readable files, leaving the three locked files out so the report stays clean."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "One bad item should reduce coverage, not end the task. The subagent should **keep going on the items it can process** and return its **partial results together with structured failure context**: which files failed, why (password-protected) and what it attempted. The coordinator can then try another copy of those files, ask a human for access, or annotate the gap in the report. This avoids both anti-patterns the exam names: ending the whole workflow on one failure, and hiding the failure.",
+      "whyWrong": {
+        "A": "Asking the subagent to take extra care and try several more approaches cannot open a password-protected file. The problem is control flow (one exception ends the task), and a prompt does not change that.",
+        "C": "A bigger model cannot open a locked PDF either, and re-running the whole task from scratch repeats 37 documents of work that would have succeeded.",
+        "D": "Leaving the locked files out without saying so is silent suppression. The coordinator would think all 40 documents were covered, and the report would overstate its evidence."
+      },
+      "difficulty": 2,
+      "mindset": "Fail per item, not per batch: keep the partial results and report exactly what is missing.",
+      "tags": [
+        "error-propagation",
+        "partial-results",
+        "multi-agent",
+        "graceful-degradation"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/multi-agent-research-system",
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "f-d5-x2-002",
+      "taskStatementId": "5.3",
+      "scenario": "You are building a multi-agent research system using the Claude Agent SDK. A coordinator agent delegates to specialized subagents: one searches the web, one analyzes documents, one synthesizes findings, and one generates reports. The system researches topics and produces comprehensive, cited reports.",
+      "stem": "The web-search subagent was asked to run eight queries. After three succeeded, the search provider began returning rate-limit errors, and the subagent's bounded retries ran out. It returns a structured error: failure type `rate_limited`, a suggested wait time, the five queries it did not run, and the results of the three completed queries. The coordinator's current logic re-sends the whole original task whenever any error arrives. What is the MOST efficient recovery that still keeps the results trustworthy?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Re-send the full eight-query task right away so that all of the results come from a single consistent run rather than being stitched together from two runs."
+        },
+        {
+          "id": "B",
+          "text": "Discard the three completed results and mark web search as unavailable for this report, so that partial data is never mixed with complete data."
+        },
+        {
+          "id": "C",
+          "text": "Ask the synthesis subagent to cover the five missing topics from its own general knowledge so the final report reads as complete and shows no gaps."
+        },
+        {
+          "id": "D",
+          "text": "Keep the three completed results, wait the suggested time, then re-send only the five remaining queries and mark those topics pending until they return."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "This is exactly why structured error context matters: the subagent said **what failed, why, what was not attempted and what already succeeded**. The coordinator can use that to recover precisely: keep the valid partial results, respect the wait hint, and retry **only the outstanding work**. Topics stay marked as pending (and become annotated gaps if they still fail), so the report never claims coverage it lacks.",
+      "whyWrong": {
+        "A": "Re-sending all eight queries straight away ignores the rate-limit signal, repeats work that already succeeded and is likely to hit the same limit again.",
+        "B": "Throwing away good results makes the report weaker for no gain. Results from the three successful queries are valid whether or not the other five complete.",
+        "C": "Filling the gaps from the model's own general knowledge produces uncited claims that look like research findings. That is the opposite of a trustworthy, cited report."
+      },
+      "difficulty": 3,
+      "mindset": "Structured errors exist so the coordinator can retry only what failed, not redo everything.",
+      "tags": [
+        "error-propagation",
+        "partial-results",
+        "retry-strategy",
+        "coordinator-recovery"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/multi-agent-research-system",
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "f-d5-x2-003",
+      "taskStatementId": "5.3",
+      "stem": "In a coordinator-subagent pipeline, the search tool retries timeouts three times internally, the subagent retries the tool call three times, and the coordinator re-spawns the subagent up to three times on any error. During a provider outage, a single user request produced 27 attempts per query and the provider throttled the team's account. Which change BEST fixes this while still recovering from brief glitches?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Make one layer own transient retries with a bounded, backed-off budget, and have propagated errors state what was already retried so higher layers reroute or annotate a gap instead."
+        },
+        {
+          "id": "B",
+          "text": "Remove the retry logic from every layer and send any error straight to the coordinator, which then ends the run and returns a clear failure message to the user naming the provider that failed."
+        },
+        {
+          "id": "C",
+          "text": "Raise the timeout value at every layer so that fewer calls fail during a slow period, and leave the three nested layers of retry logic in place since each protects against a different kind of glitch."
+        },
+        {
+          "id": "D",
+          "text": "Add an instruction to every agent's prompt telling it not to retry aggressively when a provider seems slow or keeps returning errors, and to move on to the next query after a couple of failures."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Nested retries multiply: 3 x 3 x 3 = 27 attempts. The fix is to have **one owner for local recovery of transient failures** (bounded, with backoff) and to **propagate only what it cannot resolve**, including what was already attempted. A coordinator that knows a source was retried and is still down can choose a different approach (another source, a coverage gap) rather than retry blindly.",
+      "whyWrong": {
+        "B": "Removing all retries loses recovery from brief glitches, and ending the whole run on one error is a named anti-pattern.",
+        "C": "Longer timeouts do not stop the 27x multiplication during a real outage. Each attempt just waits longer before it fails.",
+        "D": "Two of the three retry layers are deterministic code, so a prompt instruction cannot control them. Retry limits need to be enforced in code, not suggested."
+      },
+      "difficulty": 3,
+      "mindset": "Retry once, in one place, with a budget; everything above that should decide, not repeat.",
+      "tags": [
+        "error-propagation",
+        "retry-strategy",
+        "local-recovery",
+        "multi-agent"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/multi-agent-research-system",
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "f-d5-x2-004",
+      "taskStatementId": "5.3",
+      "stem": "A research subagent works under the policy \"recover locally from what you can; propagate what you cannot.\" During one run it encounters five different errors. Which TWO should it send up to the coordinator with structured error context? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "A single 503 response from a news API, where the second attempt after a short backoff succeeded."
+        },
+        {
+          "id": "B",
+          "text": "A 403 response stating that the team's API key for a paid journal database has been revoked."
+        },
+        {
+          "id": "C",
+          "text": "A rate-limit response asking the client to wait two seconds, after which the next call worked."
+        },
+        {
+          "id": "D",
+          "text": "A validation error about its own badly formatted date filter, which it fixed and re-sent successfully."
+        },
+        {
+          "id": "E",
+          "text": "A government statistics portal that moved its dataset behind a new login, making the source unreachable."
+        }
+      ],
+      "correct": [
+        "B",
+        "E"
+      ],
+      "explanation": "Propagate the errors the subagent **cannot resolve itself**. A revoked credential (B) and a source that is now behind a login (E) both need a decision above the subagent's level: obtain access, choose another source, or record a coverage gap. Include what was attempted and any partial results. Brief transient errors and the subagent's own input mistakes that it already fixed are local recovery, and sending them up would only clutter the coordinator's context.",
+      "whyWrong": {
+        "A": "This transient error was resolved by a bounded retry. Nothing remains for the coordinator to decide.",
+        "C": "The rate limit cleared after the requested wait and the call succeeded. That is routine local recovery.",
+        "D": "The subagent caused this error, understood it and fixed it. The coordinator has no decision to make."
+      },
+      "difficulty": 1,
+      "mindset": "Escalate the problems you can't fix; quietly handle the ones you already did.",
+      "tags": [
+        "error-propagation",
+        "local-recovery",
+        "error-classification"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/multi-agent-research-system",
+        "https://www.anthropic.com/engineering/building-effective-agents",
+        "https://www.anthropic.com/engineering/writing-tools-for-agents"
+      ]
+    },
+    {
+      "id": "f-d5-x2-005",
+      "taskStatementId": "5.3",
+      "scenario": "You are building a customer support resolution agent using the Claude Agent SDK. The agent handles high-ambiguity requests like returns, billing disputes, and account issues. It has access to your backend systems through custom Model Context Protocol (MCP) tools (get_customer, lookup_order, process_refund, escalate_to_human). Your target is 80%+ first-contact resolution while knowing when to escalate.",
+      "stem": "The `process_refund` tool calls a payment processor that sometimes times out after the request has already been sent. On a timeout the tool currently returns `isError: true` with the text \"Refund failed - please retry\". In a few cases the agent retried and the customer was refunded twice. What is the BEST change?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Tell the agent in its system prompt never to retry `process_refund`, and to call `escalate_to_human` every time a refund error occurs for any reason."
+        },
+        {
+          "id": "B",
+          "text": "Increase the payment processor timeout so that far fewer refund calls time out in practice, and keep the existing error message for the rare cases that still remain."
+        },
+        {
+          "id": "C",
+          "text": "Return a structured error: outcome unknown (request sent, no confirmation received), unsafe to retry blindly, so the agent checks the refund status before acting."
+        },
+        {
+          "id": "D",
+          "text": "Have the tool catch timeouts and return success instead, since most refunds that time out are in fact completed by the payment processor shortly afterwards."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "The error message is wrong: it says \"failed, retry\" when the true state is **unknown**. Tool errors should give the agent accurate, actionable context. Here that means the failure type (timeout after submission), that the outcome is unconfirmed, and that a blind retry is unsafe. The agent can then check the order's refund status (for example with `lookup_order`) and either confirm the refund, retry safely or escalate. Accurate error semantics prevent the duplicate refund without taking away the agent's ability to resolve the case.",
+      "whyWrong": {
+        "A": "Escalating every refund error, whatever its cause, sends easy, recoverable cases to humans and hurts the first-contact resolution target. It also leaves the misleading error text in place.",
+        "B": "A longer timeout makes the problem rarer but does not fix it. When a timeout does happen, the message still tells the agent to retry blindly.",
+        "D": "Reporting an unconfirmed refund as successful is silent suppression. Customers whose refund did not go through would be told it did."
+      },
+      "difficulty": 3,
+      "mindset": "An error message must tell the truth about state, especially \"we don't know yet\".",
+      "tags": [
+        "error-propagation",
+        "structured-errors",
+        "side-effects",
+        "customer-support"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/writing-tools-for-agents",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls",
+        "https://modelcontextprotocol.io/specification/2025-06-18/server/tools"
+      ]
+    },
+    {
+      "id": "f-d5-x2-006",
+      "taskStatementId": "5.3",
+      "scenario": "You are building a multi-agent research system using the Claude Agent SDK. A coordinator agent delegates to specialized subagents: one searches the web, one analyzes documents, one synthesizes findings, and one generates reports. The system researches topics and produces comprehensive, cited reports.",
+      "stem": "The subagents report failures well: when the academic-papers source is unreachable, the coordinator receives a structured error. However, the coordinator passes only the successful findings to the synthesis subagent, and the final report presents its conclusions as complete. Reviewers found two sections that rest on a single source but read as comprehensive. Which change MOST directly fixes this?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Have the coordinator pass gap information (which sources failed and which topics they would have covered) to the synthesis subagent and require coverage annotations."
+        },
+        {
+          "id": "B",
+          "text": "Have the synthesis subagent run its own fresh web searches on every topic before writing, so it can work out independently how complete the coverage really is."
+        },
+        {
+          "id": "C",
+          "text": "Add a final self-review step in which the report-generation subagent reads through its own finished report and states whether the coverage in each section seems complete."
+        },
+        {
+          "id": "D",
+          "text": "Have the coordinator hold the final report until every source succeeds, retrying the failed sources for as long as it takes them to come back online."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The error was detected but then **lost at the next hop**. Subagents only know what they are given, so if the synthesis step never sees the gap, it cannot report it. Passing coverage and gap information along with the findings lets the synthesis output say which findings are **well-supported** and which areas have **gaps due to unavailable sources**. That is the coverage-annotation skill in the exam guide.",
+      "whyWrong": {
+        "B": "Having synthesis redo the searching duplicates the search subagent's job and still gives no reliable view of which sources failed. It treats the symptom with more work instead of passing on information that already exists.",
+        "C": "A model reviewing its own output cannot see a gap it was never told about. Self-checks do not replace passing on the facts.",
+        "D": "Waiting indefinitely for every source turns one outage into a blocked workflow. Partial, annotated output is the intended degradation."
+      },
+      "difficulty": 2,
+      "mindset": "An error reported once but dropped downstream is the same as an error suppressed.",
+      "tags": [
+        "error-propagation",
+        "coverage-annotations",
+        "synthesis",
+        "multi-agent"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/multi-agent-research-system"
+      ]
+    },
+    {
+      "id": "f-d5-x2-007",
+      "taskStatementId": "5.3",
+      "stem": "A team's `lookup_records` tool writes rich error details (HTTP status, endpoint, query, partial rows) to their observability platform and returns only \"Error: lookup failed\" to the agent, on the grounds that terse tool results save tokens. Engineers can diagnose every failure afterwards, yet at runtime the coordinator retries permanent permission errors and gives up on brief timeouts. What is the BEST fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Give the coordinator a new tool that queries the observability platform, so that it can look up the full details of any error at the moment it needs to decide what to do."
+        },
+        {
+          "id": "B",
+          "text": "Keep the short message to save tokens, and add a coordinator instruction to treat every failure as temporary and retry each one a fixed number of times."
+        },
+        {
+          "id": "C",
+          "text": "Increase the logging detail so engineers can write better runbooks, then paste the most useful runbook guidance into the coordinator's system prompt."
+        },
+        {
+          "id": "D",
+          "text": "Keep the logging, and also put the context the coordinator needs (failure type, whether a retry can help, what was tried, any partial rows) in the tool result itself."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "Logs are for humans after the fact. The **model can only reason about what is in its context**, and for a tool call that means the tool result. A generic \"lookup failed\" erases the one distinction the coordinator needs at runtime: a retryable timeout versus a permanent permission error. Returning structured, actionable error content in the result (the MCP `isError` pattern) costs a few dozen tokens and lets the coordinator decide correctly, while the logs stay exactly as they are for diagnosis.",
+      "whyWrong": {
+        "A": "A log-search tool adds another tool, another round trip and far more tokens just to recover information the original tool already had and could have returned directly. It is over-engineered.",
+        "B": "Treating every failure as temporary is exactly what causes the wasteful retries of permanent errors.",
+        "C": "Static runbook text cannot tell the coordinator which error just happened. It still only sees \"lookup failed\"."
+      },
+      "difficulty": 1,
+      "mindset": "If the agent must decide, the facts must be in its context, not just in your logs.",
+      "tags": [
+        "error-propagation",
+        "structured-errors",
+        "tool-results",
+        "observability"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/writing-tools-for-agents",
+        "https://modelcontextprotocol.io/specification/2025-06-18/server/tools",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls"
+      ]
+    },
+    {
+      "id": "f-d5-x2-008",
+      "taskStatementId": "5.3",
+      "stem": "A coordinator launches each research worker as a separate Agent SDK `query()` with `max_turns` set. When a worker hits the limit, the orchestration code takes the last text the worker produced and passes it on as that worker's finding. Several reports have stated conclusions based on investigations that were only half finished. Which change is BEST?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Remove the `max_turns` limit from every worker so that each one always runs until it finishes the investigation naturally, however many turns that takes."
+        },
+        {
+          "id": "B",
+          "text": "Check the result subtype; on `error_max_turns`, mark the worker incomplete and pass on what was covered, what remains and the session ID so it can resume."
+        },
+        {
+          "id": "C",
+          "text": "Ask each worker in its prompt to start its final answer with the word FINAL when it is truly finished, and have the orchestration code check for that marker."
+        },
+        {
+          "id": "D",
+          "text": "Double the `max_turns` value for every worker, and keep passing the last text each worker produced on to the coordinator as that worker's finding."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "The SDK already reports how the loop ended: the `ResultMessage` subtype is `success` or an error subtype such as `error_max_turns`, and the `result` text is only present on success. Treating a limit-stopped worker's last message as a finished finding is **silent suppression of a failure**. Propagating an explicit incomplete status, with partial coverage and the session ID, lets the coordinator resume the worker, re-scope the task or annotate the gap.",
+      "whyWrong": {
+        "A": "Removing the limit takes away a sensible production safeguard against runaway cost, and it does nothing about how incomplete runs are reported.",
+        "C": "A prompt-based marker is a probabilistic stand-in for a deterministic signal the SDK already provides, and a worker could print it too early.",
+        "D": "A higher limit makes the problem less frequent, but any worker that still hits it is still passed off as finished."
+      },
+      "difficulty": 3,
+      "mindset": "Use the system's real completion signal; never let \"stopped\" masquerade as \"done\".",
+      "tags": [
+        "error-propagation",
+        "agent-sdk",
+        "incomplete-results",
+        "max-turns"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/agent-loop",
+        "https://www.anthropic.com/engineering/multi-agent-research-system"
+      ]
+    },
+    {
+      "id": "f-d5-x2-009",
+      "taskStatementId": "5.3",
+      "scenario": "You are building a multi-agent research system using the Claude Agent SDK. A coordinator agent delegates to specialized subagents: one searches the web, one analyzes documents, one synthesizes findings, and one generates reports. The system researches topics and produces comprehensive, cited reports.",
+      "stem": "The web-search subagent reports: failure type `access_denied`; attempted: fetching a paywalled industry report; partial results: a summary from the publisher's free abstract; alternative: \"the same figures appear in a public regulatory filing.\" The deadline allows one more round of subagent work. Which TWO coordinator responses are appropriate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Send a subagent to retrieve the public regulatory filing suggested as the alternative, and use its figures if they confirm the abstract."
+        },
+        {
+          "id": "B",
+          "text": "Retry the paywalled fetch several more times, since access-denied responses from publishers often clear on their own after a short wait."
+        },
+        {
+          "id": "C",
+          "text": "If the alternative cannot be confirmed in time, use the abstract and annotate that the figures were not checked against the full source."
+        },
+        {
+          "id": "D",
+          "text": "Ask the synthesis subagent to estimate the missing figures from similar industry reports so the finished section looks complete to readers."
+        },
+        {
+          "id": "E",
+          "text": "Stop the entire research run and tell the user that no report can be produced because one source sits behind a publisher's paywall."
+        }
+      ],
+      "correct": [
+        "A",
+        "C"
+      ],
+      "explanation": "Structured error context (failure type, what was attempted, partial results, alternatives) is meant to **drive the coordinator's recovery decision**. The two appropriate moves are to follow the suggested alternative (A) and, if that does not work out, to degrade gracefully with a **coverage annotation** (C), so readers know which figures rest only on an abstract.",
+      "whyWrong": {
+        "B": "An access-denied error is not transient, so retrying it wastes the single remaining round on something that will not change.",
+        "D": "Estimated figures presented as findings are fabrication. They make the report look complete while making it less trustworthy.",
+        "E": "Ending the whole run because one source failed is a named anti-pattern, especially when an alternative and partial results are available."
+      },
+      "difficulty": 2,
+      "mindset": "Use the alternatives the error hands you; if they fail, ship with an honest gap.",
+      "tags": [
+        "error-propagation",
+        "coordinator-recovery",
+        "coverage-annotations",
+        "alternatives"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/multi-agent-research-system",
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "f-d5-x2-010",
+      "taskStatementId": "5.4",
+      "scenario": "You are building developer productivity tools using the Claude Agent SDK. The agent helps engineers explore unfamiliar codebases, understand legacy systems, generate boilerplate code, and automate repetitive tasks. It uses the built-in tools (Read, Write, Bash, Grep, Glob) and integrates with Model Context Protocol (MCP) servers.",
+      "stem": "The team asks the agent to help a new engineer learn the legacy billing service. The agent spawns one subagent with the prompt \"Understand the billing service and report back everything important.\" After a long run it returns a vague summary (\"uses a typical layered architecture with services and repositories\"), and the main agent cannot answer the engineer's follow-up questions from it. What change BEST restores the value of delegating?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Have the main agent explore the billing service itself instead, since a subagent that returns a vague summary adds a hand-off without adding any understanding."
+        },
+        {
+          "id": "B",
+          "text": "Keep the single broad subagent but move it to a larger, more capable model and add an instruction to be thorough and specific rather than generic in its report."
+        },
+        {
+          "id": "C",
+          "text": "Replace the one broad task with several narrowly scoped subagent questions (entry points, how an invoice is built, where the tests live), each with a set summary format."
+        },
+        {
+          "id": "D",
+          "text": "Give the subagent a complete recursive file listing of the billing service in its prompt so that it starts with a full map of the code and cannot miss any part of it."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Subagents pay off when they are given **specific questions**. The exam guide's own examples are \"find all test files\" and \"trace refund flow dependencies\". A narrowly scoped question gives the subagent a clear stopping point and a concrete answer to return. An open-ended \"understand everything\" task fills the subagent's own context with unbounded exploration and ends in exactly the generic, pattern-based summary that signals context degradation. Several focused subagents, each returning a short structured answer, give the main agent specific facts it can coordinate and use to answer follow-ups.",
+      "whyWrong": {
+        "A": "Delegation is not the problem; the task scoping is. Pulling the exploration back into the main agent floods the context you are trying to protect and hands the same open-ended task to a different context.",
+        "B": "A bigger model and an instruction to be specific do not change the shape of the task. An unbounded \"understand everything\" prompt still produces an unbounded exploration and a generic summary.",
+        "D": "A full file listing front-loads the subagent's context with noise before it starts, and it still leaves the subagent with no specific question to answer."
+      },
+      "difficulty": 2,
+      "mindset": "Delegate questions, not quests: a subagent needs a specific thing to find and a format to return it in.",
+      "tags": [
+        "codebase-exploration",
+        "subagents",
+        "task-scoping",
+        "focused-questions"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/best-practices#avoid-common-failure-patterns",
+        "https://code.claude.com/docs/en/agent-sdk/subagents",
+        "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents"
+      ]
+    },
+    {
+      "id": "f-d5-x2-011",
+      "taskStatementId": "5.4",
+      "scenario": "You are using Claude Code to accelerate software development. Your team uses it for code generation, refactoring, debugging, and documentation. You need to integrate it into your development workflow with custom slash commands, CLAUDE.md configurations, and understand when to use plan mode vs direct execution.",
+      "stem": "A developer is about to plan a change to the payments module in a large repository. First she wants to know which test files cover the module and how they are organized. She wants the main conversation to stay focused on planning, and she wants no risk that this discovery step edits anything. What is the BEST approach?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Ask Claude to use the built-in Explore subagent for the discovery, so the searching runs in a separate read-only context and only a summary returns."
+        },
+        {
+          "id": "B",
+          "text": "Do the discovery in the main conversation in plan mode, since plan mode blocks file edits and therefore keeps the main context clean and focused as well."
+        },
+        {
+          "id": "C",
+          "text": "Run `/clear` first so that the main conversation has as much free room as possible for all of the search output that is about to come in."
+        },
+        {
+          "id": "D",
+          "text": "Paste the output of a full recursive directory listing into the chat so Claude can scan the whole tree for test files directly in one step."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The built-in **Explore** subagent is read-only (Write and Edit are denied), and Claude Code uses it to search a codebase **without putting the exploration results into the main conversation**. Only the summary comes back. That meets both of her requirements: no edits and a clean planning context.",
+      "whyWrong": {
+        "B": "Plan mode prevents source edits, but the search output still accumulates in the main conversation, so the context is not protected.",
+        "C": "`/clear` throws away the current conversation, and the search output still lands in the main context afterwards.",
+        "D": "Pasting a full recursive listing of a large repository is exactly the kind of verbose output that fills the context."
+      },
+      "difficulty": 1,
+      "mindset": "Read-only discovery belongs in an isolated explorer; the main thread gets the summary.",
+      "tags": [
+        "codebase-exploration",
+        "explore-subagent",
+        "claude-code",
+        "context-isolation"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/sub-agents",
+        "https://code.claude.com/docs/en/context-window"
+      ]
+    },
+    {
+      "id": "f-d5-x2-012",
+      "taskStatementId": "5.4",
+      "scenario": "You are using Claude Code to accelerate software development. Your team uses it for code generation, refactoring, debugging, and documentation. You need to integrate it into your development workflow with custom slash commands, CLAUDE.md configurations, and understand when to use plan mode vs direct execution.",
+      "stem": "A developer already knows that the HTTP retry setting lives in `config/http_client.yaml`. He wants to check its current value before making a one-line edit. A teammate's rule is \"always spawn a subagent for any lookup to protect the context.\" What is the MOST appropriate approach here?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Spawn a subagent to search the whole repository for retry-related settings and report back a short summary of everything it manages to find."
+        },
+        {
+          "id": "B",
+          "text": "Run `/compact` first so that the context has plenty of free room before Claude reads the configuration file and reports the current value."
+        },
+        {
+          "id": "C",
+          "text": "Spawn parallel subagents to check every YAML file in the repository, in case another file happens to use a similar setting name somewhere."
+        },
+        {
+          "id": "D",
+          "text": "Have Claude read the one known file directly in the main conversation, since a small, targeted lookup gains nothing from being delegated."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "Context-management techniques solve a real problem: **verbose, open-ended exploration**. Reading one small, known file adds very little to the context, and the developer needs the result right there for the edit. A subagent adds startup cost, latency and a hand-off for no benefit. Choose the lightest approach that fits the task.",
+      "whyWrong": {
+        "A": "Searching the whole repository for a value whose location is already known turns a targeted read into open-ended exploration.",
+        "B": "There is no context pressure to relieve, and compacting would summarize away the current session's details for no reason.",
+        "C": "Parallel subagents over every YAML file is heavily over-engineered for a lookup whose answer sits in a single known file."
+      },
+      "difficulty": 1,
+      "mindset": "Isolation is a tool for noisy exploration, not a ritual for every lookup.",
+      "tags": [
+        "codebase-exploration",
+        "subagents",
+        "right-sizing",
+        "claude-code"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/best-practices#manage-context-aggressively",
+        "https://code.claude.com/docs/en/sub-agents"
+      ]
+    },
+    {
+      "id": "f-d5-x2-013",
+      "taskStatementId": "5.4",
+      "scenario": "You are building developer productivity tools using the Claude Agent SDK. The agent helps engineers explore unfamiliar codebases, understand legacy systems, generate boilerplate code, and automate repetitive tasks. It uses the built-in tools (Read, Write, Bash, Grep, Glob) and integrates with Model Context Protocol (MCP) servers.",
+      "stem": "An engineer asks the agent to explain how four independent services (auth, catalog, cart and notifications) each load their configuration, and then to compare them. When this runs in a single context, the agent's descriptions of the later services get vaguer and it mixes up details between services. Which approach is MOST effective?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Have the agent explore all four services in a single pass as it does now, but with an added instruction to be extra careful not to confuse them."
+        },
+        {
+          "id": "B",
+          "text": "Spawn one subagent per service with a focused question and a required summary format, then have the main agent compare the four summaries."
+        },
+        {
+          "id": "C",
+          "text": "Spawn a single subagent that explores all four services one after another and returns one combined comparison to the main agent."
+        },
+        {
+          "id": "D",
+          "text": "Load every source file from all four services into the main context at the start so that no service's details are forgotten later on."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "The investigations are independent, so they **parallelize cleanly**. Each focused subagent works in a fresh context on a single question, and the main agent gets four compact, comparable summaries to reason over. This is the exam-guide pattern of spawning subagents for specific questions while the **main agent keeps the high-level coordination** (here, the comparison).",
+      "whyWrong": {
+        "A": "Asking the agent to be careful does not stop context degradation. The context still fills with four services' worth of exploration.",
+        "C": "One subagent exploring all four services has the same problem: it just moves the overloaded context from the main agent into the subagent.",
+        "D": "Front-loading every file uses up the context before any reasoning starts. It is the most direct way to cause the degradation you want to avoid."
+      },
+      "difficulty": 2,
+      "mindset": "Independent questions get independent contexts; the coordinator compares the answers.",
+      "tags": [
+        "codebase-exploration",
+        "subagents",
+        "parallelization",
+        "context-degradation"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/subagents",
+        "https://www.anthropic.com/engineering/multi-agent-research-system",
+        "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents"
+      ]
+    },
+    {
+      "id": "f-d5-x2-014",
+      "taskStatementId": "5.4",
+      "stem": "During a multi-hour exploration of a legacy insurance-claims system, the agent keeps a scratchpad file, `notes/findings.md`, and re-reads it before answering each new question. Which TWO kinds of content make this file MOST useful? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "The complete raw output of every Grep and Glob search, so that no detail from any search is ever lost."
+        },
+        {
+          "id": "B",
+          "text": "Confirmed facts with specifics: class and file names, how they relate, and where each was verified."
+        },
+        {
+          "id": "C",
+          "text": "A general description of the layered architecture that enterprise insurance systems usually use."
+        },
+        {
+          "id": "D",
+          "text": "Open questions and unverified hypotheses, clearly marked as unconfirmed so later steps check them."
+        },
+        {
+          "id": "E",
+          "text": "A copy of the full conversation transcript, appended to the file after every single exploration step."
+        }
+      ],
+      "correct": [
+        "B",
+        "D"
+      ],
+      "explanation": "A scratchpad counteracts context degradation only if it holds **compact, specific, verified knowledge**: the concrete classes, files and relationships the agent found, each with where it was confirmed. Adding **clearly marked open questions** stops later steps from treating guesses as facts. Structured note-taking outside the context window is a recommended technique for long-horizon work.",
+      "whyWrong": {
+        "A": "Raw search output in the notes recreates the context bloat that caused the degradation. The file becomes too large to re-read usefully.",
+        "C": "Generic \"typical architecture\" notes are exactly the vague, pattern-based answers that signal degradation. The notes should hold what this codebase actually contains.",
+        "E": "Full transcripts are huge and unfocused. Re-reading them costs as much context as the original conversation did."
+      },
+      "difficulty": 2,
+      "mindset": "Write down what you verified, where you verified it, and what you still don't know.",
+      "tags": [
+        "codebase-exploration",
+        "scratchpad",
+        "context-degradation",
+        "note-taking"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents",
+        "https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents"
+      ]
+    },
+    {
+      "id": "f-d5-x2-015",
+      "taskStatementId": "5.4",
+      "stem": "A coordinator runs six subagents, each analyzing one area of a large repository for a migration-readiness assessment. The team is adding crash recovery: each agent exports its state to a known location, and the coordinator loads a manifest when it resumes. Which TWO items should each agent's state export include? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "The items it has completed, with paths to the output files that hold its findings for each one."
+        },
+        {
+          "id": "B",
+          "text": "Its full message history, so that the coordinator can replay the entire conversation on resume."
+        },
+        {
+          "id": "C",
+          "text": "Only a single overall status flag (done or not done), so that the shared manifest stays as small as possible."
+        },
+        {
+          "id": "D",
+          "text": "The model's internal reasoning traces, so that the restarted agent thinks the same way it did before."
+        },
+        {
+          "id": "E",
+          "text": "What remains to be done and the next planned step, so a resumed agent continues instead of restarting."
+        }
+      ],
+      "correct": [
+        "A",
+        "E"
+      ],
+      "explanation": "A useful state export answers two questions for the coordinator: **what is done, and where is the evidence** (A), and **what is left and what comes next** (E). The coordinator loads these manifests on resume and **injects them into the resumed agents' prompts**, so finished work is reused and the remaining work picks up where it stopped. Long-running agent harnesses use the same pattern with progress files.",
+      "whyWrong": {
+        "B": "Replaying full histories is costly in context and fragile. The manifest should hold distilled state, not transcripts.",
+        "C": "A single flag tells the coordinator nothing about partially finished areas, so an unfinished agent would restart from the beginning.",
+        "D": "Reasoning traces are neither a reliable nor a necessary resume mechanism. What matters is the concrete progress and findings."
+      },
+      "difficulty": 3,
+      "mindset": "Checkpoint the facts of progress (done, where, next), not the conversation.",
+      "tags": [
+        "codebase-exploration",
+        "crash-recovery",
+        "manifest",
+        "state-persistence"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents",
+        "https://www.anthropic.com/engineering/multi-agent-research-system"
+      ]
+    },
+    {
+      "id": "f-d5-x2-016",
+      "taskStatementId": "5.4",
+      "stem": "The nightly migration-assessment job crashed when it was about 60% complete. Before it was restarted the next morning, developers merged twelve commits that touched two of the modules it had already analyzed. The coordinator's manifest records the completed modules and their findings files. What is the BEST way to resume?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Resume from the manifest exactly as it is, because the recorded findings are complete and re-analyzing modules only wastes tokens."
+        },
+        {
+          "id": "B",
+          "text": "Discard the manifest and start the whole assessment again from the beginning, since any code change could make every finding invalid."
+        },
+        {
+          "id": "C",
+          "text": "Load the manifest into the resumed agents' prompts and mark the two changed modules, with their changed files, for targeted re-analysis."
+        },
+        {
+          "id": "D",
+          "text": "Resume from the manifest and add a note to the final report warning readers that some of the findings may now be out of date."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Crash recovery should reuse valid work, but **state can go stale**. The best approach combines the manifest (no repeated work on untouched modules) with **targeted re-analysis of exactly what changed**: tell the resumed agents which files changed instead of re-exploring everything. This keeps accuracy where it is at risk and saves effort everywhere else.",
+      "whyWrong": {
+        "A": "Trusting stale findings for the two modules that changed would put outdated analysis into the report with no warning.",
+        "B": "Starting over throws away valid results for every module the commits did not touch. That is the expensive problem the manifest exists to prevent.",
+        "D": "A vague warning hands the problem to readers when the system already knows exactly which findings are affected and can fix them."
+      },
+      "difficulty": 3,
+      "mindset": "Resume from saved state, but re-verify precisely what changed underneath it.",
+      "tags": [
+        "codebase-exploration",
+        "crash-recovery",
+        "stale-state",
+        "targeted-reanalysis"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents",
+        "https://code.claude.com/docs/en/agent-sdk/sessions"
+      ]
+    },
+    {
+      "id": "f-d5-x2-017",
+      "taskStatementId": "5.4",
+      "stem": "A coordinator agent runs a migration assessment over a large repository. To save time, the team has the coordinator trace two of the six module flows itself while subagents trace the other four. Runs now end with a thorough write-up of the coordinator's own two flows and a thin, inconsistent merge of the subagents' findings; sometimes the coordinator forgets which modules it assigned to whom. Which change is MOST likely to fix this?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Keep the coordinator out of the detailed tracing: it decomposes the work, assigns all six flows to subagents, tracks what is outstanding and merges the returned summaries."
+        },
+        {
+          "id": "B",
+          "text": "Keep the coordinator's two flows but give it a model with a larger context window, so that its own tracing output and the four returned summaries fit comfortably together."
+        },
+        {
+          "id": "C",
+          "text": "Have the coordinator finish its own two flows first and run `/compact` before it reads the four subagent summaries, so that the merge starts from a cleaner context."
+        },
+        {
+          "id": "D",
+          "text": "Add a prompt instruction telling the coordinator to weigh the subagents' findings equally with its own and to re-read the assignment list before it starts the merge."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The coordinator's job is **high-level coordination**: decomposing the task, assigning it, tracking progress and synthesizing what comes back. When it also does detailed exploration, its context fills with its own raw search output, which crowds out the overview it needs to track assignments and merge results evenly. The exam guide's pattern is that subagents investigate specific questions **while the main agent preserves high-level coordination**. Anthropic's research system uses the same split: the lead agent plans, delegates and synthesizes while subagents do the gathering and return condensed findings.",
+      "whyWrong": {
+        "B": "A larger window delays the problem rather than fixing the role confusion. The coordinator's context still fills with tracing detail that competes with coordination state, and recall still degrades as the context grows.",
+        "C": "`/compact` summarizes what is already there. The coordinator's own tracing still consumed its context during the run, and the summary may blur the very assignment details it is forgetting.",
+        "D": "Attention cannot be rebalanced by instruction when the context is dominated by one kind of content. The imbalance is structural: raw detail for two flows next to short summaries for four."
+      },
+      "difficulty": 2,
+      "mindset": "The coordinator holds the map; the subagents walk the terrain.",
+      "tags": [
+        "codebase-exploration",
+        "coordination",
+        "subagents",
+        "role-separation"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/multi-agent-research-system",
+        "https://code.claude.com/docs/en/agent-sdk/subagents",
+        "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents"
+      ]
+    },
+    {
+      "id": "f-d5-x2-018",
+      "taskStatementId": "5.4",
+      "stem": "A team built its own code-exploration agent on the Claude Messages API and turned on context editing, so old tool results are cleared automatically once the context grows large. Since then, the agent sometimes repeats searches it has already run and loses details it found early on, such as which module owns the retry logic. What change BEST keeps those findings available while still clearing bulky tool results?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Turn context editing off entirely and let the context grow until requests start to fail, then begin a fresh conversation from scratch at that point."
+        },
+        {
+          "id": "B",
+          "text": "Give the agent the memory tool (or a scratchpad file) and have it record key findings as it goes, so they survive once old tool results are cleared."
+        },
+        {
+          "id": "C",
+          "text": "Configure context editing to keep many more of the recent tool uses, so that early search results are cleared much less often than they are under the current setting."
+        },
+        {
+          "id": "D",
+          "text": "Add an instruction to the system prompt asking the agent to remember important findings carefully and carry them forward before it runs each new search."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Clearing old tool results is a good way to control context growth, but whatever the agent learned only from those results disappears with them. The documented pairing is **context editing plus persistent notes**: the agent writes key findings to memory or a scratchpad file outside the context window and reads them back when needed. Bulky raw output gets cleared, and the distilled knowledge stays.",
+      "whyWrong": {
+        "A": "Removing context editing brings back unbounded growth and the degradation that comes with it, and the planned restart would lose every finding anyway.",
+        "C": "Keeping more tool uses only postpones clearing and keeps more raw output in context. Early findings are still lost eventually.",
+        "D": "A model has no memory beyond its context. Asking it to \"remember\" cannot save anything once the result has been cleared."
+      },
+      "difficulty": 2,
+      "mindset": "If context will be pruned, write the important parts somewhere that won't be.",
+      "tags": [
+        "codebase-exploration",
+        "context-editing",
+        "memory-tool",
+        "scratchpad"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/context-editing",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/memory-tool",
+        "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents"
+      ]
+    }
+  ]
+}

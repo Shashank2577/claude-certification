@@ -1,0 +1,675 @@
+{
+  "certId": "developer",
+  "domainId": "d1-agents-workflows",
+  "questions": [
+    {
+      "id": "v-d1-b2-001",
+      "taskStatementId": "1.2",
+      "stem": "A team is building a quoting assistant with the Claude Agent SDK in Python. The agent already uses the built-in Read and Grep tools. It now needs to call two functions that already exist in the same Python service: `get_list_price(sku)` and `get_customer_discount(account_id)`. They want the simplest reliable way to expose these to the agent with minimal new infrastructure. What should they do?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Package both functions in a standalone stdio MCP server in its own repository, deploy it as a separate service, and connect the agent to it."
+        },
+        {
+          "id": "B",
+          "text": "Decorate both functions with `@tool`, wrap them with `create_sdk_mcp_server`, pass it in `mcp_servers`, and allow its tools by name."
+        },
+        {
+          "id": "C",
+          "text": "Describe both functions in the system prompt and let the agent invoke them by running a Python one-liner through the Bash tool."
+        },
+        {
+          "id": "D",
+          "text": "Drop the Agent SDK entirely and rewrite the whole agent as a hand-written Messages API loop so the two functions can be passed as tools."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "The Agent SDK adds custom tools through an **in-process MCP server**: decorate the functions with `@tool`, wrap them with `create_sdk_mcp_server`, and pass the server in `mcp_servers`. Claude sees them as `mcp__<server>__<tool>`, and you can pre-approve them with an allow rule. They run inside the existing process, so there is nothing new to deploy.",
+      "whyWrong": {
+        "A": "This works, but it adds a separate repository, deployment and transport for two functions that already live in the same process. That is more machinery than the requirement calls for.",
+        "C": "Shelling out through Bash gives the agent a broad, hard-to-control capability, relies on the model writing correct code each time, and skips typed tool schemas. It is fragile and less safe.",
+        "D": "The Agent SDK supports custom tools directly. Throwing away the harness to add two functions is a large rewrite with no benefit."
+      },
+      "difficulty": 1,
+      "mindset": "Use the platform's built-in extension point before inventing new infrastructure.",
+      "tags": [
+        "agent-sdk",
+        "custom-tools",
+        "in-process-mcp"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/mcp",
+        "https://code.claude.com/docs/en/agent-sdk/python"
+      ]
+    },
+    {
+      "id": "v-d1-b2-002",
+      "taskStatementId": "1.2",
+      "stem": "A research-assistant product runs the Agent SDK in ephemeral containers that shut down when a user goes idle. Users come back hours or days later and expect two things: the agent remembers the earlier conversation, and the draft report files it wrote in its working directory are still there. Today both are lost whenever a container is recycled. Which TWO changes are needed? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Configure a `SessionStore` adapter and resume each returning user's session by its stored session ID."
+        },
+        {
+          "id": "B",
+          "text": "Use `fork_session` on every return so the agent branches from the previous conversation instead of starting over."
+        },
+        {
+          "id": "C",
+          "text": "Raise the container idle timeout so that containers almost never shut down between a user's visits."
+        },
+        {
+          "id": "D",
+          "text": "Store the working directory on a mounted durable volume or sync it to an object store between runs."
+        },
+        {
+          "id": "E",
+          "text": "Save the final `result` text of each run and paste it into the first prompt when the user returns."
+        }
+      ],
+      "correct": [
+        "A",
+        "D"
+      ],
+      "explanation": "This is the **hybrid** session pattern: ephemeral containers that load saved state on startup. A session is the **conversation transcript**, not the filesystem, and a `SessionStore` adapter mirrors transcripts to durable storage so a fresh container can `resume` by session ID. It does not persist files written to the working directory, so drafts need their own storage, such as a mounted volume or an object-store sync. You need both changes to meet both requirements.",
+      "whyWrong": {
+        "B": "Forking branches an existing session, but the transcript it would fork from is already gone when the container's local disk is wiped. It also does nothing for the files.",
+        "C": "Keeping containers alive raises cost and still loses everything on restarts, scale-down or a move to another node. It postpones the problem without fixing it.",
+        "E": "A final summary is a lossy stand-in for the real transcript (tool calls, files read, decisions), and it doesn't bring back the draft files."
+      },
+      "difficulty": 3,
+      "mindset": "Know exactly what each persistence mechanism covers. Transcripts and files are separate state.",
+      "tags": [
+        "agent-sdk",
+        "hosting",
+        "session-store",
+        "hybrid-sessions"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/sessions",
+        "https://code.claude.com/docs/en/agent-sdk/hosting"
+      ]
+    },
+    {
+      "id": "v-d1-b2-003",
+      "taskStatementId": "1.2",
+      "stem": "A SaaS vendor runs Agent SDK sessions for several customers inside one shared container to keep costs down. During a review, a session for Customer B started following coding conventions written in Customer A's CLAUDE.md, and it referred to notes the agent had remembered from A's earlier sessions. The vendor must stop this cross-tenant leakage without giving each customer a dedicated container. Which TWO actions are MOST effective? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add a system-prompt rule telling the agent to ignore any instructions or notes that belong to a different customer."
+        },
+        {
+          "id": "B",
+          "text": "Pass `setting_sources=[]` and set `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` so filesystem settings and auto memory are not loaded."
+        },
+        {
+          "id": "C",
+          "text": "Give every customer a separate Anthropic API key so that each tenant's sessions are billed and tracked on their own."
+        },
+        {
+          "id": "D",
+          "text": "Lower `max_turns` for each session so that less tenant data accumulates in the context window over the course of a run."
+        },
+        {
+          "id": "E",
+          "text": "Give each tenant its own working directory via `cwd` and a separate `CLAUDE_CONFIG_DIR` on every `query()` call."
+        }
+      ],
+      "correct": [
+        "B",
+        "E"
+      ],
+      "explanation": "By default the SDK reads settings and CLAUDE.md files from the filesystem (an explicit empty `setting_sources` list loads none), and auto memory is loaded independently of setting sources, so both must be disabled explicitly. Anthropic's isolation guidance for shared environments adds giving each tenant its own working directory and its own config directory, so per-tenant state (settings, sessions, memory) never overlaps. Together these remove both paths the leaked content came through.",
+      "whyWrong": {
+        "A": "A prompt rule is probabilistic, and the leaked text is already in the context. Isolation has to stop the content from loading at all.",
+        "C": "Separate keys help with billing and attribution, but every session still reads the same filesystem settings and memory.",
+        "D": "Turn caps limit run length. They don't stop CLAUDE.md or memory from loading at session start."
+      },
+      "difficulty": 3,
+      "mindset": "Enforce isolation where the data loads, not with instructions to the model.",
+      "tags": [
+        "agent-sdk",
+        "hosting",
+        "multi-tenant",
+        "isolation"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/hosting",
+        "https://code.claude.com/docs/en/agent-sdk/modifying-system-prompts"
+      ]
+    },
+    {
+      "id": "v-d1-b2-004",
+      "taskStatementId": "1.2",
+      "stem": "A company is putting a self-hosted Agent SDK service into production. The agent calls a third-party CRM API, and the web app sends it user requests. The security team has two concerns: no long-lived CRM credential should ever be readable from inside the agent's container, and the agent itself should not be the component that validates end-user tokens. Which TWO design choices BEST address these concerns? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Put the CRM key in the system prompt and add a PreToolUse hook that blocks any tool call whose input contains the key."
+        },
+        {
+          "id": "B",
+          "text": "Pass the user's raw session token into the prompt so the agent can call an auth tool to check it before acting."
+        },
+        {
+          "id": "C",
+          "text": "Route the agent's outbound calls through an egress proxy that enforces an allowlist and injects the CRM credential."
+        },
+        {
+          "id": "D",
+          "text": "Store the CRM key in a `.env` file in the working directory and add a deny rule so the Read tool cannot open it."
+        },
+        {
+          "id": "E",
+          "text": "Authenticate users at a gateway in front of the agent container so it only receives pre-authenticated requests."
+        }
+      ],
+      "correct": [
+        "C",
+        "E"
+      ],
+      "explanation": "Anthropic's hosting guidance covers both concerns. **Outbound**: keep tool credentials out of the agent environment and let an egress proxy add the credential after the request leaves the container, while also enforcing domain allowlists and logging. **Inbound**: put authentication at a gateway so the agent receives pre-authenticated requests and is not the token validator.",
+      "whyWrong": {
+        "A": "The key sits in the model's context, where a prompt injection or a slip in the response can expose it. Hook filtering on tool input doesn't remove it from context.",
+        "B": "Raw user tokens in the prompt are exposed to the model. This also makes the agent the token validator, which is exactly what the team wants to avoid.",
+        "D": "The secret still lives in the container. Shell commands or other tools could read the file, so a Read deny rule doesn't remove the exposure."
+      },
+      "difficulty": 2,
+      "mindset": "Keep secrets and identity checks outside the agent's reach. The agent should never hold what it doesn't need.",
+      "tags": [
+        "agent-sdk",
+        "hosting",
+        "secrets",
+        "egress-proxy"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/hosting"
+      ]
+    },
+    {
+      "id": "v-d1-b2-005",
+      "taskStatementId": "1.2",
+      "stem": "A coding agent built on the Agent SDK fixes bugs in a service repository. Reviewers find that about one run in ten ends with the agent reporting \"fixed\" while the unit tests still fail. The system prompt already says, in bold, to run the test suite and confirm it passes before finishing. The team wants the most reliable way to ensure the agent cannot finish with failing tests. What should they add?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add three few-shot examples to the system prompt in which the agent runs the tests, sees a failure, and keeps working."
+        },
+        {
+          "id": "B",
+          "text": "Raise `max_turns` so the agent always has enough turns left to rerun the full test suite before its final response."
+        },
+        {
+          "id": "C",
+          "text": "A Stop hook that runs the full test suite and, on failure, returns `decision: \"block\"` with the failing output as its reason."
+        },
+        {
+          "id": "D",
+          "text": "A PostToolUse hook on Edit that runs the test suite after each change and logs the outcome to the team's dashboard."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "A **Stop** hook fires when the agent is about to finish. Returning `decision: \"block\"` with a `reason` stops the agent from ending and continues the conversation, so Claude acts on the failure output. The check runs in code every time, which turns \"usually runs the tests\" into a guarantee.",
+      "whyWrong": {
+        "A": "More examples may lower the failure rate, but it is still a probabilistic prompt fix for something that must always hold.",
+        "B": "The agent isn't running out of turns. It decides it is done. A higher cap doesn't change that decision.",
+        "D": "Running and logging the tests after each edit gives visibility but doesn't stop the agent from finishing with red tests."
+      },
+      "difficulty": 2,
+      "mindset": "If a completion condition must always hold, enforce it at the exit point with code.",
+      "tags": [
+        "hooks",
+        "stop-hook",
+        "deterministic-control"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/hooks",
+        "https://code.claude.com/docs/en/agent-sdk/hooks"
+      ]
+    },
+    {
+      "id": "v-d1-b2-006",
+      "taskStatementId": "1.2",
+      "stem": "A sales agent sends follow-up emails through a custom `mcp__mail__send_email` tool. A new regulation requires that every outgoing email include the compliance archive address in BCC. Testing shows the agent sometimes forgets the BCC even after a prompt update. The team wants every email to comply with minimal disruption to the agent's behaviour. What is the BEST approach?",
+      "options": [
+        {
+          "id": "A",
+          "text": "A PreToolUse hook on `send_email` that returns `updatedInput` adding the archive address to the BCC field before the call runs."
+        },
+        {
+          "id": "B",
+          "text": "A PostToolUse hook on `send_email` that checks the sent message and adds the archive address to BCC when it is missing."
+        },
+        {
+          "id": "C",
+          "text": "A PreToolUse hook that denies any `send_email` call without the BCC, so the agent has to retry with the address added."
+        },
+        {
+          "id": "D",
+          "text": "Move the BCC rule to the top of the system prompt in capital letters and add an example email that shows the field."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "A PreToolUse hook can return `updatedInput`, which replaces the tool's arguments before it runs. Adding the BCC there makes every call compliant in code, without a failed attempt and without relying on the model to remember. Return a new input object rather than changing the original.",
+      "whyWrong": {
+        "B": "PostToolUse fires after the email has already gone out, so it is too late to change the recipients; its output options only change what Claude sees next.",
+        "C": "This does enforce compliance, but every miss costs a denied call and a retry turn, and the agent might still get the retry wrong. Fixing the input directly is simpler and more reliable.",
+        "D": "A prompt change is probabilistic, and testing has already shown the agent ignores the rule sometimes."
+      },
+      "difficulty": 2,
+      "mindset": "When a required field can be filled in mechanically, fix the input in code instead of asking the model to remember it.",
+      "tags": [
+        "hooks",
+        "pre-tool-use",
+        "updated-input",
+        "compliance"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/hooks"
+      ]
+    },
+    {
+      "id": "v-d1-b2-007",
+      "taskStatementId": "1.2",
+      "stem": "An Agent SDK app has a PostToolUse hook that sends each tool call's name and latency to a product-analytics endpoint. The data is best-effort telemetry and never changes what the agent does. Because the endpoint is slow, the hook adds one to two seconds to every tool call, and long sessions have become noticeably slower. What is the MOST appropriate change?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Raise the hook's `timeout` on its matcher so slow analytics calls finish instead of being cancelled mid-request."
+        },
+        {
+          "id": "B",
+          "text": "Remove the hook and instruct the agent in its prompt to call a logging tool after each of its other tool calls."
+        },
+        {
+          "id": "C",
+          "text": "Move the analytics call into a PreToolUse hook so the latency is measured before each tool begins running."
+        },
+        {
+          "id": "D",
+          "text": "Start the analytics call in the background and return an async output so the agent continues without waiting."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "Hooks are synchronous by default: the agent waits for them. For side effects that don't need to influence the agent, such as logging, metrics or notifications, a hook can return an async output (the `async` flag on the hook output, written `async_` in Python), so the agent moves on straight away. The trade-off is that an async output can't block, modify or add context, which is fine for telemetry.",
+      "whyWrong": {
+        "A": "A longer timeout only makes the agent wait longer. The goal is to stop waiting.",
+        "B": "This moves deterministic telemetry into the prompt. It adds model turns and tokens, and the logging becomes unreliable.",
+        "C": "A PreToolUse hook is also synchronous, so the delay just moves. It also can't record a latency that hasn't happened yet."
+      },
+      "difficulty": 3,
+      "mindset": "Make a hook asynchronous only when it never needs to affect what the agent does.",
+      "tags": [
+        "hooks",
+        "async-hooks",
+        "observability",
+        "latency"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/hooks"
+      ]
+    },
+    {
+      "id": "v-d1-b2-008",
+      "taskStatementId": "1.2",
+      "stem": "A developer wants an Agent SDK hook that blocks any write to files under `config/secrets/`. They register a PreToolUse `HookMatcher` with `matcher=\"config/secrets/*\"`, but in testing the agent edits a file in that folder and the hook never runs. What is the correct fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Change the matcher to the regular expression `.*secrets.*` so it matches any path that contains the folder name."
+        },
+        {
+          "id": "B",
+          "text": "Move the check into a PostToolUse hook instead, because path-based matching works only after the tool has run."
+        },
+        {
+          "id": "C",
+          "text": "Match the tool names, such as `Write|Edit`, and check `tool_input.file_path` in the callback before denying."
+        },
+        {
+          "id": "D",
+          "text": "Add `config/secrets/` to `allowed_tools` with a deny prefix so the SDK passes each file path to the matcher."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "For tool hooks, the `matcher` is tested against the **tool name**, not against file paths or other arguments. A path pattern never matches a tool name, so the hook never fires. Match the file-writing tools (for example `Write|Edit`) and filter on `tool_input.file_path` inside the callback, returning `permissionDecision: \"deny\"` with a reason when the path is protected.",
+      "whyWrong": {
+        "A": "A regex is still tested against the tool name, and tool names don't contain file paths.",
+        "B": "A PostToolUse hook runs after the write has happened, so it can't prevent it. Matchers are tested against tool names in both events.",
+        "D": "`allowed_tools` adds allow rules, which auto-approve. It doesn't feed paths to hook matchers, and \"deny prefix\" is not a feature."
+      },
+      "difficulty": 1,
+      "mindset": "Know what a control matches on before trusting it to block anything.",
+      "tags": [
+        "hooks",
+        "matchers",
+        "pre-tool-use"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/hooks"
+      ]
+    },
+    {
+      "id": "v-d1-b2-009",
+      "taskStatementId": "1.2",
+      "stem": "A three-person startup wants an agent that runs every night against their repositories. It clones code, runs scripts, edits files and writes a maintenance report, and each run takes up to an hour. They have no platform engineers, no special compliance requirements, and they don't want to build or run their own agent loop, sandboxing or session storage. Which approach BEST fits?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Claude Managed Agents with a cloud sandbox environment, running each night's job through a scheduled deployment."
+        },
+        {
+          "id": "B",
+          "text": "The Agent SDK in Kubernetes with a SessionStore adapter, an egress proxy and a cron job that starts the containers."
+        },
+        {
+          "id": "C",
+          "text": "A single Messages API request per repository sent through the Message Batches API to cut the overnight cost."
+        },
+        {
+          "id": "D",
+          "text": "A hand-written agent loop on the Messages API with custom shell and file tools running on a team member's workstation."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Claude Managed Agents is the Anthropic-hosted agent harness: the loop, sandboxing, sessions and scheduling run on Anthropic-managed infrastructure, with sandboxed execution for the code and file work. With no compliance constraint pushing toward self-hosting, it meets the need with the least operational work.",
+      "whyWrong": {
+        "B": "This is a valid self-hosted design, but it is exactly the infrastructure (cluster, persistence, proxy, scheduling) the team said it can't build or run.",
+        "C": "Batch requests are one-shot API requests, not an execution environment: there is no client-side tool loop or sandbox, so the model can't clone repositories, run scripts or edit files this way.",
+        "D": "This means building the harness and sandboxing yourself, and running untrusted tool execution on a personal machine is fragile and unsafe."
+      },
+      "difficulty": 1,
+      "mindset": "Match the hosting model to the team's operating capacity unless a hard constraint says otherwise.",
+      "tags": [
+        "managed-agents",
+        "deployment-models",
+        "hosting"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/overview",
+        "https://platform.claude.com/docs/en/managed-agents/overview"
+      ]
+    },
+    {
+      "id": "v-d1-b2-010",
+      "taskStatementId": "1.2",
+      "stem": "An enterprise team likes Claude Managed Agents because they don't want to run the agent loop or its orchestration themselves. However, the agent's tools must reach internal build servers and package mirrors that are not publicly routable, and the network team will not open inbound firewall access to them. The team has accepted that tool inputs and outputs flow to Anthropic so the model can reason over them. What should they do with the LEAST added operational burden?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Move the whole agent to a self-hosted Agent SDK deployment so the loop and every tool run inside their network."
+        },
+        {
+          "id": "B",
+          "text": "Use Managed Agents with a self-hosted sandbox environment, running an environment worker inside their network."
+        },
+        {
+          "id": "C",
+          "text": "Copy snapshots of the build servers and package mirrors into the Anthropic-managed cloud sandbox before each session."
+        },
+        {
+          "id": "D",
+          "text": "Ask the network team for a temporary allowlist so the Anthropic-managed cloud sandbox can reach the internal hosts."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "A self-hosted sandbox environment keeps orchestration on Anthropic's side and moves **tool execution** into infrastructure you control: an environment worker on your host claims sessions and runs each tool call locally, needing only outbound connectivity to Anthropic. Reaching internal services that are not publicly routable, without opening inbound firewall access, is exactly the case this deployment model exists for. Tool inputs and outputs still flow to Anthropic, which the team has accepted.",
+      "whyWrong": {
+        "A": "This would work, but the team would have to build and run the loop, sessions and sandboxing, which is what they wanted to avoid.",
+        "C": "Copying internal systems into an external sandbox is impractical, gets stale, and moves more data out than needed.",
+        "D": "This opens inbound access that the network team has refused, and a \"temporary\" exception is a governance risk."
+      },
+      "difficulty": 3,
+      "mindset": "Split where the loop runs from where the tools run. Hosted orchestration can still execute tools on your network.",
+      "tags": [
+        "managed-agents",
+        "self-hosted-sandbox",
+        "deployment-models",
+        "networking"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/managed-agents/overview"
+      ]
+    },
+    {
+      "id": "v-d1-b2-011",
+      "taskStatementId": "1.2",
+      "stem": "A fintech team is adding an agent feature to an existing web backend that runs on a serverless platform. The platform can't spawn subprocesses and has no persistent local disk. The agent needs three internal HTTP-backed tools. Before one of them, `issue_credit`, the backend must pause, show the proposed call in the team's own approval UI, and continue only if an operator approves. They want minimal dependencies. Which construction approach is MOST appropriate?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Embed the Claude Agent SDK in the serverless function and handle `issue_credit` approval with a `can_use_tool` callback."
+        },
+        {
+          "id": "B",
+          "text": "Use the client SDK's built-in tool runner, because it executes the tools and manages conversation state automatically."
+        },
+        {
+          "id": "C",
+          "text": "Ask Claude in the system prompt to stop and wait for operator approval in the chat before it calls `issue_credit`."
+        },
+        {
+          "id": "D",
+          "text": "Write a manual tool-use loop on the Messages API that holds `issue_credit` calls for approval before running them."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "A manual loop over the Messages API needs nothing beyond the client SDK and fits a constrained serverless runtime. Because your code decides when to run each `tool_use`, it can hold `issue_credit` until the approval UI responds. Anthropic's tool-runner guidance points to writing your own loop exactly when you need human-in-the-loop approval, custom logging or conditional execution.",
+      "whyWrong": {
+        "A": "The Agent SDK runs the bundled Claude Code engine as a subprocess and writes session state to local disk, which this runtime can't provide.",
+        "B": "The built-in tool runner automates the loop, which makes custom approval pauses harder. The guidance points to the manual loop for this case.",
+        "C": "A prompt instruction is not an approval gate. The model can still call the tool, and nothing in code stops it."
+      },
+      "difficulty": 2,
+      "mindset": "Pick the lightest harness that fits the runtime and gives you the control points you need.",
+      "tags": [
+        "custom-loop",
+        "tool-runner",
+        "human-in-the-loop",
+        "agent-sdk"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/overview",
+        "https://code.claude.com/docs/en/agent-sdk/hosting"
+      ]
+    },
+    {
+      "id": "v-d1-b2-012",
+      "taskStatementId": "1.2",
+      "stem": "A nightly Agent SDK job writes a compliance summary. The code reads `message.result` from the final `ResultMessage` and saves it. Some mornings the saved summary is empty but the job is marked successful. Logs show those runs hit their turn limit partway through. The team wants reliable handling with minimal rework. Which TWO changes should they make? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Remove `max_turns` entirely so that the agent can never stop partway through the nightly summary run."
+        },
+        {
+          "id": "B",
+          "text": "Check `subtype` before reading `result`, and treat any value other than `success` as a failed run."
+        },
+        {
+          "id": "C",
+          "text": "When `result` is empty, save the text of the last `AssistantMessage` in the stream as the summary instead."
+        },
+        {
+          "id": "D",
+          "text": "On `error_max_turns`, resume the same run using the result's `session_id` and a higher turn limit."
+        },
+        {
+          "id": "E",
+          "text": "Restart failed runs from scratch with a fresh prompt and double the previous turn limit each time."
+        }
+      ],
+      "correct": [
+        "B",
+        "D"
+      ],
+      "explanation": "The `ResultMessage.subtype` field is the main signal for how a run ended. `result` is present only when the subtype is `success`. Error subtypes such as `error_max_turns` and `error_max_budget_usd` don't include it. Every result still carries `session_id`, so the job can resume where it stopped (with a higher limit) instead of throwing the work away.",
+      "whyWrong": {
+        "A": "Removing the cap takes away the runaway-loop safety net. Turn caps should stay, with the error handled properly.",
+        "C": "The last assistant message of an interrupted run is a partial, unchecked output. Saving it as the summary hides the failure.",
+        "E": "Starting over repeats all the work already done and wastes tokens. Resuming the session keeps the progress."
+      },
+      "difficulty": 2,
+      "mindset": "Branch on the termination signal, and recover state instead of redoing work.",
+      "tags": [
+        "agent-sdk",
+        "result-message",
+        "error-handling",
+        "sessions"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/agent-loop"
+      ]
+    },
+    {
+      "id": "v-d1-b2-013",
+      "taskStatementId": "1.2",
+      "stem": "A due-diligence agent on the Agent SDK delegates document review to several subagents per run. Finance now requires a hard ceiling on what any single run can spend, including everything its subagents do, and wants failed runs to be clearly flagged rather than silently cut short. What should the team implement?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Set `max_turns` on each subagent definition and estimate the run cost from the planned number of turns."
+        },
+        {
+          "id": "B",
+          "text": "Set `max_budget_usd` on the run and treat an `error_max_budget_usd` result as a flagged, incomplete run."
+        },
+        {
+          "id": "C",
+          "text": "Tell the coordinator in its system prompt to stop spawning subagents once it thinks the run is near the limit."
+        },
+        {
+          "id": "D",
+          "text": "Set `effort` to low for the coordinator and for all subagents so each run uses fewer tokens on average."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "`max_budget_usd` caps spend for the run, and subagent spend counts toward the total. When the cap is reached, the run ends with a `ResultMessage` whose subtype is `error_max_budget_usd`, which the team can check and flag. This gives an enforced ceiling plus a clear failure signal.",
+      "whyWrong": {
+        "A": "Turn caps limit round trips, not money. Token use per turn varies a lot, so an estimate is not a hard ceiling.",
+        "C": "The model can't see its own spend reliably, and a prompt instruction isn't an enforced limit.",
+        "D": "Lower effort can reduce average cost, but it sets no ceiling and may lower review quality."
+      },
+      "difficulty": 2,
+      "mindset": "A financial limit needs an enforced cap and an explicit failure signal, not an estimate.",
+      "tags": [
+        "agent-sdk",
+        "cost-control",
+        "budget",
+        "subagents"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/agent-loop"
+      ]
+    },
+    {
+      "id": "v-d1-b2-014",
+      "taskStatementId": "1.2",
+      "stem": "A CI pipeline runs an Agent SDK agent with no human watching. The agent should use only Read, Grep, Glob and one scoped test command. Twice last month a run hung until the CI timeout because the agent asked to use another tool and was waiting for an approval no one could give. The team wants out-of-list requests refused immediately, without hanging. Which configuration BEST meets this?",
+      "options": [
+        {
+          "id": "A",
+          "text": "List the approved tools in `allowed_tools` and set `permission_mode=\"bypassPermissions\"` so nothing ever waits for approval."
+        },
+        {
+          "id": "B",
+          "text": "Keep the default mode and add a `can_use_tool` callback that sends a Slack message asking on-call staff to approve requests."
+        },
+        {
+          "id": "C",
+          "text": "List the approved tools in `allowed_tools` and set `permission_mode=\"dontAsk\"` so anything that would prompt is denied."
+        },
+        {
+          "id": "D",
+          "text": "List the approved tools in `allowed_tools` and set `permission_mode=\"acceptEdits\"` so routine file operations go through."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "`dontAsk` mode turns any call that would prompt into a denial and never calls `can_use_tool`. Paired with `allowed_tools`, it gives a fixed tool surface for headless agents: listed tools run, and anything that would need approval is refused at once. Add a tool's bare name to `disallowed_tools` if it should be removed from the agent's view completely.",
+      "whyWrong": {
+        "A": "`allowed_tools` doesn't constrain `bypassPermissions`. Every tool would be approved, including ones the team wanted refused.",
+        "B": "This brings back a human wait, which is the cause of the hangs, and on-call staff can't approve CI runs in real time.",
+        "D": "`acceptEdits` auto-approves file edits and common filesystem commands, which widens access. Other unlisted tools still fall through to a prompt, so runs can still hang."
+      },
+      "difficulty": 2,
+      "mindset": "For unattended agents, an explicit deny beats a prompt no one will answer.",
+      "tags": [
+        "agent-sdk",
+        "permissions",
+        "headless",
+        "ci"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/permissions"
+      ]
+    },
+    {
+      "id": "v-d1-b2-015",
+      "taskStatementId": "1.2",
+      "stem": "A healthcare-admin agent on the Agent SDK sets `allowed_tools=[\"Read\", \"Grep\", \"mcp__records__fetch_patient\"]`. To meet an audit rule, the team put a check inside their `can_use_tool` callback that logs and verifies the caller's role before every patient-record fetch. An audit finds hundreds of fetches with no log entries. What is the BEST explanation and fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Allow-listed tools are auto-approved and never reach `can_use_tool`, so move the check into a PreToolUse hook on that tool."
+        },
+        {
+          "id": "B",
+          "text": "The callback is skipped for MCP tools, so rewrite `fetch_patient` as a built-in tool to make the callback fire for it."
+        },
+        {
+          "id": "C",
+          "text": "The callback failed silently under heavy load, so wrap it in retries and raise its timeout so every fetch gets logged."
+        },
+        {
+          "id": "D",
+          "text": "Switch to `permission_mode=\"plan\"` so that every tool call, reads included, is routed to `can_use_tool` for a decision."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Listing a tool in `allowed_tools` auto-approves it at the allow-rule step, and the docs warn that auto-approved tools **never reach `can_use_tool`**, so checks placed there are silently skipped. For a check that must run on every call, use a PreToolUse hook: hooks run before every other permission step, and a hook deny applies even in `bypassPermissions` mode.",
+      "whyWrong": {
+        "B": "MCP tools go through the same permission flow as other tools. The callback was skipped because the tool was allow-listed, not because it was an MCP tool. And you can't add your own built-in tools.",
+        "C": "Nothing failed. The callback was never called for these calls, so retries and timeouts don't change anything.",
+        "D": "Plan mode is read-only exploration: it would block the agent's normal work, and allow-listed tools still never reach the callback, so the audit gap remains."
+      },
+      "difficulty": 3,
+      "mindset": "Put mandatory checks at a control point that runs on every call, and confirm it does.",
+      "tags": [
+        "agent-sdk",
+        "permissions",
+        "hooks",
+        "audit",
+        "can-use-tool"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/permissions",
+        "https://code.claude.com/docs/en/agent-sdk/hooks"
+      ]
+    }
+  ]
+}

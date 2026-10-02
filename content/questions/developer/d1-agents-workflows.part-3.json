@@ -1,0 +1,667 @@
+{
+  "certId": "developer",
+  "domainId": "d1-agents-workflows",
+  "questions": [
+    {
+      "id": "v-d1-b3-001",
+      "taskStatementId": "1.3",
+      "stem": "A developer's custom tool-use loop works when Claude calls one tool at a time. When Claude asks for `get_inventory`, `get_price` and `get_shipping_eta` in a single response, the harness runs each tool and then sends three separate user messages, one `tool_result` per message, before calling the API again. The API now returns errors or the loop behaves erratically. What is the MOST appropriate fix with minimal changes?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Return all three `tool_result` blocks, each matched by `tool_use_id`, together in one user message that immediately follows that assistant turn"
+        },
+        {
+          "id": "B",
+          "text": "Add a system prompt instruction telling Claude to request only one tool per response so results stay in step"
+        },
+        {
+          "id": "C",
+          "text": "Run the three tools one after another and send each result back with its own API call before running the next"
+        },
+        {
+          "id": "D",
+          "text": "Combine the three tool outputs into one text block in the user message and drop the separate `tool_result` blocks"
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "When Claude requests several tools in one response, the harness should run them and return **all** results in a **single** user message that immediately follows the assistant message; each `tool_result` is matched to its request by `tool_use_id`, and any text must come after the results. Splitting results across messages breaks the expected turn structure and degrades parallel tool behavior. This is a harness bug, so the fix belongs in code.",
+      "whyWrong": {
+        "B": "This fixes a code bug with a prompt rule and gives up parallel tool use, which saves round trips. The harness should honor the format the API expects.",
+        "C": "Extra API calls still split results that Claude asked for in one turn, break the turn structure, and add latency. The results belong in one message.",
+        "D": "Plain text loses the `tool_use_id` mapping. Each requested tool needs its own `tool_result` block so Claude knows which output answers which call."
+      },
+      "difficulty": 2,
+      "mindset": "When the loop misbehaves, fix the harness contract in code. Don't ask the model to work around it.",
+      "tags": [
+        "tool-use-loop",
+        "parallel-tool-calls",
+        "harness"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/parallel-tool-use"
+      ]
+    },
+    {
+      "id": "v-d1-b3-002",
+      "taskStatementId": "1.3",
+      "stem": "An insurance-quote agent runs long sessions with many tool calls. The team enabled context editing with `clear_tool_uses_20250919` to control context growth. Since then, late in long sessions the agent sometimes quotes prices that ignore the customer's eligibility rules. Those rules come from one early `get_eligibility_rules` call and are never fetched again. Which change MOST directly fixes this while keeping the context savings?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Raise the `keep` value so many more recent tool results stay visible after each clearing pass"
+        },
+        {
+          "id": "B",
+          "text": "Turn off context editing and switch to a model with a larger context window for long quote sessions"
+        },
+        {
+          "id": "C",
+          "text": "Add `get_eligibility_rules` to `exclude_tools` so its results are never cleared while other old results still are"
+        },
+        {
+          "id": "D",
+          "text": "Tell Claude in the system prompt to remember the eligibility rules carefully before old tool results are cleared"
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "`exclude_tools` names the tools whose results the clearing strategy must never touch. Here one early, long-lived result is the problem: excluding that tool keeps the rules in what Claude sees while stale outputs from other tools are still cleared. Clearing removes those older results from the prompt sent to Claude (the client keeps the full history), so without the exclusion the rules simply vanish from the model's view.",
+      "whyWrong": {
+        "A": "`keep` counts the most **recent** tool uses. An early call still ages out eventually in a long session, and keeping many more results erodes the savings.",
+        "B": "This throws away the savings, and a larger window does not fix cost growth or the way stale content spreads the model's attention.",
+        "D": "A prompt cannot preserve content the strategy removes from the request. Only a configuration change (or saving the rules to memory) keeps them reliably."
+      },
+      "difficulty": 2,
+      "mindset": "Protect the few results that must last with configuration, and let the rest be cleared.",
+      "tags": [
+        "context-editing",
+        "exclude_tools",
+        "context-management"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/context-editing"
+      ]
+    },
+    {
+      "id": "v-d1-b3-003",
+      "taskStatementId": "1.3",
+      "stem": "A research agent uses prompt caching on a large, stable system prompt and tool set. After the team adds context editing with a low trigger, the bill goes **up**. Logs show tool results being cleared every few turns, and each clearing pass removes only a small amount of content. Which adjustment is MOST likely to cut cost while keeping context editing?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Remove the `cache_control` breakpoints, since caching and context editing cannot be used in the same request"
+        },
+        {
+          "id": "B",
+          "text": "Set `clear_at_least` so a clearing pass only happens when it frees enough tokens to justify rewriting the cache"
+        },
+        {
+          "id": "C",
+          "text": "Add another `cache_control` breakpoint after the most recent tool results so the portion rewritten after each clearing pass is still read from cache"
+        },
+        {
+          "id": "D",
+          "text": "Lower the trigger further so clearing happens earlier and the context never grows large between passes"
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Clearing tool results changes the prompt prefix, so it **invalidates the cached prefix** and forces a new cache write (writes cost more than base input). Many small clearing passes mean many cache rewrites for very little saving. `clear_at_least` sets a minimum amount to clear; when a pass would not free that much, the strategy does not apply — so each cache rewrite only happens when it pays for itself. This exact trade-off is why the parameter exists.",
+      "whyWrong": {
+        "A": "The two features can be combined; the docs describe how they interact and provide `clear_at_least` precisely for this cost trade-off. Dropping breakpoints just removes the caching savings.",
+        "C": "A cache read requires the entire prefix up to the breakpoint to be identical. Clearing edits earlier content, so everything after that point is a miss on that request no matter where a later breakpoint sits; the rewrite cost is exactly what `clear_at_least` exists to justify.",
+        "D": "An earlier trigger makes clearing happen **more** often, which means even more cache invalidations and writes."
+      },
+      "difficulty": 3,
+      "mindset": "Every context edit has a cache cost, so clear in larger, less frequent batches.",
+      "tags": [
+        "context-editing",
+        "prompt-caching",
+        "cost"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/context-editing",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching"
+      ]
+    },
+    {
+      "id": "v-d1-b3-004",
+      "taskStatementId": "1.3",
+      "stem": "A data-analysis agent answers questions about a warehouse of several thousand tables. Today the harness puts the full schema of every table and a 500-row sample of each into the first message. Answers are slow, expensive and often reference the wrong table. Which TWO changes BEST apply sound context-management patterns? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Move the full schemas and samples into the system prompt so they are cached and re-sent on every turn"
+        },
+        {
+          "id": "B",
+          "text": "Switch to the model with the largest available context window so every schema and sample fits comfortably"
+        },
+        {
+          "id": "C",
+          "text": "Give the agent lightweight references (table names with one-line descriptions) and a tool to fetch one table's schema when it needs it"
+        },
+        {
+          "id": "D",
+          "text": "Add more few-shot examples showing which table answers which kind of question to guide table choice"
+        },
+        {
+          "id": "E",
+          "text": "Have query tools return a small, filtered result set with row counts and an id for paging, not full result dumps"
+        }
+      ],
+      "correct": [
+        "C",
+        "E"
+      ],
+      "explanation": "Keep lightweight identifiers in context and load detail through tools on demand: a table catalog of names and one-line descriptions plus a fetch-one-schema tool. Tool-design guidance likewise calls for **token-efficient** output — filtering, pagination, truncation with sensible defaults, and stable ids for follow-up calls. Curation beats capacity: accuracy and recall degrade as the prompt fills with irrelevant content, so shrinking and focusing the context fixes both cost and the wrong-table errors.",
+      "whyWrong": {
+        "A": "Caching lowers the cost of repeated tokens but leaves thousands of irrelevant schemas competing for attention, so wrong-table errors continue and the context stays bloated.",
+        "B": "A bigger window lets more noise fit; it does not make the context relevant, and cost still scales with all those tokens.",
+        "D": "Examples cannot cover thousands of tables and add tokens without removing the overload that causes misrouting."
+      },
+      "difficulty": 2,
+      "mindset": "Load detail on demand and keep tool output lean. A bigger context is not the answer.",
+      "tags": [
+        "just-in-time-context",
+        "tool-output",
+        "context-management"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/writing-tools-for-agents",
+        "https://platform.claude.com/docs/en/build-with-claude/context-windows"
+      ]
+    },
+    {
+      "id": "v-d1-b3-005",
+      "taskStatementId": "1.3",
+      "stem": "A SaaS company adds Claude's memory tool to a multi-tenant assistant so it can remember each customer's preferences across sessions. A security review is scheduled before launch. Which TWO controls are MOST important to build into the memory implementation? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Resolve and validate every requested path so it stays inside that tenant's own memory directory, rejecting `../` and encoded traversal"
+        },
+        {
+          "id": "B",
+          "text": "Rely on Anthropic's servers to isolate each tenant's memory files, since the memory tool stores data in managed storage"
+        },
+        {
+          "id": "C",
+          "text": "Add a system prompt rule telling Claude never to read memory files that belong to a different customer"
+        },
+        {
+          "id": "D",
+          "text": "Enforce size limits and keep secrets and sensitive personal data out of what is written to memory files"
+        },
+        {
+          "id": "E",
+          "text": "Turn on context editing so stored memories are cleared from context before another tenant's session starts"
+        }
+      ],
+      "correct": [
+        "A",
+        "D"
+      ],
+      "explanation": "The memory tool is **client-side**: Claude issues the file commands and your application executes them against storage you control, so the security is yours to implement. The docs specifically call out path-traversal validation (including URL-encoded forms), keeping operations inside the memory directory, size caps, and stripping sensitive data before it is written. In a multi-tenant app, also scope each tenant to its own directory.",
+      "whyWrong": {
+        "B": "Memory files are not stored by Anthropic. Your application implements the storage, so isolation has to be enforced in your code.",
+        "C": "A prompt is not an access control. A path check in code is deterministic; an instruction can fail or be overridden by injected content.",
+        "E": "Context editing trims what a single request sends to Claude. It does nothing to isolate the stored memory files between tenants."
+      },
+      "difficulty": 3,
+      "mindset": "Client-side memory means you own the file-system security, so enforce it in code.",
+      "tags": [
+        "memory-tool",
+        "security",
+        "multi-tenant"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/memory-tool"
+      ]
+    },
+    {
+      "id": "v-d1-b3-006",
+      "taskStatementId": "1.3",
+      "stem": "A personal travel assistant should remember things like each user's seat preference and loyalty numbers across conversations that happen weeks apart. Each conversation is otherwise new. Which approach BEST fits this need?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Resume the user's previous session so the whole earlier transcript is loaded at the start of each new conversation"
+        },
+        {
+          "id": "B",
+          "text": "Put every user's preferences into one shared system prompt that is sent with every request for all users"
+        },
+        {
+          "id": "C",
+          "text": "Rely on automatic compaction to keep a summary of earlier conversations inside the context window"
+        },
+        {
+          "id": "D",
+          "text": "Store durable per-user facts outside the context window (memory tool or a database tool) and read them when needed"
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "Durable facts that must survive across separate sessions belong in **external memory**: the memory tool (client-side storage you implement) or a database exposed as a tool. The agent reads only what it needs, and the store persists independently of any one context window or conversation.",
+      "whyWrong": {
+        "A": "Resume continues one existing conversation and drags in the whole old transcript, most of it irrelevant. It is a session feature, not a store of durable facts.",
+        "B": "One shared prompt would expose every user's personal data to every other user and grows without limit.",
+        "C": "Compaction summarizes **within** a conversation. It does not carry facts into a brand-new conversation weeks later."
+      },
+      "difficulty": 1,
+      "mindset": "Durable cross-session facts go in external memory, not in conversation history.",
+      "tags": [
+        "memory",
+        "sessions",
+        "persistence"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/memory-tool",
+        "https://code.claude.com/docs/en/agent-sdk/sessions"
+      ]
+    },
+    {
+      "id": "v-d1-b3-007",
+      "taskStatementId": "1.3",
+      "stem": "A team's Agent SDK coding agent spends 30 minutes analysing a legacy module. They then want to try two different refactoring strategies, both starting from that same analysis, and compare the results. Both strategies will edit files in the repository. Which approach BEST achieves this?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Use `continue` for the first strategy, then `continue` again for the second strategy so both pick up the latest analysis"
+        },
+        {
+          "id": "B",
+          "text": "Fork the analysis session for each strategy and run each fork in its own isolated working copy, such as a separate git worktree"
+        },
+        {
+          "id": "C",
+          "text": "Fork the analysis session twice in the same directory, since each fork gets its own copy of history and files"
+        },
+        {
+          "id": "D",
+          "text": "Re-run the full 30-minute analysis separately for each strategy so neither one inherits the other's state"
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "`fork_session` creates a new session with a **copy of the conversation history**, so both strategies can start from the same analysis baseline. But a fork copies the conversation only: file edits are real and shared with the original checkout. Running each fork in its own isolated working copy (for example a git worktree) is what stops the two strategies from overwriting each other's changes.",
+      "whyWrong": {
+        "A": "`continue` picks up the most recent session, so the second strategy would inherit the first strategy's work and edits — the comparison is contaminated.",
+        "C": "Forks share the file system. Two forks editing the same directory will clash, and the comparison becomes meaningless.",
+        "D": "This can work but wastes the analysis time and tokens that forking was designed to reuse, and the two fresh analyses may not even match."
+      },
+      "difficulty": 3,
+      "mindset": "Forks branch the conversation, not the disk, so isolate file changes yourself.",
+      "tags": [
+        "sessions",
+        "fork_session",
+        "agent-sdk"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/sessions",
+        "https://code.claude.com/docs/en/worktrees"
+      ]
+    },
+    {
+      "id": "v-d1-b3-008",
+      "taskStatementId": "1.3",
+      "stem": "An Agent SDK app has a lead agent that delegates to a `triage` subagent. The subagent opens hundreds of small config files per run and flags the few that look misconfigured. The lead then reasons over the flagged files to write a remediation plan. Every agent uses the team's most capable model, and the monthly cost is well over budget. Plan quality must not drop. Which change BEST lowers cost?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Set the `triage` subagent's `model` to a smaller, faster model and keep the more capable model for the lead's synthesis"
+        },
+        {
+          "id": "B",
+          "text": "Remove the subagent and have the lead read every config file itself so that only one model is billed per run"
+        },
+        {
+          "id": "C",
+          "text": "Tell the lead in its system prompt to write shorter remediation plans so it produces fewer output tokens"
+        },
+        {
+          "id": "D",
+          "text": "Move every agent, the lead included, to the smallest available model so the cost drops as far as possible"
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "A key benefit of subagents is **specialisation**: each can have its own prompt, tools and **model** (`AgentDefinition` has a `model` field). High-volume, simple triage suits a smaller, faster model, while the harder synthesis step stays on the capable model so plan quality holds. Anthropic's own multi-agent system uses exactly this split: a stronger lead model with cheaper subagents doing the volume work.",
+      "whyWrong": {
+        "B": "Hundreds of file reads would then flood the lead's context on the expensive model — raising cost and hurting plan quality by burying the flagged files in noise.",
+        "C": "Most of the cost is the high-volume triage reads, not the plan, and shorter plans risk the stated quality requirement.",
+        "D": "This puts the hard synthesis step on a weaker model, which breaks the requirement that plan quality must not drop."
+      },
+      "difficulty": 2,
+      "mindset": "Match each subagent's model to the difficulty of its job.",
+      "tags": [
+        "subagents",
+        "model-selection",
+        "cost"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/subagents",
+        "https://www.anthropic.com/engineering/multi-agent-research-system"
+      ]
+    },
+    {
+      "id": "v-d1-b3-009",
+      "taskStatementId": "1.3",
+      "stem": "In an Agent SDK app, a `dependency-audit` subagent spent many turns mapping which services call a deprecated library, then returned a short summary. The user now asks a follow-up that needs the detailed call-site knowledge the subagent built up but left out of its summary. What is the MOST efficient way to answer?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Have the lead agent re-run the same searches itself, since subagent work cannot be reused after it returns"
+        },
+        {
+          "id": "B",
+          "text": "Spawn a new `dependency-audit` subagent with the original brief so that it repeats the full investigation"
+        },
+        {
+          "id": "C",
+          "text": "Resume that same subagent by its session and agent id so it continues with its earlier context and answers the follow-up"
+        },
+        {
+          "id": "D",
+          "text": "Pass the lead's whole conversation history to a new subagent so it can rebuild the details from the summary"
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Subagents can be **resumed**: capture the `session_id` from the result, parse the subagent's agent id from the Agent tool result, and resume with both. The subagent continues with its full earlier context — the turns behind its summary — so it can answer without repeating the investigation. (The built-in one-shot agents such as Explore and Plan cannot be resumed this way.)",
+      "whyWrong": {
+        "A": "Subagent work *can* be reused by resuming it. Re-running the searches in the lead also fills the lead's context with noise the isolation was meant to avoid.",
+        "B": "This repeats all the work, costing time and tokens, and may not even reach the same findings.",
+        "D": "The lead only holds the summary, so the details are not there to rebuild — and passing the whole history defeats context isolation."
+      },
+      "difficulty": 3,
+      "mindset": "Reuse a subagent's accumulated context when follow-ups need it, instead of redoing the work.",
+      "tags": [
+        "subagents",
+        "sessions",
+        "resume"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/subagents",
+        "https://code.claude.com/docs/en/agent-sdk/sessions"
+      ]
+    },
+    {
+      "id": "v-d1-b3-010",
+      "taskStatementId": "1.3",
+      "stem": "A team built a support agent with a third-party agent framework. After a framework upgrade, the agent sometimes ignores a tool it used to call reliably. Their prompts and tool code have not changed. What should they do FIRST?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Rewrite the agent directly on the Messages API so that no framework layer is involved in the requests"
+        },
+        {
+          "id": "B",
+          "text": "Add more examples to the system prompt showing exactly when the agent should call the ignored tool"
+        },
+        {
+          "id": "C",
+          "text": "Switch the agent to a larger Claude model in the framework settings so tool selection is more reliable"
+        },
+        {
+          "id": "D",
+          "text": "Turn on tracing or request logging to inspect the actual prompt and tool definitions the framework now sends"
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "The upgrade is the only change, and abstraction layers can silently alter what reaches the model — a dropped tool, a rewritten description, a reworded system prompt. The proportionate first step is observability: capture the actual requests and diff what the framework now sends, then fix the real cause. Anthropic's agent guidance is to start simple and be skeptical of added abstraction, not to pile on more changes before the cause is known.",
+      "whyWrong": {
+        "A": "A rewrite might be justified later, but it is a large change made before anyone has found the cause.",
+        "B": "This patches a symptom without checking whether the framework still sends the tool and its description correctly at all.",
+        "C": "A bigger model does not fix a missing or mangled tool definition, and it adds cost based on a guess."
+      },
+      "difficulty": 2,
+      "mindset": "Before changing anything, inspect what the abstraction actually sends to the model.",
+      "tags": [
+        "frameworks",
+        "debugging",
+        "observability"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "v-d1-b3-011",
+      "taskStatementId": "1.3",
+      "stem": "A team's agent runs inside an open-source agent framework. The prompt contains a long, stable policy document, and they want to use Claude's prompt caching to cut cost. The framework's default model wrapper does not seem to support cache breakpoints. What is the MOST appropriate next step?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Shorten the policy document heavily so that caching is no longer needed to keep the cost acceptable"
+        },
+        {
+          "id": "B",
+          "text": "Check the framework's docs and Anthropic integration for cache-control support or a pass-through option, then confirm cache hits in usage"
+        },
+        {
+          "id": "C",
+          "text": "Replace the framework with a different one that the team has heard has better support for Claude features"
+        },
+        {
+          "id": "D",
+          "text": "Move the policy document into the first user message, because caching only applies to user content"
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Third-party frameworks do not always expose every Claude feature, or expose it only through specific options or escape hatches. The proportionate step is to confirm whether the integration supports or passes through `cache_control`, then verify with the cache read/write fields (`cache_read_input_tokens`, `cache_creation_input_tokens`) in the response usage. Change tools only if the feature really is missing.",
+      "whyWrong": {
+        "A": "Cutting policy content can hurt answer quality just to avoid investigating a supported cost feature.",
+        "C": "Replacing a working framework on a rumor is costly and skips checking whether the current one already supports caching.",
+        "D": "Caching applies to prompt prefixes, including tools, the system prompt and messages — not only user content. Moving the document does not fix a wrapper that never sends breakpoints."
+      },
+      "difficulty": 2,
+      "mindset": "Check feature pass-through in your framework before rewriting anything.",
+      "tags": [
+        "frameworks",
+        "prompt-caching",
+        "integration"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "v-d1-b3-012",
+      "taskStatementId": "1.3",
+      "stem": "An AWS-based team runs an internal knowledge assistant built with Strands Agents. Claude chooses among a few MCP tools to answer open-ended employee questions, and the right sequence of lookups varies with each question. An architect proposes rebuilding it as an explicit graph with a fixed node for every possible lookup path, \"for more control\". Accuracy and cost are acceptable today. What is the BEST recommendation?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Keep the model-driven design, since the path depends on each question, and add tracing and evals to watch quality"
+        },
+        {
+          "id": "B",
+          "text": "Rebuild it as an explicit graph so that every possible lookup sequence is fixed and testable ahead of time"
+        },
+        {
+          "id": "C",
+          "text": "Replace the agent with a routing workflow that classifies each question into one fixed lookup sequence"
+        },
+        {
+          "id": "D",
+          "text": "Move it to the Claude Agent SDK, because that is the only supported way to use Claude with MCP tools"
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The decision rule from Anthropic's agent guidance: use an **agent** (model-directed tool choice) for open-ended problems where the steps cannot be predicted in advance, and a **workflow** only when the path is known and fixed. Here the lookup sequence varies per question, and the system already meets its accuracy and cost goals — so a rebuild adds rigidity and cost for no stated gain. The guidance is to start simple and add complexity only when it demonstrably helps; tracing and evals keep the flexible design under watch.",
+      "whyWrong": {
+        "B": "A fixed graph suits known, auditable processes. With a path that varies per question, the graph becomes huge and brittle, and it cannot handle sequences nobody anticipated.",
+        "C": "Routing assumes a small set of known categories with fixed handling. The scenario says the lookup sequence varies with each question, so classification into fixed paths loses coverage.",
+        "D": "Strands, LangGraph and similar frameworks can integrate Claude with MCP tools; the Agent SDK is one option, not a requirement."
+      },
+      "difficulty": 2,
+      "mindset": "Pick the framework style that matches how predictable the task is, and don't rebuild what already works.",
+      "tags": [
+        "frameworks",
+        "strands",
+        "agent-vs-workflow"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "v-d1-b3-013",
+      "taskStatementId": "1.3",
+      "stem": "A billing-dispute chat agent uses server-side compaction for long conversations. After compaction, it sometimes gets order numbers wrong or rounds disputed amounts, although these were exact earlier in the chat. Which TWO changes MOST reliably preserve these details? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Provide custom compaction `instructions` that require exact order ids, amounts and open actions to be kept verbatim in the summary"
+        },
+        {
+          "id": "B",
+          "text": "Raise `max_tokens` on each response so Claude has more room to restate the exact figures it remembers"
+        },
+        {
+          "id": "C",
+          "text": "Keep a structured case-facts record (ids, amounts, status) outside the summarised history and give it to Claude each turn or through a tool"
+        },
+        {
+          "id": "D",
+          "text": "Ask Claude at the end of each reply to double-check that every number it quoted matches the earlier conversation"
+        },
+        {
+          "id": "E",
+          "text": "Disable compaction and let the conversation grow until it reaches the model's context limit"
+        }
+      ],
+      "correct": [
+        "A",
+        "C"
+      ],
+      "explanation": "Compaction is a **lossy** summary, so exact figures and ids can be blurred. Custom compaction `instructions` **replace** the default summarization prompt, so you can require exact ids, amounts and open actions to be carried verbatim. And a structured facts record kept outside the summarised history — state injected each turn, or memory/database tools — means the exact values never depend on any summary surviving intact.",
+      "whyWrong": {
+        "B": "`max_tokens` limits output length. It does nothing about details already lost from the summarised history the model now sees.",
+        "D": "After compaction, the original text the self-check would compare against is gone, so the model checks against the lossy summary — the same lossy source it just misquoted.",
+        "E": "This swaps a precision problem for a hard failure at the context limit, with higher cost and latency along the way."
+      },
+      "difficulty": 3,
+      "mindset": "Summaries are lossy, so give critical exact values their own storage.",
+      "tags": [
+        "compaction",
+        "memory",
+        "precision"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/compaction",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/memory-tool"
+      ]
+    },
+    {
+      "id": "v-d1-b3-014",
+      "taskStatementId": "1.3",
+      "stem": "An on-call agent has a `search_logs` tool that returns every matching log line, often tens of thousands of tokens per call. After a few searches the agent becomes slow and loses track of the incident. What is the BEST first fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Instruct the agent in its system prompt to call `search_logs` less often and only when it is clearly needed"
+        },
+        {
+          "id": "B",
+          "text": "Raise the maximum number of loop iterations so the agent has more turns to work through the large outputs"
+        },
+        {
+          "id": "C",
+          "text": "Redesign `search_logs` to return filtered, paginated results with counts and ids, plus a way to fetch more detail"
+        },
+        {
+          "id": "D",
+          "text": "Run a second model call after each search to judge whether the agent is still on track with the incident"
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "The cheapest fix is to keep the bloat out at the source. Anthropic's tool-design guidance says tools should return only what the agent needs: filtering, range selection, pagination, truncation with sensible defaults, and stable ids for follow-up calls. Large raw dumps crowd out relevant context and degrade recall, so shrinking the output fixes speed and focus together.",
+      "whyWrong": {
+        "A": "The agent still needs logs. When it does call the tool, the full flood still lands in context.",
+        "B": "More turns just mean more huge outputs in context. An iteration cap is a safety net, not a context fix.",
+        "D": "An extra checker adds cost and latency and does nothing about the oversized tool output that is causing the problem."
+      },
+      "difficulty": 1,
+      "mindset": "Fix context bloat at the tool that produces it.",
+      "tags": [
+        "tool-design",
+        "context-management",
+        "tool-output"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/writing-tools-for-agents",
+        "https://platform.claude.com/docs/en/build-with-claude/context-windows"
+      ]
+    },
+    {
+      "id": "v-d1-b3-015",
+      "taskStatementId": "1.3",
+      "stem": "A developer is reviewing the stopping logic in a custom agent harness built on the Messages API. Which TWO practices are correct for deciding when the loop ends? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "End the loop as soon as a response contains any text block, because text means Claude is talking to the user"
+        },
+        {
+          "id": "B",
+          "text": "Branch on `stop_reason`: run tools and continue on `tool_use`, return on `end_turn`, and handle other values explicitly"
+        },
+        {
+          "id": "C",
+          "text": "End the loop when Claude's text contains a phrase such as \"TASK COMPLETE\" that the prompt asks it to output"
+        },
+        {
+          "id": "D",
+          "text": "Keep an iteration or budget cap as a safety net that ends the run with a clear error or partial result"
+        },
+        {
+          "id": "E",
+          "text": "Rely on a fixed iteration count as the main stop condition, since Claude cannot judge when a task is finished"
+        }
+      ],
+      "correct": [
+        "B",
+        "D"
+      ],
+      "explanation": "`stop_reason` is the reliable signal: `tool_use` means run the tools and continue, `end_turn` means finished, and values such as `max_tokens`, `stop_sequence`, `pause_turn`, `refusal` and `model_context_window_exceeded` each need their own handling. An iteration or budget cap belongs in the harness as a **safety net** against runaway loops — not as the primary way to stop.",
+      "whyWrong": {
+        "A": "A response can contain text and `tool_use` blocks together. Stopping on text skips the tool calls Claude just requested.",
+        "C": "Parsing natural language is fragile: the phrase may be missing, reworded, or appear early. The structured `stop_reason` already carries this signal.",
+        "E": "A fixed count either cuts work off early or wastes turns. Claude reports completion through `end_turn`; the count is only a guardrail."
+      },
+      "difficulty": 1,
+      "mindset": "Let the structured stop signal end the loop, and keep caps as guardrails.",
+      "tags": [
+        "tool-use-loop",
+        "stop_reason",
+        "harness"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons",
+        "https://code.claude.com/docs/en/agent-sdk/agent-loop"
+      ]
+    }
+  ]
+}

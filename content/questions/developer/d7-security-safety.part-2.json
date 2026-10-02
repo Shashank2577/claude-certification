@@ -1,0 +1,715 @@
+{
+  "certId": "developer",
+  "domainId": "d7-security-safety",
+  "questions": [
+    {
+      "id": "v-d7-g2-001",
+      "taskStatementId": "7.1",
+      "scenario": "A customer-support agent drafts replies and, as one of its tools, can issue refunds up to $200 through the payments API. The agent also fetches web pages that customers link in their tickets. An audit finds that on rare occasions the agent followed instructions embedded in a fetched page. The team wants the most effective mitigation; they are open to restructuring how refunds are issued, but the product must keep drafting replies, fetching linked pages, and supporting refunds.",
+      "stem": "What should they do?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Rewrite the system prompt with much stronger wording about ignoring instructions that appear inside fetched pages."
+        },
+        {
+          "id": "B",
+          "text": "Take the refund tool out of the drafting agent and route refunds through a separate step with deterministic checks and human approval."
+        },
+        {
+          "id": "C",
+          "text": "Add few-shot examples showing the agent correctly ignoring embedded instructions in fetched pages."
+        },
+        {
+          "id": "D",
+          "text": "Switch to a more instruction-following model so that embedded instructions are ignored reliably."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "**Least privilege plus a deterministic gate is the control that holds.** An agent exposed to untrusted content will occasionally be manipulated, so the fix that actually changes the risk is removing the high-impact capability from the model's direct reach. Once refunds cannot be triggered by a single model decision, a successful injection is largely harmless. Prompt wording and examples reduce the likelihood of injection succeeding but have a non-zero failure rate, so they are supporting layers, not the fix.",
+      "whyWrong": {
+        "A": "Stronger prompt wording is still probabilistic guidance; it lowers but does not eliminate the chance the agent obeys embedded instructions.",
+        "C": "Few-shot examples improve consistency but remain model-mediated; they cannot guarantee an agent that reads attacker-controlled text will never act on it.",
+        "D": "Model choice is not a security control; a more instruction-following model can be equally or more susceptible to instructions hidden in content it reads."
+      },
+      "difficulty": 1,
+      "mindset": "Make a successful attack harmless, not just less likely.",
+      "tags": [
+        "d7-security-safety",
+        "prompt-injection",
+        "least-privilege",
+        "guardrails",
+        "deterministic-controls"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/mitigate-jailbreaks",
+        "https://code.claude.com/docs/en/agent-sdk/hooks"
+      ]
+    },
+    {
+      "id": "v-d7-g2-002",
+      "taskStatementId": "7.2",
+      "scenario": "A consumer app calls the Messages API to power a moderated, user-facing feature. Some requests return HTTP 200 with `stop_reason: \"refusal\"` when the safety classifier declines. The app's error handling branches only on HTTP status codes, so these responses flow into the normal completion path and the UI renders the raw refusal text. The product spec says policy-relevant requests must show a friendly in-app message.",
+      "stem": "Which change is the most reliable fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Treat any refusal response as a server error, page the on-call engineer, and retry from the client until it clears."
+        },
+        {
+          "id": "B",
+          "text": "Retry the identical request in a loop until the response is no longer a refusal, since refusals are transient."
+        },
+        {
+          "id": "C",
+          "text": "Branch on `stop_reason: \"refusal\"` as a normal outcome, inspect `stop_details`, and show the standard in-app message or retry on a fallback model."
+        },
+        {
+          "id": "D",
+          "text": "Raise the temperature so refusals become less frequent and the completion path gets more varied outputs."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "**A refusal is a successful response, not an error.** The API returns HTTP 200 with `stop_reason: \"refusal\"` when the safety classifier declines; `stop_details` explains why. Safe deployment means handling refusals as a first-class outcome in application logic — a defined UX message or a fallback model — exactly like any other stop reason, rather than letting raw refusal text leak into the UI.",
+      "whyWrong": {
+        "A": "A refusal is HTTP 200, not a 5xx; paging on-call and client-side retries misclassify a normal outcome as an outage.",
+        "B": "Resending the identical request is wasteful and usually returns the same refusal; refusals are not transient rate-limit errors.",
+        "D": "Temperature has nothing to do with refusals, and raising it degrades output quality without addressing the missing code path."
+      },
+      "difficulty": 2,
+      "mindset": "A refusal is an outcome to handle, not an outage to fight.",
+      "tags": [
+        "d7-security-safety",
+        "guardrails",
+        "content-policy",
+        "stop-reasons",
+        "safe-deployment"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons"
+      ]
+    },
+    {
+      "id": "v-d7-g2-003",
+      "taskStatementId": "7.2",
+      "scenario": "A team runs a Claude Agent SDK agent with `allowed_tools` set to `[\"Read\", \"Grep\", \"Glob\"]` in the belief that the agent is now restricted to read-only work. During a security review run with `permission_mode: \"acceptEdits\"`, the agent created and edited files in the working directory even though `Write` and `Edit` were never listed.",
+      "stem": "What is the most accurate explanation and fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The behavior is a bug in acceptEdits mode; file an issue and keep `allowed_tools` as the only restriction mechanism."
+        },
+        {
+          "id": "B",
+          "text": "Keep `allowed_tools` as is and add a CLAUDE.md rule stating the agent must only use the three listed tools."
+        },
+        {
+          "id": "C",
+          "text": "Switch to `bypassPermissions` so unlisted tools can never surface a prompt and slip through unnoticed."
+        },
+        {
+          "id": "D",
+          "text": "`allowed_tools` only auto-approves listed tools; unlisted tools still exist. To restrict, use `disallowed_tools` to remove tools or permission deny rules to block them."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "**`allowed_tools` grants; it does not restrict.** It is an auto-approve list: unlisted tools remain available to the model and simply fall through to the permission mode or approval callback — and `acceptEdits` auto-accepts file edits in the working directory. To actually remove capability, use `disallowed_tools` (removes the tool) or permission deny rules (blocks matched calls), which are deterministic restrictions independent of what the model attempts.",
+      "whyWrong": {
+        "A": "Not a bug: acceptEdits is designed to auto-accept edits; the team mistook an approval list for an allowlist restriction.",
+        "B": "A CLAUDE.md instruction is probabilistic guidance — the edit tools still exist and can still be approved; it is not a restriction.",
+        "C": "`bypassPermissions` fails open: it approves everything, the exact opposite of restricting the agent to read-only tools."
+      },
+      "difficulty": 2,
+      "mindset": "`allowed_tools` auto-approves; only `disallowed_tools` and deny rules restrict.",
+      "tags": [
+        "d7-security-safety",
+        "least-privilege",
+        "permissions",
+        "agent-sdk",
+        "secure-defaults"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/permissions",
+        "https://code.claude.com/docs/en/permissions"
+      ]
+    },
+    {
+      "id": "v-d7-g2-004",
+      "taskStatementId": "7.3",
+      "scenario": "A PreToolUse command hook runs a guard script on every Bash call. When the script detects a dangerous command such as `rm -rf`, it prints an error message and exits with code 1. In testing, dangerous commands still execute, although the error message does appear in the logs.",
+      "stem": "What is the most reliable change?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Make the script exit with code 2 on detection (or emit JSON with a deny decision) so the call is blocked and the reason is fed back to the model."
+        },
+        {
+          "id": "B",
+          "text": "Keep exit code 1 but increase the hook timeout so the script always finishes before the tool runs."
+        },
+        {
+          "id": "C",
+          "text": "Move the same script to a PostToolUse hook so it can react to the dangerous command before the next turn begins."
+        },
+        {
+          "id": "D",
+          "text": "Have the script exit 0 and print the warning on stdout so Claude reads the message and stops itself."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "**Exit 2 blocks; exit 1 only complains.** For a command hook on PreToolUse, exit code 2 is the blocking signal — the tool call is stopped and stderr is sent back so the model can adjust. Any other non-zero exit (including 1) is a non-blocking error: the action proceeds, which is exactly what the team observed. Emitting JSON with a deny decision achieves the same block declaratively.",
+      "whyWrong": {
+        "B": "Timing was never the problem — the script already ran; exit 1 is simply defined as non-blocking, and no timeout change alters that.",
+        "C": "PostToolUse fires after execution, so moving the check there guarantees the dangerous command has already run.",
+        "D": "Exit 0 signals success; plain stdout from a PreToolUse hook does not block anything, so the command still executes."
+      },
+      "difficulty": 2,
+      "mindset": "Exit 2 blocks; exit 1 does not.",
+      "tags": [
+        "d7-security-safety",
+        "hooks",
+        "pretooluse",
+        "deterministic-controls",
+        "guardrails"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/hooks"
+      ]
+    },
+    {
+      "id": "v-d7-g2-005",
+      "taskStatementId": "7.3",
+      "scenario": "A platform registers two PreToolUse hooks that both match the same tool call. Hook 1 (compliance) returns a JSON permission decision of `deny`. Hook 2 (input normalization) returns `allow` with `updatedInput`. A developer claims the outcome depends on which hook happens to finish first.",
+      "stem": "What actually happens?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The call runs with the updated input, but only if Hook 2 happens to finish last."
+        },
+        {
+          "id": "B",
+          "text": "Registration order decides: the decision returned by the later-registered hook always wins."
+        },
+        {
+          "id": "C",
+          "text": "The call is denied: when multiple hooks return decisions, deny outranks defer, ask, and allow regardless of completion order."
+        },
+        {
+          "id": "D",
+          "text": "The decisions conflict, so the hook system discards both and falls back to the ordinary permission prompt."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "**Hook decisions are combined deterministically, and deny is the strongest decision.** Hooks run in parallel, but the outcomes are not resolved by racing: among `allow`, `ask`, `defer`, and `deny`, deny takes precedence. This is what makes layered hook guardrails dependable — a compliance deny cannot be washed out by another hook's allow.",
+      "whyWrong": {
+        "A": "There is no race: parallel execution does not mean last-writer-wins; decisions are merged by precedence.",
+        "B": "Registration order is irrelevant to the outcome; precedence among decision values is fixed.",
+        "D": "Conflicting decisions do not void the hooks; the system applies the deny rather than dropping both controls."
+      },
+      "difficulty": 3,
+      "mindset": "When hook decisions collide, deny always wins.",
+      "tags": [
+        "d7-security-safety",
+        "hooks",
+        "pretooluse",
+        "guardrail-layering",
+        "deterministic-controls"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/hooks",
+        "https://code.claude.com/docs/en/hooks"
+      ]
+    },
+    {
+      "id": "v-d7-g2-006",
+      "taskStatementId": "7.1",
+      "scenario": "A multi-tenant SaaS product exposes a `get_orders` tool to Claude. The tool takes a `customer_id` parameter, and the model fills it from the conversation. In a penetration test, a user who said \"check orders for customer 8841\" received another tenant's order data, because the model passed that ID and the tool trusted it.",
+      "stem": "What should the team change?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add a system-prompt rule that the agent must only ever use the customer's own ID in tool calls."
+        },
+        {
+          "id": "B",
+          "text": "Resolve the tenant and user from the authenticated session inside the tool implementation and enforce scoping there, treating any model-supplied identifier as untrusted."
+        },
+        {
+          "id": "C",
+          "text": "Have the model return the customer_id in a structured output field that the backend double-checks after the query has run."
+        },
+        {
+          "id": "D",
+          "text": "Instruct the agent to confirm with the user whenever the requested customer_id differs from the account on file."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "**Authorization is enforced in code with the session identity, never with a model-supplied value or a prompt rule.** Anything the model writes — including a `customer_id` parameter — is attacker-influenceable input. The tool implementation must derive the tenant from the authenticated session and scope the query to it; the model's parameter can at most be validated against that identity. This is least privilege applied to data access, and it holds even when the model is manipulated.",
+      "whyWrong": {
+        "A": "A prompt rule is probabilistic; a user (or injected text) can still push a foreign ID into the parameter, and the tool will trust it.",
+        "C": "Checking the ID after the query has run means another tenant's data was already fetched and returned; post-hoc verification is not access control.",
+        "D": "Confirmation depends on the model raising the mismatch every time — and here the requester is the potential attacker, so asking them to confirm provides no authorization at all."
+      },
+      "difficulty": 2,
+      "mindset": "Authorization lives in your code, keyed to the session — not in the prompt.",
+      "tags": [
+        "d7-security-safety",
+        "identity-access",
+        "least-privilege",
+        "tool-implementation",
+        "multi-tenant"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-06-18/server/tools",
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/mitigate-jailbreaks"
+      ]
+    },
+    {
+      "id": "v-d7-g2-007",
+      "taskStatementId": "7.2",
+      "scenario": "A nightly CI job runs Claude Code headlessly to refactor test fixtures. Occasionally the run stalls for hours because the agent attempts an action that needs permission approval and nobody is watching. The team wants unattended runs that never wait on a person, while granting nothing beyond what the job's existing allow rules already permit.",
+      "stem": "Which permission mode should they set?",
+      "options": [
+        {
+          "id": "A",
+          "text": "\"acceptEdits\", so file edits stop prompting and the permission behavior for everything else is unchanged."
+        },
+        {
+          "id": "B",
+          "text": "\"plan\", so the job is restricted to read-only exploration while it waits for approval that never comes."
+        },
+        {
+          "id": "C",
+          "text": "\"bypassPermissions\", so no permission prompt can ever stall the unattended run."
+        },
+        {
+          "id": "D",
+          "text": "\"dontAsk\", so anything that would prompt is auto-denied: the job fails fast and closed, while pre-approved tools keep working."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "**Unattended means deny-by-default, not approve-everything.** `dontAsk` auto-denies any action that would require a prompt, so the run either completes with its allow rules or stops promptly — it never hangs, and it never silently gains new capabilities. That is the fail-closed behavior locked-down CI needs. Pre-approved tools still run, so the fixture work described by the allow rules proceeds.",
+      "whyWrong": {
+        "A": "`acceptEdits` only auto-accepts edits and filesystem commands; other prompts still block the unattended run.",
+        "B": "`plan` prevents edits entirely, so the refactoring job cannot do its work; it trades a stall for guaranteed failure.",
+        "C": "`bypassPermissions` does eliminate prompts — by approving everything, failing open and violating the requirement to grant nothing beyond the allow rules."
+      },
+      "difficulty": 2,
+      "mindset": "Fail closed on the unexpected; never hang, never widen.",
+      "tags": [
+        "d7-security-safety",
+        "permission-modes",
+        "secure-defaults",
+        "fail-closed",
+        "ci"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/permission-modes",
+        "https://code.claude.com/docs/en/headless"
+      ]
+    },
+    {
+      "id": "v-d7-g2-008",
+      "taskStatementId": "7.1",
+      "scenario": "An internal research agent reads from a confidential data warehouse, browses the public web for market context, and can post summaries to an external Slack workspace on request. Security is worried about a web page carrying injected instructions that trick the agent into sending warehouse data outside the company. The team can fund exactly one change this quarter.",
+      "stem": "Which change most reduces the impact of a successful injection?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Remove the agent's direct external-posting capability and route every outbound send through a reviewed queue, so a tricked agent has no exfiltration path it controls."
+        },
+        {
+          "id": "B",
+          "text": "Add system-prompt rules forbidding internal warehouse data from ever appearing in outbound messages."
+        },
+        {
+          "id": "C",
+          "text": "Screen every fetched page with a small classifier for injection attempts before the agent is allowed to read it."
+        },
+        {
+          "id": "D",
+          "text": "Require the agent to cite the public web source for every claim it includes in outbound messages."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "**Break the trifecta: private data, untrusted content, and an exfiltration path should never coexist in one agent.** Screening and prompt rules reduce the chance an injection succeeds, but if the model is fully fooled, the only change that still holds is removing the exit path. Routing outbound sends through a human-reviewed queue is deterministic isolation — the attacker's instructions can no longer move data out, regardless of how thoroughly the model is manipulated.",
+      "whyWrong": {
+        "B": "Prompt rules are probabilistic; against a successful injection they are precisely the control being bypassed.",
+        "C": "Input screening is a useful outer layer, but classifiers miss novel injections, and the untrusted content still flows to an agent holding private data plus an open exit.",
+        "D": "Citations constrain output format, not data flow; a tricked agent can cite sources while exfiltrating confidential figures."
+      },
+      "difficulty": 3,
+      "mindset": "When you can't prevent the model being fooled, cut the exit path.",
+      "tags": [
+        "d7-security-safety",
+        "data-leakage",
+        "prompt-injection",
+        "least-privilege",
+        "guardrail-layering"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/mitigate-jailbreaks"
+      ]
+    },
+    {
+      "id": "v-d7-g2-009",
+      "taskStatementId": "7.3",
+      "scenario": "To stop accidental force-pushes, a team registers a PostToolUse hook on Bash that detects `git push --force` and prints a violation message. In testing, the force-push still lands and the violation only appears in the log afterwards. The team expected the hook to prevent it.",
+      "stem": "What is the most accurate explanation and fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The hook can block the call if its script exits 2 instead of printing; switching the exit code fixes it."
+        },
+        {
+          "id": "B",
+          "text": "PostToolUse runs after the tool has executed and cannot prevent it; move the check to PreToolUse (exit 2 or a deny decision) or a permission deny rule."
+        },
+        {
+          "id": "C",
+          "text": "The matcher is matching too few Bash calls; broaden it so every command is inspected before execution."
+        },
+        {
+          "id": "D",
+          "text": "Register the same script for the Stop event so it runs before any dangerous turn is allowed to complete."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "**PreToolUse prevents; PostToolUse reports.** PostToolUse fires after the action has already happened, so it is the right place for audit trails, logging, and feedback to the model — not for blocking. Even a blocking-style exit code on PostToolUse only surfaces the error to Claude; it cannot un-run the push. Prevention belongs in PreToolUse (exit 2 or a JSON deny) or a permission deny rule, both evaluated before execution.",
+      "whyWrong": {
+        "A": "On PostToolUse, exit 2 does not block — the tool already ran; the stderr is shown to Claude, at best prompting a follow-up apology.",
+        "C": "The matcher worked — the hook fired and logged; the problem is timing, not coverage.",
+        "D": "The Stop event fires when the agent finishes its turn, long after the push executed; it is not a pre-execution gate."
+      },
+      "difficulty": 2,
+      "mindset": "PreToolUse prevents; PostToolUse audits.",
+      "tags": [
+        "d7-security-safety",
+        "hooks",
+        "posttooluse",
+        "pretooluse",
+        "guardrails"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/hooks"
+      ]
+    },
+    {
+      "id": "v-d7-g2-010",
+      "taskStatementId": "7.2",
+      "scenario": "A platform team must guarantee that a deny rule blocking writes to production configuration files applies to every developer's Claude Code sessions — including contractors who administer their own laptops — and cannot be weakened from any lower scope. They ask where the rule belongs.",
+      "stem": "Which placement meets the requirement?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The repository-root CLAUDE.md, so every session in that repository reads the rule at launch."
+        },
+        {
+          "id": "B",
+          "text": "The shared project settings in `.claude/settings.json`, committed to the repository for the whole team."
+        },
+        {
+          "id": "C",
+          "text": "Each developer's user settings, backed by a signed policy acknowledgment from every contractor."
+        },
+        {
+          "id": "D",
+          "text": "Organization-managed settings deployed by the company, which no lower scope can override."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "**Only a scope nobody can edit can guarantee a rule.** Settings precedence runs managed > CLI > local > project > user, and managed settings cannot be overridden from lower scopes. Combined with the fact that permissions are enforced by Claude Code rather than the model, and that deny rules hold in every permission mode, managed settings are the only placement that survives a self-administered laptop. This is secure-by-design: the control does not depend on developer cooperation.",
+      "whyWrong": {
+        "A": "CLAUDE.md is context delivered to the model, not an enforcement mechanism; it can never grant or revoke access.",
+        "B": "The project file lives in a checkout each contractor controls and can edit or remove locally; it is also outranked by CLI and local scopes.",
+        "C": "User settings are the weakest scope — developers can edit them freely, so a signature does not enforce anything."
+      },
+      "difficulty": 3,
+      "mindset": "Guaranteed rules live where no one below can edit them.",
+      "tags": [
+        "d7-security-safety",
+        "managed-settings",
+        "permissions",
+        "governance",
+        "secure-by-design"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/managed-settings",
+        "https://code.claude.com/docs/en/settings",
+        "https://code.claude.com/docs/en/permissions"
+      ]
+    },
+    {
+      "id": "v-d7-g2-011",
+      "taskStatementId": "7.2",
+      "scenario": "A new engineer proposes the team's audit control for \"agents must never email files from the finance share\": a detailed system-prompt section listing the forbidden folders and actions.",
+      "stem": "How should the team lead respond?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Approve it — system-prompt instructions are deterministically enforced by the API on every request."
+        },
+        {
+          "id": "B",
+          "text": "Approve it, provided the workload is first moved to the largest, most instruction-following model available."
+        },
+        {
+          "id": "C",
+          "text": "Keep the prompt as one layer, but pair it with an enforceable control — a permission deny rule or a PreToolUse approval gate — before calling it an audit control."
+        },
+        {
+          "id": "D",
+          "text": "Approve it once few-shot examples of the agent refusing such requests are added to the system prompt."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "**Prompts are one layer and are never the only control for a high-impact action.** Instructions in a system prompt are guidance with a non-zero failure rate — they shape behavior, they do not enforce it. For an auditable control on a destructive or sensitive action, the enforcement must be deterministic and outside the model: a permission rule that blocks the capability, or a hook that gates it. The prompt still helps the agent behave sensibly inside those boundaries.",
+      "whyWrong": {
+        "A": "System-prompt instructions are not deterministically enforced; treating guidance as a control is the classic layering mistake.",
+        "B": "Model choice is not a security control; a more instruction-following model can still fail, and can be manipulated just the same.",
+        "D": "Examples improve consistency, but consistency of probabilistic behavior is still not enforcement."
+      },
+      "difficulty": 1,
+      "mindset": "A control that can't fail closed is just a suggestion.",
+      "tags": [
+        "d7-security-safety",
+        "guardrail-layering",
+        "least-privilege",
+        "hooks",
+        "permissions"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/hooks",
+        "https://code.claude.com/docs/en/permissions",
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/mitigate-jailbreaks"
+      ]
+    },
+    {
+      "id": "v-d7-g2-012",
+      "taskStatementId": "7.2",
+      "scenario": "An agent processes documents submitted by outside parties. The security team is planning defenses and wants to distinguish controls that depend on the model's good judgment from controls that hold regardless of it.",
+      "stem": "If the model is completely fooled by instructions embedded in a document, which TWO controls still hold? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "A permission deny rule that removes the Bash tool from the agent entirely."
+        },
+        {
+          "id": "B",
+          "text": "A system-prompt section enumerating the actions the agent must never take."
+        },
+        {
+          "id": "C",
+          "text": "Few-shot examples that demonstrate ignoring embedded instructions."
+        },
+        {
+          "id": "D",
+          "text": "A PreToolUse hook that exits 2 on tool calls matching dangerous patterns."
+        },
+        {
+          "id": "E",
+          "text": "Routing the workload to a larger model with stronger instruction following."
+        }
+      ],
+      "correct": [
+        "A",
+        "D"
+      ],
+      "explanation": "**Deterministic controls execute outside the model, so they hold even when the model is fully manipulated.** A deny rule that removes a tool means the capability simply does not exist for the agent to misuse, in every permission mode. A PreToolUse hook that exits 2 blocks the call before it runs, whatever the model believes it should do. Both convert a security property from \"the model usually complies\" to \"the action cannot occur.\"",
+      "whyWrong": {
+        "B": "A system-prompt rule is exactly the layer being bypassed when the model is fooled; it has a non-zero failure rate by design.",
+        "C": "Examples shift behavior statistically; they are model-mediated and provide no guarantee under adversarial input.",
+        "E": "No model choice is a security control; instruction-following strength does not remove the failure mode, and can make manipulation more effective."
+      },
+      "difficulty": 2,
+      "mindset": "Ask which controls run outside the model — those are the ones that always hold.",
+      "tags": [
+        "d7-security-safety",
+        "guardrail-layering",
+        "deterministic-controls",
+        "permissions",
+        "hooks"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/permissions",
+        "https://code.claude.com/docs/en/hooks"
+      ]
+    },
+    {
+      "id": "v-d7-g2-013",
+      "taskStatementId": "7.4",
+      "scenario": "During an audit, a Claude API key is discovered committed to a public repository. The commit is four weeks old, and the repository has visible clone activity.",
+      "stem": "Which TWO actions should the security team take first? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Rewrite the repository's git history to remove the key, then treat the exposure as closed."
+        },
+        {
+          "id": "B",
+          "text": "Move the key into the repository's CLAUDE.md so it stays out of application code but remains available to the agent."
+        },
+        {
+          "id": "C",
+          "text": "Revoke the exposed key immediately and issue a replacement that is stored in a secrets manager and injected as an environment variable."
+        },
+        {
+          "id": "D",
+          "text": "Add a system-prompt rule that agents must never reveal API keys in their output."
+        },
+        {
+          "id": "E",
+          "text": "Review console usage logs and usage reporting for unauthorized activity dating back to the commit."
+        }
+      ],
+      "correct": [
+        "C",
+        "E"
+      ],
+      "explanation": "**Revoke first, then investigate — a public key is compromised the moment it lands in the repo.** History rewriting cannot un-ring the bell: clones and caches already exist. Rotation moves the workload to a safe credential from a secrets manager, while log review establishes whether the key was abused during the four-week window and informs customer or incident decisions. Cleanup of the repo history comes after containment.",
+      "whyWrong": {
+        "A": "History rewriting is remediation theater as a first step — existing clones and caches retain the key, so the credential must still be treated as compromised.",
+        "B": "CLAUDE.md is part of the repository (and prompts are never a place for secrets); this re-exposes the key rather than protecting it.",
+        "D": "A prompt rule about revealing keys addresses model output, not a static credential that already leaked; it does nothing to contain the exposure."
+      },
+      "difficulty": 2,
+      "mindset": "Revoke first, investigate second, clean history last.",
+      "tags": [
+        "d7-security-safety",
+        "secrets",
+        "key-management",
+        "incident-response",
+        "monitoring"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/headless",
+        "https://code.claude.com/docs/en/github-actions"
+      ]
+    },
+    {
+      "id": "v-d7-g2-014",
+      "taskStatementId": "7.2",
+      "scenario": "A startup is moving its document-analysis agent from internal pilots to processing uploads from untrusted external users. The agent enriches extracted records by calling external APIs, and it runs on shared infrastructure alongside other customers' workloads. Security planning assumes some uploads will contain injection attempts and that some will succeed.",
+      "stem": "Which TWO changes best contain the blast radius of a successful manipulation? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Deny the agent the Bash tool and rely on that alone, since without shell access there is no route for data to leave the environment."
+        },
+        {
+          "id": "B",
+          "text": "Run each tenant's workload in strong OS-level isolation, such as a dedicated virtual machine or container sandbox, rather than a shared runtime."
+        },
+        {
+          "id": "C",
+          "text": "Upgrade to a larger model so injected instructions in uploads are less likely to be followed."
+        },
+        {
+          "id": "D",
+          "text": "Add a system-prompt layer reminding the agent that uploaded documents are untrusted data."
+        },
+        {
+          "id": "E",
+          "text": "Route all model and external API calls through a credential broker so workloads never hold raw keys, with destination allowlists and traffic logging at the broker."
+        }
+      ],
+      "correct": [
+        "B",
+        "E"
+      ],
+      "explanation": "**Containment must sit outside the model.** If planning assumes injections sometimes succeed, the changes that still matter are the ones the manipulation cannot touch: OS-level isolation per tenant contains both manipulation-driven and escape-driven failures on shared infrastructure, and a credential broker with destination allowlists and traffic logging means a fooled or compromised workload holds no raw secrets and can only reach approved endpoints. Prompt layers and model choice shape the odds; they do not contain the blast radius.",
+      "whyWrong": {
+        "A": "Removing Bash cuts one egress route but not the others — WebFetch, MCP tools, and the agent's own external API calls all move data — and it does nothing for cross-tenant isolation or credential exposure.",
+        "C": "Model choice is not a security control; instruction-following strength does not remove the injection failure mode.",
+        "D": "Labeling uploads as untrusted is a worthwhile layer, but it works through the model's judgment — exactly what this threat model assumes will sometimes fail."
+      },
+      "difficulty": 3,
+      "mindset": "Assume the injection succeeds; then ask what still contains it.",
+      "tags": [
+        "d7-security-safety",
+        "sandboxing",
+        "credential-isolation",
+        "threat-model",
+        "multi-tenant"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/mitigate-jailbreaks",
+        "https://modelcontextprotocol.io/specification/2025-06-18/basic/security_best_practices"
+      ]
+    },
+    {
+      "id": "v-d7-g2-015",
+      "taskStatementId": "7.2",
+      "scenario": "A team is designing a new internal workflow agent that will summarize tickets, query two internal services, and post updates to one channel.",
+      "stem": "Which TWO practices apply least privilege? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Start the agent with the smallest tool set that covers its task and add tools only when a demonstrated need appears."
+        },
+        {
+          "id": "B",
+          "text": "Run with bypassPermissions so the agent is never interrupted by a permission prompt."
+        },
+        {
+          "id": "C",
+          "text": "Run the agent's backend under its own narrowly scoped credential rather than reusing the team's broad shared admin key."
+        },
+        {
+          "id": "D",
+          "text": "Connect every MCP server the organization owns so the agent can handle any request that might come up."
+        },
+        {
+          "id": "E",
+          "text": "Place the credential in the system prompt where the agent can retrieve it when calling tools."
+        }
+      ],
+      "correct": [
+        "A",
+        "C"
+      ],
+      "explanation": "**Least privilege means fewest tools and narrowest identity.** A minimal tool set shrinks the blast radius of any mistake or manipulation — the agent cannot misuse capability it does not have — and adding tools on demonstrated need keeps that boundary honest (and keeps tool selection reliable). A dedicated, narrowly scoped credential for the workload's backend does the same for identity: exposure of that key affects one workload, not the whole organization. Both are design-time decisions, not runtime behavior.",
+      "whyWrong": {
+        "B": "`bypassPermissions` approves everything — it is the maximum-privilege configuration, the opposite of least privilege.",
+        "D": "Maximal tool access inverts least privilege; it also degrades tool selection reliability.",
+        "E": "Secrets never belong in prompts or model-visible context; a credential in a system prompt is exposed to prompt leaks and logging."
+      },
+      "difficulty": 1,
+      "mindset": "Least privilege = smallest tool set, narrowest credential.",
+      "tags": [
+        "d7-security-safety",
+        "least-privilege",
+        "identity-access",
+        "secrets",
+        "secure-by-design"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/mitigate-jailbreaks",
+        "https://code.claude.com/docs/en/permission-modes",
+        "https://code.claude.com/docs/en/headless"
+      ]
+    }
+  ]
+}

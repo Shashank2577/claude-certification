@@ -157,7 +157,7 @@ export function OnboardingWizard({
             {step === 0 ? (
               <>
                 <h1 className="font-display text-3xl font-semibold tracking-[-0.025em] [overflow-wrap:anywhere] sm:text-4xl">Hi {shortName(name)}. Which exam are you preparing for?</h1>
-                <p className="mt-3 text-ink-2">Pick one or both. Your plan starts with the first one you choose.</p>
+                <p className="mt-3 text-ink-2">Pick one or more. Your plan starts with the first one you choose.</p>
                 <div className="mt-8 grid gap-3">
                   {certs.map((c) => {
                     const on = certIds.includes(c.id);

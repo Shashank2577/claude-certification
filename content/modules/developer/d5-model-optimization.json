@@ -1,0 +1,589 @@
+{
+  "certId": "developer",
+  "domainId": "d5-model-optimization",
+  "lessons": [
+    {
+      "id": "v-llm-fundamentals",
+      "title": "How LLMs work: tokens, context windows and next-token generation",
+      "estMinutes": 12,
+      "level": "core",
+      "taskStatementIds": [
+        "5.1"
+      ],
+      "eli5": "Claude writes the way a very well-read person finishes your sentence: it looks at everything on the page so far and picks the next small piece of a word, then the next, over and over. The page has a fixed size (the context window), and you pay for every piece read and written.",
+      "visualId": "context-window",
+      "body": "## The one-sentence model\n\nA large language model (LLM) takes a sequence of **tokens** and predicts a probability distribution over the **next token**. It picks one, appends it, and repeats until it decides to stop or hits a limit. Everything else (chat, tool use, thinking, JSON output) is built on that loop.\n\nTwo consequences follow, and the exam leans on both:\n\n1. **The model only knows what is in the request.** The Messages API is stateless. Earlier turns, retrieved documents and tool results help only if you send them again in `messages`.\n2. **Output is generated, not looked up.** Fluent text can still be wrong. Correctness has to come from grounding (documents, tools) and from checks in your code.\n\n## Tokens are not words\n\nA token is a chunk of text produced by the model's tokenizer: often part of a word, a word, punctuation or a piece of code. You are billed per token, limits are set in tokens, and speed is measured in output tokens per second.\n\n| Rule of thumb | Why it matters |\n|---|---|\n| Token counts depend on the **model's tokenizer** | Moving between model generations can change your bill for the same text |\n| Code, non-English text and unusual symbols use more tokens per character | Budget more for these workloads |\n| Never estimate Claude tokens with a different vendor's tokenizer | Counts will be wrong. Use `POST /v1/messages/count_tokens` with the same `model` you will call |\n\nAt the time of writing, the docs note that the current tokenizer arrived with Claude Opus 4.7 and that text can use roughly 1x to 1.35x as many tokens as on earlier models. Re-baseline with `count_tokens` when you migrate rather than reusing old numbers.\n\n```python\ncount = client.messages.count_tokens(\n    model=\"claude-sonnet-5-5\",\n    system=SYSTEM_PROMPT,\n    messages=[{\"role\": \"user\", \"content\": contract_text}],\n)\nprint(count.input_tokens)   # exact input size for this model\n```\n\n## The context window is a shared budget\n\nThe context window is the maximum number of tokens the model can work with in one request. The prompt (system, tool definitions, history, documents) and the generated output, including any thinking, have to fit inside it.\n\n| Model (Oct 2026 docs) | Context window | Max output (sync Messages API) |\n|---|---|---|\n| Claude Fable 5.1 | 1M tokens | 128K |\n| Claude Opus 5.5 | 1M tokens | 128K |\n| Claude Sonnet 5.5 | 1M tokens | 128K |\n| Claude Haiku 4.5 | 200K tokens | 64K |\n\nTwo different ceilings are easy to confuse:\n\n- **`max_tokens`** is a cap *you* set on output for one response. Hit it and the response stops with `stop_reason: \"max_tokens\"`. The answer is **truncated, not finished**.\n- **The context window** is the model's hard limit. If input plus output fills it first, you get `stop_reason: \"model_context_window_exceeded\"`, or a 400 error if the input alone is too large.\n\nA bigger window is not a free pass. Everything in the window competes for attention, and every input token is billed on every call. Long agent sessions get slower and more expensive as history grows, which is why compaction, context editing and caching exist (Domain 6 covers these in depth).\n\n## Next-token generation and stopping\n\nThe model stops for a reason, and your code should read that reason from `stop_reason`, never by parsing the text:\n\n| `stop_reason` | Meaning |\n|---|---|\n| `end_turn` | Finished naturally |\n| `max_tokens` | Your output cap was reached, so the output is incomplete |\n| `stop_sequence` | One of your `stop_sequences` matched |\n| `tool_use` | The model wants a tool run |\n| `refusal` | Declined for safety reasons (HTTP 200, check `stop_details`) |\n\n## Worked example: will it fit?\n\nA support summarizer sends a 6K-token system prompt, a 3K-token tool list and a ticket thread of up to 40K tokens, and asks for up to 2K tokens of output. On Haiku 4.5 (200K window) that is about 51K tokens, which fits easily. Now the product team wants to attach the customer's full 300K-token account history. That **cannot** fit on Haiku 4.5 at all. The options are a 1M-window model, or (usually better) retrieving only the relevant history. Retrieval also cuts the per-call input cost of re-sending 300K tokens every time.\n\n## What to remember for the exam\n\n- Price, limits and latency are all expressed in **tokens**, and counts are **model-specific**.\n- Stateless API: no memory beyond what you send.\n- `max_tokens` truncation is not success. Check `stop_reason` before you use the content.\n",
+      "keyTakeaways": [
+        "An LLM generates one token at a time by predicting the next token from everything in the request.",
+        "The Messages API is stateless: history, documents and tool results only count if you send them again.",
+        "Tokens are tokenizer-specific; use count_tokens with the target model, never another vendor's tokenizer.",
+        "Input and output (including thinking) share the context window; max_tokens is your separate output cap.",
+        "stop_reason max_tokens means truncated output, not a finished answer.",
+        "Current Fable 5.1, Opus 5.5 and Sonnet 5.5 have 1M-token windows; Haiku 4.5 has 200K (Oct 2026 docs)."
+      ],
+      "examTips": [
+        "If a scenario says Claude 'forgot' an earlier turn, the answer is almost always that the app did not resend history, not a model defect.",
+        "When asked how to estimate cost or check fit before sending, pick count_tokens with the same model ID.",
+        "Distinguish max_tokens (your cap, truncation) from the context window (model limit) in answer choices."
+      ],
+      "commonTraps": [
+        "Treating 1 token as 1 word when budgeting.",
+        "Assuming a larger context window removes the need for retrieval or pruning (cost and attention still suffer).",
+        "Reading the final text for 'Done' instead of checking stop_reason.",
+        "Reusing token counts measured on an older model after migrating to a model with a different tokenizer."
+      ],
+      "resources": [
+        {
+          "title": "Models overview (Claude Docs)",
+          "url": "https://platform.claude.com/docs/en/about-claude/models/overview",
+          "type": "docs"
+        },
+        {
+          "title": "Context windows (Claude Docs)",
+          "url": "https://platform.claude.com/docs/en/build-with-claude/context-windows",
+          "type": "docs"
+        },
+        {
+          "title": "Token counting (Claude Docs)",
+          "url": "https://platform.claude.com/docs/en/build-with-claude/token-counting",
+          "type": "docs"
+        }
+      ]
+    },
+    {
+      "id": "v-sampling-nondeterminism",
+      "title": "Sampling and non-determinism: designing for variable output",
+      "estMinutes": 9,
+      "level": "core",
+      "taskStatementIds": [
+        "5.1"
+      ],
+      "eli5": "Asking Claude the same question twice is like asking a chef to cook the same dish twice: it will be very similar but not identical. You build your kitchen so that small differences don't break anything, instead of hoping for a perfect copy every time.",
+      "visualId": "structured-output",
+      "body": "## Where variation comes from\n\nAt each step the model produces a probability distribution over possible next tokens, and **sampling** chooses one of them. Because many continuations are plausible, two runs of the same prompt can diverge early and end up with different wording, ordering or even conclusions. Long outputs and agent loops amplify this, because one different early choice changes everything after it.\n\nSampling controls such as `temperature`, `top_p` and `top_k` shape that choice on models that accept them. Lower temperature makes the most likely tokens more dominant and tends to give more focused output. Higher temperature spreads the choice and tends to give more varied output.\n\nTwo facts matter more than the knob itself:\n\n1. **Even at the lowest temperature, output is not guaranteed to be identical.** Anthropic's docs have long said this. Non-determinism is a property you design around, not one you switch off.\n2. **The newest models restrict sampling parameters.** At the time of writing, the models overview and migration guide list `temperature`/`top_p`/`top_k` as removed (a 400 error) on Claude Opus 5.5, Fable 5.1 and the Opus 4.7+ line, and Sonnet 5.5 rejects non-default values. Haiku 4.5 and the 4.6 models still accept them. Code that sets `temperature=0` can therefore *break* on migration. It is a classic breaking change (see the migration lesson).\n\n## Designing for variable output\n\n| Need | Reliable technique | Why it works |\n|---|---|---|\n| Machine-readable output | **Structured outputs** (`output_config.format` with a JSON schema) or `strict: true` tools | Constrains the format, so parsing doesn't depend on luck |\n| Consistent style or labels | Clear instructions plus **few-shot examples** | Examples pin the pattern better than adjectives |\n| Repeatable decisions | Put business rules in **code**, not prompts | Deterministic logic for things that must always hold |\n| Same answer for the same input | **Cache your own results** by input hash | Your cache is deterministic; the model is not |\n| Confidence a change helped | **Evals over many samples** | One run proves nothing about a distribution |\n| Catching bad outputs | Validate, then retry or escalate | Schema-valid is not the same as correct |\n\n## Worked example: a flaky classifier\n\nA team routes inbound emails into `billing`, `bug`, `sales` or `other`. In testing, the same email sometimes lands in `bug` and sometimes in `billing`. Someone proposes \"set temperature to 0\".\n\nBetter sequence:\n\n1. **Check the model.** If it's a current Opus or Sonnet, the parameter may not even be accepted.\n2. **Constrain the output.** Use a schema with an `enum` of the four labels so the format can't drift.\n3. **Fix the real ambiguity.** Variation on the *label* usually means the categories overlap (\"I was double-charged after the app crashed\"). Add a rule for tie-breaks and two or three examples of borderline emails with the correct label.\n4. **Measure.** Run the eval set several times and track label agreement and accuracy, not a single pass.\n\n```python\nresp = client.messages.create(\n    model=\"claude-haiku-4-5\",\n    max_tokens=200,\n    system=ROUTING_RULES,              # includes tie-break rule + examples\n    messages=[{\"role\": \"user\", \"content\": email_text}],\n    output_config={\"format\": {\n        \"type\": \"json_schema\",\n        \"schema\": {\n            \"type\": \"object\",\n            \"properties\": {\"label\": {\"type\": \"string\",\n                           \"enum\": [\"billing\", \"bug\", \"sales\", \"other\"]}},\n            \"required\": [\"label\"],\n            \"additionalProperties\": False,\n        },\n    }},\n)\n```\n\n## Non-determinism and testing\n\n- **Unit tests** around LLM calls should mock the model or assert on properties (\"valid JSON\", \"label in the allowed set\", \"cites a provided document\"), not on exact strings.\n- **Evals** should sample each case more than once when variance matters, and report rates.\n- **Regression checks** after a prompt or model change compare distributions (accuracy, refusal rate, length) rather than diffs of text.\n\n## Thinking is variable too\n\nAdaptive thinking lets the model decide how much to reason per request, so token usage and latency also vary between runs of similar prompts. Budget with ranges and percentiles, and monitor `usage.output_tokens`, not a single sample.\n",
+      "keyTakeaways": [
+        "Sampling picks each next token from a probability distribution, so identical prompts can produce different outputs.",
+        "Lower temperature narrows the choice but never guarantees identical output.",
+        "Current Opus/Fable models reject sampling parameters and Sonnet 5.5 rejects non-default values; Haiku 4.5 still accepts them (Oct 2026 docs).",
+        "Get consistency from structured outputs, examples, code-enforced rules and your own result caching.",
+        "Test LLM features with property assertions and multi-sample evals, not exact-string matches."
+      ],
+      "examTips": [
+        "When an answer choice says 'set temperature to 0 to make it deterministic', treat it with suspicion; look for schema constraints, examples or code-level rules.",
+        "If a question involves format reliability, structured outputs beats prompt pleading.",
+        "Questions about testing LLM features reward evals over many samples and property-based assertions."
+      ],
+      "commonTraps": [
+        "Believing temperature 0 guarantees byte-identical output.",
+        "Carrying temperature settings into a migration to a model that rejects them (400 errors).",
+        "Judging a prompt change from a single run.",
+        "Using exact-text snapshot tests on model output."
+      ],
+      "resources": [
+        {
+          "title": "Models overview (Claude Docs)",
+          "url": "https://platform.claude.com/docs/en/about-claude/models/overview",
+          "type": "docs"
+        },
+        {
+          "title": "Migration guide (Claude Docs)",
+          "url": "https://platform.claude.com/docs/en/about-claude/models/migration-guide",
+          "type": "docs"
+        },
+        {
+          "title": "Prompting best practices (Claude Docs)",
+          "url": "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices",
+          "type": "docs"
+        }
+      ]
+    },
+    {
+      "id": "v-prompting-shots",
+      "title": "Zero-shot, one-shot and few-shot prompting",
+      "estMinutes": 9,
+      "level": "core",
+      "taskStatementIds": [
+        "5.1"
+      ],
+      "eli5": "Zero-shot is telling a new colleague what you want. One-shot is also handing them one finished example. Few-shot is handing them a small stack of varied examples so they can see the pattern, including the tricky cases.",
+      "visualId": "prompt-anatomy",
+      "body": "## The three patterns\n\n| Pattern | What you send | Best for | Cost |\n|---|---|---|---|\n| **Zero-shot** | Instructions only | Clear, common tasks where the format is simple (\"summarize this in 3 bullets\") | Smallest prompt |\n| **One-shot** (single-shot) | Instructions plus one example of input and output | Showing an exact output shape or tone | Small increase |\n| **Few-shot** (multi-shot) | Instructions plus several examples | Ambiguous judgments, house style, edge cases, consistent labels | Larger prompt, but cacheable |\n\nAnthropic's prompt engineering guide recommends that examples be **relevant** (they match real inputs), **diverse** (they cover edge cases so the model doesn't copy one surface pattern) and **clearly marked**, for example inside `<example>` tags within an `<examples>` block. The docs suggest about **3 to 5** examples as a good starting point.\n\n## Start zero-shot, add examples when you have evidence\n\nCurrent models follow clear instructions well, so start zero-shot with a precise task, context, audience and output format. Add examples when your evals show one of these problems:\n\n- **Format drift**: fields missing, wrong order, extra commentary.\n- **Inconsistent judgment**: borderline inputs get different labels.\n- **Wrong tone or level**: output is too formal, too long or too technical.\n\nA single example fixes shape. Several varied examples fix judgment.\n\n## Worked example: extracting action items\n\nZero-shot prompt:\n\n```text\nExtract action items from the meeting notes. Return one line per item:\nOWNER | TASK | DUE (or \"none\").\n```\n\nTesting shows two failures: it lists discussion points (\"we talked about pricing\") as tasks, and it invents due dates from phrases like \"soon\". Add three examples that target exactly those failures:\n\n```xml\n<examples>\n  <example>\n    <notes>Priya will send the revised quote by Friday.</notes>\n    <output>Priya | Send revised quote | Friday</output>\n  </example>\n  <example>\n    <notes>We discussed whether to raise prices next quarter.</notes>\n    <output>(no action items)</output>\n  </example>\n  <example>\n    <notes>Tom said he'd look at the login bug soon.</notes>\n    <output>Tom | Investigate login bug | none</output>\n  </example>\n</examples>\n```\n\nThe second example teaches \"discussion is not a task\". The third teaches \"vague timing means no due date\". That is what **diverse** means in practice: each example covers a different decision, not three copies of the easy case.\n\n## Pitfalls with examples\n\n- **Overfitting to surface features.** If every example has exactly two items, outputs may always have two items. Vary length and structure.\n- **Contradicting your instructions.** If the rules say ISO dates and an example uses \"Friday\", the model has to guess. Keep them consistent, or say explicitly that relative days are kept as written.\n- **Leaking test data.** Don't use your eval cases as prompt examples, or your eval will overstate quality.\n- **Paying for examples every call.** Put stable examples in the system prompt and cache them (see the caching lesson), so repeated calls read them at a fraction of the input price.\n\n## Examples vs other tools\n\n| Problem | Better fix than more examples |\n|---|---|\n| Output must be valid JSON | Structured outputs (`output_config.format`) |\n| Model lacks facts | Provide documents or a retrieval tool |\n| Hard multi-step reasoning | Adaptive thinking with suitable effort, or break the task into steps |\n| Rule must never be broken | Enforce it in code or with a hook |\n\n## Exam framing\n\nThe exam tests whether you can match the technique to the failure. \"Inconsistent classification of edge cases\" points to few-shot examples that cover those cases. \"Output not parseable\" points to structured outputs. \"Needs knowledge the model doesn't have\" points to grounding, not examples.\n",
+      "keyTakeaways": [
+        "Zero-shot = instructions only; one-shot = one example; few-shot (multi-shot) = several examples.",
+        "Start zero-shot and add examples when evals show format drift or inconsistent judgment.",
+        "Good examples are relevant, diverse (each covers a different edge case) and clearly tagged; about 3-5 is the docs' starting point.",
+        "Keep examples consistent with your written rules and separate from your eval set.",
+        "Stable examples belong in a cached system prompt to control cost."
+      ],
+      "examTips": [
+        "Map the symptom to the fix: inconsistent edge-case handling -> few-shot; unparseable format -> structured outputs; missing knowledge -> grounding.",
+        "Prefer answers that add diverse examples covering the failing cases over answers that add many similar examples.",
+        "'Single-shot' and 'one-shot' mean the same thing; 'multi-shot' and 'few-shot' mean the same thing."
+      ],
+      "commonTraps": [
+        "Adding more examples of the easy case instead of the failing edge cases.",
+        "Using few-shot examples to try to force strict JSON when structured outputs exist.",
+        "Copying eval items into the prompt, which inflates eval scores.",
+        "Examples that contradict the instructions."
+      ],
+      "resources": [
+        {
+          "title": "Prompt engineering overview (Claude Docs)",
+          "url": "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/overview",
+          "type": "docs"
+        },
+        {
+          "title": "Prompting best practices (Claude Docs)",
+          "url": "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices",
+          "type": "docs"
+        },
+        {
+          "title": "Anthropic prompt engineering interactive tutorial",
+          "url": "https://github.com/anthropics/prompt-eng-interactive-tutorial",
+          "type": "repo"
+        }
+      ]
+    },
+    {
+      "id": "v-thinking-effort-fast",
+      "title": "Model options: adaptive thinking, extended thinking, effort and fast mode",
+      "estMinutes": 14,
+      "level": "core",
+      "taskStatementIds": [
+        "5.1",
+        "5.3"
+      ],
+      "eli5": "Thinking is Claude working on scrap paper before answering. Effort is how carefully you ask it to work. Fast mode is paying extra for the same expert to write faster. Each one trades money, time and quality differently.",
+      "body": "## Four controls, four different jobs\n\n| Control | What it changes | Where you set it |\n|---|---|---|\n| **Adaptive thinking** | The model decides when and how much to reason before answering | `thinking: {type: \"adaptive\"}` (or omit on models where it is always on) |\n| **Extended thinking** (manual) | You set a fixed thinking token budget | `thinking: {type: \"enabled\", budget_tokens: N}` on earlier models such as Haiku 4.5 |\n| **Effort** | How thorough the model is overall: thinking depth, tool calls, verbosity | `output_config: {effort: \"low\" \\| \"medium\" \\| \"high\" \\| \"xhigh\" \\| \"max\"}` |\n| **Fast mode** | Output speed of the same model, at a premium price | `speed: \"fast\"` + beta header `fast-mode-2026-02-01` |\n\n## Adaptive vs extended thinking\n\n**Adaptive thinking** is the current approach. The model reasons more on hard requests and less on easy ones, and you steer the overall level with effort. Per the models overview (Oct 2026):\n\n| Model | Thinking | Default effort |\n|---|---|---|\n| Claude Fable 5.1 | Adaptive, always on | `high` |\n| Claude Opus 5.5 | Adaptive, always on (cannot be disabled; lower effort instead) | `medium` |\n| Claude Sonnet 5.5 | Adaptive | `high` |\n| Claude Haiku 4.5 | **Extended** (manual `budget_tokens`) | Effort **not supported** |\n\n**Extended thinking** with `budget_tokens` is the manual mode on earlier models. On Haiku 4.5, `budget_tokens` must be at least 1024 and less than `max_tokens`. It is deprecated on Opus 4.6 and Sonnet 4.6 and **rejected with a 400** on later models. Code that hard-codes `budget_tokens` breaks when you move it to Opus 5.5.\n\nThinking tokens are billed as output tokens. On current models the raw chain of thought is not returned. By default the thinking text comes back empty (`display: \"omitted\"`), and `display: \"summarized\"` returns a readable summary. Display affects visibility only, not cost.\n\n```python\nresp = client.messages.create(\n    model=\"claude-opus-5-5\",\n    max_tokens=16000,\n    thinking={\"type\": \"adaptive\", \"display\": \"summarized\"},\n    output_config={\"effort\": \"high\"},\n    messages=[{\"role\": \"user\", \"content\": incident_timeline}],\n)\n```\n\n## Effort: the main quality-vs-cost dial\n\nEffort trades thoroughness against tokens and latency **within one model**:\n\n- `low`: quick, terse, fewer tool calls. Good for chat, classification, simple subagents.\n- `medium`: a cost-saving step down where quality holds. It is the **default on Opus 5.5**, so set effort explicitly if you need more.\n- `high`: a strong balance for intelligence-sensitive work. Default on Sonnet 5.5 and Fable 5.1.\n- `xhigh` / `max`: for hard coding, long-horizon agentic work, or when correctness outweighs cost.\n\nTune effort per route using evals. Before building a cascade of several models, test whether the stronger model at lower effort already meets the bar. Fewer models also means one cache namespace, because caches are model-scoped.\n\n## Fast mode (research preview)\n\nFast mode runs the **same model with the same weights** on a faster inference configuration:\n\n- Supported on **Claude Opus 5.5, Opus 5 and Opus 4.8**.\n- **Up to 2.5x higher output tokens per second.** The gain is in output speed, **not time to first token**. It shows most with streaming.\n- **Premium pricing**: Opus 5.5 fast is $8 / $40 per million input/output tokens vs $4 / $20 standard.\n- Claude API (including Managed Agents) only. Not on Amazon Bedrock, Google Cloud, Microsoft Foundry or Claude Platform on AWS, and **not with the Batch API** or Priority Tier.\n- Separate rate limit. When exceeded you get a **429 with `retry-after`**. You can wait, or retry without `speed` to fall back to standard. Switching speed **misses the prompt cache**, because different speeds don't share cached prefixes.\n- `usage.speed` tells you which speed actually ran. Access requires joining the research preview.\n\n```python\nresp = client.beta.messages.create(\n    model=\"claude-opus-5-5\", max_tokens=4096,\n    speed=\"fast\", betas=[\"fast-mode-2026-02-01\"],\n    messages=msgs,\n)\nprint(resp.usage.speed)   # \"fast\" or \"standard\"\n```\n\n## Choosing the right lever\n\n| Situation | Lever |\n|---|---|\n| Interactive coding assistant on Opus; users wait on long generated diffs | Fast mode, with streaming |\n| Users complain the first word takes too long | Streaming, shorter prompts, caching or a smaller model. Fast mode does **not** target TTFT |\n| Answers are shallow on hard analysis | Raise effort (and check the model) |\n| Simple, high-volume tagging on Opus costs too much | Lower effort, or route to Sonnet/Haiku if evals pass |\n| Overnight non-urgent bulk job | Batches (50% off). Fast mode is unavailable there anyway |\n",
+      "keyTakeaways": [
+        "Adaptive thinking lets the model decide how much to reason; effort steers it. It is the current default approach.",
+        "Extended thinking with budget_tokens is for earlier models (Haiku 4.5 among current ones) and is rejected on Opus 5.5.",
+        "Default effort: medium on Opus 5.5, high on Sonnet 5.5 and Fable 5.1; Haiku 4.5 doesn't support effort (Oct 2026).",
+        "Fast mode: same Opus model, up to 2.5x output tokens/sec, premium price ($8/$40 on Opus 5.5), Claude API only, not with Batches.",
+        "Fast mode speeds output throughput, not time to first token; switching speed invalidates the prompt cache.",
+        "Thinking tokens are billed as output; display settings change visibility, not cost."
+      ],
+      "examTips": [
+        "If latency complaints are about time to first token, fast mode is a distractor; look for streaming or a smaller model.",
+        "If a scenario uses Bedrock, Vertex/Google Cloud or the Batch API, fast mode cannot be the answer.",
+        "Effort is the first quality-vs-cost lever inside one model; model switching is the bigger lever across models.",
+        "Watch for code using budget_tokens on a current Opus model: expect a 400."
+      ],
+      "commonTraps": [
+        "Thinking fast mode is a different, smaller model.",
+        "Assuming Opus 5.5 defaults to high effort (it defaults to medium).",
+        "Trying to disable thinking on Opus 5.5 to save money instead of lowering effort.",
+        "Expecting fast mode inside a batch job to be cheaper still.",
+        "Assuming summarized thinking costs less than omitted thinking."
+      ],
+      "resources": [
+        {
+          "title": "Adaptive thinking (Claude Docs)",
+          "url": "https://platform.claude.com/docs/en/build-with-claude/adaptive-thinking",
+          "type": "docs"
+        },
+        {
+          "title": "Extended thinking (Claude Docs)",
+          "url": "https://platform.claude.com/docs/en/build-with-claude/extended-thinking",
+          "type": "docs"
+        },
+        {
+          "title": "Effort (Claude Docs)",
+          "url": "https://platform.claude.com/docs/en/build-with-claude/effort",
+          "type": "docs"
+        },
+        {
+          "title": "Fast mode, research preview (Claude Docs)",
+          "url": "https://platform.claude.com/docs/en/build-with-claude/fast-mode",
+          "type": "docs"
+        },
+        {
+          "title": "Models overview (Claude Docs)",
+          "url": "https://platform.claude.com/docs/en/about-claude/models/overview",
+          "type": "docs"
+        }
+      ]
+    },
+    {
+      "id": "v-sdk-rest-streaming",
+      "title": "SDKs that wrap the REST API, streaming and websockets",
+      "estMinutes": 13,
+      "level": "core",
+      "taskStatementIds": [
+        "5.2"
+      ],
+      "eli5": "The Claude API is a web address you send letters to. The official SDK is a helpful assistant who formats each letter correctly, resends it if the post office is busy, and lets you read the reply as it is being written instead of waiting for the whole thing.",
+      "body": "## Under the SDK: plain HTTPS\n\nEvery Claude request is an HTTPS call. The core endpoint is `POST https://api.anthropic.com/v1/messages` with three headers:\n\n```bash\ncurl https://api.anthropic.com/v1/messages \\\n  -H \"x-api-key: $ANTHROPIC_API_KEY\" \\\n  -H \"anthropic-version: 2023-06-01\" \\\n  -H \"content-type: application/json\" \\\n  -d '{\"model\":\"claude-sonnet-5-5\",\"max_tokens\":1024,\n       \"messages\":[{\"role\":\"user\",\"content\":\"Hello\"}]}'\n```\n\nOther REST resources sit alongside it: `/v1/messages/count_tokens`, `/v1/messages/batches`, `/v1/files` and `/v1/models`. Beta features are switched on with the `anthropic-beta` header.\n\n## What the official SDKs add\n\nAnthropic publishes SDKs for Python, TypeScript, Java, Go, Ruby, C# and PHP. They wrap the same REST API and add:\n\n| SDK feature | What you'd otherwise build yourself |\n|---|---|\n| Typed request and response objects | Hand-written JSON and parsing |\n| **Automatic retries**: 2 by default, on connection errors, 408, 409, 429 and 5xx, with backoff | Retry loops and backoff |\n| **Timeouts**: default 10 minutes, configurable per client or request | Hung connections |\n| **Typed errors** (`RateLimitError`, `BadRequestError`, `APIStatusError` …) | String-matching error messages |\n| **Streaming helpers** that parse SSE events | Your own event parser |\n| Sync and **async** clients (`Anthropic` / `AsyncAnthropic` in Python) | Thread pools around blocking calls |\n| Helpers for tool loops, batches, files and token counting | Boilerplate |\n\nUnit gotcha: Python and Ruby timeouts are in seconds, while the TypeScript SDK uses **milliseconds**.\n\n```typescript\nimport Anthropic from \"@anthropic-ai/sdk\";\nconst client = new Anthropic({ maxRetries: 4, timeout: 60_000 }); // ms\ntry {\n  const msg = await client.messages.create({ model: \"claude-sonnet-5-5\",\n    max_tokens: 1024, messages: [{ role: \"user\", content: q }] });\n} catch (err) {\n  if (err instanceof Anthropic.RateLimitError) { /* back off or shed load */ }\n  else if (err instanceof Anthropic.BadRequestError) { /* fix the request; don't retry */ }\n  else throw err;\n}\n```\n\nError handling follows HTTP semantics. **4xx** errors mean fix the request (400 invalid, 401 auth, 403 permission, 404 not found, 413 too large). **429** means you are rate limited: honor `retry-after`. **529** means overloaded, and **5xx** means server-side: retry with backoff or fall back. Log the `request-id` response header for support tickets.\n\n## Streaming: Server-Sent Events over HTTP\n\nSet `stream: true` (or use the SDK's `stream()` helper) and the API returns **Server-Sent Events (SSE)** on the same HTTP connection. The event sequence is `message_start` → one or more content blocks (`content_block_start`, many `content_block_delta`, `content_block_stop`) → `message_delta` (carries `stop_reason` and final usage) → `message_stop`. There are also `ping` events and possibly `error` events mid-stream.\n\n```python\nwith client.messages.stream(\n    model=\"claude-sonnet-5-5\", max_tokens=4096, messages=msgs,\n) as stream:\n    for text in stream.text_stream:\n        push_to_ui(text)\n    final = stream.get_final_message()   # full Message with usage\n```\n\nWhy stream:\n\n- **Perceived latency**: users see the first words quickly.\n- **Long outputs**: SDKs require or strongly favor streaming for very large `max_tokens`, to avoid HTTP timeouts.\n- **Errors can arrive after a 200.** Once streaming starts, an overload or other failure shows up as an `error` event, so handle it inside the loop.\n\n## Where websockets fit\n\n**The Claude API does not expose a websocket endpoint.** It streams over HTTP with SSE. Websockets show up one layer out, in **your** application:\n\n```text\nBrowser  <--websocket-->  Your backend  --HTTPS + SSE-->  Claude API\n                          (holds the API key)\n```\n\nA typical pattern for a collaborative or chat UI:\n\n1. The browser keeps a websocket open to your server (useful when the server must also push events the user didn't request, such as \"teammate is typing\" or job progress).\n2. Your server calls Claude with the SDK's streaming helper.\n3. As each `text` delta arrives, the server forwards it over the websocket.\n4. On `message_stop`, the server stores the final message and usage for cost tracking.\n\nIf the browser only needs one-way streaming of a response, forwarding SSE directly from your backend is also fine. Pick websockets when you need **bidirectional**, long-lived messaging.\n\n## Security basics that the exam expects\n\n- **Never ship the API key to the browser or a mobile app.** Calls go through your backend, which authenticates the user, applies rate limits and logs usage.\n- Keep keys in environment variables or a secret manager, separate per environment (dev, staging, prod) and per workspace.\n- Validate and size-limit user input before it becomes a prompt.\n\n## Async and concurrency\n\nFor many independent requests, use the async client with bounded concurrency (for example `asyncio.Semaphore`) so you stay under your rate limits. If nobody is waiting on the results, use the Message Batches API instead of firing thousands of parallel synchronous calls.\n",
+      "keyTakeaways": [
+        "Claude is a REST API: POST /v1/messages with x-api-key, anthropic-version and content-type headers.",
+        "Official SDKs add typed models, automatic retries (2 by default on connection errors, 408/409/429/5xx), timeouts, typed errors, streaming helpers and async clients.",
+        "Streaming uses Server-Sent Events over HTTP; message_delta carries stop_reason and final usage.",
+        "The Claude API has no websocket endpoint; websockets connect your frontend to your backend, which relays the SSE stream.",
+        "API keys stay server-side; browsers call your backend, never the Claude API directly.",
+        "4xx means fix the request; 429/529/5xx are retryable with backoff (honor retry-after)."
+      ],
+      "examTips": [
+        "Any option that puts the Anthropic API key in client-side JavaScript is wrong.",
+        "If a choice claims Claude streams over websockets, it's a distractor; the API uses SSE over HTTP.",
+        "Prefer 'use the official SDK' over hand-rolled HTTP when the scenario needs retries, streaming and typed errors.",
+        "Know which errors to retry: 429, 529, 5xx and connection errors yes; 400/401/403/404 no."
+      ],
+      "commonTraps": [
+        "Retrying 400 errors as if they were transient.",
+        "Assuming a 200 status at stream start means the whole stream will succeed.",
+        "Mixing up TypeScript timeout units (ms) with Python's (seconds).",
+        "Wrapping SDK events in hand-made promise code instead of using finalMessage()/get_final_message().",
+        "Opening thousands of synchronous calls for non-urgent work instead of using Batches."
+      ],
+      "resources": [
+        {
+          "title": "Client SDKs (Claude Docs)",
+          "url": "https://platform.claude.com/docs/en/api/client-sdks",
+          "type": "docs"
+        },
+        {
+          "title": "Streaming messages (Claude Docs)",
+          "url": "https://platform.claude.com/docs/en/build-with-claude/streaming",
+          "type": "docs"
+        },
+        {
+          "title": "API errors (Claude Docs)",
+          "url": "https://platform.claude.com/docs/en/api/errors",
+          "type": "docs"
+        },
+        {
+          "title": "anthropic-sdk-python (GitHub)",
+          "url": "https://github.com/anthropics/anthropic-sdk-python",
+          "type": "repo"
+        },
+        {
+          "title": "anthropic-sdk-typescript (GitHub)",
+          "url": "https://github.com/anthropics/anthropic-sdk-typescript",
+          "type": "repo"
+        }
+      ]
+    },
+    {
+      "id": "v-engineering-practices",
+      "title": "Engineering practices for Claude integrations: retries, rate limits and observability",
+      "estMinutes": 11,
+      "level": "core",
+      "taskStatementIds": [
+        "5.2",
+        "5.4"
+      ],
+      "eli5": "Building on Claude is like running a delivery service on a busy road: sometimes there is traffic (rate limits), sometimes the road is closed for a moment (overload). Good drivers wait sensibly, don't deliver the same parcel twice, and keep a log of every trip.",
+      "visualId": "error-recovery",
+      "body": "## The production checklist\n\nCalling Claude in a demo takes five lines of code. Calling it reliably for thousands of users takes the same engineering habits as any other remote dependency.\n\n| Practice | Implementation |\n|---|---|\n| **Retries with backoff** | Exponential backoff with jitter, honoring `retry-after`. Cap the number of attempts and the total time |\n| **Idempotency** | Side effects (emails, refunds, DB writes) keyed by a request or job ID so a retry doesn't repeat them |\n| **Timeouts** | Per-route timeouts that fit the UX. Stream long outputs |\n| **Bounded concurrency** | Semaphores or worker pools sized to your rate limits |\n| **Fallbacks** | Standard speed instead of fast mode, a different model tier, a cached answer or a graceful message |\n| **Observability** | Log model, `request-id`, latency, `stop_reason` and `usage` for every call |\n| **Config, not constants** | Model ID, effort and limits in configuration so you can change them without a redeploy |\n\n## Rate limits\n\nThe Claude API enforces limits per organization (and optionally per workspace), measured in **requests per minute** and **input and output tokens per minute**, by model and usage tier. When you exceed one you get **HTTP 429** with a `retry-after` header, and response headers report remaining capacity. Fast mode has its own separate limit.\n\nDesign implications:\n\n- Smooth bursts with a queue instead of hammering on 429.\n- Large prompts eat input-token limits quickly. **Prompt caching** reduces both cost and, on many models, rate-limit pressure. Check the rate-limits page for how cached reads count on your model.\n- Non-urgent bulk work belongs in the **Message Batches API**, which is processed asynchronously and does not consume your synchronous capacity the same way.\n\n## Retrying correctly\n\n```python\nimport random, time, anthropic\n\nclient = anthropic.Anthropic(max_retries=0)   # we own the policy here\n\ndef call_with_retry(params, attempts=5):\n    for i in range(attempts):\n        try:\n            return client.messages.create(**params)\n        except anthropic.RateLimitError as e:\n            wait = float(e.response.headers.get(\"retry-after\", 2 ** i))\n        except anthropic.APIStatusError as e:\n            if e.status_code < 500:                  # 4xx: fix the request\n                raise\n            wait = 2 ** i                            # 5xx, including 529\n        except anthropic.APIConnectionError:\n            wait = 2 ** i\n        time.sleep(wait + random.uniform(0, 0.5))    # jitter\n    raise RuntimeError(\"Claude unavailable after retries\")\n```\n\nNotes:\n\n- The SDK already retries twice by default. Writing your own policy is only worth it when you need different caps, fallbacks or metrics. Don't stack your loop on top of SDK retries without thinking about the total.\n- **Never retry 4xx** errors other than 429 (and 408/409, which the SDK handles). A 400 will fail the same way every time.\n- A `stop_reason` of `max_tokens` or `refusal` is **not** an HTTP error. Retrying the same request won't help. Raise the limit, continue, or change the request or model.\n\n## Observability: usage is your cost meter\n\nEvery successful response includes a `usage` object:\n\n```json\n\"usage\": {\n  \"input_tokens\": 1830,\n  \"cache_creation_input_tokens\": 0,\n  \"cache_read_input_tokens\": 24576,\n  \"output_tokens\": 412\n}\n```\n\nLog it with the route name, model, effort and user or tenant. That lets you answer the questions that matter: cost per feature, cost per **completed task** (not per call), cache hit rate, and which route regressed after a prompt change. Organization-wide totals are available through the **Usage and Cost API** (Admin API), which is useful for reconciliation and dashboards.\n\n## Software lifecycle practices\n\n- **Version prompts** like code: in the repo, reviewed, with eval results attached to the change.\n- **Pin model IDs** in config and upgrade deliberately behind an eval run. Current model IDs are pinned snapshots, so the model under you won't silently change, but retirements do happen. Track the deprecations page.\n- **Feature-flag** model or prompt changes and roll them out gradually, watching error rate, refusal rate, latency and cost.\n- **Separate environments and keys** (dev, staging, prod) and workspaces for spend limits and isolation.\n\n## Worked example\n\nA ticket-drafting feature starts returning 429s every weekday at 9am. The team's first instinct is to raise SDK retries to 10. Better:\n\n1. Check logs: 80% of input tokens are a 20K-token policy manual resent on every call. **Cache it** (stable prefix), which cuts input cost and pressure.\n2. Add a queue with bounded concurrency so the morning burst is smoothed.\n3. Move the nightly \"re-draft all stale tickets\" job to **Batches**.\n4. Keep modest retries with jitter for the remaining spikes, and alert on the 429 rate.\n",
+      "keyTakeaways": [
+        "Use exponential backoff with jitter, honor retry-after, cap attempts, and make side effects idempotent.",
+        "Retry 429, 529, 5xx and connection errors; fix, don't retry, other 4xx errors.",
+        "Rate limits are per organization (and workspace) in requests and tokens per minute; 429 includes retry-after.",
+        "Log model, request-id, stop_reason and usage for every call; measure cost per completed task.",
+        "Pin model IDs in configuration, version prompts, and gate upgrades behind evals and gradual rollout.",
+        "Caching, queuing and Batches are structural fixes for rate-limit pressure; more retries are not."
+      ],
+      "examTips": [
+        "When a scenario shows 429 storms, prefer answers that reduce load (caching, queuing, batching) over 'retry more aggressively'.",
+        "If an answer retries a 400 error, eliminate it.",
+        "Look for request-id logging and usage tracking in observability questions."
+      ],
+      "commonTraps": [
+        "Treating max_tokens or refusal stop reasons as transient errors to retry.",
+        "Retrying non-idempotent actions without a dedupe key.",
+        "Stacking custom retries on top of SDK retries, multiplying wall-clock time.",
+        "Hard-coding model IDs across the codebase instead of in configuration."
+      ],
+      "resources": [
+        {
+          "title": "API errors (Claude Docs)",
+          "url": "https://platform.claude.com/docs/en/api/errors",
+          "type": "docs"
+        },
+        {
+          "title": "Rate limits (Claude Docs)",
+          "url": "https://platform.claude.com/docs/en/api/rate-limits",
+          "type": "docs"
+        },
+        {
+          "title": "Usage and Cost API (Claude Docs)",
+          "url": "https://platform.claude.com/docs/en/manage-claude/usage-cost-api",
+          "type": "docs"
+        },
+        {
+          "title": "Client SDKs (Claude Docs)",
+          "url": "https://platform.claude.com/docs/en/api/client-sdks",
+          "type": "docs"
+        }
+      ]
+    },
+    {
+      "id": "v-model-selection",
+      "title": "Choosing a model: Opus vs Sonnet vs Haiku (and Fable)",
+      "estMinutes": 12,
+      "level": "core",
+      "taskStatementIds": [
+        "5.3"
+      ],
+      "eli5": "Picking a Claude model is like staffing a project: you don't send the senior partner to sort the mail, and you don't send the intern to argue the big case. Match the person to the job, then check their work.",
+      "body": "## The current lineup (models overview, Oct 2026)\n\n| | Claude Fable 5.1 | Claude Opus 5.5 | Claude Sonnet 5.5 | Claude Haiku 4.5 |\n|---|---|---|---|---|\n| Positioning | Demanding reasoning, long-horizon agentic work | Long-running agentic coding and knowledge work; **recommended starting point for most workloads** | Best balance of speed and intelligence | Fastest, near-frontier intelligence |\n| Relative latency | Slower | Moderate | Fast | Fastest |\n| Price (input / output per MTok) | $10 / $50 | $4 / $20 | $2 / $10 | $1 / $5 |\n| Thinking | Adaptive (always on) | Adaptive (always on) | Adaptive | Extended (manual) |\n| Default effort | high | medium | high | not supported |\n| Context / max output | 1M / 128K | 1M / 128K | 1M / 128K | 200K / 64K |\n| API ID | `claude-fable-5-1` | `claude-opus-5-5` | `claude-sonnet-5-5` | `claude-haiku-4-5-20251001` (alias `claude-haiku-4-5`) |\n\nPrices and lineups change, so check the models overview and pricing pages before you rely on a number. The exam guide's skill statement names **Opus vs Sonnet vs Haiku**. Know Fable 5.1 as the tier above Opus for the hardest work.\n\n## The selection method\n\n1. **Define the quality bar** with an eval set built from real inputs.\n2. **Start where the docs suggest** (Opus 5.5 for most workloads, or Sonnet 5.5 when speed matters), then run the eval.\n3. **Try cheaper options**: lower effort on the same model first, then a smaller model. Keep the cheapest configuration that passes.\n4. **Check the non-functional requirements**: latency (TTFT and total), throughput, context size, platform availability and data-residency needs.\n5. **Route by request type** if traffic is mixed: send easy requests to a cheap tier and hard ones to a stronger tier.\n\n## Quality, latency and cost trade-offs\n\n| Requirement | Leaning |\n|---|---|\n| High-volume, simple, latency-sensitive (tagging, short replies, moderation screens, subagent lookups) | Haiku 4.5, or Sonnet 5.5 at low effort |\n| Everyday coding, chat, agent steps that need judgment at speed | Sonnet 5.5 |\n| Complex reasoning, long agentic coding sessions, nuanced knowledge work | Opus 5.5, tuning effort |\n| Hardest multi-hour agentic or research tasks, or when Opus at higher effort still falls short in evals | Fable 5.1 |\n| Inputs over 200K tokens in one request | Not Haiku 4.5. Use a 1M-window model, or retrieve less |\n| Needs effort control or adaptive thinking | Not Haiku 4.5 |\n\nCost is not just the per-token price. A cheaper model that needs more turns, retries or human fixes can cost more **per completed task**. Conversely, a stronger model at lower effort sometimes matches a weaker model at high effort for fewer total tokens.\n\n## Worked example: a three-tier router\n\nA legal-tech app has three request types:\n\n- **\"Which practice area is this email about?\"**: thousands per hour, needs sub-second feel. Haiku 4.5 with a short system prompt and an enum schema passes 98% on the eval.\n- **\"Summarize this 80-page lease and flag unusual clauses\"**: dozens per hour. Sonnet 5.5 at `high` passes. Haiku misses subtle clauses.\n- **\"Draft a negotiation strategy across these 12 related contracts\"**: a few per day, accuracy critical. Opus 5.5 at `high`, with human review before anything is sent.\n\nEach route has its own model, effort and eval. Model IDs live in configuration, so the team can re-test when a new model ships.\n\n## Multi-model architectures\n\n- **Orchestrator plus workers**: a strong model plans and synthesizes, while cheaper models do reading-heavy subtasks. Pass explicit context to workers.\n- **Cascade or escalation**: try the cheap tier first and escalate on low confidence or failed validation. Measure first, because cascades add latency, complexity and lose cache reuse (caches are per model).\n- **Screen then act**: a fast model screens inputs (for example for policy violations or relevance) before an expensive model runs.\n\n## Batch vs realtime is a separate decision\n\nModel choice and delivery mode are independent. If nobody is waiting on the result, the **Message Batches API** cuts the price of whichever model you choose by 50%. Don't downsize the model just to save money when the real fix is batching.\n",
+      "keyTakeaways": [
+        "Opus 5.5 is the docs' recommended starting point; Sonnet 5.5 balances speed and intelligence; Haiku 4.5 is fastest and cheapest; Fable 5.1 is for the most demanding work.",
+        "Pick the cheapest configuration (model + effort) that passes your evals, and route per request type.",
+        "Haiku 4.5 has a 200K window, extended (not adaptive) thinking and no effort support.",
+        "Judge cost per completed task, not per call.",
+        "Batch vs realtime is independent of model choice; batching halves cost without changing quality.",
+        "Keep model IDs in config and re-run evals when new models ship."
+      ],
+      "examTips": [
+        "'Always use the most capable model' and 'always use the cheapest model' are both distractors; the right answer cites the requirement and evals.",
+        "High-volume + latency-sensitive + simple points to Haiku (or Sonnet at low effort); complex multi-step reasoning points to Opus.",
+        "If the scenario is about cost on non-urgent work, batching usually beats downsizing the model.",
+        "If inputs exceed 200K tokens, eliminate Haiku 4.5."
+      ],
+      "commonTraps": [
+        "Choosing a model by reputation without an eval.",
+        "Downsizing the model when the requirement says quality can't drop and the work isn't urgent (batch instead).",
+        "Building a complex cascade before testing the stronger model at lower effort.",
+        "Forgetting that caches are model-scoped when splitting traffic across models."
+      ],
+      "resources": [
+        {
+          "title": "Models overview (Claude Docs)",
+          "url": "https://platform.claude.com/docs/en/about-claude/models/overview",
+          "type": "docs"
+        },
+        {
+          "title": "Choosing a model (Claude Docs)",
+          "url": "https://platform.claude.com/docs/en/about-claude/models/choosing-a-model",
+          "type": "docs"
+        },
+        {
+          "title": "Pricing (Claude Docs)",
+          "url": "https://platform.claude.com/docs/en/about-claude/pricing",
+          "type": "docs"
+        },
+        {
+          "title": "Optimizing for cost and intelligence (Claude Docs)",
+          "url": "https://platform.claude.com/docs/en/about-claude/models/optimizing-for-cost-and-intelligence",
+          "type": "docs"
+        }
+      ]
+    },
+    {
+      "id": "v-model-migration",
+      "title": "Breaking behavior changes across model releases",
+      "estMinutes": 12,
+      "level": "core",
+      "taskStatementIds": [
+        "5.3"
+      ],
+      "eli5": "A new model version is like a new phone OS: most apps keep working, but a few settings moved and some old tricks stop working. You read the release notes and test your important apps before switching everyone over.",
+      "visualId": "eval-loop",
+      "body": "## Why migrations break things\n\nSwapping the model ID looks like a one-line change. In practice a new model can change **what the API accepts** (hard breaks that return 400 errors) and **how the model behaves** (soft breaks that pass silently but change quality, length, cost or format). Both are tested.\n\n## Hard breaks: requests that start failing\n\nExamples documented in the migration guides and models overview (Oct 2026):\n\n| Old pattern | What happens on newer models | Replacement |\n|---|---|---|\n| `thinking: {type: \"enabled\", budget_tokens: N}` | Deprecated on Opus/Sonnet 4.6; **400** on Opus 4.7 and later, Sonnet 5+, Opus 5.5 and Fable | `thinking: {type: \"adaptive\"}` + `output_config.effort` |\n| `thinking: {type: \"disabled\"}` on Opus 5.5 | **400** (thinking is always on) | Lower `effort` |\n| `temperature` / `top_p` / `top_k` | **400** on Opus 4.7+ and Fable; Sonnet 5.5 rejects non-default values | Structured outputs, examples, evals |\n| Assistant **prefill** (last message is a partial assistant turn) | **400** on the 4.6 family and later | Structured outputs or system instructions |\n| Forced `tool_choice` `{type: \"any\"}` / `{type: \"tool\"}` | **400** on Opus 5.5, Sonnet 5.5 and Fable 5.1 | `auto` + clear instruction, `strict: true` tools, or structured outputs |\n| `speed: \"fast\"` on Opus 4.7 | Error (fast mode not available there) | Opus 5.5, Opus 5 or Opus 4.8 |\n| Deprecated `output_format` parameter | Replaced | `output_config: {format: ...}` |\n\n## Soft breaks: requests that succeed but behave differently\n\n- **Default effort changed.** Opus 5.5 defaults to `medium` where Opus 5 defaulted to `high`. Unset effort can mean shorter, less thorough answers after migration, so set it explicitly.\n- **Tokenizer changed.** The tokenizer introduced with Opus 4.7 can use about 1x to 1.35x as many tokens for the same text. Costs, `max_tokens` headroom and context fit all shift.\n- **Thinking display defaults.** On recent models thinking text is omitted by default. A UI that showed reasoning summaries now shows an empty pause unless you request `display: \"summarized\"`.\n- **Prompt sensitivity.** Prompts tuned with heavy emphasis (\"CRITICAL\", \"you MUST\") for older models can cause over-triggering or overly rigid output on newer ones. Newer models also follow instructions more literally.\n- **Tool-call JSON escaping** may differ, so parse tool inputs with a JSON parser, never by string matching.\n- **Minimum cacheable prompt length** differs by model (for example 512 tokens on Opus 5.5 and Sonnet 5.5 vs 4096 on Haiku 4.5), so cache hit rates can change.\n- **Refusal behavior.** Newer models can return `stop_reason: \"refusal\"` with a `stop_details` category, so check it before reading content.\n\n## Versions, aliases and snapshots\n\nPer the models overview, **every Claude model ID is a pinned snapshot**, including the dateless IDs used from the 4.6 generation onward (`claude-opus-5-5`). For older models, the alias (for example `claude-haiku-4-5`) is a convenience pointer to a dated ID (`claude-haiku-4-5-20251001`). Practical rules:\n\n- **Pin the exact ID in production config.** Upgrade by changing config, not by surprise.\n- **Watch retirement dates** on the model deprecations page and plan migrations before them.\n- On third-party platforms (Bedrock, Google Cloud) model IDs are formatted differently, and those platforms set their own lifecycle dates.\n\n## A safe migration playbook\n\n1. **Read the migration guide** for the target model, and list the hard breaks your code hits.\n2. **Grep the codebase** for `budget_tokens`, `temperature`, prefill patterns, forced `tool_choice`, `output_format` and hard-coded model IDs.\n3. **Re-baseline tokens** with `count_tokens` on representative prompts using the new model.\n4. **Run the eval suite** old vs new: accuracy, format validity, refusal rate, length, latency and cost per task.\n5. **Re-tune effort and prompts.** Remove emphasis written for older models, and set effort explicitly.\n6. **Roll out gradually** behind a flag (shadow traffic or a percentage rollout), with dashboards and a rollback path.\n\n## Worked example\n\nA team moves an extraction service from Opus 4.6 to Opus 5.5. Day one: every request 400s, because the code sends `thinking: {type: \"enabled\", budget_tokens: 8000}` and `temperature: 0`. After fixing that, the eval passes but average output length drops 30% and two fields are missed more often. The cause is effort defaulting to `medium`. Setting `effort: \"high\"` on that route restores quality. Monthly cost still falls, because Opus 5.5 is priced below Opus 4.6 per token. That is the full pattern: fix hard breaks, then measure and re-tune the soft ones.\n",
+      "keyTakeaways": [
+        "Migrations have hard breaks (400 errors) and soft breaks (silent behavior, cost or quality changes).",
+        "budget_tokens, sampling parameters, prefill and forced tool_choice are common hard breaks on current models.",
+        "Opus 5.5 defaults to medium effort, so set effort explicitly after migrating.",
+        "Tokenizer changes shift costs and context fit; re-baseline with count_tokens.",
+        "Every current model ID is a pinned snapshot; pin IDs in config and watch the deprecations page.",
+        "Migrate with: read the guide, grep for patterns, run evals, re-tune, roll out gradually."
+      ],
+      "examTips": [
+        "When a scenario says 'after switching models, requests return 400', look for budget_tokens, temperature, prefill or forced tool_choice.",
+        "When quality or length silently changed after migration, think effort default, tokenizer or over-emphatic legacy prompts, and re-run evals.",
+        "Correct answers to 'how to upgrade safely' include evals and staged rollout, not just changing the ID."
+      ],
+      "commonTraps": [
+        "Assuming a newer model is a drop-in replacement with identical behavior.",
+        "Comparing old vs new on a handful of manual prompts instead of the eval suite.",
+        "Leaving effort unset and blaming the model for shorter answers.",
+        "Using floating references in production without a plan for behavior change or retirement."
+      ],
+      "resources": [
+        {
+          "title": "Migration guide (Claude Docs)",
+          "url": "https://platform.claude.com/docs/en/about-claude/models/migration-guide",
+          "type": "docs"
+        },
+        {
+          "title": "Model IDs and versioning (Claude Docs)",
+          "url": "https://platform.claude.com/docs/en/about-claude/models/model-ids-and-versions",
+          "type": "docs"
+        },
+        {
+          "title": "Model deprecations (Claude Docs)",
+          "url": "https://platform.claude.com/docs/en/about-claude/model-deprecations",
+          "type": "docs"
+        },
+        {
+          "title": "Models overview (Claude Docs)",
+          "url": "https://platform.claude.com/docs/en/about-claude/models/overview",
+          "type": "docs"
+        }
+      ]
+    },
+    {
+      "id": "v-cost-tokens",
+      "title": "Token budgeting, usage tracking and cost modeling",
+      "estMinutes": 13,
+      "level": "core",
+      "taskStatementIds": [
+        "5.4"
+      ],
+      "eli5": "Running Claude is like a taxi meter that charges for every word you say to the driver and every word the driver says back, with output words costing more. To control the bill, you count the words, say only what's needed, and share rides when nobody's in a hurry.",
+      "visualId": "batch-vs-realtime",
+      "body": "## The cost formula\n\nFor one request:\n\n```text\ncost = uncached_input_tokens   x input_price\n     + cache_write_tokens      x input_price x write_multiplier\n     + cache_read_tokens       x input_price x read_multiplier\n     + output_tokens           x output_price      (thinking counts as output)\n```\n\nThen multiply by volume, and apply discounts such as the **Batch API (50% off input and output)**. Output tokens cost **5x** input on every current model (for example Sonnet 5.5 is $2 in / $10 out per MTok). Verbose answers and heavy thinking are often the biggest line item.\n\n## Reading `usage`\n\n| Field | Meaning |\n|---|---|\n| `input_tokens` | Uncached input tokens after the last cache breakpoint, at full price |\n| `cache_creation_input_tokens` | Tokens written to cache this request (write premium) |\n| `cache_read_input_tokens` | Tokens served from cache (heavily discounted) |\n| `output_tokens` | Generated tokens, including thinking |\n| `speed` | `\"fast\"` or `\"standard\"` when fast mode was requested |\n\nTotal input = `input_tokens` + `cache_creation_input_tokens` + `cache_read_input_tokens`. A common bug is computing cost from `input_tokens` alone and under-reporting.\n\n## Worked cost model\n\nAn internal Q&A bot on **Claude Sonnet 5.5** ($2 / $10 per MTok, cache reads 0.1x, 5-minute writes 1.25x):\n\n- System prompt plus policy handbook: 30,000 tokens (stable)\n- User question plus retrieved snippets: 2,000 tokens (varies)\n- Answer: 500 tokens\n- Volume: 20,000 questions per day, steady through business hours\n\n**Without caching** (per request):\n`32,000 x $2/1M = $0.064` input + `500 x $10/1M = $0.005` output = **$0.069**. Per day: **$1,380**.\n\n**With the 30K prefix cached** (traffic is steady, so nearly every request is a read):\ncache read `30,000 x $0.20/1M = $0.006` + uncached `2,000 x $2/1M = $0.004` + output `$0.005` = **$0.015**. Per day about **$300**, plus a negligible number of cache writes. That is roughly a 78% saving with no change in quality.\n\n**Next lever, output**: if answers average 900 tokens because the prompt says \"be thorough\", tightening the format to \"answer in at most 5 bullets, cite the section\" cuts output cost and latency.\n\n## Token budgeting levers (cheapest first)\n\n1. **Cache stable prefixes** (tools, system prompt, reference docs). See the next lesson.\n2. **Trim input.** Retrieve relevant chunks instead of whole documents, prune old tool results, compact long histories, and don't resend unused tool definitions.\n3. **Control output.** Specify format and length. Set `max_tokens` as a safety cap, not as a length instruction, because truncated answers are wasted spend.\n4. **Batch non-urgent work** for a 50% discount. Most batches finish within an hour, with a 24-hour window. Discounts stack with caching.\n5. **Tune effort** per route. Lower effort uses fewer thinking and output tokens.\n6. **Right-size the model** per route, validated by evals.\n\n## Budgeting before you send\n\n- `count_tokens` gives the exact input size for a given model, which is useful for pre-flight checks (\"this upload would cost $X\" or \"this won't fit\").\n- Set per-tenant or per-feature **budgets** in your own app (for example a daily token quota) and reject or queue when exceeded.\n- For agent loops, cap turns and track cumulative `usage` across iterations. At the time of writing, a beta **task budget** (`output_config.task_budget`) lets supported models pace themselves within a token budget for a loop. It is advisory, unlike `max_tokens`.\n- Use **workspaces** to separate projects and set spend limits, and the **Usage and Cost API** to reconcile organization-wide spend.\n\n## Measure the right thing\n\nReport **cost per completed task** (cost per resolved ticket, cost per accepted PR), not cost per request. A cheaper configuration that needs two retries or a human fix is not cheaper. Track the cache hit rate (`cache_read / total input`) as a first-class metric, because a sudden drop usually means someone put a timestamp in the system prompt.\n",
+      "keyTakeaways": [
+        "Cost = tokens x price x volume, with input split into uncached, cache-write and cache-read tokens; thinking counts as output.",
+        "Output tokens cost 5x input on current models, so controlling output length matters.",
+        "Total input = input_tokens + cache_creation_input_tokens + cache_read_input_tokens.",
+        "Levers in order: cache, trim input, control output, batch (50% off), tune effort, right-size the model.",
+        "Use count_tokens for pre-flight budgeting and log usage per route to measure cost per completed task.",
+        "Batch and caching discounts stack."
+      ],
+      "examTips": [
+        "When asked to cut cost without hurting quality, caching and batching beat model downgrades.",
+        "When a question shows usage numbers, remember cached reads are not included in input_tokens.",
+        "max_tokens is a ceiling, not a length instruction; truncated output wastes money."
+      ],
+      "commonTraps": [
+        "Calculating cost from input_tokens alone and ignoring cache and output fields.",
+        "Using a low max_tokens to save money and getting truncated, unusable answers.",
+        "Measuring cost per call rather than per completed task.",
+        "Assuming fast mode or larger models are the default for cost-sensitive work."
+      ],
+      "resources": [
+        {
+          "title": "Pricing (Claude Docs)",
+          "url": "https://platform.claude.com/docs/en/about-claude/pricing",
+          "type": "docs"
+        },
+        {
+          "title": "Token counting (Claude Docs)",
+          "url": "https://platform.claude.com/docs/en/build-with-claude/token-counting",
+          "type": "docs"
+        },
+        {
+          "title": "Usage and Cost API (Claude Docs)",
+          "url": "https://platform.claude.com/docs/en/manage-claude/usage-cost-api",
+          "type": "docs"
+        },
+        {
+          "title": "Batch processing (Claude Docs)",
+          "url": "https://platform.claude.com/docs/en/build-with-claude/batch-processing",
+          "type": "docs"
+        }
+      ]
+    },
+    {
+      "id": "v-prompt-caching-checkpoints",
+      "title": "Prompt caching and cache checkpointing",
+      "estMinutes": 14,
+      "level": "core",
+      "taskStatementIds": [
+        "5.4"
+      ],
+      "eli5": "Prompt caching is like a teacher who has already read the textbook: the first time it takes a while, but after that you only need to tell them which page you're asking about. Change one word near the start of the book, though, and they have to read everything after it again.",
+      "visualId": "prompt-caching",
+      "body": "## How it works\n\nPrompt caching stores the processed **prefix** of a request so later requests that start with the exact same bytes can reuse it. That makes them cheaper and faster to process. You mark where a cacheable prefix ends with `cache_control` **breakpoints** (checkpoints).\n\nKey rules (prompt caching docs, Oct 2026):\n\n| Rule | Detail |\n|---|---|\n| Prefix order | `tools` → `system` → `messages`. The cache key covers everything up to the breakpoint |\n| Exact match | Any change in the prefix (one character, a reordered tool, a timestamp) invalidates that breakpoint **and everything after it** |\n| Breakpoints | At most **4** `cache_control` markers per request. Top-level automatic caching uses one of them |\n| TTL | Default **5 minutes**, refreshed on each hit. Optional `\"ttl\": \"1h\"` |\n| Write price | **1.25x** base input (5-minute) or **2x** (1-hour) |\n| Read price | **0.1x** base input on most models. **0.05x on Opus 5.5**, 0.025x on Fable 5.1 |\n| Minimum length | Model-specific, for example 512 tokens on Opus 5.5 and Sonnet 5.5, 4096 on Haiku 4.5. Below it nothing is cached and **no error is raised** |\n| Scope | Caches are per model, isolated per workspace on the Claude API, and never shared across organizations. Changing fast/standard speed also misses |\n\n## Placing checkpoints\n\nPut stable things first and volatile things last:\n\n```python\nresp = client.messages.create(\n    model=\"claude-sonnet-5-5\",\n    max_tokens=2048,\n    tools=TOOLS,                                   # deterministic order\n    system=[\n        {\"type\": \"text\", \"text\": ROLE_AND_RULES},\n        {\"type\": \"text\", \"text\": PRODUCT_MANUAL,    # 40K tokens, rarely changes\n         \"cache_control\": {\"type\": \"ephemeral\"}},   # checkpoint 1\n    ],\n    messages=history + [{\"role\": \"user\", \"content\": question}],\n    cache_control={\"type\": \"ephemeral\"},           # automatic: tail of the conversation\n)\nu = resp.usage\nprint(u.cache_creation_input_tokens, u.cache_read_input_tokens, u.input_tokens)\n```\n\n**Cache checkpointing in a multi-turn conversation or agent loop** means:\n\n- One explicit breakpoint at the end of the **static prefix** (tools + system + reference docs). This expensive part gets a guaranteed read point, whatever happens later.\n- A breakpoint that **advances** with the conversation (automatic caching places it on the last cacheable block). Each turn reads everything up to the previous turn from cache and writes only the new part.\n- In long agent turns, watch the docs' **20-block lookback**: the cache only looks back a limited number of blocks from a breakpoint for a previous entry, so a single turn that appends many blocks can miss the earlier entry. Add an intermediate breakpoint if needed.\n- With mixed TTLs, **longer TTL entries must come before shorter ones**.\n\n## Choosing a TTL\n\n- Requests sharing the prefix arrive **less than 5 minutes apart**: use the default 5-minute TTL. Hits keep refreshing it.\n- Gaps of **5 to 60 minutes** (bursty internal tools, batch jobs that share a big context): the 1-hour TTL can pay off despite the 2x write.\n- Rarely reused prefixes: caching may cost more than it saves. A 5-minute write breaks even after one read (1.25x + 0.1x vs 2x uncached).\n\n## Silent invalidators (debug checklist)\n\nIf `cache_read_input_tokens` stays at 0 across repeated calls:\n\n1. **Volatile content in the prefix**: `datetime.now()`, request IDs or user names in the system prompt. Move them after the last breakpoint, or into the user message.\n2. **Non-deterministic serialization**: tools or JSON built from unordered maps. Sort keys and tool order.\n3. **Tool set varies per request**: tools come first, so changing them invalidates everything.\n4. **Prefix below the minimum length**: nothing caches and no error appears.\n5. **Different model, workspace or speed** between calls.\n6. **TTL expired**: the gap between requests was longer than the TTL. TTL is measured from the start of the request, so long generations eat into it.\n\n## What caching does and doesn't do\n\n- It **does** cut input cost and processing time for repeated prefixes. It stacks with the Batch API discount.\n- It **does not** change output, reduce output tokens or make answers more consistent. It also **does not** store responses. For \"same question, same answer\", you need your own response cache.\n\n## Worked example: a coding agent\n\nEach agent turn resends 12 tool definitions (8K tokens), a system prompt (6K) and a growing transcript. Without caching, turn 30 re-pays full price for 150K+ tokens. With a breakpoint after the system prompt plus automatic caching of the tail, each turn pays a read price on almost all prior context and a write price only on the newest tool result. A team that then injected the current time into the system prompt \"for context\" saw costs jump 6x overnight. The fix was to move the timestamp into the latest user message.\n",
+      "keyTakeaways": [
+        "Caching reuses an exact-match prefix in the order tools -> system -> messages; any change invalidates that point and everything after.",
+        "Up to 4 cache_control breakpoints per request; default TTL 5 minutes (refreshed on hit), optional 1 hour.",
+        "Writes cost 1.25x (5m) or 2x (1h) base input; reads cost 0.1x on most models, 0.05x on Opus 5.5.",
+        "Below the model's minimum cacheable length nothing caches and no error appears; verify with cache_read_input_tokens.",
+        "Checkpoint the static prefix explicitly and advance a second breakpoint with the conversation.",
+        "Caching cuts input cost and latency only; it doesn't cache responses or reduce output tokens."
+      ],
+      "examTips": [
+        "If a cache hit rate is zero, look for timestamps or varying content early in the prompt, tool order changes, or a prefix below the minimum.",
+        "Stable content first, volatile content last is the answer to most placement questions.",
+        "Caching and Batches stack; pick both when the scenario has shared context and no urgency."
+      ],
+      "commonTraps": [
+        "Putting per-request data (date, user ID) in the system prompt ahead of the breakpoint.",
+        "Expecting caching to make outputs identical or to skip generation.",
+        "Assuming a short prompt is cached because cache_control is present.",
+        "Choosing the 1-hour TTL for traffic that already arrives every few seconds.",
+        "Splitting traffic across models or workspaces and expecting shared cache hits."
+      ],
+      "resources": [
+        {
+          "title": "Prompt caching (Claude Docs)",
+          "url": "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
+          "type": "docs"
+        },
+        {
+          "title": "Pricing (Claude Docs)",
+          "url": "https://platform.claude.com/docs/en/about-claude/pricing",
+          "type": "docs"
+        },
+        {
+          "title": "Token counting (Claude Docs)",
+          "url": "https://platform.claude.com/docs/en/build-with-claude/token-counting",
+          "type": "docs"
+        }
+      ]
+    },
+    {
+      "id": "v-d5-drill",
+      "title": "Model and cost drill: picking the right lever",
+      "estMinutes": 10,
+      "level": "core",
+      "taskStatementIds": [
+        "5.1",
+        "5.2",
+        "5.3",
+        "5.4"
+      ],
+      "eli5": "This is the practice lap. For each situation, ask what problem is actually being described (speed, cost, quality, reliability or format) and pick the tool built for that problem.",
+      "visualId": "exam-strategy",
+      "body": "## The elimination funnel for Domain 5\n\nMost Domain 5 questions describe a symptom and offer four plausible levers. Name the **dimension** first:\n\n| Symptom | Dimension | First levers to consider |\n|---|---|---|\n| \"First words take too long to appear\" | Time to first token | Streaming, shorter or cached prompt, smaller model |\n| \"Long answers take too long to finish\" | Output throughput | Fast mode (Opus 5.5/5/4.8, Claude API only), shorter output, smaller model |\n| \"Bill is too high, quality must stay the same\" | Cost | Caching, batching (if nobody waits), trimming input, output limits |\n| \"Bill is too high, some quality loss is acceptable\" | Cost-quality | Lower effort, smaller model per route, validated by evals |\n| \"Answers are shallow on hard problems\" | Quality | Raise effort, stronger model, better context |\n| \"Output format breaks the parser\" | Reliability | Structured outputs, strict tools |\n| \"Same input, different labels\" | Consistency | Clearer rules, few-shot edge-case examples, schema enums, evals |\n| \"400 errors after a model upgrade\" | Compatibility | Migration guide: budget_tokens, sampling params, prefill, forced tool_choice |\n| \"429 errors at peak\" | Capacity | Backoff with retry-after, queueing, caching, Batches |\n\n## Practice scenarios (original)\n\n**1. Commit-message helper.** A CLI tool generates commit messages from small diffs. It runs on Opus 5.5 and developers say it's fine but the bill is noticeable. What should you try first?\n\nAnswer: measure **Sonnet 5.5 or Haiku 4.5** (or Opus at `low` effort) against a small eval of real diffs. This is a simple, high-volume task where cheaper tiers usually pass. Batching is wrong because a developer is waiting. Fast mode raises cost.\n\n**2. Research report generator.** Reports take 4 minutes to finish on Opus 5.5, and users watch the text stream in. Quality is good. The product owner wants it faster and accepts higher cost.\n\nAnswer: **fast mode** (up to 2.5x output tokens per second, premium price), keeping streaming. Check that the deployment is on the Claude API (not Bedrock or Google Cloud) and plan a fallback to standard speed on 429.\n\n**3. Zero cache hits.** A support bot marks its 15K-token system prompt with `cache_control`, but `cache_read_input_tokens` is always 0. The system prompt begins with `Today is {date} {time}`.\n\nAnswer: the timestamp changes every request and sits at the start of the cached prefix. Move it after the breakpoint (for example into the user turn).\n\n**4. The upgrade that broke.** After switching from Sonnet 4.6 to Sonnet 5.5, every request fails with 400. The code sets `thinking={\"type\":\"enabled\",\"budget_tokens\":4000}` and prefills the assistant turn with `{`.\n\nAnswer: both patterns are rejected on the new model. Use adaptive thinking with effort, and structured outputs instead of prefill. Then run evals.\n\n**5. Frontend wiring.** A team wants the browser to call the Claude API directly over a websocket so tokens stream to the UI.\n\nAnswer: no. The API key would be exposed, and the Claude API streams over **SSE on HTTP**, not websockets. The browser connects to your backend (a websocket is fine there), and the backend calls Claude with the SDK's streaming helper and relays deltas.\n\n**6. Weekly digest.** Every Sunday, 3,000 customer accounts get a personalized usage digest. Nobody reads them until Monday. All requests share an 8K-token style guide.\n\nAnswer: **Message Batches** (50% off) with the shared style guide cached. Consider the 1-hour TTL, since batch requests may not be processed within 5 minutes of each other. Results come back keyed by `custom_id`, in any order.\n\n**7. Classifier variance.** A sentiment classifier on Haiku 4.5 gives different labels for the same tweet across runs. A teammate suggests switching to Opus for \"more deterministic\" output.\n\nAnswer: a bigger model doesn't guarantee determinism. Constrain the labels with a schema enum, add few-shot examples of ambiguous tweets, consider a lower temperature (Haiku 4.5 accepts it), and measure agreement over several runs.\n\n## Final checklist\n\n- Can you state each current model's price tier, window and thinking mode?\n- Do you know the effort defaults and that Haiku 4.5 lacks effort?\n- Can you compute a request's cost from a `usage` object, including cache fields?\n- Can you list four silent cache invalidators?\n- Can you name three hard breaks seen when migrating to current models?\n",
+      "keyTakeaways": [
+        "Name the dimension first (TTFT, throughput, cost, quality, reliability, consistency, compatibility, capacity), then pick the matching lever.",
+        "Fast mode fixes output throughput at a premium; streaming fixes perceived latency.",
+        "Caching and batching are the no-quality-loss cost levers; effort and model size trade quality for cost.",
+        "Browser clients talk to your backend; the backend calls Claude and relays SSE deltas.",
+        "Migration 400s usually come from budget_tokens, sampling params, prefill or forced tool_choice."
+      ],
+      "examTips": [
+        "Eliminate answers that solve a different dimension than the one described.",
+        "Eliminate answers that expose API keys client-side or claim websocket streaming from the Claude API.",
+        "Prefer measured approaches (evals, usage logs) over absolute rules ('always use X')."
+      ],
+      "commonTraps": [
+        "Reaching for the biggest model to fix variance or format problems.",
+        "Using fast mode for TTFT complaints or inside batches.",
+        "Downsizing the model for non-urgent bulk work instead of batching.",
+        "Forgetting that caching needs an identical prefix above the minimum length."
+      ],
+      "resources": [
+        {
+          "title": "Models overview (Claude Docs)",
+          "url": "https://platform.claude.com/docs/en/about-claude/models/overview",
+          "type": "docs"
+        },
+        {
+          "title": "Fast mode, research preview (Claude Docs)",
+          "url": "https://platform.claude.com/docs/en/build-with-claude/fast-mode",
+          "type": "docs"
+        },
+        {
+          "title": "Prompt caching (Claude Docs)",
+          "url": "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
+          "type": "docs"
+        },
+        {
+          "title": "Batch processing (Claude Docs)",
+          "url": "https://platform.claude.com/docs/en/build-with-claude/batch-processing",
+          "type": "docs"
+        },
+        {
+          "title": "Migration guide (Claude Docs)",
+          "url": "https://platform.claude.com/docs/en/about-claude/models/migration-guide",
+          "type": "docs"
+        }
+      ]
+    }
+  ]
+}

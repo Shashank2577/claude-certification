@@ -1,0 +1,645 @@
+{
+  "certId": "foundations",
+  "domainId": "d4-prompting",
+  "questions": [
+    {
+      "id": "f-d4-x2-001",
+      "taskStatementId": "4.3",
+      "scenario": "Scenario: Structured Data Extraction. Your system uses Claude to pull fields out of unstructured business documents (invoices, receipts, contracts), validates the output against JSON schemas, and loads the results into a downstream finance system. Accuracy matters more than speed, and edge cases must be handled gracefully.",
+      "stem": "Freight invoices from one carrier list 300 to 600 line items each. Strict tool use is enabled, yet on these invoices the loader sometimes receives a line_items array that stops partway through the document, and the matching API responses show stop_reason \"max_tokens\". Smaller invoices are always fine. What should the architect do to make these extractions reliable?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Trust the strict schema: because tool input is grammar-constrained, the partial array is still valid output, so load it and flag the invoice for later review."
+        },
+        {
+          "id": "B",
+          "text": "Add an instruction asking Claude to keep each line-item description very short so that the full extraction fits inside the current output limit."
+        },
+        {
+          "id": "C",
+          "text": "Check stop_reason before using the tool input; on max_tokens, rerun with a higher max_tokens or split the invoice into page ranges and merge the results."
+        },
+        {
+          "id": "D",
+          "text": "Raise the retry count so that any max_tokens response is resent unchanged until one comes back that ends with a complete extraction tool call."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Schema guarantees from strict tool use and structured outputs only hold when generation finishes normally. When a response stops with `stop_reason: \"max_tokens\"`, the output was cut off and may be incomplete or may not match the schema at all. The pipeline must check `stop_reason` before trusting the `tool_use` input. The fix is about capacity: give the request a larger `max_tokens`, or break very large documents into chunks (for example page ranges) and merge the per-chunk line items in code.",
+      "whyWrong": {
+        "A": "Strict mode does not make a truncated response complete. Loading a partial line-item list silently drops data that finance relies on, which is worse than failing loudly.",
+        "B": "Shorter descriptions might help a little, but a 600-row invoice can still exceed the limit. It is a prompt-only nudge for a hard size problem, and it also degrades the data.",
+        "D": "Resending the identical request hits the same output limit again. Retries help with random or correctable errors, not with a deterministic size limit."
+      },
+      "difficulty": 2,
+      "mindset": "A schema guarantee is only as good as a finished response: always check stop_reason before trusting structured output.",
+      "tags": [
+        "structured-output",
+        "stop-reason",
+        "max-tokens",
+        "chunking"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons",
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs"
+      ]
+    },
+    {
+      "id": "f-d4-x2-002",
+      "taskStatementId": "4.3",
+      "stem": "A developer adds minimum 1 to the quantity field and maximum 1000000 to line_total in a strict extraction tool's input_schema, using the SDK's schema helper. Requests succeed, but a later audit finds several extractions with quantity 0 and one with a line_total of 4,500,000, all of which passed. In the request logs, the schema Claude actually received contains no minimum or maximum, only descriptions that mention the limits. What should the architect do so that out-of-range values are caught, with the least change?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Turn strict mode off for this tool so that the complete schema, including the numeric constraints, is sent to the model unchanged and honored during generation."
+        },
+        {
+          "id": "B",
+          "text": "Replace the two numeric fields with integer enums that list every allowed value, since enum is a constraint that strict mode does support and enforce."
+        },
+        {
+          "id": "C",
+          "text": "Add a closing instruction asking the model to re-check that every quantity and line total lies inside the documented limits before it calls the extraction tool."
+        },
+        {
+          "id": "D",
+          "text": "Keep the limits in the field descriptions as guidance and enforce them in application-side validation, treating out-of-range values as retry or review cases."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "Strict tool use and structured outputs rely on grammar-constrained sampling, which supports only a subset of JSON Schema. Numeric constraints such as `minimum`, `maximum` and `multipleOf` are not supported: the raw API rejects them with a 400 error, and SDK helpers work around this by removing the constraint, appending it to the field's description, and (where the helper validates responses) checking the response against your original schema. So what Claude sees is a plain number plus a hint, and range enforcement is the application's job. Keep the descriptions, because they steer the model, and add a deterministic range check in the validation step that already exists, so violations are retried with the specific error or routed to review.",
+      "whyWrong": {
+        "A": "Without strict mode the full schema is sent, but nothing is grammar-enforced: Claude reads minimum and maximum as guidance only, exactly as it now reads the descriptions. Switching strict off gains no range enforcement and loses the type and required-field guarantees you already have.",
+        "B": "Enumerating every integer from 1 to 1,000,000 is impractical and bloats the schema toward its complexity limits. Integer enums suit small fixed sets such as 1 to 10, not open ranges.",
+        "C": "A self-check instruction can lower the rate of out-of-range values but cannot guarantee it. The team wants these values caught, which requires a deterministic check in code."
+      },
+      "difficulty": 2,
+      "mindset": "Know which schema constraints the grammar actually enforces; everything else still needs a check in code.",
+      "tags": [
+        "strict-tool-use",
+        "json-schema-limitations",
+        "validation",
+        "numeric-constraints"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools"
+      ]
+    },
+    {
+      "id": "f-d4-x2-003",
+      "taskStatementId": "4.3",
+      "scenario": "Scenario: Claude Code for Continuous Integration. Your team runs Claude Code non-interactively in the CI/CD pipeline to review pull requests, generate tests and post feedback. Findings must be actionable, and false positives must stay low.",
+      "stem": "The review step currently returns findings as a markdown list, and a script uses regular expressions to turn them into inline PR annotations. Format drift breaks the script every few weeks. Separately, on clean PRs the reviewer sometimes invents a minor finding just to say something. Which TWO changes BEST address these problems? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add a stricter markdown template to the prompt with exact headings and bullet syntax, and make the regular expressions tolerant of extra whitespace."
+        },
+        {
+          "id": "B",
+          "text": "Run the reviewer with --output-format json and a --json-schema defining a findings array (file, line, severity enum, message); read structured_output."
+        },
+        {
+          "id": "C",
+          "text": "Require the findings array to contain at least one item so that the annotation script always receives something it can process on every run."
+        },
+        {
+          "id": "D",
+          "text": "Ask the reviewer to print JSON inside a fenced code block, and have the script extract whatever text appears between the first pair of fences."
+        },
+        {
+          "id": "E",
+          "text": "Allow an empty findings array, and say in the schema description that an empty array is the correct result when nothing meets the review criteria."
+        }
+      ],
+      "correct": [
+        "B",
+        "E"
+      ],
+      "explanation": "Claude Code in print mode can return schema-conforming output: `--output-format json` together with `--json-schema` puts the validated result in the `structured_output` field, so the annotation script reads fields instead of scraping markdown (B). The invented findings are partly a schema-design issue: if the output contract implies there must be something to report, the model is pushed to produce something. Explicitly allowing an empty array, and describing it as the right answer for a clean PR, removes that pressure (E).",
+      "whyWrong": {
+        "A": "A tighter template plus a looser regex still depends on the model following formatting instructions. Drift will return; it is a prompt-only fix where a structural one exists.",
+        "C": "Requiring at least one item does the opposite of what is needed: on a clean PR it forces the reviewer to fabricate a finding to satisfy the schema.",
+        "D": "JSON in a fenced block is still free text. Nothing guarantees valid syntax or the expected fields, so the script stays fragile."
+      },
+      "difficulty": 2,
+      "mindset": "Get machine-readable output from a schema, and make sure the schema allows the honest answer \"nothing found\".",
+      "tags": [
+        "structured-output",
+        "claude-code",
+        "ci-cd",
+        "json-schema",
+        "false-positives"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/headless",
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs"
+      ]
+    },
+    {
+      "id": "f-d4-x2-004",
+      "taskStatementId": "4.3",
+      "stem": "A developer's extraction script sends one extraction tool with tool_choice \"auto\" and reads response.content[0].input to get the data. Most runs work, but some crash because content[0] is a short text block such as \"I'll extract the fields now.\" and the tool_use block comes second. What is the MOST appropriate fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add a system-prompt instruction telling Claude never to write any text before calling the extraction tool, so the first block is always the call."
+        },
+        {
+          "id": "B",
+          "text": "Wrap the read in error handling and, when content[0] has no input, resend the same request until the first block happens to be the tool call."
+        },
+        {
+          "id": "C",
+          "text": "Lower the temperature so that responses become more deterministic and the extraction tool call reliably appears as the first content block."
+        },
+        {
+          "id": "D",
+          "text": "Loop over the response's content blocks, pick the block whose type is tool_use with the expected tool name, and read its input object."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "A response's `content` is a list of blocks, and with `tool_choice` set to `auto` Claude may put a text block before the `tool_use` block. Code should never assume a position. It should find the block with `type: \"tool_use\"` (and the expected `name`) and read its `input`, which is already a parsed object. This is how the tool-use docs show handling tool calls, and it works whether or not any text appears.",
+      "whyWrong": {
+        "A": "An instruction may reduce the preamble, but it is not a guarantee, so the script can still crash. The bug is in the parsing code, not in the model's behavior.",
+        "B": "Resending wastes calls on responses that already contain the data. The tool call was there; the code just looked in the wrong place.",
+        "C": "Temperature does not control block order, and even low-temperature responses can include a text block before the tool call."
+      },
+      "difficulty": 1,
+      "mindset": "Parse responses by block type, never by position.",
+      "tags": [
+        "tool-use",
+        "response-parsing",
+        "tool-choice"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools"
+      ]
+    },
+    {
+      "id": "f-d4-x2-005",
+      "taskStatementId": "4.3",
+      "scenario": "Scenario: Multi-Agent Research System. A coordinator agent delegates to specialized subagents: one searches the web, one analyzes documents, one synthesizes findings and one writes reports. The system must produce comprehensive reports in which every claim is correctly cited.",
+      "stem": "The document-analysis subagent returns its findings to the coordinator as free-form paragraphs. The synthesis step then has to guess which sentence came from which source, and publication dates are often lost, so final reports sometimes cite the wrong paper or present old figures as current. Many sources do not state a publication date at all. Which TWO changes BEST make this hand-off reliable? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Have the subagent return a structured list of findings, each with claim, source_id and supporting_quote fields defined in a schema."
+        },
+        {
+          "id": "B",
+          "text": "Instruct the coordinator to re-read every source document itself so it no longer depends on the subagent's summary of the findings."
+        },
+        {
+          "id": "C",
+          "text": "Make publication_date a required string on every finding so that a date is always carried forward into the synthesis step."
+        },
+        {
+          "id": "D",
+          "text": "Add a publication_date field that allows null, described as the date printed in the source, or null when the source states none."
+        },
+        {
+          "id": "E",
+          "text": "Merge the analysis and synthesis subagents into one agent so that no hand-off is needed and nothing gets lost in transfer."
+        }
+      ],
+      "correct": [
+        "A",
+        "D"
+      ],
+      "explanation": "Structured output is not only for loading data into databases; it is also the most reliable contract between agents. A schema with `claim`, `source_id` and `supporting_quote` per finding keeps the claim-to-source mapping intact, so the synthesizer no longer has to infer it (A). Because many sources have no date, the date field must be able to say \"not stated\": allowing null, with a clear description, preserves real dates without pushing the model to invent them (D).",
+      "whyWrong": {
+        "B": "Having the coordinator re-read everything defeats the purpose of delegating, bloats its context and still does not give it a structured mapping of claims to sources.",
+        "C": "A required non-null date on sources that have no date pushes the model to fabricate one, which is exactly the outdated-figure risk you are trying to remove.",
+        "E": "Merging agents is an over-engineered architectural change that loses the benefits of specialization and context isolation. The problem is the shape of the hand-off, not its existence."
+      },
+      "difficulty": 3,
+      "mindset": "Use schemas as the contract between agents, and let fields say \"unknown\" instead of forcing a guess.",
+      "tags": [
+        "structured-output",
+        "multi-agent",
+        "nullable-fields",
+        "provenance"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/strict-tool-use"
+      ]
+    },
+    {
+      "id": "f-d4-x2-006",
+      "taskStatementId": "4.3",
+      "scenario": "Scenario: Structured Data Extraction. Your system uses Claude to pull fields out of unstructured business documents (invoices, receipts, contracts), validates the output against JSON schemas, and loads the results into a downstream finance system. Accuracy matters more than speed, and edge cases must be handled gracefully.",
+      "stem": "To stop fabricated values, an engineer removed every field of the contract-extraction schema from the required list. Fabrication dropped, but a new problem appeared: when a field is missing from the output, the legal team cannot tell whether the contract lacks that clause or the model simply skipped it, and audits show some clauses that ARE present, such as governing_law, are silently left out. Which schema design BEST fixes both issues?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Make every field required again with its original non-null type, and rely on a prompt instruction telling the model not to invent absent clauses."
+        },
+        {
+          "id": "B",
+          "text": "Leave the fields optional and add a free-text notes field where the model can list any clauses it chose not to extract and explain why."
+        },
+        {
+          "id": "C",
+          "text": "Keep every field required but allow null as a value, described as \"clause not present in the document\", so every field gets an explicit answer."
+        },
+        {
+          "id": "D",
+          "text": "Leave the fields optional and add a post-processing step that reruns the whole extraction whenever any optional field is missing from the output."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Required and nullable solve different problems. Making a field nullable (for example type `[\"string\", \"null\"]`) gives the model an honest way to say \"not in the document\", which prevents fabrication. Keeping the field in `required` forces the model to answer every field explicitly, so a missing key can no longer mean \"skipped\". Together they turn three states (value, absent, skipped) into two clear ones (value or null), and downstream systems can act on null with confidence. One practical caveat if you use strict mode: its complexity limits cap optional parameters (24 in total) and union-type parameters such as `[\"string\", \"null\"]` (16 in total) across all strict schemas in a request. The docs recommend making parameters required where possible, but each nullable field counts as a union type, so on a large schema reserve null for fields that can genuinely be absent from a contract.",
+      "whyWrong": {
+        "A": "This brings back the original fabrication problem: a required non-null field gives the model no valid way to say a clause is absent, and a prompt instruction does not reliably override that pressure.",
+        "B": "A free-text notes field is unstructured and easy to ignore downstream. Fields can still be silently skipped, and someone has to read the notes to know.",
+        "D": "Rerunning the whole extraction whenever an optional field is missing would rerun every contract that truly lacks a clause, adding cost without telling you which case you are in."
+      },
+      "difficulty": 3,
+      "mindset": "Required plus nullable means every field gets an answer, and \"not present\" is one of the allowed answers.",
+      "tags": [
+        "schema-design",
+        "required-vs-optional",
+        "nullable-fields",
+        "fabrication"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/strict-tool-use"
+      ]
+    },
+    {
+      "id": "f-d4-x2-007",
+      "taskStatementId": "4.3",
+      "stem": "An order-intake extractor fills shipping_address and billing_address. The schema properties have names but no descriptions. On purchase orders where the blocks are labelled \"Deliver to\" and \"Invoice to\", or where only one address appears, the model often swaps the two or copies the same address into both. Strict mode is on and every output is schema-valid. What is the MOST effective first change?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Tighten the schema with regular-expression patterns for postal codes and phone numbers, so that malformed address values are rejected by the structure itself."
+        },
+        {
+          "id": "B",
+          "text": "Move the extraction to a larger model, because confusing two similar fields is a reasoning error that additional model capability resolves."
+        },
+        {
+          "id": "C",
+          "text": "Add property descriptions that define each field, list the label variants that map to it, and say to return null rather than copy when only one appears."
+        },
+        {
+          "id": "D",
+          "text": "Add a retry loop that resends the extraction whenever both address fields contain identical text, until the two values come back different."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Field names and descriptions in the schema are part of what Claude reads to decide where values go. When two fields are easy to confuse, the most direct fix is a precise description for each one: what it means, which source labels map to it (\"Deliver to\", \"Ship to\" versus \"Invoice to\", \"Bill to\") and what to do when only one appears. Strict mode guarantees shape, not meaning, so a semantic mapping problem needs better field definitions.",
+      "whyWrong": {
+        "A": "Structural tightening checks shape and format. A correctly formatted address placed in the wrong field still passes, so the swap problem remains.",
+        "B": "A bigger model is the costly default fix. The real cause is undefined fields; with clear descriptions the current model may well be enough.",
+        "D": "Identical addresses are often legitimate when the buyer ships to its billing address. This retry would loop on correct data and never fix a swap."
+      },
+      "difficulty": 2,
+      "mindset": "The schema is part of the prompt: define each field precisely before reaching for more model or more retries.",
+      "tags": [
+        "schema-design",
+        "field-descriptions",
+        "semantic-errors"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/strict-tool-use"
+      ]
+    },
+    {
+      "id": "f-d4-x2-008",
+      "taskStatementId": "4.4",
+      "scenario": "Scenario: Structured Data Extraction. Your system uses Claude to pull fields out of unstructured business documents (invoices, receipts, contracts), validates the output against JSON schemas, and loads the results into a downstream finance system. Accuracy matters more than speed, and edge cases must be handled gracefully.",
+      "stem": "Insurance claim forms are extracted into a strict schema. Audits find that about 2% of policy_number and incident_date values do not appear anywhere in the submitted document: when the form is smudged or a box is blank, the model produces a plausible-looking value instead. Schema and format checks pass because the invented values are well formed. The team wants fabricated values caught automatically on every claim, without paying for a second model call per document. Which design is MOST effective?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add a required source_quote beside each critical value, described as the exact text copied from the document, and have code verify that the quote occurs verbatim in the document text."
+        },
+        {
+          "id": "B",
+          "text": "Add a required confidence number beside each critical value, and have code send any extraction whose confidence falls below a fixed threshold to the human review queue instead of loading it."
+        },
+        {
+          "id": "C",
+          "text": "Tighten the format checks on both fields with stricter regular-expression patterns, so that values that were not read from a genuine claim form are rejected by the validation step."
+        },
+        {
+          "id": "D",
+          "text": "Add an instruction telling the model to copy values exactly as printed and never to guess, and rerun the audit next quarter to confirm that the fabrication rate has fallen."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "A fabricated value is well formed, so format checks cannot see it. What distinguishes a real value from an invented one is that the real one came from the document, and the design can make that checkable: ask for the supporting evidence (the exact source text) as a field next to each critical value, then verify in code that the quote really occurs in the document text. That is a deterministic check with no extra model call, and a quote that is missing or not found marks the value as unsupported, so it goes to a retry with that specific error or to human review. Pair this with nullable fields so a blank box has an honest answer. The tool-definition guidance points the same way: ask for a short explanation or supporting evidence rather than the model's reasoning.",
+      "whyWrong": {
+        "B": "A confidence score is the model's opinion of itself and is never checked against the document. The model can be confident in an invented value, so the signal is not verifiable.",
+        "C": "The invented values already match the expected formats. A stricter pattern still cannot tell a value read from the form from one that was made up.",
+        "D": "An instruction lowers guessing but cannot guarantee it, and a quarterly audit catches nothing on the claims flowing through today. The requirement is an automatic check on every document."
+      },
+      "difficulty": 3,
+      "mindset": "Make correctness checkable: ask for the evidence alongside the value, then verify the evidence in code.",
+      "tags": [
+        "validation",
+        "grounding",
+        "fabrication",
+        "supporting-evidence",
+        "deterministic-check"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools",
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs"
+      ]
+    },
+    {
+      "id": "f-d4-x2-009",
+      "taskStatementId": "4.4",
+      "scenario": "Scenario: Structured Data Extraction. Your system uses Claude to pull fields out of unstructured business documents (invoices, receipts, contracts), validates the output against JSON schemas, and loads the results into a downstream finance system. Accuracy matters more than speed, and edge cases must be handled gracefully.",
+      "stem": "The retry-with-feedback loop works: 97% of documents pass within two attempts. But 18% of documents need a retry, which roughly doubles cost and latency for them. A quick look suggests most first-attempt failures are the same few errors, such as quantities returned as \"12 pcs\" instead of a number and dates in local formats. Which TWO actions BEST reduce retries while keeping quality? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Remove the validator checks for the most common error types, since the retry loop fixes them anyway and the extra pass is what adds the cost."
+        },
+        {
+          "id": "B",
+          "text": "Log every validation failure by field and error type, and review the counts regularly to find recurring, predictable failure patterns."
+        },
+        {
+          "id": "C",
+          "text": "Raise the retry cap from two attempts to five so that the remaining 3% of documents also pass without needing any human review."
+        },
+        {
+          "id": "D",
+          "text": "Fix recurring errors upstream: type quantity as a number and add unit and date normalization rules to the prompt, keeping retries as a safety net."
+        },
+        {
+          "id": "E",
+          "text": "Replace the specific error messages in retries with a general instruction to re-check all fields, which keeps the retry prompt shorter and cheaper."
+        }
+      ],
+      "correct": [
+        "B",
+        "D"
+      ],
+      "explanation": "A retry loop is a safety net, not the main quality mechanism. Logging failures by field and error type turns anecdotes into data, showing which errors recur and how often (B). Recurring, predictable errors should then be fixed where they start: a better-typed schema (quantity as a number) and explicit normalization rules in the prompt, with the validator and retry still in place for the long tail (D). That lowers first-attempt failures, cost and latency without lowering the quality bar.",
+      "whyWrong": {
+        "A": "Removing checks does not reduce errors; it just stops catching them, so bad values reach the finance system.",
+        "C": "More attempts increase cost and latency, which is the opposite of the goal, and the remaining 3% are likely cases retries cannot fix.",
+        "E": "Specific error feedback is what makes retries succeed. A vague \"re-check everything\" prompt lowers retry success, causing more attempts and more cost."
+      },
+      "difficulty": 3,
+      "mindset": "Measure why retries happen, then fix recurring causes upstream; keep the retry loop for the long tail.",
+      "tags": [
+        "validation",
+        "retry-loop",
+        "feedback-loop",
+        "cost",
+        "normalization"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs",
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests"
+      ]
+    },
+    {
+      "id": "f-d4-x2-010",
+      "taskStatementId": "4.4",
+      "stem": "An insurance team reports that 99.4% of claim extractions pass schema and business-rule validation after retries, and leadership wants to declare accuracy \"solved\". An analyst points out that the validators only check formats, required fields and that amounts add up. What is the BEST way to find out how accurate the passing extractions really are?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Treat the validation pass rate as the accuracy figure, because any extraction that passes every check has in effect already been confirmed correct."
+        },
+        {
+          "id": "B",
+          "text": "Have reviewers compare a regular random sample of passing extractions with the source documents, field by field, and track errors per field."
+        },
+        {
+          "id": "C",
+          "text": "Ask Claude in the same request to rate its confidence for each field, and report the average confidence across claims as the accuracy figure."
+        },
+        {
+          "id": "D",
+          "text": "Keep adding validation rules until the pass rate drops, then report that new, lower pass rate as the true accuracy of the extraction system."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Validation catches only the errors it was written to catch. A value can be well formatted, present and arithmetically consistent and still be wrong, for example the wrong claimant name or a date from the wrong section. The only way to measure real accuracy is to compare outputs with ground truth: sample passing extractions regularly, have people check them against the source and track field-level error rates. That data also shows which fields need better prompts, schemas or new validators.",
+      "whyWrong": {
+        "A": "Passing validation proves the output meets the rules, not that it is correct. Semantic errors the rules do not cover are invisible to this number.",
+        "C": "Self-reported confidence is not a measurement of correctness and is not checked against the source. It cannot stand in for ground truth.",
+        "D": "The pass rate of a stricter validator is still not accuracy. It measures rule compliance, and the drop depends on which rules you happened to add."
+      },
+      "difficulty": 2,
+      "mindset": "Passing validation is not the same as being right: measure accuracy against ground truth.",
+      "tags": [
+        "validation",
+        "evaluation",
+        "human-review",
+        "accuracy"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests"
+      ]
+    },
+    {
+      "id": "f-d4-x2-011",
+      "taskStatementId": "4.4",
+      "scenario": "Scenario: Claude Code for Continuous Integration. Your team runs Claude Code non-interactively in the CI/CD pipeline to review pull requests, generate tests and post feedback. Findings must be actionable, and false positives must stay low.",
+      "stem": "Each review finding now carries a detected_pattern field, and every developer dismissal is logged against it. After a month the data shows that findings tagged \"unused-import\" are dismissed 85% of the time, because the team's linter already enforces that rule, while \"sql-string-concat\" findings are dismissed only 4% of the time. Overall, 30% of findings are dismissed. What should the team do next?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Lower the severity of every finding category by one level so that developers are bothered less and the overall dismissal rate falls below 30%."
+        },
+        {
+          "id": "B",
+          "text": "Add an instruction telling the reviewer to be more conservative overall and to report only findings it is highly confident about."
+        },
+        {
+          "id": "C",
+          "text": "Drop unused-import from the review criteria since the linter covers it, leave sql-string-concat unchanged, and recheck per-pattern rates."
+        },
+        {
+          "id": "D",
+          "text": "Run two reviewer instances on every PR and post only findings that both report, since agreement removes most false positives."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "The point of recording `detected_pattern` is to act on each pattern separately instead of guessing. The data shows one noisy pattern that duplicates a deterministic tool (the linter) and one precise, valuable pattern. The targeted fix is to remove or rewrite only the noisy criterion, leave the precise one alone, and measure per-pattern dismissal rates again to confirm the change worked. That closes the feedback loop.",
+      "whyWrong": {
+        "A": "A blanket severity downgrade ignores what the data shows and also weakens the SQL findings developers do act on.",
+        "B": "A vague \"be conservative\" instruction cuts precise and noisy findings alike and is hard to measure. Explicit, targeted criteria beat general caution.",
+        "D": "Two reviewers double the cost and may agree on the same noisy pattern. The data already tells you exactly which criterion to change."
+      },
+      "difficulty": 1,
+      "mindset": "Use per-pattern feedback data to make targeted fixes, then measure again.",
+      "tags": [
+        "feedback-loop",
+        "detected-pattern",
+        "false-positives",
+        "ci-cd"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/headless",
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests"
+      ]
+    },
+    {
+      "id": "f-d4-x2-012",
+      "taskStatementId": "4.4",
+      "stem": "A validator rejects about 6% of extractions. When the team breaks the failures down, most are currency codes in lowercase (\"usd\"), phone numbers with spaces and trailing whitespace in IDs; the underlying values are correct. Every rejection currently triggers a full retry call that resends the document. The team wants the lowest-cost fix that does not reduce accuracy. What should they do?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Normalize case, whitespace and phone format deterministically in code before validation, and keep retries for errors that need the document."
+        },
+        {
+          "id": "B",
+          "text": "Add these formatting rules to the prompt and delete the matching validator checks, since the prompt now covers the formatting requirement."
+        },
+        {
+          "id": "C",
+          "text": "Add examples of each malformed value next to its corrected form in the prompt, and keep retrying the failures through the same loop as before."
+        },
+        {
+          "id": "D",
+          "text": "Keep the retries but send them through the Message Batches API, so that the extra calls cost less even though they still happen for every failure."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Not every validation failure needs the model. When the value is right and only its surface form is off (case, whitespace, separators), a few lines of deterministic normalization fix it with no API call and no risk of the model changing the value. Retries with error feedback should be kept for failures that genuinely need the document to resolve, such as a misread amount or a field placed in the wrong slot. This is the cheapest option and it keeps accuracy intact. The docs make the same point for enums: structured outputs do not guarantee the capitalization of enum values, and the recommended handling is to compare case-insensitively in code rather than retry.",
+      "whyWrong": {
+        "B": "A prompt rule lowers the error rate but does not guarantee it, and deleting the checks means any remaining slips reach downstream systems unnoticed.",
+        "C": "Examples may reduce these slips, but every remaining one still costs a full retry. Code can fix them deterministically for free.",
+        "D": "Batches lower the per-call price but still pay for avoidable calls and add delay to the retry. The cheapest call is the one you do not make."
+      },
+      "difficulty": 2,
+      "mindset": "Fix mechanical formatting problems in code; spend model retries only on errors that need the document.",
+      "tags": [
+        "validation",
+        "retry-loop",
+        "normalization",
+        "cost"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs"
+      ]
+    },
+    {
+      "id": "f-d4-x2-013",
+      "taskStatementId": "4.4",
+      "stem": "An extraction job writes each result to the ERP as soon as Claude returns it, then runs validation. When validation fails, the job retries and writes the corrected result as well. Finance now sees duplicate vendor records, some with wrong values. What is the BEST change to the loop?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Validate before writing, write only the final validated result once keyed by document ID, and send documents that exhaust retries to a review queue."
+        },
+        {
+          "id": "B",
+          "text": "Keep writing immediately, but add a nightly cleanup job that finds duplicate vendor records and deletes the older copy of each pair it finds."
+        },
+        {
+          "id": "C",
+          "text": "Remove retries entirely so each document is written exactly once, accepting that failed validations go into the ERP exactly as they are."
+        },
+        {
+          "id": "D",
+          "text": "Ask Claude to include a flag in each extraction saying whether it is a retry, so the ERP can decide which version of the record to keep when duplicates appear."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Validation is a gate: it must sit between the model and anything with side effects. Only a result that has passed validation should be written, and writing it once with a stable key (the document ID) means a retry can never create a second record. Documents that still fail after the retry cap go to a human review queue with their errors instead of into the ERP.",
+      "whyWrong": {
+        "B": "A cleanup job treats the symptom after bad data has already been visible to finance, and \"older copy\" is not always the wrong one.",
+        "C": "Dropping retries removes duplicates by letting known-bad data in, which trades one quality problem for a worse one.",
+        "D": "The model does not know the pipeline's retry state, and record-keeping logic belongs in deterministic code, not in a model-generated flag."
+      },
+      "difficulty": 1,
+      "mindset": "Validate before side effects, and make writes idempotent.",
+      "tags": [
+        "validation",
+        "retry-loop",
+        "idempotency",
+        "human-review"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls"
+      ]
+    },
+    {
+      "id": "f-d4-x2-014",
+      "taskStatementId": "4.4",
+      "scenario": "Scenario: Customer Support Resolution Agent. You are building a support agent with the Claude Agent SDK that handles returns, billing disputes and account issues through custom MCP tools (get_customer, lookup_order, process_refund, escalate_to_human). The target is 80%+ first-contact resolution while knowing when to escalate.",
+      "stem": "Before calling process_refund, the agent produces a structured refund decision (order_id, refund_amount, reason_code). Schema validation always passes, yet reviews find occasional refunds larger than the order total and reason codes that policy does not allow for that product category. Refunds are hard to reverse. What is the MOST reliable way to stop these before money moves?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Restate the refund policy in detail in the system prompt and tell the agent to double-check the amount against the order before it calls process_refund."
+        },
+        {
+          "id": "B",
+          "text": "Check each decision in code against the order record and policy table before process_refund runs; return violations to the agent and escalate."
+        },
+        {
+          "id": "C",
+          "text": "Set a fixed maximum refund_amount in the JSON schema so that the model cannot produce a value above that ceiling in its decision."
+        },
+        {
+          "id": "D",
+          "text": "Have a second Claude instance review every refund decision in prose and approve it if the reasoning sounds consistent with the policy."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Schema validation proves the decision has the right shape; it cannot know this order's total or which reason codes are allowed for this category. Those are business rules that code can check exactly against the order record and the policy table. Placing that check before `process_refund` executes blocks bad refunds deterministically. Sending the specific violation back gives the agent a chance to correct itself, and escalating to a human after repeated failures keeps edge cases safe.",
+      "whyWrong": {
+        "A": "More prompt text and a self-check lower the error rate but cannot guarantee it. For an irreversible financial action, a deterministic check is required.",
+        "C": "A single fixed ceiling cannot reflect each order's total, so it would block valid large refunds and allow invalid small ones, and it does nothing about reason codes. Numeric maximum is also not part of the schema subset that strict mode enforces.",
+        "D": "A second model's judgment is still probabilistic and costs a call per refund. Rules that can be checked exactly in code should be checked in code."
+      },
+      "difficulty": 2,
+      "mindset": "Enforce business rules with deterministic checks before irreversible actions, and feed specific violations back.",
+      "tags": [
+        "validation",
+        "business-rules",
+        "feedback-loop",
+        "escalation",
+        "support-agent"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/strict-tool-use",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,821 @@
+{
+  "certId": "foundations",
+  "domainId": "d5-context",
+  "questions": [
+    {
+      "id": "f-d5-x1-001",
+      "taskStatementId": "5.1",
+      "scenario": "You are building a customer support resolution agent using the Claude Agent SDK. The agent handles high-ambiguity requests like returns, billing disputes, and account issues. It has access to your backend systems through custom Model Context Protocol (MCP) tools (get_customer, lookup_order, process_refund, escalate_to_human). Your target is 80%+ first-contact resolution while knowing when to escalate.",
+      "stem": "The team is designing the persistent case facts block for billing-dispute sessions. The block will be sent with every request, outside the summarized conversation history. Which TWO items belong in it? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "The exact disputed amount, the date of the charge and the order number that the billing dispute is about."
+        },
+        {
+          "id": "B",
+          "text": "A word-for-word copy of the last ten conversation turns, so the model can always re-read each message's exact wording."
+        },
+        {
+          "id": "C",
+          "text": "What the customer said they expect, for example \"refund to the original card, not store credit, by the 20th\"."
+        },
+        {
+          "id": "D",
+          "text": "A running description of the customer's mood across the conversation, updated after every single new turn."
+        },
+        {
+          "id": "E",
+          "text": "The full JSON schemas of all four MCP tools, so the agent always remembers exactly how to call each tool."
+        }
+      ],
+      "correct": [
+        "A",
+        "C"
+      ],
+      "explanation": "A case facts block holds the **transactional facts** that the next correct action depends on and that summaries tend to blur: **amounts, dates, order numbers, statuses and the customer's stated expectations**. These are pulled out of the history and sent with every request, so the summary can be compressed freely without losing them.\n\nThe exam guide lists \"customer-stated expectations\" next to numbers and dates as the things progressive summarization destroys. A condition such as \"original card, not store credit, by the 20th\" decides whether a resolution is acceptable, so it must be stored exactly.",
+      "whyWrong": {
+        "B": "Recent turns are already delivered as conversation history. Duplicating them in the facts block doubles token cost and is not a distilled list of facts.",
+        "D": "Mood is not a transactional fact and does not affect which refund is correct. Tracking it after every new turn adds noise to the block.",
+        "E": "Tool definitions are already sent through the tools parameter on every request. They are not case-specific, so repeating them only wastes context."
+      },
+      "difficulty": 1,
+      "mindset": "Protect the exact facts the outcome depends on; let everything else be summarized.",
+      "tags": [
+        "case-facts-block",
+        "progressive-summarization",
+        "customer-support"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents",
+        "https://platform.claude.com/docs/en/build-with-claude/context-windows"
+      ]
+    },
+    {
+      "id": "f-d5-x1-002",
+      "taskStatementId": "5.1",
+      "stem": "A support agent extracts a case facts block in the first turn of each chat and sends it with every later request. In turn 6 of one chat, the customer corrects themselves: \"Sorry, the charge was $129.40, not $124.90, and it went on my Visa ending 7731.\" The agent says thanks. In turn 31 it calls the refund tool for $124.90 to the card on file. What is the root-cause fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Raise the summarization threshold so that older turns, including corrections like this one, stay word-for-word in the history for much longer."
+        },
+        {
+          "id": "B",
+          "text": "Update the case facts block whenever the customer corrects a fact or a tool result changes it, so every later request carries the corrected value."
+        },
+        {
+          "id": "C",
+          "text": "Add a system-prompt rule telling the agent to scan the whole conversation for corrections before it calls the refund tool on any account."
+        },
+        {
+          "id": "D",
+          "text": "Have the agent read the refund amount and destination card back to the customer at the end of every turn, so mistakes are caught before they matter."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "The facts block is the agent's **authoritative source** for amounts and payment details, and it went stale. It was written once and never updated, so every later request carried the wrong amount right next to the (eventually summarized) correction. A facts block only works if it is **maintained**: when a customer corrects a value or a tool returns a new status, the block must be updated so the current value replaces the old one.",
+      "whyWrong": {
+        "A": "Keeping turns verbatim for much longer only delays the problem. The stale block still contradicts the correction, and once the turn is summarized the correction is lost anyway.",
+        "C": "This asks the model to recall details from a long context, which is exactly what is failing. It is a prompt-only patch for a data-maintenance bug.",
+        "D": "Confirming the amount every turn adds friction to the whole chat and relies on the customer catching the error. The stale source of the mistake stays in place."
+      },
+      "difficulty": 2,
+      "mindset": "A facts block is a living record; keep it current or it becomes a confident source of wrong answers.",
+      "tags": [
+        "case-facts-block",
+        "state-updates",
+        "customer-support"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents",
+        "https://platform.claude.com/docs/en/build-with-claude/context-windows"
+      ]
+    },
+    {
+      "id": "f-d5-x1-003",
+      "taskStatementId": "5.1",
+      "scenario": "You are building a customer support resolution agent using the Claude Agent SDK. The agent handles high-ambiguity requests like returns, billing disputes, and account issues. It has access to your backend systems through custom Model Context Protocol (MCP) tools (get_customer, lookup_order, process_refund, escalate_to_human). Your target is 80%+ first-contact resolution while knowing when to escalate.",
+      "stem": "Last quarter the team trimmed lookup_order results in the tool wrapper to the five fields that return requests need, and context use dropped sharply. Now warranty-claim conversations are failing. The agent tells customers it cannot see warranty status and escalates, even though the backend returns warranty_expiry and serial_number. Which change is BEST?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Remove the trimming so the agent once again receives every field, because the five-field limit has proven too aggressive for real traffic."
+        },
+        {
+          "id": "B",
+          "text": "Add warranty_expiry and serial_number to the single always-kept field list, so the one trimming rule now covers both returns and warranty claims."
+        },
+        {
+          "id": "C",
+          "text": "Define the kept fields per workflow (returns, warranty, billing) so each lookup is trimmed to what the current task needs before it enters context."
+        },
+        {
+          "id": "D",
+          "text": "Keep the trimmed result, and tell the agent in the system prompt to call lookup_order again for the full record whenever a field seems absent."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Trimming is right, but **relevance depends on the task**. A single global allow-list tuned for returns removes fields that other workflows need. Making the kept fields **workflow-specific** keeps each conversation's context small and high-signal while giving every flow the data it needs. This applies the guide's example (\"keeping only return-relevant fields from order lookups\") correctly to more than one workflow.",
+      "whyWrong": {
+        "A": "Removing the trim brings back the 40+ field bloat and the loss of precision that trimming solved. It throws out the fix instead of scoping it.",
+        "B": "It fixes today's report, but a single global list grows with every workflow until it is close to the full record again, and every conversation then pays for every workflow's fields. The relevance problem is per task, not per field.",
+        "D": "The agent already concluded the data was missing instead of asking again, so this relies on the model noticing. When it does, the full record enters context anyway."
+      },
+      "difficulty": 3,
+      "mindset": "Trim to what the current task needs, not to one fixed list; relevance is per workflow.",
+      "tags": [
+        "tool-output-trimming",
+        "context-budget",
+        "customer-support"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents",
+        "https://platform.claude.com/docs/en/build-with-claude/context-windows"
+      ]
+    },
+    {
+      "id": "f-d5-x1-004",
+      "taskStatementId": "5.1",
+      "scenario": "You are building a structured data extraction system using Claude. The system extracts information from unstructured documents, validates the output using JavaScript Object Notation (JSON) schemas, and maintains high accuracy. It must handle edge cases gracefully and integrate with downstream systems.",
+      "stem": "Each request contains, in this order: the instructions and a list of 25 fields to extract, then a full 120-page supplier agreement. Fields whose evidence is on the first and last pages are extracted reliably. Fields that depend on clauses in the middle, such as the liability cap on page 60, are often returned as null or are wrong. Which TWO changes are MOST likely to improve accuracy? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Include the full agreement twice in the same request, so the middle sections also appear in a second position that the model attends to better."
+        },
+        {
+          "id": "B",
+          "text": "Put the agreement at the top of the prompt inside document tags, and place the instructions and the field list after it at the end."
+        },
+        {
+          "id": "C",
+          "text": "Move to a model with a larger context window, since a 120-page agreement is close enough to the limit to weaken the model's attention."
+        },
+        {
+          "id": "D",
+          "text": "Ask Claude first to quote the passages relevant to each field into a tagged section, and then fill each field from those quotes."
+        },
+        {
+          "id": "E",
+          "text": "Raise max_tokens a lot, so the model has more room to read the middle sections carefully before it writes the extraction output."
+        }
+      ],
+      "correct": [
+        "B",
+        "D"
+      ],
+      "explanation": "Anthropic's long-context guidance (for inputs of roughly 20k+ tokens) gives two direct fixes. **Put the long document at the top and the query or instructions at the end**, which the docs say improves performance across models. **Ask Claude to pull out relevant quotes first** and then work from them, which brings middle-of-document evidence to the front before the answer is written. Both target the position effect: material in the middle of a long input is the most likely to be missed.",
+      "whyWrong": {
+        "A": "Sending the document twice doubles input cost, and the middle pages are still in the middle of each copy. It is a workaround with no documented benefit.",
+        "C": "A 120-page agreement fits easily within current context windows. The problem is position and attention, which a bigger window does not change.",
+        "E": "max_tokens limits the length of the output. It has no effect on how the input is read."
+      },
+      "difficulty": 2,
+      "mindset": "Fix position effects with layout and quote-first grounding, not with more capacity.",
+      "tags": [
+        "lost-in-the-middle",
+        "long-context",
+        "extraction",
+        "prompt-structure"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices",
+        "https://platform.claude.com/docs/en/build-with-claude/context-windows"
+      ]
+    },
+    {
+      "id": "f-d5-x1-005",
+      "taskStatementId": "5.1",
+      "stem": "Developers on the team run multi-hour Claude Code sessions on a large migration. Whenever auto-compaction triggers, the summary keeps the overall goal but drops the exact list of files already migrated and the module's test command, so Claude re-edits finished files and runs the wrong tests. Several developers hit this every day. Which fix is MOST reliable with the LEAST ongoing effort?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Ask every developer to run /compact with focus instructions, such as \"keep the migrated-file list and the test command\", before auto-compaction can trigger."
+        },
+        {
+          "id": "B",
+          "text": "Ask developers to run /clear whenever the context gets large and to re-explain the task from the beginning, so no summary step is ever needed."
+        },
+        {
+          "id": "C",
+          "text": "Have Claude restate the migrated-file list and the test command at the end of every reply, so the latest copy always sits in the most recent messages."
+        },
+        {
+          "id": "D",
+          "text": "Add an instruction to the project's CLAUDE.md stating what compaction must preserve, such as the full list of modified files and any test commands."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "Compaction is lossy by design, and what it keeps can be steered. Claude Code's guidance is to **customize compaction behavior in CLAUDE.md** with instructions such as \"when compacting, always preserve the full list of modified files and any test commands\". A project CLAUDE.md is shared through source control, is loaded in every session, and is re-read after compaction, so the rule applies for every developer on every compaction with no one having to remember it.",
+      "whyWrong": {
+        "A": "A /compact with focus instructions works for one compaction, but it depends on each developer remembering to run it in time, every session. Forget once and the default summary drops the list again.",
+        "B": "/clear throws away the migration state entirely. The developer then has to rebuild the context that compaction was supposed to carry forward, which is worse than a lossy summary.",
+        "C": "Restating state in every reply costs output tokens, can drift between restatements, and is itself conversation content that the summarizer may condense. It is a prompt habit doing a configuration's job."
+      },
+      "difficulty": 2,
+      "mindset": "When a lossy step keeps dropping the same facts, configure what it must preserve once, for everyone.",
+      "tags": [
+        "compaction",
+        "claude-md",
+        "claude-code",
+        "context-preservation"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/best-practices",
+        "https://code.claude.com/docs/en/memory"
+      ],
+      "scenario": "You are using Claude Code to accelerate software development. Your team uses it for code generation, refactoring, debugging, and documentation. You need to integrate it into your development workflow with custom slash commands, CLAUDE.md configurations, and understand when to use plan mode vs direct execution."
+    },
+    {
+      "id": "f-d5-x1-006",
+      "taskStatementId": "5.1",
+      "stem": "A long-running agent built on the Messages API calls a log-search tool dozens of times per session. Each result is several thousand tokens and is only useful to the step that asked for it. The agent records its conclusions in files through the memory tool. After a few hours, requests get close to the context limit and answer quality drops. The team wants to keep the user's instructions and the agent's reasoning while removing the stale bulk. Which approach fits BEST?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Use context editing to clear older tool results automatically past a token threshold, keeping the most recent ones, with conclusions already in memory files."
+        },
+        {
+          "id": "B",
+          "text": "Restart the conversation every hour with only the original system prompt, so each new session begins with an empty context and no earlier tool results."
+        },
+        {
+          "id": "C",
+          "text": "Add a system-prompt rule telling the agent to stop calling the log-search tool after a fixed number of calls in any one session, whatever the task needs."
+        },
+        {
+          "id": "D",
+          "text": "Move to the model with the largest context window available, so several hours of tool results can stay in context without anything being cleared."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The bulk is in **old tool results** that have already been used. **Context editing** (tool-result clearing) removes older tool results on the server once a threshold is passed and keeps the most recent ones, so instructions and the dialogue stay in place. Anthropic recommends pairing it with the **memory tool**, so conclusions are saved to files the agent can read again after the raw results are cleared. This fits the context-engineering advice to clear tool results once they've done their job.",
+      "whyWrong": {
+        "B": "An hourly restart throws away the user's instructions and the agent's reasoning, which are exactly what the team wants to keep.",
+        "C": "A fixed call limit stops the agent from doing its work. The problem is stale results piling up, not the number of searches.",
+        "D": "A bigger window delays the limit but keeps the noise. Recall drops as context grows (context rot), and every request costs more."
+      },
+      "difficulty": 3,
+      "mindset": "Clear what has served its purpose; persist what must survive outside the window.",
+      "tags": [
+        "context-editing",
+        "tool-result-clearing",
+        "memory-tool",
+        "long-running-agents"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/context-editing",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/memory-tool",
+        "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents"
+      ]
+    },
+    {
+      "id": "f-d5-x1-007",
+      "taskStatementId": "5.1",
+      "scenario": "You are building a customer support resolution agent using the Claude Agent SDK. The agent handles high-ambiguity requests like returns, billing disputes, and account issues. It has access to your backend systems through custom Model Context Protocol (MCP) tools (get_customer, lookup_order, process_refund, escalate_to_human). Your target is 80%+ first-contact resolution while knowing when to escalate.",
+      "stem": "To stop amounts and dates being lost, the team adds a case facts block at the very top of the system prompt, before the long, unchanging refund policy and tool guidance. Facts are now preserved correctly. However, cost and latency per turn have gone up noticeably, because prompt caching no longer gets cache hits on the policy section. Which change BEST keeps both benefits?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Keep the stable policy and guidance first as the cached prefix, and place the case facts block after them, next to the recent conversation turns."
+        },
+        {
+          "id": "B",
+          "text": "Remove the case facts block entirely and rely on the conversation summary again, since prompt caching saves more than the facts block costs in extra tokens."
+        },
+        {
+          "id": "C",
+          "text": "Refresh the case facts block only every tenth turn, so the request prefix stays identical for longer and most requests still get a cache hit."
+        },
+        {
+          "id": "D",
+          "text": "Shorten the refund policy section until it is small enough that missing the cache on every turn no longer adds meaningful cost to a request."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Prompt caching reuses an **identical prefix**. Content that changes per conversation, like a facts block, breaks the match for everything after it when it sits at the top. The usual layout is **stable content first** (tools, system instructions, policy) and **changing content last** (case facts, recent turns). That keeps the cache hits and still sends the facts on every request.",
+      "whyWrong": {
+        "B": "This returns to the original problem: summaries lose exact amounts and dates. You don't need to trade accuracy for cost.",
+        "C": "Refreshing only every tenth turn leaves the facts stale between refreshes, and stale facts produce wrong refunds.",
+        "D": "Cutting the policy to save cost removes guidance the agent needs, and the cache still misses because the facts block sits above the policy."
+      },
+      "difficulty": 3,
+      "mindset": "Static first, dynamic last: order the prompt so caching and fact preservation work together.",
+      "tags": [
+        "case-facts-block",
+        "prompt-caching",
+        "prompt-structure",
+        "customer-support"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
+        "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents"
+      ]
+    },
+    {
+      "id": "f-d5-x1-008",
+      "taskStatementId": "5.1",
+      "stem": "A support chatbot condenses older turns into a running summary to keep long chats within budget. Which detail from turn 3 is BOTH most important to resolving the case AND most likely to be blurred by that summarization?",
+      "options": [
+        {
+          "id": "A",
+          "text": "That the conversation is about a problem with an online order rather than a general question about store opening hours."
+        },
+        {
+          "id": "B",
+          "text": "That the customer greeted the agent politely and gave their first name at the very beginning of the conversation."
+        },
+        {
+          "id": "C",
+          "text": "That the customer will accept a partial refund of $38.50, but only if it is issued before 14 March at the latest."
+        },
+        {
+          "id": "D",
+          "text": "That the customer said they have shopped with the brand for several years and have generally liked the products."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Progressive summarization reliably keeps the **gist** (\"customer wants a partial refund\") and loses **specifics**: exact amounts, dates and conditions the customer set. The $38.50 figure and the 14 March deadline decide whether a resolution is acceptable, which is why such details belong in a persistent facts block and not only in the summary.",
+      "whyWrong": {
+        "A": "The general topic is what summaries keep best, and it is unlikely to be lost.",
+        "B": "A greeting and first name matter little to the outcome, and the name is usually available from the account anyway.",
+        "D": "Background about loyalty may be shortened, but losing it doesn't change which resolution is correct."
+      },
+      "difficulty": 1,
+      "mindset": "Summaries keep the gist and drop the numbers; protect the numbers.",
+      "tags": [
+        "progressive-summarization",
+        "case-facts-block",
+        "non-technical"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents",
+        "https://platform.claude.com/docs/en/build-with-claude/context-windows"
+      ]
+    },
+    {
+      "id": "f-d5-x1-009",
+      "taskStatementId": "5.1",
+      "stem": "When an agent's conversation gets close to the context limit, its harness deletes the oldest messages until the request fits. Two problems follow. Some requests are rejected because a tool result is left in the history without the tool call that produced it. And the agent forgets the refund amount the customer gave in the first turn. Which redesign is MOST reliable?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Delete messages from the middle of the conversation instead of the oldest ones, since the model relies most on the beginning and end of its context."
+        },
+        {
+          "id": "B",
+          "text": "Trim tool calls and their results together, and keep transactional facts in a persistent block that is sent with every request, whatever gets trimmed."
+        },
+        {
+          "id": "C",
+          "text": "Raise the trimming threshold so messages are deleted only at 99% of the context window, which means old turns are removed far less often."
+        },
+        {
+          "id": "D",
+          "text": "Ask the agent to repeat the key facts in every reply, so that they always appear in the most recent messages and are never trimmed away."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Two separate failures need two structural fixes. First, the API expects each tool result to follow the assistant message that contains the matching tool call. Trimming has to treat a **tool call and its result as one unit**, or the request becomes invalid. Second, facts that the case depends on must not depend on which turns survive trimming. Put them in a **persistent facts block** that is sent every time.",
+      "whyWrong": {
+        "A": "Cutting from the middle can still split tool calls from their results and can still remove the turn with the amount. It misapplies the lost-in-the-middle idea.",
+        "C": "Running right up to the limit makes quality worse (context rot), and the same deletions still happen, only later.",
+        "D": "Restating facts every turn costs output tokens, and each restatement can drift slightly. It is a prompt habit doing the job of a data structure."
+      },
+      "difficulty": 2,
+      "mindset": "Trim in valid units and keep critical facts outside whatever gets trimmed.",
+      "tags": [
+        "context-truncation",
+        "tool-use",
+        "case-facts-block"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls",
+        "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents"
+      ]
+    },
+    {
+      "id": "f-d5-x1-010",
+      "taskStatementId": "5.2",
+      "scenario": "You are building a customer support resolution agent using the Claude Agent SDK. The agent handles high-ambiguity requests like returns, billing disputes, and account issues. It has access to your backend systems through custom Model Context Protocol (MCP) tools (get_customer, lookup_order, process_refund, escalate_to_human). Your target is 80%+ first-contact resolution while knowing when to escalate.",
+      "stem": "The agent correctly decides to escalate a billing dispute after two refund attempts have failed. Human agents complain that they have to reread the 50-turn transcript and often ask the customer again for details. Which TWO things should the escalate_to_human call pass so the human can act straight away? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "The model's self-rated confidence that the case needs a human, so that the human queue can be sorted by that score."
+        },
+        {
+          "id": "B",
+          "text": "The case facts: customer ID, order and charge identifiers, the disputed amount and the outcome the customer is asking for."
+        },
+        {
+          "id": "C",
+          "text": "A sentiment score for the whole conversation, so the human knows how upset the customer is before writing a first reply."
+        },
+        {
+          "id": "D",
+          "text": "The full raw transcript on its own, with no summary attached, so the human sees nothing that the model has filtered or condensed."
+        },
+        {
+          "id": "E",
+          "text": "What the agent has already tried, including the tool calls and their results, and the specific reason it is escalating now."
+        }
+      ],
+      "correct": [
+        "B",
+        "E"
+      ],
+      "explanation": "A good handoff lets the human **continue without starting again**. It needs the **facts of the case** (who, which order or charge, how much, what the customer wants) and the **history of attempts** (what was tried, what happened, and why the agent stopped). That way the customer isn't asked to repeat themselves and the human doesn't redo failed steps.",
+      "whyWrong": {
+        "A": "Self-rated confidence is poorly calibrated and doesn't help the human resolve anything. It is also a weak signal for prioritizing the queue.",
+        "C": "Knowing the customer is upset may help with tone, but it tells the human nothing about what to do. It is not one of the two most useful items.",
+        "D": "Making humans reread an unfiltered transcript is the current problem. A transcript can be linked, but on its own it is not a handoff."
+      },
+      "difficulty": 2,
+      "mindset": "Escalate with a structured handoff: facts plus what was tried, so nobody starts over.",
+      "tags": [
+        "escalation",
+        "handoff",
+        "customer-support"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/about-claude/use-case-guides/customer-support-chat",
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "f-d5-x1-011",
+      "taskStatementId": "5.2",
+      "stem": "Policy requires human approval for any refund over $500. A customer's $740 refund is clearly valid, and the agent explains that a specialist has to approve it. The customer replies: \"No. I've been passed around twice already, don't transfer me again. Just do it now.\" What should the agent do?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Process the refund now, because the customer has stated an explicit preference and explicit customer requests should be honored without further delay."
+        },
+        {
+          "id": "B",
+          "text": "Issue two separate refunds of $370 each so the customer receives the full amount now and no single refund crosses the $500 approval threshold."
+        },
+        {
+          "id": "C",
+          "text": "Tell the customer that the agent cannot complete this request and ask them to email the billing department, since a transfer is unwanted."
+        },
+        {
+          "id": "D",
+          "text": "Acknowledge the frustration, explain that approval is required at this amount, and hand off with the case facts and a recommendation so nothing is re-asked."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "Honoring a customer's explicit request applies to **who handles the case**, not to **whether a control applies**. A customer preference cannot grant the agent authority it does not have. The right move is to be honest about why approval is needed and to make the required escalation as painless as possible: pass the case facts, what has been verified and a clear recommendation (\"valid, approve $740\") so the specialist can approve in seconds and the customer repeats nothing. That respects the control and the customer's real complaint, which is being made to start over.",
+      "whyWrong": {
+        "A": "\"Honor explicit requests\" is about escalating promptly when a customer wants a person. It never means bypassing a financial control because the customer asked.",
+        "B": "Splitting a payment to stay under an approval limit is deliberate circumvention of a control. It is worse than a single policy breach, because it hides the breach from review.",
+        "C": "This is a dead end that leaves the customer with no progress, while the agent has an escalation tool that exists for exactly this case. Refusing is not the same as escalating."
+      },
+      "difficulty": 2,
+      "mindset": "Customer preference decides how smoothly you escalate, never whether a required control applies.",
+      "tags": [
+        "escalation",
+        "policy-controls",
+        "handoff",
+        "customer-support"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/about-claude/use-case-guides/customer-support-chat",
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ],
+      "scenario": "You are building a customer support resolution agent using the Claude Agent SDK. The agent handles high-ambiguity requests like returns, billing disputes, and account issues. It has access to your backend systems through custom Model Context Protocol (MCP) tools (get_customer, lookup_order, process_refund, escalate_to_human). Your target is 80%+ first-contact resolution while knowing when to escalate."
+    },
+    {
+      "id": "f-d5-x1-012",
+      "taskStatementId": "5.2",
+      "stem": "A verified customer writes: \"Cancel my order, I don't need it anymore.\" lookup_order shows two open orders. One was placed yesterday and hasn't shipped, so it can be cancelled. The other shipped two days ago and would need a return instead. What is the MOST appropriate next step?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Ask which order they mean, and briefly explain that one can be cancelled now while the other would need a return once it arrives."
+        },
+        {
+          "id": "B",
+          "text": "Cancel the unshipped order, because it is the only one that can technically be cancelled, and then confirm the cancellation to the customer."
+        },
+        {
+          "id": "C",
+          "text": "Cancel the unshipped order and also open a return for the shipped one, so that both possible meanings are handled in a single step."
+        },
+        {
+          "id": "D",
+          "text": "Escalate to a human, because the request matches more than one order and the agent should not have to choose between them itself."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "When a request could refer to more than one record, the agent should **ask a targeted clarifying question** and not guess. Explaining briefly what happens to each order helps the customer answer in one reply. One question resolves the ambiguity cheaply, and the agent can then finish the task itself.",
+      "whyWrong": {
+        "B": "Choosing the order that \"can technically be cancelled\" is a heuristic guess. If the customer meant the shipped order, the wrong order gets cancelled.",
+        "C": "This takes irreversible actions the customer never asked for, on at least one order they may want to keep.",
+        "D": "Ambiguity that one question can clear up is not a reason to escalate. Escalating here hurts first-contact resolution for no gain."
+      },
+      "difficulty": 1,
+      "mindset": "Ambiguous target? Ask one targeted question; never guess on an irreversible action.",
+      "tags": [
+        "ambiguity",
+        "clarifying-questions",
+        "customer-support"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents",
+        "https://platform.claude.com/docs/en/about-claude/use-case-guides/customer-support-chat"
+      ]
+    },
+    {
+      "id": "f-d5-x1-013",
+      "taskStatementId": "5.2",
+      "stem": "Written policy says: \"Defective items reported within 60 days are replaced with the same item.\" A customer reports a defective coffee grinder on day 20, but that model is discontinued and out of stock. The customer asks for a refund instead. Policy says nothing about what to do when a replacement isn't available. What should the support agent do?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Process a full refund, because it is the closest equivalent to the replacement the policy promises and the customer is clearly entitled to some remedy."
+        },
+        {
+          "id": "B",
+          "text": "Offer a similar current grinder model at the same price as the replacement, since that keeps to the spirit of the written replacement policy."
+        },
+        {
+          "id": "C",
+          "text": "Escalate to a human with the case facts, because policy covers replacement but says nothing about what to do when the item is unavailable."
+        },
+        {
+          "id": "D",
+          "text": "Tell the customer that the written policy only allows a replacement and ask them to check back in case the discontinued model returns to stock."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Policy covers the general situation (replace defective items) but is **silent on this particular case** (no replacement exists). That is a policy gap, and policy gaps are a valid escalation trigger. The agent should not invent a remedy, even a reasonable-sounding one. A human with authority decides, and the case facts let them decide quickly.",
+      "whyWrong": {
+        "A": "A refund may well be the right outcome, but deciding it means the agent is making policy. That call belongs to someone with the authority to grant an exception.",
+        "B": "Swapping in a different product is also an invented remedy that the written policy doesn't cover. It only looks safer.",
+        "D": "The model is discontinued, so it will never return to stock. This applies the policy rigidly and leaves the customer with no route forward."
+      },
+      "difficulty": 2,
+      "mindset": "When policy is silent, escalate; don't invent policy, however reasonable it sounds.",
+      "tags": [
+        "escalation",
+        "policy-gap",
+        "customer-support"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/about-claude/use-case-guides/customer-support-chat",
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "f-d5-x1-014",
+      "taskStatementId": "5.2",
+      "scenario": "You are using Claude Code to accelerate software development. Your team uses it for code generation, refactoring, debugging, and documentation. You need to integrate it into your development workflow with custom slash commands, CLAUDE.md configurations, and understand when to use plan mode vs direct execution.",
+      "stem": "A developer asks Claude Code: \"Remove the deprecated checkout flow.\" While exploring, Claude finds two code paths marked deprecated. One is a legacy v1 checkout that a partner integration still references. The other is an unused experimental one-click checkout. The request doesn't say which one is meant, and deleting the wrong one would break a live integration. What is the BEST way to handle this?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Delete both deprecated paths, since both carry the deprecated marker and the request asked for deprecated checkout code to be removed."
+        },
+        {
+          "id": "B",
+          "text": "Stop and ask the developer which path they mean, mentioning that v1 still has a live partner reference, before making any edits."
+        },
+        {
+          "id": "C",
+          "text": "Delete the unused one-click path, because nothing references it and it is therefore the safer choice, then report what was done."
+        },
+        {
+          "id": "D",
+          "text": "Delete the v1 path, since it is older and more likely to be what was meant, and rely on the test suite to catch any breakage."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "There are two reasonable readings of the request, and acting on the wrong one has a high cost (a broken partner integration). The right move is to **pause and ask a specific question**, and to share the finding that changes the decision (v1 is still in use). Anthropic's agent guidance describes agents checking in with the human when they hit blockers or uncertainty, instead of pressing on with a guess.",
+      "whyWrong": {
+        "A": "Deleting both would break the live partner integration. It takes the request literally and ignores a risk that is easy to see.",
+        "C": "Choosing the \"safer\" path is still a guess. If the developer meant v1, the task isn't done and the developer has been told it is.",
+        "D": "Choosing by age is a heuristic. Tests may not cover the partner integration, so breakage could reach production."
+      },
+      "difficulty": 2,
+      "mindset": "When intent is ambiguous and the action is costly to undo, ask before acting.",
+      "tags": [
+        "ambiguity",
+        "clarifying-questions",
+        "claude-code"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents",
+        "https://code.claude.com/docs/en/best-practices"
+      ]
+    },
+    {
+      "id": "f-d5-x1-015",
+      "taskStatementId": "5.2",
+      "scenario": "You are building a customer support resolution agent using the Claude Agent SDK. The agent handles high-ambiguity requests like returns, billing disputes, and account issues. It has access to your backend systems through custom Model Context Protocol (MCP) tools (get_customer, lookup_order, process_refund, escalate_to_human). Your target is 80%+ first-contact resolution while knowing when to escalate.",
+      "stem": "Reviews show the agent escalates most cases that involve three or more orders, such as partial refunds across several shipments, even though every step is covered by written policy and the tools support it. Its reasoning traces say things like \"this case is too complex to resolve safely.\" First-contact resolution is well below the 80% target. Which change is MOST effective?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Raise the agent's max_turns limit, so that it has enough steps to work through multi-order cases before it decides to give up."
+        },
+        {
+          "id": "B",
+          "text": "Add a sentiment check, so multi-order cases with calm customers are kept and only upset customers with complex cases are escalated."
+        },
+        {
+          "id": "C",
+          "text": "Have the agent rate each case's complexity from 1 to 10, and escalate only when that rating goes above a stricter threshold such as 9."
+        },
+        {
+          "id": "D",
+          "text": "State in the escalation criteria that complexity alone is no trigger, and add a few-shot example of a resolved multi-order case."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "The agent is treating **complexity** as an escalation trigger. Valid triggers are an explicit request for a human, a policy gap or exception, and no meaningful progress. A complex case that policy covers fully should be resolved. The proportionate fix is to **state the criteria explicitly** and show the boundary with a **few-shot example** of a hard-but-covered case being resolved.",
+      "whyWrong": {
+        "A": "The agent escalates by choice early in the case, not because it runs out of turns. More turns don't change that decision.",
+        "B": "Sentiment measures how the customer feels, not whether policy covers the case. It doesn't fix the mistaken complexity rule.",
+        "C": "Self-rated scores are poorly calibrated. Moving the threshold on a number the model makes up doesn't teach it the real boundary."
+      },
+      "difficulty": 3,
+      "mindset": "Complex is not the same as needing escalation; policy coverage decides.",
+      "tags": [
+        "escalation",
+        "few-shot",
+        "escalation-criteria",
+        "customer-support"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/about-claude/use-case-guides/customer-support-chat",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices"
+      ]
+    },
+    {
+      "id": "f-d5-x1-016",
+      "taskStatementId": "5.2",
+      "scenario": "You are building a customer support resolution agent using the Claude Agent SDK. The agent handles high-ambiguity requests like returns, billing disputes, and account issues. It has access to your backend systems through custom Model Context Protocol (MCP) tools (get_customer, lookup_order, process_refund, escalate_to_human). Your target is 80%+ first-contact resolution while knowing when to escalate.",
+      "stem": "Company policy requires a human to approve any refund over $500. The system prompt states this rule, but audits find a few refunds of $600 to $900 that the agent processed without approval, usually late in long conversations. Which TWO changes give the MOST reliable enforcement? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Repeat the $500 approval rule in capital letters at both the start and the end of the system prompt, so the agent is less likely to overlook it."
+        },
+        {
+          "id": "B",
+          "text": "Ask the agent to state its confidence that each refund is within policy, and block only the refunds where that stated confidence falls below 0.9."
+        },
+        {
+          "id": "C",
+          "text": "Enforce the limit in code: have process_refund, or a PreToolUse hook, reject amounts over $500 with an error telling the agent to escalate."
+        },
+        {
+          "id": "D",
+          "text": "When the check blocks a refund, route the case through escalate_to_human with the amount and the case facts, so a person can approve it."
+        },
+        {
+          "id": "E",
+          "text": "Add three few-shot examples to the prompt showing large refunds being escalated, so the agent sees the correct pattern demonstrated repeatedly."
+        }
+      ],
+      "correct": [
+        "C",
+        "D"
+      ],
+      "explanation": "A hard financial limit that **must never** be broken should not rely only on the model following a prompt, especially late in long contexts, where instructions get less attention. A **deterministic check** in the tool or a pre-tool-use hook blocks the action every time. Pairing it with a **defined escalation path** means a blocked refund becomes a proper human approval, not a dead end.",
+      "whyWrong": {
+        "A": "Stronger wording may reduce violations, but it is still probabilistic. The failures already happen with the rule present in the prompt.",
+        "B": "The agent was confidently wrong in exactly these cases. A self-rated score would let those refunds through.",
+        "E": "Examples help with judgment calls, but a fixed dollar rule needs a guarantee, not a better guess."
+      },
+      "difficulty": 3,
+      "mindset": "If a rule must always hold, enforce it in code and give the block a clear escalation path.",
+      "tags": [
+        "escalation",
+        "deterministic-guardrails",
+        "hooks",
+        "customer-support"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/hooks",
+        "https://code.claude.com/docs/en/hooks",
+        "https://platform.claude.com/docs/en/about-claude/use-case-guides/customer-support-chat"
+      ]
+    },
+    {
+      "id": "f-d5-x1-017",
+      "taskStatementId": "5.2",
+      "stem": "A customer in a logged-out chat gives the email jordan.k@example.com and asks to change the delivery address on their latest order. get_customer returns exactly one account for that email, but the name on it is \"Priya Kapoor\", and the customer introduced themselves as Jordan. What is the MOST appropriate next step?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Change the address, because the email matched exactly one account and an exact email match is enough to identify the account holder."
+        },
+        {
+          "id": "B",
+          "text": "Escalate to a human immediately, because any mismatch between the customer's stated details and the stored account details may indicate fraud."
+        },
+        {
+          "id": "C",
+          "text": "Explain the mismatch neutrally and ask for another identifier tied to the account, such as the order number, before making any change."
+        },
+        {
+          "id": "D",
+          "text": "Change the address, then email Priya Kapoor a notice afterwards so the account holder can object if the change was not authorized."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "A single match on one identifier does **not** settle identity when another detail conflicts with it. There are innocent explanations (a shared household account, a nickname), but redirecting a delivery is sensitive. The agent should **ask for an additional identifier** before acting. If verification still fails, that lack of progress becomes a reason to escalate.",
+      "whyWrong": {
+        "A": "This ignores a clear conflicting signal and could send someone else's delivery to a new address.",
+        "B": "A mismatch has many innocent explanations. One clarifying question should come first, and escalation is for when that doesn't resolve it.",
+        "D": "Notifying the owner after the change accepts the risk first and tries to catch the problem later. A misdirected parcel may not be recoverable."
+      },
+      "difficulty": 2,
+      "mindset": "Conflicting identifiers call for one more identifier, not a guess and not an instant escalation.",
+      "tags": [
+        "ambiguity",
+        "identity-verification",
+        "clarifying-questions"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/about-claude/use-case-guides/customer-support-chat",
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "f-d5-x1-018",
+      "taskStatementId": "5.2",
+      "scenario": "You are building a multi-agent research system using the Claude Agent SDK. A coordinator agent delegates to specialized subagents: one searches the web, one analyzes documents, one synthesizes findings, and one generates reports. The system researches topics and produces comprehensive, cited reports.",
+      "stem": "A user submits: \"Research how the new data rules affect companies like ours.\" The coordinator has no stored profile of the user's company, and \"the new data rules\" could refer to several regulations in different jurisdictions. A full research run starts several subagents and takes about 20 minutes. What should the coordinator do FIRST?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Launch subagents for every plausible regulation in parallel, so that the report covers whichever one the user actually meant."
+        },
+        {
+          "id": "B",
+          "text": "Ask the user one or two targeted questions, such as which regulation or region and what kind of company, before starting any subagents."
+        },
+        {
+          "id": "C",
+          "text": "Pick the regulation most discussed in recent news, research it, and state that assumption clearly at the top of the final report."
+        },
+        {
+          "id": "D",
+          "text": "Run the research with the request as written, and have the synthesis subagent note in the report that the scope of the request was unclear."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "The scope is unclear on two points (which rules, and what kind of company), and an expensive run is about to start. A couple of **targeted clarifying questions up front** cost the user seconds and save a 20-minute run that could answer the wrong question. Anthropic's agent guidance describes agents starting from a command or a discussion with the user, and going ahead on their own once the task is clear.",
+      "whyWrong": {
+        "A": "Researching every option multiplies cost and time, and the report still can't be tailored to a company type that was never identified.",
+        "C": "Stating the assumption is better than hiding it, but it is still a guess. If it's wrong, the whole run is wasted.",
+        "D": "Pointing out the ambiguity after spending the effort is the most expensive way to deal with it."
+      },
+      "difficulty": 2,
+      "mindset": "Resolve cheap-to-clarify ambiguity before launching expensive work.",
+      "tags": [
+        "ambiguity",
+        "clarifying-questions",
+        "multi-agent",
+        "research"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents",
+        "https://www.anthropic.com/engineering/multi-agent-research-system"
+      ]
+    }
+  ]
+}

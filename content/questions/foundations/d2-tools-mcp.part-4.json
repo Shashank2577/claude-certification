@@ -1,0 +1,778 @@
+{
+  "certId": "foundations",
+  "domainId": "d2-tools-mcp",
+  "questions": [
+    {
+      "id": "f-d2-x1-001",
+      "taskStatementId": "2.1",
+      "scenario": "Developer Productivity with Claude: You are building developer productivity tools with the Claude Agent SDK. The agent helps engineers explore unfamiliar codebases, understand legacy systems, generate boilerplate and automate repetitive tasks, using the built-in tools (Read, Write, Edit, Bash, Grep, Glob) plus MCP servers.",
+      "stem": "The team owns two MCP servers that the agent uses: one for the issue tracker and one for the internal engineering wiki. Each exposes a tool named `search` with the same description, \"Searches for items matching a query.\" Traces show the agent searching the wiki for ticket keys like PROJ-4821 and searching the tracker for architecture design docs. With the smallest change that fixes the cause at the tool-interface level, what should they do?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add a system prompt rule telling the agent to always search the tracker first and fall back to the wiki only when the tracker returns nothing relevant to the question."
+        },
+        {
+          "id": "B",
+          "text": "Give them service-specific names such as `tracker_search_issues` and `wiki_search_pages`, and have each description say what it covers and when to use the other."
+        },
+        {
+          "id": "C",
+          "text": "Put both servers behind a gateway that exposes a single shared `search` tool, sends every query to both backends and merges the two result lists before replying."
+        },
+        {
+          "id": "D",
+          "text": "Add several few-shot examples to the system prompt that show ticket-key queries going to the tracker and design-doc questions going to the wiki."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Claude chooses tools from their **names and descriptions**. Two tools called `search` with identical one-line descriptions give it nothing to tell them apart. Anthropic's tool-writing guidance recommends **namespacing** related tools by service or resource (for example `asana_search`, `jira_search`) and writing descriptions that state what each tool covers and when to use an alternative. The Agent SDK does prefix MCP tools with their server key (`mcp__tracker__search`, `mcp__wiki__search`), but a prefix alone doesn't say which store holds tickets and which holds design docs; the description is what explains the difference. This removes the overlap at its source with no new components.",
+      "whyWrong": {
+        "A": "A fixed search order is a prompt workaround. It wastes a call on every wiki question and still fails when the tracker returns loosely related hits.",
+        "C": "A fan-out gateway is new infrastructure that doubles backend load and floods the context with mixed results, while the descriptions stay ambiguous.",
+        "D": "Few-shot examples add tokens to every request and only cover the cases you thought of. The tool interface stays ambiguous."
+      },
+      "difficulty": 2,
+      "mindset": "When two tools look identical to the model, fix the names and descriptions before adding prompts or plumbing.",
+      "tags": [
+        "tool-naming",
+        "namespacing",
+        "tool-descriptions",
+        "misrouting"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/writing-tools-for-agents",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools"
+      ]
+    },
+    {
+      "id": "f-d2-x1-002",
+      "taskStatementId": "2.1",
+      "scenario": "Customer Support Resolution Agent: You are building a customer support resolution agent with the Claude Agent SDK. It handles high-ambiguity requests such as returns, billing disputes and account issues, and reaches your backend through custom MCP tools (get_customer, lookup_order, process_refund, escalate_to_human). The target is 80%+ first-contact resolution while still knowing when to escalate.",
+      "stem": "`lookup_order` currently returns the raw order record: about 60 fields, including internal warehouse and carrier UUIDs and both `ship_date` and a deprecated `ship_date_v1`. Transcripts show the agent sometimes quoting the deprecated date to customers, and long conversations fill up with order payloads. Which TWO changes to the tool's output design will help MOST? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add a system prompt rule telling the agent to ignore any field whose name ends in `_v1` and to read only the current fields of each record."
+        },
+        {
+          "id": "B",
+          "text": "Move the support agent to a model with a much larger context window so that full 60-field order records no longer crowd out the rest of the conversation."
+        },
+        {
+          "id": "C",
+          "text": "Return a curated set of high-signal fields with clear names (status, ship date, items by name) plus the order ID needed for follow-up calls."
+        },
+        {
+          "id": "D",
+          "text": "Add a second tool, `summarize_order`, that the agent must call after every `lookup_order` call to condense the raw record into a short summary."
+        },
+        {
+          "id": "E",
+          "text": "Add an optional `response_format` parameter with values like \"concise\" (the default) and \"detailed\" for the rare cases that need the full record."
+        }
+      ],
+      "correct": [
+        "C",
+        "E"
+      ],
+      "explanation": "Tool **output** is part of the interface. Anthropic's guidance is to return **high-signal information**, prefer meaningful names over cryptic identifiers, and keep identifiers that downstream calls actually need. Removing the deprecated field and internal UUIDs from the default response removes the source of the wrong date and shrinks the payload. A `response_format` option (concise vs detailed) keeps the full record available when it is genuinely needed, without paying for it on every call.",
+      "whyWrong": {
+        "A": "The confusing field still reaches the model on every call. A prompt rule is a weaker fix than not returning the field.",
+        "B": "A bigger context window does not stop the agent reading the deprecated date, and it keeps paying for all 60 fields per call.",
+        "D": "An extra tool call per lookup adds latency and cost and still sends the raw record into context first."
+      },
+      "difficulty": 2,
+      "mindset": "Design what a tool returns, not just what it accepts: give the agent the fields it should reason with.",
+      "tags": [
+        "tool-output",
+        "response-format",
+        "token-efficiency",
+        "semantic-identifiers"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/writing-tools-for-agents"
+      ]
+    },
+    {
+      "id": "f-d2-x1-003",
+      "taskStatementId": "2.1",
+      "scenario": "Multi-Agent Research System: You are building a multi-agent research system with the Claude Agent SDK. A coordinator delegates to specialized subagents (web search, document analysis, synthesis, report generation) and the system produces comprehensive, cited reports.",
+      "stem": "The web-search subagent's `search_archive` tool returns every match. Broad queries such as \"climate policy\" return about 3,000 entries (roughly 80k tokens), after which the subagent loses track of its instructions and sends incomplete results to the coordinator. Which change is MOST effective at the tool level, with no new components?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Return the top 20 results plus the total match count by default, accept page and filter parameters, and, when output is cut off, add a note suggesting a narrower query."
+        },
+        {
+          "id": "B",
+          "text": "Move the web-search subagent to a model with a larger context window so that even the broadest archive queries fit alongside its instructions and earlier results."
+        },
+        {
+          "id": "C",
+          "text": "Add a line to the subagent's system prompt telling it to always write narrow, specific queries so the archive never returns very large result sets for any search."
+        },
+        {
+          "id": "D",
+          "text": "Have the coordinator break every research topic into many narrow sub-queries before dispatching them, so that no single search returns too much data."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Anthropic recommends building **token efficiency into the tool**: pagination, filtering and truncation with sensible defaults, and when output is truncated, **steering the agent** with a short instruction toward a more targeted query. This makes every caller safe by default and teaches the agent how to get more if it needs it.",
+      "whyWrong": {
+        "B": "A larger window postpones the problem and pays for thousands of low-value entries on every broad query.",
+        "C": "A prompt-only rule is probabilistic. One broad query still floods the context, because the tool has no limit.",
+        "D": "Pre-splitting every topic is over-engineered. It adds coordinator work and calls for every topic while the tool remains unbounded."
+      },
+      "difficulty": 3,
+      "mindset": "Make the tool safe by default: page, filter, truncate and tell the agent how to narrow.",
+      "tags": [
+        "pagination",
+        "truncation",
+        "token-efficiency",
+        "tool-output"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/writing-tools-for-agents"
+      ]
+    },
+    {
+      "id": "f-d2-x1-004",
+      "taskStatementId": "2.1",
+      "scenario": "Claude Code for Continuous Integration: You are integrating Claude Code into your CI/CD pipeline. It runs automated code reviews, generates test cases and posts feedback on pull requests. Feedback must be actionable, with few false positives.",
+      "stem": "The review agent has two tools: `review_diff` for normal review and `run_security_scan`, a deep analyzer that adds about 12 minutes per run. The system prompt says: \"If the pull request mentions security, run the security scan.\" The scan now runs on doc-only PRs whose changelog mentions \"security\", and skips a PR that rewrote the login middleware without using the word. The team wants scans where they matter without adding time to PRs that don't need them. What should they do?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Extend the system prompt rule with more trigger words such as \"auth\", \"token\", \"password\" and \"crypto\", so that more risky pull requests match."
+        },
+        {
+          "id": "B",
+          "text": "Add the sentence \"Use only when necessary\" to the `run_security_scan` description so the agent becomes more careful and selective about calling it."
+        },
+        {
+          "id": "C",
+          "text": "Replace the keyword rule with criteria about what the diff changes (auth, input handling, crypto, dependencies), placed in the scan tool's description."
+        },
+        {
+          "id": "D",
+          "text": "Remove the condition from the prompt and have the pipeline run the security scan on every pull request, so that no risky change is ever missed by the agent."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "The system prompt ties a **keyword** to a tool, so selection follows the word \"security\" rather than the risk in the change. The exam guide calls out reviewing system prompts for keyword-sensitive instructions that override good tool descriptions. The fix is to describe *when* the scan is warranted in terms of the actual change, and keep that guidance with the tool's description, where Claude looks when choosing tools.",
+      "whyWrong": {
+        "A": "More keywords keep the same flawed mechanism. Doc PRs that mention \"token\" will trigger it and risky changes without those words will still be missed.",
+        "B": "A vague \"only when necessary\" gives no boundary, and the keyword rule in the system prompt still drives the choice.",
+        "D": "Pipeline scans add 12 minutes to doc-only changes, which the requirement rules out."
+      },
+      "difficulty": 2,
+      "mindset": "Check the system prompt for keyword triggers that hijack tool selection; describe conditions, not words.",
+      "tags": [
+        "system-prompt",
+        "keyword-sensitivity",
+        "tool-selection",
+        "ci"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools",
+        "https://www.anthropic.com/engineering/writing-tools-for-agents"
+      ]
+    },
+    {
+      "id": "f-d2-x1-005",
+      "taskStatementId": "2.1",
+      "stem": "A support operations lead is writing the description for a new `check_return_eligibility` tool. A separate `check_exchange_eligibility` tool already exists. Which description will MOST improve how reliably Claude selects and calls this tool?",
+      "options": [
+        {
+          "id": "A",
+          "text": "\"Return eligibility checker. Accepts an order identifier and checks it. Useful for many kinds of customer order situations, so call it whenever an order comes up.\""
+        },
+        {
+          "id": "B",
+          "text": "\"IMPORTANT: always call this tool first in every order conversation, before any other tool, even when the customer has not asked about a return.\""
+        },
+        {
+          "id": "C",
+          "text": "\"Wraps GET /v2/returns/eligibility on the returns service, joins the policy table, and caches each eligibility result in Redis for ten minutes.\""
+        },
+        {
+          "id": "D",
+          "text": "\"Checks whether an order can be returned under current policy. Input: order_id like ORD-123456. Returns eligible flag, reason and last return date. Not for exchanges.\""
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "Good descriptions say **what the tool does, what input it expects (with format), what it returns, and when not to use it** relative to similar tools. Option D does all four in a few sentences, which is what the tool-definition docs describe as the most important factor in tool performance.",
+      "whyWrong": {
+        "A": "Vague purpose, no input format, and \"call it whenever an order comes up\" invites overuse and overlaps with the exchange tool.",
+        "B": "Shouting \"always call first\" forces needless calls and says nothing about inputs, outputs or boundaries.",
+        "C": "Implementation details (endpoint, joins, cache) don't help the model decide when to use the tool or how to fill its inputs."
+      },
+      "difficulty": 1,
+      "mindset": "A description should tell the model when to use the tool, how to call it and what comes back.",
+      "tags": [
+        "tool-descriptions",
+        "boundaries",
+        "input-format"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools"
+      ]
+    },
+    {
+      "id": "f-d2-x1-006",
+      "taskStatementId": "2.1",
+      "scenario": "Multi-Agent Research System: You are building a multi-agent research system with the Claude Agent SDK. A coordinator delegates to specialized subagents (web search, document analysis, synthesis, report generation) and the system produces comprehensive, cited reports.",
+      "stem": "The team has rewritten the descriptions of the document-analysis and web-search subagents' tools. Before rolling the change out, they want solid evidence that tool selection actually improved, at reasonable effort. Which TWO steps are MOST effective? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Ask Claude to score each new description from 1 to 10 for clarity and completeness, and ship the change once every description scores 8 or higher."
+        },
+        {
+          "id": "B",
+          "text": "Run a set of realistic multi-step research tasks on the old and new versions, comparing tool-selection accuracy, call counts, tool errors and tokens."
+        },
+        {
+          "id": "C",
+          "text": "Call each tool once by hand with a typical input, to confirm that it still runs and returns valid output on its own after the description change."
+        },
+        {
+          "id": "D",
+          "text": "Ship the new descriptions to production and track, over the next month, whether readers of the final reports send in fewer complaints about the agents' answers."
+        },
+        {
+          "id": "E",
+          "text": "Read the eval transcripts, or have Claude analyze them, to find where agents still hesitate or pick the wrong tool, then refine and re-run."
+        }
+      ],
+      "correct": [
+        "B",
+        "E"
+      ],
+      "explanation": "Anthropic's tool-writing guidance is **evaluation-driven**: build realistic tasks that need multiple tool calls, measure outcomes such as accuracy, number of calls, errors and tokens, then **study the transcripts** (Claude can help analyze them) to see where tools confuse the agent, refine, and re-run. Comparing old against new on the same tasks gives real evidence.",
+      "whyWrong": {
+        "A": "A self-rating of how clear a description reads is not a measurement of how the agent actually behaves with it.",
+        "C": "A manual call checks that the tool runs, not that the agent chooses it correctly among similar tools.",
+        "D": "Waiting for complaint metrics is slow and noisy, and it only shows problems after users have been hurt."
+      },
+      "difficulty": 3,
+      "mindset": "Prove tool changes with realistic evals and transcript review, not opinions.",
+      "tags": [
+        "evaluation",
+        "tool-descriptions",
+        "iteration",
+        "transcripts"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/writing-tools-for-agents"
+      ]
+    },
+    {
+      "id": "f-d2-x1-007",
+      "taskStatementId": "2.1",
+      "scenario": "Customer Support Resolution Agent: You are building a customer support resolution agent with the Claude Agent SDK. It handles high-ambiguity requests such as returns, billing disputes and account issues, and reaches your backend through custom MCP tools (get_customer, lookup_order, process_refund, escalate_to_human). The target is 80%+ first-contact resolution while still knowing when to escalate.",
+      "stem": "`get_customer` has a clear description and the agent selects it correctly. However, it sometimes overlooks the customer's loyalty tier, which is buried deep in a long response, and so misses tier-based refund rules. A teammate proposes splitting the tool into six tools: `get_customer_email`, `get_customer_phone`, `get_customer_address`, `get_customer_tier`, `get_customer_payment_methods` and `get_customer_history`. What is the BEST response?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Accept the split, because purpose-specific tools with narrow contracts always improve tool-selection accuracy compared with a single broader tool."
+        },
+        {
+          "id": "B",
+          "text": "Keep the single tool and make its response put decision-relevant fields such as loyalty tier and eligibility flags first, with clear names."
+        },
+        {
+          "id": "C",
+          "text": "Accept the split and add a planner step that works out which of the six customer tools each request needs before the agent starts work."
+        },
+        {
+          "id": "D",
+          "text": "Keep the tool as it is and add a system prompt rule telling the agent to re-read the whole customer record twice before composing an answer."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Splitting is the right move when one tool does **several different jobs** with unclear output (like a generic `analyze_document`). Here the tool already has one coherent purpose and is selected correctly; the problem is **output design**. Six tools would add selection decisions and extra calls without fixing the cause. Surfacing high-signal fields clearly in the response is the targeted fix.",
+      "whyWrong": {
+        "A": "A single broader tool is not automatically worse. Over-fragmenting a coherent tool adds decisions and calls, which can lower reliability.",
+        "C": "A planner over six fragmented tools is over-engineered and adds latency for a problem in the response format.",
+        "D": "Re-reading the same cluttered output is a prompt-only workaround that costs tokens and stays unreliable."
+      },
+      "difficulty": 3,
+      "mindset": "Split tools with mixed jobs; fix the output of tools that already have one clear job.",
+      "tags": [
+        "tool-granularity",
+        "over-splitting",
+        "tool-output",
+        "trade-offs"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/writing-tools-for-agents",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools"
+      ]
+    },
+    {
+      "id": "f-d2-x1-008",
+      "taskStatementId": "2.1",
+      "scenario": "Customer Support Resolution Agent: You are building a customer support resolution agent with the Claude Agent SDK. It handles high-ambiguity requests such as returns, billing disputes and account issues, and reaches your backend through custom MCP tools (get_customer, lookup_order, process_refund, escalate_to_human). The target is 80%+ first-contact resolution while still knowing when to escalate.",
+      "stem": "`escalate_to_human` takes a free-text `priority` string. The agent sends values such as \"urgent\", \"P1\", \"HIGH!!\" and \"normal-ish\", and the routing system drops tickets with values it doesn't recognize. What is the MOST reliable fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add a sentence to the system prompt that lists the four priority words the routing system accepts, and instruct the agent to use only those."
+        },
+        {
+          "id": "B",
+          "text": "Ask the agent to double-check the priority value it has chosen against the routing rules before every call to `escalate_to_human` and correct any mismatch."
+        },
+        {
+          "id": "C",
+          "text": "Define `priority` in the input schema as an enum of the accepted values with a note on when each applies, and have the server reject other values."
+        },
+        {
+          "id": "D",
+          "text": "Add a server-side step that maps whatever text the agent sends onto the nearest accepted priority value, using a maintained list of synonyms and spellings."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "When a parameter has a fixed set of valid values, put that constraint **in the input schema** (an `enum`) and explain each value in the parameter description. Claude reads the schema on every call, so the allowed set travels with the tool instead of living in a prompt it may forget, and the MCP spec requires servers to validate inputs, so a stray value becomes a clear validation error rather than a silently dropped ticket. (If you define tools directly against the Messages API, `strict: true` goes further and guarantees schema-valid inputs.) This is an interface fix, not a hope.",
+      "whyWrong": {
+        "A": "A prompt list helps but is probabilistic, and the schema still advertises a free string, so the tool contract itself stays loose.",
+        "B": "Self-checking before every call adds tokens and is still probabilistic. It doesn't make invalid values impossible.",
+        "D": "A synonym mapper guesses intent after the fact (is \"normal-ish\" normal or low?) and hides an interface that remains loose."
+      },
+      "difficulty": 1,
+      "mindset": "Encode fixed choices in the schema; don't ask the model to remember them.",
+      "tags": [
+        "input-schema",
+        "enum",
+        "strict-tool-use",
+        "parameters"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools"
+      ]
+    },
+    {
+      "id": "f-d2-x1-009",
+      "taskStatementId": "2.3",
+      "stem": "A team calls the Messages API directly with several order tools. Traces show Claude sometimes returns `cancel_order` and `issue_store_credit` as two `tool_use` blocks in the same response, and the order system cannot safely apply two writes from one turn. The team wants Claude to request at most one tool per response while still being free to answer in plain text when no tool is needed, for example to ask a clarifying question. Which configuration meets both requirements?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Set `tool_choice` to `{\"type\": \"auto\", \"disable_parallel_tool_use\": true}`, so each response contains at most one tool call or none."
+        },
+        {
+          "id": "B",
+          "text": "Set `tool_choice` to `{\"type\": \"any\", \"disable_parallel_tool_use\": true}`, so each response contains exactly one call to one of the tools."
+        },
+        {
+          "id": "C",
+          "text": "Set `tool_choice` to `{\"type\": \"none\"}` for any turn where the customer might be asking for a cancellation or a store credit."
+        },
+        {
+          "id": "D",
+          "text": "Keep `tool_choice` at its default and add `disable_parallel_tool_use: true` as a separate top-level field of the request body."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Parallel tool use is on by default. The `disable_parallel_tool_use` flag goes **inside the `tool_choice` object**, and its effect depends on the type: with `auto` Claude calls **at most one** tool per response and can still reply in plain text; with `any` or `tool` it calls **exactly one** tool. Only `auto` with the flag meets both requirements. (The app should still return a `tool_result` for every `tool_use` block it receives.)",
+      "whyWrong": {
+        "B": "`any` forces a tool call on every response, so Claude can no longer reply in plain text or ask a clarifying question. Some newer models also reject `any` and `tool` outright.",
+        "C": "`none` stops Claude from calling any tool on those turns, so the cancellation or credit can never happen, and the team would have to guess in advance which turns need it.",
+        "D": "The docs state that `disable_parallel_tool_use` is not a top-level request parameter; it is set inside the `tool_choice` object."
+      },
+      "difficulty": 2,
+      "mindset": "Configure tool-call behavior with the documented tool_choice options, picking the one that leaves the model free where it should stay free.",
+      "tags": [
+        "tool_choice",
+        "disable_parallel_tool_use",
+        "parallel-tool-use",
+        "auto"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/parallel-tool-use",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools"
+      ]
+    },
+    {
+      "id": "f-d2-x1-010",
+      "taskStatementId": "2.2",
+      "scenario": "Developer Productivity with Claude: You are building developer productivity tools with the Claude Agent SDK. The agent helps engineers explore unfamiliar codebases, understand legacy systems, generate boilerplate and automate repetitive tasks, using the built-in tools (Read, Write, Edit, Bash, Grep, Glob) plus MCP servers.",
+      "stem": "An in-process custom tool built with the Agent SDK lets its handler throw raw exceptions, for example `KeyError: 'sku'` when a record is missing a field. A teammate says every handler must be wrapped in try/catch \"because an uncaught exception ends the agent run\". Which statement is MOST accurate?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The teammate is right: an uncaught handler exception ends the query with an error result, so the conversation is lost unless every handler is wrapped."
+        },
+        {
+          "id": "B",
+          "text": "Uncaught exceptions are silently dropped and Claude receives an empty successful result, so wrapping is needed only to make failures visible at all."
+        },
+        {
+          "id": "C",
+          "text": "The SDK retries the handler automatically a few times after an uncaught exception, so wrapping only matters for errors that aren't retryable."
+        },
+        {
+          "id": "D",
+          "text": "The agent loop continues and Claude sees the raw exception text; catching it and returning `isError: true` lets you say exactly what failed and what to try next."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "Per the Agent SDK custom-tools docs, the in-process MCP server **catches uncaught exceptions and returns them as error results carrying the raw message**; the agent loop continues. Catching the error yourself and returning `isError: true` lets you **compose** what Claude reads: which request failed, the error category, whether to retry and what to try instead. `KeyError: 'sku'` gives Claude almost nothing to act on.",
+      "whyWrong": {
+        "A": "The docs state a handler error doesn't stop the agent loop. The reason to catch errors is message quality, not survival.",
+        "B": "Failures are not hidden as successes. The raw exception message reaches Claude as an error result.",
+        "C": "The docs describe no automatic handler retry: the exception becomes an error result that Claude reads, and Claude (or your own code) decides whether to retry."
+      },
+      "difficulty": 2,
+      "mindset": "Own the error message the agent reads; a raw exception string is not a recovery plan.",
+      "tags": [
+        "isError",
+        "agent-sdk",
+        "custom-tools",
+        "exceptions"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/custom-tools",
+        "https://modelcontextprotocol.io/specification/2025-06-18/server/tools"
+      ]
+    },
+    {
+      "id": "f-d2-x1-011",
+      "taskStatementId": "2.2",
+      "scenario": "Customer Support Resolution Agent: You are building a customer support resolution agent with the Claude Agent SDK. It handles high-ambiguity requests such as returns, billing disputes and account issues, and reaches your backend through custom MCP tools (get_customer, lookup_order, process_refund, escalate_to_human). The target is 80%+ first-contact resolution while still knowing when to escalate.",
+      "stem": "`process_refund` calls a chargeback-reversal API that the MCP server's service account is not authorized to use. Today the tool returns \"Request failed\", and the agent retries several times before telling the customer to try again tomorrow. Which TWO elements should the tool's error response include? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "`errorCategory: \"permission\"` and `isRetryable: false`, so the agent knows that repeating the same call cannot succeed."
+        },
+        {
+          "id": "B",
+          "text": "The service account's full access token and its granted scope list, so the agent can work out for itself which permission is missing."
+        },
+        {
+          "id": "C",
+          "text": "A description saying this action needs a staff member with chargeback authority and that `escalate_to_human` is the next step."
+        },
+        {
+          "id": "D",
+          "text": "`errorCategory: \"transient\"` and `isRetryable: true`, since an administrator might grant the missing permission later today."
+        },
+        {
+          "id": "E",
+          "text": "A message telling the customer that their own account lacks permission for refunds, which the agent passes on to them word for word."
+        }
+      ],
+      "correct": [
+        "A",
+        "C"
+      ],
+      "explanation": "A permission failure won't fix itself on retry, so the response should say so explicitly (**category + non-retryable flag**), and the human-readable description should point to the **appropriate recovery**: escalate to someone with authority. That turns wasted retries and a misleading \"try tomorrow\" into a clean handoff.",
+      "whyWrong": {
+        "B": "Putting credentials in tool output leaks secrets into the context and logs, and the agent can't change its own permissions anyway.",
+        "D": "Labelling a permission gap as transient invites pointless retries; permissions aren't granted in seconds.",
+        "E": "It's the service account, not the customer, that lacks access. Blaming the customer is inaccurate and harms trust."
+      },
+      "difficulty": 2,
+      "mindset": "Permission errors are non-retryable; tell the agent who can do it instead.",
+      "tags": [
+        "permission-errors",
+        "isRetryable",
+        "errorCategory",
+        "escalation"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-06-18/server/tools",
+        "https://www.anthropic.com/engineering/writing-tools-for-agents"
+      ]
+    },
+    {
+      "id": "f-d2-x1-012",
+      "taskStatementId": "2.2",
+      "scenario": "Customer Support Resolution Agent: You are building a customer support resolution agent with the Claude Agent SDK. It handles high-ambiguity requests such as returns, billing disputes and account issues, and reaches your backend through custom MCP tools (get_customer, lookup_order, process_refund, escalate_to_human). The target is 80%+ first-contact resolution while still knowing when to escalate.",
+      "stem": "`process_refund` accepts several line items at once. A customer returns four items: three refunds succeed and one fails because the payment gateway times out. The tool returns `isError: true` with \"Refund failed\" for the whole call, so the agent retries the full request and refunds the first three items a second time. Which design MOST reliably prevents this?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Return `isError: false` with \"Refund processed\" whenever at least one item succeeds, and log any failed items for the back-office team to handle."
+        },
+        {
+          "id": "B",
+          "text": "Add a system prompt rule that the agent must never call `process_refund` more than once in a conversation, whatever result it gets back from the tool."
+        },
+        {
+          "id": "C",
+          "text": "Return per-item results: refund IDs for items that succeeded, and for the failed item a transient, retryable error so only that item is retried."
+        },
+        {
+          "id": "D",
+          "text": "Have the MCP server silently retry the whole multi-item request up to three times internally before sending any result back to the agent."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "A single pass/fail flag for a **partial success** hides what actually happened. Reporting status **per item** (what succeeded, with IDs, and what failed, with category and `isRetryable`) lets the agent retry only the failed item and tell the customer accurately. Making the server's refund operation idempotent (for example with an idempotency key per item) is a sensible extra safeguard.",
+      "whyWrong": {
+        "A": "Hiding the failure as success means the customer is told all four items were refunded when one wasn't.",
+        "B": "Banning retries blocks recovery from a genuinely transient failure and hurts first-contact resolution.",
+        "D": "Retrying the whole batch silently on the server repeats the same double-refund problem, just out of sight."
+      },
+      "difficulty": 3,
+      "mindset": "Report partial success precisely so recovery touches only what failed.",
+      "tags": [
+        "partial-failure",
+        "idempotency",
+        "isError",
+        "structured-errors"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-06-18/server/tools",
+        "https://www.anthropic.com/engineering/writing-tools-for-agents"
+      ]
+    },
+    {
+      "id": "f-d2-x1-013",
+      "taskStatementId": "2.2",
+      "scenario": "Developer Productivity with Claude: You are building developer productivity tools with the Claude Agent SDK. The agent helps engineers explore unfamiliar codebases, understand legacy systems, generate boilerplate and automate repetitive tasks, using the built-in tools (Read, Write, Edit, Bash, Grep, Glob) plus MCP servers.",
+      "stem": "The agent's `run_query` MCP tool returns `isError: true` with a 150-line Java stack trace that includes the JDBC connection string. The useful detail, \"column 'created' does not exist; did you mean 'created_at'?\", is buried on line 97. The agent often rewrites the query from scratch two or three times. What is the BEST change to the error response?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Return a short `validation` error carrying the database's exact message about the column, with secrets omitted and the full trace logged server-side."
+        },
+        {
+          "id": "B",
+          "text": "Keep returning the full stack trace, because the agent needs every technical detail available to work out the cause of a query failure for itself."
+        },
+        {
+          "id": "C",
+          "text": "Have `run_query` automatically call `describe_table` on every table mentioned in a query before running it, so that column errors never reach the agent."
+        },
+        {
+          "id": "D",
+          "text": "Return only \"Query failed\" and add a system prompt rule telling the agent to retry with a simpler query whenever `run_query` reports an error."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Good tool errors are **specific and actionable**, not opaque tracebacks. Passing through the database's precise message (with the suggested column) as a validation error lets the agent fix the query in one step. Trimming the trace saves context, and keeping credentials out of tool output avoids leaking secrets into the conversation and logs.",
+      "whyWrong": {
+        "B": "The trace buries the one useful line, burns context and leaks a connection string.",
+        "C": "Describing every table before every query adds latency and calls to all queries to prevent an occasional, easily corrected mistake.",
+        "D": "A generic message removes the exact detail needed to fix the query, so the agent keeps guessing."
+      },
+      "difficulty": 2,
+      "mindset": "Error messages should tell the agent exactly what to change, and nothing secret.",
+      "tags": [
+        "actionable-errors",
+        "validation-errors",
+        "security",
+        "context-efficiency"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/writing-tools-for-agents",
+        "https://modelcontextprotocol.io/specification/2025-06-18/server/tools"
+      ]
+    },
+    {
+      "id": "f-d2-x1-014",
+      "taskStatementId": "2.2",
+      "stem": "A team marks every validation error from its shipping MCP tools as `isRetryable: true`, reasoning that \"the agent can fix the input and try again\". Logs show the agent resending identical calls, such as a pickup date of 2026-02-30, three or four times before giving up. What should they change?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Keep `isRetryable: true` and add exponential backoff between attempts, so the repeated identical calls put less load on the shipping service."
+        },
+        {
+          "id": "B",
+          "text": "Mark validation errors `isRetryable: false`, since resending the same input can't succeed, and say what's invalid and what a valid value looks like."
+        },
+        {
+          "id": "C",
+          "text": "Drop the `isRetryable` field altogether, so the agent has to read the free-text message on every error and decide what to do from that alone."
+        },
+        {
+          "id": "D",
+          "text": "Return validation failures with `isError` false and a short note in the content instead, so the agent treats them as informational and stops retrying the call."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "`isRetryable` answers one question: **will repeating this exact call help?** For a validation error the answer is no. Marking it non-retryable and including **what's wrong and what valid input looks like** steers the agent to send a corrected call (or ask the user) instead of an identical retry. Transient failures such as timeouts are the ones that are retryable as-is.",
+      "whyWrong": {
+        "A": "Backoff only spaces out calls that will fail every time. The input is still invalid.",
+        "C": "Removing structured metadata makes recovery decisions harder, not easier.",
+        "D": "Reporting a failure as a success hides it: the agent may carry on as if the pickup were booked. `isError: true` is what tells the model the call did not do its job."
+      },
+      "difficulty": 3,
+      "mindset": "\"Retryable\" means the same call might work next time; bad input never does.",
+      "tags": [
+        "isRetryable",
+        "validation-errors",
+        "retry-semantics"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-06-18/server/tools",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls"
+      ]
+    },
+    {
+      "id": "f-d2-x1-015",
+      "taskStatementId": "2.2",
+      "scenario": "Multi-Agent Research System: You are building a multi-agent research system with the Claude Agent SDK. A coordinator delegates to specialized subagents (web search, document analysis, synthesis, report generation) and the system produces comprehensive, cited reports.",
+      "stem": "The search API used by the web-search subagent returns HTTP 429 with a header saying to retry after 30 seconds. The MCP tool returns `isError: true`, `errorCategory: \"transient\"` and `isRetryable: true`, but no timing. The subagent retries immediately eight times, burning quota, and then escalates the failure to the coordinator. Which change is MOST effective?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Mark rate-limit responses as `isRetryable: false`, so that the subagent escalates them straight to the coordinator instead of retrying them itself."
+        },
+        {
+          "id": "B",
+          "text": "Move all web searches up to the coordinator, so that a single agent controls every call to the search API and can track and ration its quota."
+        },
+        {
+          "id": "C",
+          "text": "Move the web-search subagent to a larger, newer model that understands HTTP status codes and rate-limiting conventions better on its own."
+        },
+        {
+          "id": "D",
+          "text": "Put the wait time in the error text, such as \"Rate limited. Retry after 30 seconds\", so the subagent can pause and make a few spaced retries before escalating."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "The error was correctly classified but **missing the information needed to retry well**. Anthropic's guidance on error results is to say what went wrong *and what to try next*, with \"Rate limit exceeded. Retry after 60 seconds\" as the canonical example. Carrying the server's retry-after value into the human-readable text lets the subagent wait instead of hammering the API, and a bounded retry budget keeps recovery local and cheap.",
+      "whyWrong": {
+        "A": "A rate limit that clears in 30 seconds is the textbook transient error. Marking it non-retryable just pushes a routine hiccup straight up to the coordinator.",
+        "B": "Centralizing every search in the coordinator overloads its context and breaks the role split, without fixing the missing timing.",
+        "C": "A larger model can't respect a wait time the tool never told it about."
+      },
+      "difficulty": 2,
+      "mindset": "A retryable error should say how to retry, not just that it may.",
+      "tags": [
+        "transient-errors",
+        "rate-limits",
+        "local-recovery",
+        "isRetryable"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls",
+        "https://modelcontextprotocol.io/specification/2025-06-18/server/tools",
+        "https://www.anthropic.com/engineering/multi-agent-research-system"
+      ]
+    },
+    {
+      "id": "f-d2-x1-016",
+      "taskStatementId": "2.2",
+      "stem": "A support team lead with no engineering background asks why the developers want each tool error labelled with a category (transient, validation, business, permission) instead of returning one standard \"Operation failed\" message. Which explanation is MOST accurate?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The MCP specification requires an `errorCategory` field on every tool error, and servers that leave it out are rejected by MCP clients."
+        },
+        {
+          "id": "B",
+          "text": "Categories make the error logs smaller and cheaper, because the model reads only the category field and ignores the rest of the error message."
+        },
+        {
+          "id": "C",
+          "text": "Each category points to a different next step: retry a brief outage, correct bad input, explain a policy, or escalate a permission gap."
+        },
+        {
+          "id": "D",
+          "text": "Categories are mainly for human dashboards; the model itself handles a generic \"Operation failed\" message just as well as a categorized one."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "A generic \"Operation failed\" hides **what kind** of problem happened, so the agent can't choose a sensible recovery: it retries policy blocks or gives up on blips that would have cleared. Categories (plus an `isRetryable` flag and a clear description) map directly to recovery actions. Note that the MCP spec itself only defines the `isError` flag; the category fields are a design convention you add in the result.",
+      "whyWrong": {
+        "A": "The spec defines `isError`, not `errorCategory`. Categories are a convention the server author chooses to return.",
+        "B": "The model reads the whole result, so the value of categories is better decisions, not smaller or cheaper logs.",
+        "D": "The model benefits most: uniform errors directly cause wrong retries and misleading customer replies."
+      },
+      "difficulty": 1,
+      "mindset": "Errors exist to drive the agent's next move, so tell it what kind of failure it hit.",
+      "tags": [
+        "errorCategory",
+        "fundamentals",
+        "non-technical",
+        "recovery"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-06-18/server/tools",
+        "https://www.anthropic.com/engineering/writing-tools-for-agents"
+      ]
+    },
+    {
+      "id": "f-d2-x1-017",
+      "taskStatementId": "2.2",
+      "stem": "An order-management MCP server is being reviewed. For which TWO of these outcomes should the tool return a normal, successful result (`isError` false) rather than an error? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "The order database did not respond within ten seconds, so the tool could not check whether the customer has any open orders."
+        },
+        {
+          "id": "B",
+          "text": "A search for open orders under the customer's email address ran correctly and found no matching orders anywhere in the system."
+        },
+        {
+          "id": "C",
+          "text": "A cancellation was rejected because the order has already shipped, which company policy says can't be cancelled."
+        },
+        {
+          "id": "D",
+          "text": "The customer record was retrieved correctly and shows that the customer currently has no saved payment methods on file."
+        },
+        {
+          "id": "E",
+          "text": "The request asked for orders in a date range where the start date came after the end date, so the query could not be executed at all."
+        }
+      ],
+      "correct": [
+        "B",
+        "D"
+      ],
+      "explanation": "An **empty result from a query that ran correctly is a valid answer** (\"I looked and found nothing\"), so it should be returned as success, ideally with a short note saying so. Errors are for when the tool **couldn't do what was asked**: a timeout (transient), an invalid date range (validation), or a policy block (business). Confusing the two either makes the agent retry real answers or, worse, treat failures as \"no data\".",
+      "whyWrong": {
+        "A": "A timeout means the tool couldn't look. Returning it as success would turn an access failure into a false \"no orders\".",
+        "C": "A policy refusal is a business error: return `isError` with a non-retryable flag and a customer-friendly reason.",
+        "E": "An impossible date range is a validation error the agent should fix, not a successful empty result."
+      },
+      "difficulty": 2,
+      "mindset": "\"Found nothing\" is a result; \"couldn't look\" is an error.",
+      "tags": [
+        "empty-results",
+        "isError",
+        "error-classification"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-06-18/server/tools"
+      ]
+    }
+  ]
+}

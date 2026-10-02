@@ -1,0 +1,702 @@
+{
+  "certId": "developer",
+  "domainId": "d8-tools-mcp",
+  "questions": [
+    {
+      "id": "v-d8-g2-001",
+      "taskStatementId": "8.2",
+      "scenario": "A platform team writes an internal MCP server in Python that Claude Code launches locally over stdio. While debugging a caching bug in the server, a developer adds print() statements that dump internal state. After that, the /mcp panel shows the server dropping mid-session exactly when the cache code path runs, and nothing is wrong at the API layer.",
+      "stem": "What should they do to keep the diagnostic output without breaking the connection?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Send diagnostics to stderr and reserve stdout for newline-delimited JSON-RPC protocol messages only."
+        },
+        {
+          "id": "B",
+          "text": "Prefix each debug line with a marker such as \"DEBUG:\" so the client's parser can recognize and skip it."
+        },
+        {
+          "id": "C",
+          "text": "Increase the server startup timeout so the client has time to resynchronize after unexpected output."
+        },
+        {
+          "id": "D",
+          "text": "Switch the server to Streamable HTTP so that logs and protocol traffic travel over separate channels."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "On the stdio transport, the client launches the server as a subprocess and speaks newline-delimited JSON-RPC over stdin/stdout. **stdout must contain only valid MCP messages**; any stray bytes corrupt the message framing and the session fails intermittently — exactly the symptom described. Diagnostic logging belongs on **stderr**, which sits outside the protocol channel.",
+      "whyWrong": {
+        "B": "There is no marker convention in the protocol: the client parses stdout strictly as JSON-RPC messages, so any non-protocol line breaks framing regardless of prefix.",
+        "C": "Timeouts govern how long the client waits for the server, not recovery from a corrupted byte stream; by then the framing is already broken.",
+        "D": "Streamable HTTP is the remote transport, not a logging fix — rewriting the server's transport to work around a print statement is a disproportionate change, and diagnostic logs still do not get their own channel there."
+      },
+      "difficulty": 2,
+      "mindset": "On stdio, stdout belongs to the protocol and stderr belongs to logs.",
+      "tags": [
+        "mcp",
+        "stdio",
+        "transports",
+        "debugging"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-06-18/basic/transports"
+      ]
+    },
+    {
+      "id": "v-d8-g2-002",
+      "taskStatementId": "8.2",
+      "scenario": "A company stands up an internal MCP server on Streamable HTTP so several Claude applications can reach it across the network. A security review flags that the endpoint has no authentication, and that the copy developers run locally for testing binds 0.0.0.0. It is justified internally by \"it's only reachable on the office LAN.\"",
+      "stem": "Which change best addresses the documented security requirements for this transport?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Move the endpoint behind the office VPN and keep the 0.0.0.0 binding on the local instance, since traffic is then encrypted in transit."
+        },
+        {
+          "id": "B",
+          "text": "Restrict responses to application/json and disable the optional GET server-initiated stream on the endpoint."
+        },
+        {
+          "id": "C",
+          "text": "Require authentication and Origin-header validation on the endpoint, and bind local instances to 127.0.0.1 rather than 0.0.0.0."
+        },
+        {
+          "id": "D",
+          "text": "Mark the server's tool annotations as trusted so clients apply their hints instead of ignoring them."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "The MCP security best practices for Streamable HTTP are explicit: **validate the Origin header** (to defeat DNS-rebinding and other browser-originated requests), **authenticate** the endpoint, and when a server runs locally, **bind to 127.0.0.1 rather than 0.0.0.0**. These are exactly the controls the review found missing; network position is not a substitute for any of them.",
+      "whyWrong": {
+        "A": "Network position reduces exposure but does not satisfy the stated requirements — Origin validation still matters for browser-originated requests, and VPN encryption is not authentication.",
+        "B": "Response formats and the optional GET stream are protocol mechanics, not access controls; changing them authenticates no one.",
+        "D": "Annotations are metadata the client treats as untrusted unless the server itself is trusted, and they are not a transport-security mechanism at all."
+      },
+      "difficulty": 2,
+      "mindset": "Remote MCP means Streamable HTTP with authentication and Origin validation; local servers bind loopback, not 0.0.0.0.",
+      "tags": [
+        "mcp",
+        "streamable-http",
+        "transports",
+        "security",
+        "deployment"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-06-18/basic/security_best_practices",
+        "https://modelcontextprotocol.io/specification/2025-06-18/basic/transports"
+      ]
+    },
+    {
+      "id": "v-d8-g2-003",
+      "taskStatementId": "8.2",
+      "scenario": "A developer-docs platform wants to give Claude applications an on-demand catalog of current database schemas and documentation trees. Applications should browse the catalog and pull entries into context when needed, without the model having to invoke an action just to explore what exists.",
+      "stem": "Which MCP primitive should the server expose for this catalog?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Tools that return catalog entries whenever the model decides to call them during the conversation."
+        },
+        {
+          "id": "B",
+          "text": "Resources with URIs and URI templates that the client application lists and reads as read-only context."
+        },
+        {
+          "id": "C",
+          "text": "Prompts that embed the current catalog inside reusable, user-invoked message templates."
+        },
+        {
+          "id": "D",
+          "text": "Sampling requests that ask the client's model to summarize the catalog on demand."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "MCP's primitives have distinct control models: **tools are model-controlled actions, resources are application-driven read-only context** (addressed by URIs and URI templates, listed and read by the application), **prompts are user-invoked templates**, and sampling is a server-initiated LLM call through the client. A browsable catalog of schemas and doc hierarchies is exactly the resources use case — and it cuts exploratory tool calls by the model.",
+      "whyWrong": {
+        "A": "Making exploration a tool call forces the model to spend turns and context discovering what exists; the catalog should be addressable context the application reads.",
+        "C": "Prompts are templated messages chosen by the user, not a data catalog the application can query programmatically.",
+        "D": "Sampling runs an LLM call, which is unnecessary for serving static catalog entries and puts generation where deterministic data retrieval belongs."
+      },
+      "difficulty": 1,
+      "mindset": "Match the primitive to who controls it: tools=model, resources=application, prompts=user.",
+      "tags": [
+        "mcp",
+        "resources",
+        "primitives",
+        "server-design"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-06-18/server/resources",
+        "https://modelcontextprotocol.io/specification/2025-06-18/architecture"
+      ]
+    },
+    {
+      "id": "v-d8-g2-004",
+      "taskStatementId": "8.2",
+      "scenario": "An MCP server wrapping an upstream customer-data API currently reports every failure as a generic JSON-RPC internal error (-32603) with the message \"Operation failed.\" Consuming agents respond erratically: some abort the whole workflow, some retry business-rule rejections, some invent recovery steps.",
+      "stem": "Which TWO changes bring error handling in line with MCP best practice? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Return tool execution failures in the tool result with isError: true and a human-readable message stating what failed and what to try instead."
+        },
+        {
+          "id": "B",
+          "text": "Classify each failure (transient, validation, permission, business rule) and include whether the operation is retryable so the caller can pick a recovery path."
+        },
+        {
+          "id": "C",
+          "text": "Return an empty result with isError: false when a lookup fails, so the conversation continues smoothly without an error state."
+        },
+        {
+          "id": "D",
+          "text": "Retry every failure indefinitely inside the server so the model never observes an error at all."
+        },
+        {
+          "id": "E",
+          "text": "Surface business-rule rejections as JSON-RPC protocol errors so the client displays them to the user directly."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "MCP separates two error channels: **protocol errors** (unknown tool, invalid parameters) and **tool execution errors returned in-band in the result with `isError: true`** — the flag exists precisely so the model can see the failure and react. An actionable message (what failed, what to try next) plus a retryability/category classification lets the harness back off transient errors, correct validation errors, and stop on business rules instead of guessing.",
+      "whyWrong": {
+        "C": "Disguising a failed lookup as a successful empty result suppresses the failure and leads the model to conclude \"no data exists\" — a classic masking anti-pattern.",
+        "D": "Unlimited server-side retries add latency and can hang the call; bounded retries for transient errors belong in code, and unresolvable failures should be surfaced, with partial results where available.",
+        "E": "Business-rule rejections are execution outcomes the model must reason about; protocol errors are for protocol-level problems, and pushing business errors there hides them from the model's recovery loop."
+      },
+      "difficulty": 3,
+      "mindset": "isError is the model's eyes: in-band, classified, actionable — never masked, never pushed to the protocol layer.",
+      "tags": [
+        "mcp",
+        "iserror",
+        "error-handling",
+        "tool-results"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-06-18/server/tools"
+      ]
+    },
+    {
+      "id": "v-d8-g2-005",
+      "taskStatementId": "8.2",
+      "scenario": "An agent built with the Claude Agent SDK configures three MCP servers through the mcp_servers option. Intermittently, the agent completes tasks using only built-in tools like Grep and ignores the MCP tools entirely. No exception is raised, and nothing appears in the application logs when it happens.",
+      "stem": "What is the best first diagnostic step?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add \"mcp__*\" to allowed_tools so the agent is required to prefer MCP tools over built-ins."
+        },
+        {
+          "id": "B",
+          "text": "Wrap query() in a broader try/catch, since a failed MCP server raises only when the first tool call is attempted."
+        },
+        {
+          "id": "C",
+          "text": "Re-register the servers in a project .mcp.json so they bypass the permission system at startup."
+        },
+        {
+          "id": "D",
+          "text": "Inspect each server's status field in the SDK init message and address any that report failed or needs-auth, passing tokens via headers."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "In the Agent SDK, a failed MCP server **does not throw** — the init message reports each server's status (`connected`, `pending`, `failed`, `needs-auth`, `disabled`), and Claude may silently fall back to built-in tools. Checking that status first explains the intermittent behavior; for `needs-auth` the SDK runs no interactive OAuth flow, so credentials must be supplied in headers.",
+      "whyWrong": {
+        "A": "allowed_tools is an auto-approval list, not a preference or restriction mechanism — it cannot make the model choose MCP tools, and bare globs like mcp__* are not valid allow entries.",
+        "B": "Failed servers do not raise, so no catch block will ever see this failure; the problem is structural, not exceptional.",
+        "C": "Registering servers in .mcp.json changes where the configuration lives, not whether they connect, and MCP tools still require explicit permission either way."
+      },
+      "difficulty": 2,
+      "mindset": "Silent fallback to built-ins means check mcp_servers[].status first — failures don't throw.",
+      "tags": [
+        "mcp",
+        "agent-sdk",
+        "integration",
+        "status",
+        "debugging"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/mcp"
+      ]
+    },
+    {
+      "id": "v-d8-g2-006",
+      "taskStatementId": "8.2",
+      "scenario": "A team wants every engineer's Claude Code sessions to use an internal package-registry MCP server. The server is reached over HTTP and requires a personal API token that must not be committed to the shared repository.",
+      "stem": "Which configuration approach best meets both the sharing and the secrecy requirements?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Commit a project-scope .mcp.json whose headers reference ${REGISTRY_TOKEN}, with each engineer exporting the token locally."
+        },
+        {
+          "id": "B",
+          "text": "Commit the registry token directly inside .mcp.json, since the repository is private to the organization."
+        },
+        {
+          "id": "C",
+          "text": "Have each engineer run claude mcp add with user scope and paste their token into ~/.claude.json by hand."
+        },
+        {
+          "id": "D",
+          "text": "Keep the server in local scope and distribute one shared ~/.claude.json to the team through a dotfiles repo."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Project scope is the team-sharing mechanism: a **`.mcp.json` at the repo root** committed to git, with **`${VAR}` (and `${VAR:-default}`) expansion** in url, headers, command, args, and env so secrets stay out of version control. Each engineer supplies the environment variable locally. Use a dedicated variable name such as REGISTRY_TOKEN — well-known credential variables like ANTHROPIC_API_KEY are read as empty when expanded for remote servers.",
+      "whyWrong": {
+        "B": "A private repo is not a secret store — committed tokens leak through clones, history, and CI, which is exactly what expansion exists to avoid.",
+        "C": "User scope is per-machine and never travels with the repo, so every engineer repeats manual setup and drifts; it defeats the sharing requirement.",
+        "D": "Local scope is private per project per machine, and passing around ~/.claude.json conflates personal config with shared team config — the wrong file and the wrong scope."
+      },
+      "difficulty": 1,
+      "mindset": "Team sharing = committed .mcp.json; secrets = ${VAR} expansion, never file contents.",
+      "tags": [
+        "mcp",
+        "claude-code",
+        "mcp-json",
+        "secrets",
+        "scopes"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/mcp"
+      ]
+    },
+    {
+      "id": "v-d8-g2-007",
+      "taskStatementId": "8.2",
+      "scenario": "An MCP server that enriches CRM records needs LLM reasoning (lead classification) as a step inside its own processing pipeline, before results are returned. It will run inside customer environments. The security policy forbids shipping any model API keys with the server, and the security team requires a human review point for model calls.",
+      "stem": "Which mechanism best fits these constraints?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Ship a read-only Anthropic API key in the server's environment variables and call the API directly from the server."
+        },
+        {
+          "id": "B",
+          "text": "Use the client's sampling feature: the server sends a sampling/createMessage request and the host executes the LLM call, with human review of the request."
+        },
+        {
+          "id": "C",
+          "text": "Return a tool result asking the calling model to classify the lead itself and then invoke the tool a second time with the answer."
+        },
+        {
+          "id": "D",
+          "text": "Require clients to forward their full conversation history so the server can run its own prompting loop over it."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "**Sampling** is the client feature designed for exactly this: the server sends `sampling/createMessage`, and the **client/host runs the LLM call using its own credentials** — the server needs no API keys. The spec's human-in-the-loop guidance says the client SHOULD let a human review the sampling request (and response), which satisfies the review requirement.",
+      "whyWrong": {
+        "A": "Direct API calls with an embedded key violate the stated policy on shipping keys and put credential management on the server operator.",
+        "C": "Pushing the reasoning back onto the calling model removes the server-side pipeline step, adds a fragile extra round trip, and lets the model guess at data the server should have processed.",
+        "D": "The architecture deliberately keeps servers from reading the whole conversation; slurping client history inverts trust boundaries and bloats data exposure."
+      },
+      "difficulty": 3,
+      "mindset": "When a server needs an LLM, it borrows the client's via sampling — never its keys.",
+      "tags": [
+        "mcp",
+        "sampling",
+        "client-features",
+        "security",
+        "server-design"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-06-18/client/sampling"
+      ]
+    },
+    {
+      "id": "v-d8-g2-008",
+      "taskStatementId": "8.2",
+      "scenario": "A shipping MCP server's create_shipment tool can proceed only after the user picks one of three delivery windows. The client application implements the standard MCP client features, and the server team wants the question answered reliably without extra conversation turns.",
+      "stem": "Which mechanism is designed for obtaining that user choice?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Send an elicitation request whose schema is a nested object capturing the delivery option, card number, and billing address."
+        },
+        {
+          "id": "B",
+          "text": "Return isError: true with a message telling the calling model to ask the user in chat, then retry the tool call."
+        },
+        {
+          "id": "C",
+          "text": "Send an elicitation request with a flat schema whose enum lists the three delivery windows."
+        },
+        {
+          "id": "D",
+          "text": "Open a server-initiated stream and push a custom form payload that the client is expected to render."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "**Elicitation** (`elicitation/create`) is how a server asks the user for input mid-flow: the schema must be **flat and primitive-only** (string/number/boolean/enum), and the user responds with **accept, decline, or cancel**. An enum of the three options is the canonical use; servers must not request sensitive information such as credentials.",
+      "whyWrong": {
+        "A": "Nested objects are outside the flat primitive-only schema, and card numbers are exactly the sensitive data elicitation must not request.",
+        "B": "Routing the question through the model's chat loop adds round trips, can be paraphrased or guessed, and is a workaround rather than the designed mechanism.",
+        "D": "There is no spec-defined server-pushed form channel; inventing a rendering contract breaks interoperability with standard clients."
+      },
+      "difficulty": 2,
+      "mindset": "Server needs the user? Elicit with a flat, primitive schema — accept, decline, or cancel.",
+      "tags": [
+        "mcp",
+        "elicitation",
+        "client-features",
+        "ux"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-06-18/client/elicitation"
+      ]
+    },
+    {
+      "id": "v-d8-g2-009",
+      "taskStatementId": "8.2",
+      "scenario": "A local code-analysis MCP server is given roots pointing at the repository checkout. During a demo, it reads a file under ~/secrets, outside the provided roots. A teammate insists \"that can't happen — roots are a security sandbox enforced by the protocol.\"",
+      "stem": "Which statement accurately characterizes roots?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Roots are advisory boundaries: servers SHOULD stay within them, and clients MUST validate requests to prevent traversal — the protocol itself does not enforce a sandbox."
+        },
+        {
+          "id": "B",
+          "text": "Roots are a protocol-enforced sandbox, so any access outside the declared roots is automatically rejected."
+        },
+        {
+          "id": "C",
+          "text": "Roots are the server's declaration of which directories it is permitted to read or write."
+        },
+        {
+          "id": "D",
+          "text": "Roots apply only to servers reached over Streamable HTTP, not to locally launched servers."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Roots are a **client feature**: the client exposes filesystem boundaries (as `file://` URIs) that servers **SHOULD** respect, and clients **MUST validate** requests against them to prevent path traversal. It is cooperative guidance plus client-side enforcement — not a sandbox the protocol guarantees, which is why defense-in-depth (sandboxing, least privilege) still matters.",
+      "whyWrong": {
+        "B": "This is the documented misconception: nothing in the protocol blocks an out-of-roots access; validation happens in the client, and only if implemented.",
+        "C": "Roots are declared by the client, not the server, and they describe boundaries the client exposes — not a server-side permission grant.",
+        "D": "Roots are transport-independent and are typically most relevant for locally launched servers that touch the filesystem."
+      },
+      "difficulty": 2,
+      "mindset": "Roots are hints the client enforces, not a sandbox the protocol guarantees.",
+      "tags": [
+        "mcp",
+        "roots",
+        "client-features",
+        "security"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-06-18/client/roots",
+        "https://modelcontextprotocol.io/specification/2025-06-18/basic/security_best_practices"
+      ]
+    },
+    {
+      "id": "v-d8-g2-010",
+      "taskStatementId": "8.2",
+      "scenario": "A team's MCP integration is bloating context in two ways: one server returns multi-thousand-row query dumps that regularly trip output-truncation warnings, and several rarely used servers load their full tool schemas up front on every session. They want to reduce context pressure without removing any capability.",
+      "stem": "Which TWO changes best reduce context pressure? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Raise MAX_MCP_OUTPUT_TOKENS on every client machine so the full dumps always fit within the session."
+        },
+        {
+          "id": "B",
+          "text": "Embed several complete example outputs in each tool's description so the model knows what to expect."
+        },
+        {
+          "id": "C",
+          "text": "Return high-signal, paginated results with filters, ranges, and cursors, applying sensible truncation defaults."
+        },
+        {
+          "id": "D",
+          "text": "Copy full tool results into the system prompt so they persist across turns instead of repeating them."
+        },
+        {
+          "id": "E",
+          "text": "Leave rarely used tools' schemas deferred through the default tool-search behavior instead of forcing alwaysLoad for every server."
+        }
+      ],
+      "correct": [
+        "C",
+        "E"
+      ],
+      "explanation": "Two levers apply. **Token-efficient results**: paginate, filter, and truncate MCP tool output with sensible defaults — oversized output (warned at ~10k tokens, capped around 25k before being offloaded to a file) wastes context. **Schema deferral**: tool search defers MCP tool schemas by default so they load only when needed; `alwaysLoad: true` exempts a server and should be used sparingly.",
+      "whyWrong": {
+        "A": "Raising the cap makes the dumps fit but multiplies context cost on every call — it treats the symptom and worsens the disease.",
+        "B": "Example outputs in descriptions add hundreds of tokens up front on every turn; descriptions should be concise, not data dumps.",
+        "D": "Tool results belong in tool_result blocks; moving them to the system prompt inflates every future turn, churns the cached prefix, and mixes untrusted content into trusted instructions."
+      },
+      "difficulty": 2,
+      "mindset": "Context discipline: paginate what you return, defer what you rarely use.",
+      "tags": [
+        "mcp",
+        "token-efficiency",
+        "tool-search",
+        "context",
+        "output-limits"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/mcp",
+        "https://www.anthropic.com/engineering/writing-tools-for-agents"
+      ]
+    },
+    {
+      "id": "v-d8-g2-011",
+      "taskStatementId": "8.2",
+      "scenario": "An engineer connects Claude Code to a popular community-run MCP server of unknown provenance for ticket tracking, intending to use it across several projects.",
+      "stem": "Which TWO practices align with safely consuming a third-party MCP server? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Treat the server's tool descriptions and annotations as untrusted content capable of steering the model, since provenance is unknown."
+        },
+        {
+          "id": "B",
+          "text": "Once /mcp shows the server as connected, treat its tool results as authoritative data that is safe to act on directly."
+        },
+        {
+          "id": "C",
+          "text": "Enable all discovered MCP servers globally so the agent can select the most appropriate one for each task."
+        },
+        {
+          "id": "D",
+          "text": "Grant the server a narrowly scoped permission set, such as per-tool or mcp__server__* rules, rather than blanket approval."
+        },
+        {
+          "id": "E",
+          "text": "Rely on the MCP session identifier as proof of user identity for subsequent requests to the server."
+        }
+      ],
+      "correct": [
+        "A",
+        "D"
+      ],
+      "explanation": "Two principles govern third-party servers. First, **descriptions, annotations, and results from a server you do not trust are untrusted input** — a malicious description or result can carry prompt injection (tool poisoning), so treat everything the server says as data, not instructions. Second, **least privilege**: scope MCP tool permissions explicitly (per-tool or `mcp__server__*`), since MCP tools are not auto-approved by default and blanket grants maximize blast radius.",
+      "whyWrong": {
+        "B": "A successful connection says nothing about trustworthiness; results from any external server can contain injected instructions and must be treated as untrusted data.",
+        "C": "Enabling everything increases attack surface and degrades tool selection; it is the opposite of scoping per need.",
+        "E": "Sessions are not authentication — the security guidance is to verify every request and bind sessions to verified user identity, not to accept a session id as proof of anything."
+      },
+      "difficulty": 3,
+      "mindset": "A connected server is not a trusted server: untrusted content in, least privilege out.",
+      "tags": [
+        "mcp",
+        "third-party",
+        "security",
+        "permissions",
+        "tool-poisoning"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-06-18/basic/security_best_practices",
+        "https://code.claude.com/docs/en/mcp"
+      ]
+    },
+    {
+      "id": "v-d8-g2-012",
+      "taskStatementId": "8.2",
+      "scenario": "While designing an integration, an architect proposes \"one shared MCP client instance that connects to all five of our MCP servers, to simplify lifecycle management and connection pooling.\"",
+      "stem": "Which objection correctly reflects the MCP architecture?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Nothing is wrong: MCP sessions are stateless, so a single client can freely multiplex several servers."
+        },
+        {
+          "id": "B",
+          "text": "It works only if all five servers share a single HTTP endpoint that the client targets."
+        },
+        {
+          "id": "C",
+          "text": "The design is inverted because servers create clients, not the other way around."
+        },
+        {
+          "id": "D",
+          "text": "Each client holds a 1:1 stateful session with exactly one server, so five servers means five clients created and managed by the host."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "In MCP, the **host** application creates and manages **clients**, and each client maintains a **1:1 stateful session with exactly one server**, negotiating capabilities at initialization over JSON-RPC 2.0. A client-per-server is not an implementation detail — it is the architecture — and the host coordinates all of them.",
+      "whyWrong": {
+        "A": "Sessions are stateful, with per-server capability negotiation — which is exactly why they cannot be multiplexed through one client.",
+        "B": "Each server has its own endpoint and session; pointing five servers at one shared HTTP URL is not a mechanism the architecture defines.",
+        "C": "Servers never create clients — the host does; this objection gets the direction of control backwards."
+      },
+      "difficulty": 1,
+      "mindset": "Host manages many clients; each client owns exactly one stateful server session.",
+      "tags": [
+        "mcp",
+        "architecture",
+        "host-client-server",
+        "json-rpc"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-06-18/architecture"
+      ]
+    },
+    {
+      "id": "v-d8-g2-013",
+      "taskStatementId": "8.2",
+      "scenario": "An MCP server returns ticket summaries that a client application parses programmatically. Parsing intermittently fails because the free-text result drifts in wording and layout. The team wants the server to guarantee a machine-readable result shape to consumers.",
+      "stem": "Which practice best meets this requirement?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Describe the intended JSON shape thoroughly in the tool's description and rely on the model to preserve it."
+        },
+        {
+          "id": "B",
+          "text": "Return a plain string and have each client parse it defensively with regexes and fallbacks."
+        },
+        {
+          "id": "C",
+          "text": "Use notifications/tools/list_changed to publish the current result schema to clients."
+        },
+        {
+          "id": "D",
+          "text": "Declare an outputSchema on the tool and return structuredContent that conforms to it, echoing the JSON as text for compatibility."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "MCP tools may declare an **`outputSchema`**, and when one is present the server **MUST** return **`structuredContent`** that conforms to it — a contract on the result, not a hope. The spec also recommends echoing the structured content as JSON text in the content array so older clients that only read text still work.",
+      "whyWrong": {
+        "A": "Descriptions guide the model's behavior; they cannot constrain what the *server* returns, and textual drift is exactly the problem being solved.",
+        "B": "Defensive regex parsing is the brittle pattern the team is trying to escape, and it pushes the contract problem onto every client.",
+        "C": "tools/list_changed signals that the set of tools changed so clients re-fetch the list; it says nothing about result schemas."
+      },
+      "difficulty": 2,
+      "mindset": "Guarantee server output with outputSchema + structuredContent; descriptions are for behavior, not contracts.",
+      "tags": [
+        "mcp",
+        "outputschema",
+        "structured-content",
+        "server-design",
+        "contracts"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-06-18/server/tools"
+      ]
+    },
+    {
+      "id": "v-d8-g2-014",
+      "taskStatementId": "8.2",
+      "scenario": "An MCP gateway server fronts three upstream SaaS APIs. To avoid managing per-connector credentials, an engineer proposes that clients send their existing Anthropic API key with every request, and the gateway forwards that key to whichever upstream needs authentication.",
+      "stem": "Which assessment of this proposal is correct?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Acceptable as long as the key is stored only in environment variables on the gateway and never written to logs."
+        },
+        {
+          "id": "B",
+          "text": "Out of policy: servers must not accept or forward tokens that were not issued for them, so the gateway needs per-service credentials with audience validation."
+        },
+        {
+          "id": "C",
+          "text": "Acceptable if the client marks the token as read-only in the request metadata."
+        },
+        {
+          "id": "D",
+          "text": "Acceptable when the key is forwarded only to first-party Anthropic endpoints rather than third-party ones."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "The MCP security best practices **forbid token passthrough**: a server MUST NOT accept tokens that were not issued *for that MCP server* — each token's audience must be validated. Forwarding a client's API key to arbitrary upstreams massively expands blast radius and breaks attribution. The gateway should hold **per-service credentials** with least-privilege scopes for each upstream.",
+      "whyWrong": {
+        "A": "Storage hygiene does not fix the audience mismatch: the gateway is still accepting and reusing a token issued for a different purpose.",
+        "C": "There is no read-only marker that makes cross-audience forwarding safe; the prohibition is about audience, not permissions labels.",
+        "D": "Narrowing the forwarding target does not change the violation, and silently reusing a client's key upstream still conflates identity and authorization."
+      },
+      "difficulty": 3,
+      "mindset": "Tokens are audience-bound: a server accepts only tokens issued for it, never passes them through.",
+      "tags": [
+        "mcp",
+        "security",
+        "token-passthrough",
+        "oauth",
+        "credentials"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-06-18/basic/security_best_practices"
+      ]
+    },
+    {
+      "id": "v-d8-g2-015",
+      "taskStatementId": "8.2",
+      "scenario": "A team runs Claude Code headlessly in CI and wants deterministic, reproducible runs against an internal test-data MCP server configured at project scope in .mcp.json.",
+      "stem": "Which TWO practices best support this goal? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Commit the local-scope server entries from ~/.claude.json into the repository so CI sees the same servers."
+        },
+        {
+          "id": "B",
+          "text": "Pin the server set for CI with --mcp-config and --strict-mcp-config so only the declared configuration is loaded."
+        },
+        {
+          "id": "C",
+          "text": "Disable tool search in CI so every server's full schemas load on each run, keeping behavior identical."
+        },
+        {
+          "id": "D",
+          "text": "Place the OAuth client secret directly in .mcp.json headers, since CI environments are internal."
+        },
+        {
+          "id": "E",
+          "text": "Control which project-scoped servers are enabled in CI through settings such as enabledMcpjsonServers or enableAllProjectMcpServers, since the interactive approval is skipped."
+        }
+      ],
+      "correct": [
+        "B",
+        "E"
+      ],
+      "explanation": "For reproducible CI: **`--mcp-config` with `--strict-mcp-config`** loads exactly the pinned server set and nothing else from ambient configuration. And because the project-server approval prompt is interactive-only (headless runs skip it), enablement must be governed deliberately via settings like `enabledMcpjsonServers`/`enableAllProjectMcpServers` rather than left to default behavior.",
+      "whyWrong": {
+        "A": "Local scope is private per machine and per project; committing it is a scope confusion — project scope in .mcp.json is the shareable mechanism.",
+        "C": "Forcing every schema to load burns context and hurts tool selection on every run; determinism does not require abandoning deferral.",
+        "D": "CI environments are still shared infrastructure; secrets belong in environment variables referenced via expansion, never committed in the file."
+      },
+      "difficulty": 2,
+      "mindset": "Reproducible MCP in CI: pin the config, govern enablement explicitly, keep secrets out of the file.",
+      "tags": [
+        "mcp",
+        "claude-code",
+        "ci",
+        "headless",
+        "mcp-json",
+        "reproducibility"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/mcp",
+        "https://code.claude.com/docs/en/headless"
+      ]
+    }
+  ]
+}

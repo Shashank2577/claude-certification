@@ -1,0 +1,706 @@
+{
+  "certId": "developer",
+  "domainId": "d2-applications-integration",
+  "questions": [
+    {
+      "id": "v-d2-g4-001",
+      "taskStatementId": "2.4",
+      "scenario": "A support agent built on the Messages API calls an internal refunds endpoint (POST) whenever Claude emits a particular tool_use block. During a network blip, the HTTP client timed out and automatically retried the refund call; the original request had actually reached the server, and a customer was refunded twice.",
+      "stem": "Which change most reliably prevents duplicate refunds while keeping automatic retries enabled for transient failures?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Disable automatic retries for the refund call and accept that a timed-out request may have applied no refund at all."
+        },
+        {
+          "id": "B",
+          "text": "Before calling the endpoint, ask Claude to check whether a refund for this ticket was already issued earlier in the conversation."
+        },
+        {
+          "id": "C",
+          "text": "Retry only on connection errors that provably occurred before the request left the client, and never retry on timeouts."
+        },
+        {
+          "id": "D",
+          "text": "Send a client-generated idempotency key (for example the tool_use id) with each refund request and have the refunds service deduplicate on it, making retries safe."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "POST is not idempotent: a timed-out write may have succeeded, so any blind retry can duplicate the side effect. The reliable fix is to make the write itself idempotent with a stable client-generated key (a tool_use id is unique per call and stable across retries of that call) that the server deduplicates — the client can then keep retrying transient failures (429 with `retry-after`, 5xx, 529) without risk of double effects. This is enforced in code at the boundary, not hoped for in the model.",
+      "whyWrong": {
+        "A": "Trades correctness for reliability: it stops duplicates but silently drops refunds on genuine transient failures, and it violates the requirement to keep retries enabled.",
+        "B": "Pushes a deterministic deduplication concern into the model's conversation memory, which is nondeterministic and lost across sessions — the wrong layer for a guarantee.",
+        "C": "You often cannot prove whether a timed-out request reached the server; classifying errors does not remove the ambiguity that only idempotency resolves, and it disables retry on the most common transient case."
+      },
+      "difficulty": 3,
+      "mindset": "Side effects need idempotency keys, not smarter retry rules.",
+      "tags": [
+        "d2",
+        "software-engineering",
+        "idempotency",
+        "retries",
+        "tool-use"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls"
+      ]
+    },
+    {
+      "id": "v-d2-g4-002",
+      "taskStatementId": "2.4",
+      "scenario": "An overnight enrichment job sends thousands of Messages API requests. This morning every request failed after five attempts each, and the logs show HTTP 400 invalid_request_error pointing at one tool definition whose schema contains a constraint the API does not support. The job's retry policy currently treats every non-2xx response as transient.",
+      "stem": "What is the best next step?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Stop retrying these requests, correct the invalid tool schema in the request, and redeploy — a 400 means the request itself must change."
+        },
+        {
+          "id": "B",
+          "text": "Keep the retry policy but lengthen the backoff interval so the API has more time to recover between attempts."
+        },
+        {
+          "id": "C",
+          "text": "Route the workload through the Message Batches API, which applies looser request validation than the realtime endpoint."
+        },
+        {
+          "id": "D",
+          "text": "Resubmit the identical requests on a schedule overnight, when overall API traffic and error rates are lower."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "4xx responses (except 429) are client errors: the request is malformed and no number of retries can make it succeed. Retrying a 400 wastes the whole run and masks the real defect. Fix the payload (here, the tool schema), then redeploy; reserve automatic retries for 429 and 5xx/529.",
+      "whyWrong": {
+        "B": "Backoff changes timing, not validity — an invalid request fails identically on every attempt.",
+        "C": "Batch requests use the same Messages request format and validation; the 400 would recur and the job would still fail, just more slowly.",
+        "D": "Lower traffic does not make an invalid request valid; overnight resubmission just delays the same total failure."
+      },
+      "difficulty": 1,
+      "mindset": "4xx means fix the request, not the retry policy.",
+      "tags": [
+        "d2",
+        "software-engineering",
+        "error-handling",
+        "http-errors"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors"
+      ]
+    },
+    {
+      "id": "v-d2-g4-003",
+      "taskStatementId": "2.4",
+      "scenario": "A chat product streams completions with stream: true. The integration checks the HTTP status code and then pipes events to the UI. Users occasionally see answers that stop mid-sentence with no error displayed, and support tickets spike exactly when the API reports elevated load. The team's error handling looks only at the response status.",
+      "stem": "Which change most reliably surfaces these failures to users and monitoring?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Increase max_tokens and the client read timeout so that long responses can always finish streaming."
+        },
+        {
+          "id": "B",
+          "text": "Move these requests to the Message Batches API, which has no streaming failure mode."
+        },
+        {
+          "id": "C",
+          "text": "Consume the SSE event stream end to end: handle error events that can arrive after the HTTP 200, and treat a stream that closes without message_stop as failed."
+        },
+        {
+          "id": "D",
+          "text": "Wrap the request in a try/catch block and rethrow any exception to the chat UI as a user-facing message."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "With streaming, a failure can arrive after a successful HTTP 200 as an `error` event in the SSE stream (for example `overloaded_error` under high load). Status-code checks and request-level try/catch cannot see these; the client must parse the event stream, handle mid-stream error events, and detect a missing terminal `message_stop` so the failure is retried or surfaced.",
+      "whyWrong": {
+        "A": "The failures are server-side mid-stream aborts, not output-length or timeout limits; bigger limits do not address them.",
+        "B": "Batch processing suits latency-tolerant bulk work and cannot stream (`stream: true` is unsupported); an interactive chat product needs realtime responses.",
+        "D": "A try/catch around the request only catches transport exceptions before or during connection — it never sees in-stream error events."
+      },
+      "difficulty": 2,
+      "mindset": "A 200 is not a promise — streams can fail after they start.",
+      "tags": [
+        "d2",
+        "software-engineering",
+        "streaming",
+        "error-handling"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/streaming"
+      ]
+    },
+    {
+      "id": "v-d2-g4-004",
+      "taskStatementId": "2.4",
+      "scenario": "A streaming integration extracts tool arguments from content_block_delta events and calls its JSON parser on each delta as it arrives. Intermittent parse exceptions fill the logs, and some tool arguments are silently truncated before being executed.",
+      "stem": "What is the minimal correct fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Prompt the model to keep each tool's arguments short enough to fit within a single delta event."
+        },
+        {
+          "id": "B",
+          "text": "Buffer the input_json_delta strings for each content block and parse the assembled string only once that block's content_block_stop event arrives."
+        },
+        {
+          "id": "C",
+          "text": "Parse every delta immediately, skip any fragment that fails to parse, and concatenate the pieces that succeed."
+        },
+        {
+          "id": "D",
+          "text": "Lower temperature to 0 so that tool arguments are emitted as one complete, predictable JSON string."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "In streaming responses, tool arguments arrive incrementally as partial JSON strings in `input_json_delta` deltas; the argument object is only complete when the block closes. The correct pattern is to accumulate deltas per block and parse after `content_block_stop` — anything else parses fragments that are invalid by design.",
+      "whyWrong": {
+        "A": "Delta boundaries depend on the stream, not argument size; even short arguments can span multiple deltas, and prompt wording cannot control tokenization.",
+        "C": "Individually invalid fragments will mostly fail or parse to nonsense; skipping them is exactly what truncates arguments today.",
+        "D": "Temperature affects sampling, not how the stream is chunked into deltas; the parsing bug remains."
+      },
+      "difficulty": 1,
+      "mindset": "Deltas are fragments; blocks are the unit of truth.",
+      "tags": [
+        "d2",
+        "software-engineering",
+        "streaming",
+        "tool-use",
+        "json"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/streaming"
+      ]
+    },
+    {
+      "id": "v-d2-g4-005",
+      "taskStatementId": "2.4",
+      "scenario": "A payables feature asks Claude to return structured JSON (vendor, line items, totals) using a strict schema. Every response passes schema validation, but auditors found invoices whose line items do not add up to the stated total, and one invoice containing a vendor tax ID that appears nowhere in the source document.",
+      "stem": "Which change best addresses these defects?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Tighten the JSON schema with numeric ranges and string-length constraints on every field so bad values are rejected at generation time."
+        },
+        {
+          "id": "B",
+          "text": "Add application-side checks: recompute totals and require a match, reject values absent from the source, and retry a bounded number of times with the error fed back before flagging for human review."
+        },
+        {
+          "id": "C",
+          "text": "Instruct the model in the same request to double-check its arithmetic and verify each field against the document before responding."
+        },
+        {
+          "id": "D",
+          "text": "Switch this endpoint to a larger model tier and keep the existing schema-only validation in place."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Schema conformance — even strict, grammar-constrained output — guarantees shape, not correctness. Cross-field rules like 'items sum to total' and 'value must appear in the source' cannot be expressed in a schema (and strict schemas do not even support numeric range or string-length constraints). These are business rules: validate them in code, retry a bounded number of times with the validation error fed back, and escalate rather than loop when the source data is genuinely absent.",
+      "whyWrong": {
+        "A": "Strict schemas do not support numeric range or string-length constraints, and no schema can express 'the total must equal the sum of items' or 'grounded in the document'.",
+        "C": "Asking the model to self-check is probabilistic and unenforceable; it is the failure mode already being observed.",
+        "D": "A larger model reduces but does not eliminate semantic errors, and schema-only validation still cannot detect them."
+      },
+      "difficulty": 2,
+      "mindset": "Schemas guarantee shape; code must guarantee meaning.",
+      "tags": [
+        "d2",
+        "software-engineering",
+        "json",
+        "validation",
+        "structured-output"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/strict-tool-use"
+      ]
+    },
+    {
+      "id": "v-d2-g4-006",
+      "taskStatementId": "2.4",
+      "scenario": "A team's shared .mcp.json, committed to the company repository, was found to contain a hard-coded access token for an internal MCP server. The repository is cloned by dozens of contractors, and the token has been in the git history for two months.",
+      "stem": "What should the team do?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add .mcp.json to .gitignore so the token stops receiving future updates, and leave the existing history alone."
+        },
+        {
+          "id": "B",
+          "text": "Move the token into the project CLAUDE.md, restrict repository access to the platform team, and continue as before."
+        },
+        {
+          "id": "C",
+          "text": "Replace the long-lived token with a shorter-lived personal access token committed in the same file."
+        },
+        {
+          "id": "D",
+          "text": "Revoke and rotate the exposed token, then reference it in .mcp.json through environment variable expansion (\"${MCP_TOKEN}\") so the value is never committed."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "A secret that has entered git history must be treated as compromised: rotate it first. `.mcp.json` supports `${VAR}` and `${VAR:-default}` expansion in command, args, env, url and headers precisely so credentials stay out of version control while the file itself remains shareable. Personal or short-lived tokens in committed files repeat the same mistake.",
+      "whyWrong": {
+        "A": "gitignore only stops future commits — the token remains readable in history to everyone who ever cloned the repo — and it also stops the team from sharing the server config, which is the file's purpose.",
+        "B": "CLAUDE.md is also committed and read by Claude on every session — it is project knowledge, never a secret store, and access restriction does not un-leak a credential.",
+        "C": "Committing any credential — even short-lived — recreates the problem and adds rotation churn for every user of the file."
+      },
+      "difficulty": 2,
+      "mindset": "Exposed secrets get rotated; config files reference env vars.",
+      "tags": [
+        "d2",
+        "software-engineering",
+        "secrets",
+        "version-control",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/mcp"
+      ]
+    },
+    {
+      "id": "v-d2-g4-007",
+      "taskStatementId": "2.4",
+      "scenario": "A team uses Claude Code for implementation. Before opening a pull request, an engineer asks the same Claude session that wrote the change to review its own diff. These sessions consistently approve their own work, yet defects that human reviewers later find keep slipping through to production.",
+      "stem": "Which approach is most likely to catch those defects before merge?",
+      "options": [
+        {
+          "id": "A",
+          "text": "In the same session, ask Claude to adopt a harsh senior-reviewer persona and critique its own diff a second time."
+        },
+        {
+          "id": "B",
+          "text": "In the same session, ask Claude to re-run the test suite and confirm every test passes before the PR is opened."
+        },
+        {
+          "id": "C",
+          "text": "Run the review in a separate, fresh session — for example a headless CI job — with written review standards and findings requested in a structured, machine-readable format."
+        },
+        {
+          "id": "D",
+          "text": "Configure the authoring session to use a larger model tier so its self-review of the same diff is more thorough."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "A session that authored a change carries its own reasoning and assumptions, which biases any review it performs — the model 'knows' why it wrote the code and reviews that intent rather than the artifact. A genuinely independent instance, given explicit documented standards and asked for structured findings (for example headless mode with JSON output), provides a real second pass that a self-review cannot.",
+      "whyWrong": {
+        "A": "Changing tone does not remove the shared-context bias; the reviewer still holds the author's justification in mind.",
+        "B": "Tests passing is necessary but is not review, and the authoring session chose which tests to write; coverage gaps stay invisible.",
+        "D": "A larger model reviewing its own recent output with the same retained context inherits the same blind spots."
+      },
+      "difficulty": 2,
+      "mindset": "Authors make poor reviewers — even model authors.",
+      "tags": [
+        "d2",
+        "software-engineering",
+        "code-review",
+        "claude-code",
+        "ci"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/headless",
+        "https://code.claude.com/docs/en/github-actions"
+      ]
+    },
+    {
+      "id": "v-d2-g4-008",
+      "taskStatementId": "2.4",
+      "scenario": "A payments monolith with almost no automated tests must be modernized with Claude's help over the next two quarters. Production releases happen every sprint, and regressions in billing are extremely costly. The team is planning the migration now.",
+      "stem": "Which plan best manages the risk?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Plan the target architecture first, add characterization tests that pin down today's behavior on critical flows, then migrate incrementally with small shippable changes so main stays releasable throughout."
+        },
+        {
+          "id": "B",
+          "text": "Have Claude rewrite the system module by module on a long-lived feature branch across the two quarters, merging once the whole rewrite compiles and manual smoke tests pass."
+        },
+        {
+          "id": "C",
+          "text": "Ask Claude to refactor and simultaneously simplify the billing rules wherever it sees opportunities, so the new system is cleaner than the old one."
+        },
+        {
+          "id": "D",
+          "text": "Freeze all other development, point every engineer and Claude session at the rewrite, and cut over to the new system in a single release."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Large-scale modernization is safest as: plan first, capture current behavior with characterization tests (the safety net an untested monolith lacks), then migrate in small incremental steps with main shippable at every point. This keeps every sprint releasable, localizes regressions, and lets Claude's contributions be verified against pinned behavior.",
+      "whyWrong": {
+        "B": "A months-long branch defers integration, guarantees merge pain, and 'compiles + smoke tests' is weak evidence for a billing system with no test suite.",
+        "C": "Mixing behavior changes into a refactor makes regressions undetectable — you can no longer tell intended from unintended differences.",
+        "D": "Big-bang cutover maximizes blast radius and abandons the sprint cadence; freezing development raises cost without reducing risk."
+      },
+      "difficulty": 3,
+      "mindset": "Modernize incrementally under characterization tests, never big-bang.",
+      "tags": [
+        "d2",
+        "software-engineering",
+        "refactoring",
+        "large-scale",
+        "sdlc"
+      ],
+      "sourceRefs": [
+        "https://everpath-course-content.s3-accelerate.amazonaws.com/instructor%2F6nizmqk8tpzpfjvt6qmmav7rh%2Fpublic%2F1783542875%2FClaude+Certified+Developer+%E2%80%93+Foundations+Exam+Guide.pdf"
+      ]
+    },
+    {
+      "id": "v-d2-g4-009",
+      "taskStatementId": "2.4",
+      "scenario": "A pull request generated with Claude Code contains two kinds of changes: a broad mechanical rename touching 60 files, and a small but subtle modification to discount-calculation logic buried in one of them. Reviewers cannot tell whether runtime behavior is preserved, and the diff is nearly unreadable.",
+      "stem": "What should the team do with minimal disruption?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Keep the PR intact but add a detailed description asking reviewers to focus their attention on the discount file."
+        },
+        {
+          "id": "B",
+          "text": "Split the work: land the rename as its own PR with tests green before and after, then open a separate small PR for the discount change with tests pinning its behavior."
+        },
+        {
+          "id": "C",
+          "text": "Revert the rename entirely and keep only the discount change, deferring the modernization effort to next quarter."
+        },
+        {
+          "id": "D",
+          "text": "Ask Claude to add comments throughout the renamed files explaining that runtime behavior is unchanged."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "A refactor is by definition behavior-preserving, and the only way to review one is to verify behavior is unchanged — tests green before and after, with a diff that contains nothing else. Mixing in a logic change makes both halves unverifiable: reviewers cannot use green tests as evidence, and the risky change hides inside noise. Separate PRs restore that evidence at low cost.",
+      "whyWrong": {
+        "A": "Reviewer instructions do not create verifiability; the risky change still hides in a 60-file diff.",
+        "C": "Deferring the refactor is unnecessary — the problem is the mixing, not the rename itself.",
+        "D": "Comments are claims, not evidence; they add more noise to an already unreadable diff."
+      },
+      "difficulty": 2,
+      "mindset": "If reviewers can't verify 'no behavior change', the refactor isn't finished.",
+      "tags": [
+        "d2",
+        "software-engineering",
+        "refactoring",
+        "code-review",
+        "version-control"
+      ],
+      "sourceRefs": [
+        "https://everpath-course-content.s3-accelerate.amazonaws.com/instructor%2F6nizmqk8tpzpfjvt6qmmav7rh%2Fpublic%2F1783542875%2FClaude+Certified+Developer+%E2%80%93+Foundations+Exam+Guide.pdf"
+      ]
+    },
+    {
+      "id": "v-d2-g4-010",
+      "taskStatementId": "2.4",
+      "scenario": "A nightly pipeline fans out 500 asynchronous Messages API calls to tag product records. When a handful of requests hit 429 or 529 responses, the orchestrator's gather call throws, the job aborts, and every record — including the 490+ that succeeded — is marked failed and reprocessed the following night, roughly doubling cost.",
+      "stem": "Which redesign best fixes the pipeline?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Raise the concurrency limit so that successful requests outpace the transient errors."
+        },
+        {
+          "id": "B",
+          "text": "Keep the all-or-nothing design but rerun the whole job on failure, since prompt caching makes the second pass nearly free."
+        },
+        {
+          "id": "C",
+          "text": "Capture per-record results, persist the successes, retry 429/529 items with backoff (honoring any retry-after header), and reprocess only the failed records."
+        },
+        {
+          "id": "D",
+          "text": "Replace the fan-out with a sequential single-request loop so at most one call is in flight and rate limits can never be hit."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "The defect is partial-failure handling, not the fan-out itself. Isolate each item's outcome: successes are persisted and never re-billed; transient per-item failures (429, 529, 5xx) are retried with exponential backoff honoring `retry-after`; anything still failing is surfaced per record. One bad item should never fail five hundred good ones.",
+      "whyWrong": {
+        "A": "More concurrency makes 429s worse — parallelism does not bypass rate limits, it collides with them.",
+        "B": "Cache hits reduce input cost but do not make regeneration free — output tokens are re-billed in full — and the failure mode (one error fails everything) is untouched.",
+        "D": "Sequential processing sacrifices throughput the workload does not need to sacrifice, and even a single stream of requests can still cross token limits."
+      },
+      "difficulty": 3,
+      "mindset": "One bad item must not fail five hundred good ones.",
+      "tags": [
+        "d2",
+        "software-engineering",
+        "async",
+        "partial-failure",
+        "rate-limits"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://platform.claude.com/docs/en/api/rate-limits"
+      ]
+    },
+    {
+      "id": "v-d2-g4-011",
+      "taskStatementId": "2.4",
+      "scenario": "An e-commerce team regenerates product descriptions nightly for roughly 8,000 SKUs. Nobody consumes the results before the next morning, yet the job hammers the realtime endpoint with a large asyncio fan-out at full price, and finance wants the cost cut. A new engineer proposes 'making it asynchronous' by moving the same realtime fan-out into a background task queue.",
+      "stem": "Which approach best meets the requirement at the lowest cost?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Submit the workload to the Message Batches API: asynchronous processing at reduced cost, with results available within 24 hours — matching speed to the job's latency tolerance."
+        },
+        {
+          "id": "B",
+          "text": "Keep the realtime endpoint but run the identical fan-out in a background job queue outside business hours."
+        },
+        {
+          "id": "C",
+          "text": "Enable streaming so each description starts arriving earlier and total spend drops because outputs finish sooner."
+        },
+        {
+          "id": "D",
+          "text": "Increase the concurrency of the existing fan-out so the job finishes faster and spends fewer compute-hours."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "'Asynchronous' has two different meanings here. A background queue of realtime calls is still realtime processing at full price — only the clock time moves. The Batches API is asynchronous processing: latency-tolerant bulk workloads run at a substantial discount (about half the token cost) with results available when the batch completes or within 24 hours, which is exactly the latency this nightly job tolerates. Match who-is-waiting to the calling pattern.",
+      "whyWrong": {
+        "B": "Off-peak scheduling changes when the full-price requests fire, not what they cost.",
+        "C": "Streaming improves perceived latency; it does not reduce token cost, and nobody is watching this job's output arrive.",
+        "D": "Faster completion does not change per-token price, and aggressive concurrency invites 429s that slow the job further."
+      },
+      "difficulty": 2,
+      "mindset": "If nobody is waiting, you are buying latency you don't need — sell it back via batches.",
+      "tags": [
+        "d2",
+        "software-engineering",
+        "batch",
+        "async",
+        "cost"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/batch-processing"
+      ]
+    },
+    {
+      "id": "v-d2-g4-012",
+      "taskStatementId": "2.4",
+      "scenario": "A shared client library wraps the Messages API for all of a company's services. The platform team is tuning the library's automatic retry policy and wants to retry only conditions that can succeed on a later attempt without any change to the request itself.",
+      "stem": "Which two conditions should the policy retry automatically with backoff? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "HTTP 400 invalid_request_error caused by a tool schema the API rejects."
+        },
+        {
+          "id": "B",
+          "text": "HTTP 429 rate_limit_error returned with a retry-after header."
+        },
+        {
+          "id": "C",
+          "text": "HTTP 401 authentication_error caused by a revoked API key."
+        },
+        {
+          "id": "D",
+          "text": "HTTP 413 request_too_large caused by an oversized payload."
+        },
+        {
+          "id": "E",
+          "text": "HTTP 529 overloaded_error returned while the API is briefly over capacity."
+        }
+      ],
+      "correct": [
+        "B",
+        "E"
+      ],
+      "explanation": "Only conditions that time can fix are retryable: 429 (the one 4xx worth retrying — wait according to `retry-after`, then resubmit unchanged) and 5xx/529 server-side conditions such as `overloaded_error`, which are transient. Everything else is a client problem the request must fix.",
+      "whyWrong": {
+        "A": "A 400 is a request bug; every unchanged resubmission fails identically and burns quota.",
+        "C": "A revoked key fails until a human rotates credentials — retrying just delays the alert.",
+        "D": "An oversized payload must be shrunk or split; retrying the same bytes cannot succeed."
+      },
+      "difficulty": 1,
+      "mindset": "Retry what time can fix; fix what code must.",
+      "tags": [
+        "d2",
+        "software-engineering",
+        "http-errors",
+        "retries"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://platform.claude.com/docs/en/api/rate-limits"
+      ]
+    },
+    {
+      "id": "v-d2-g4-013",
+      "taskStatementId": "2.4",
+      "scenario": "A team is deciding what belongs in the Git repository that holds their Claude application. Several engineers also use Claude Code locally against the same repository. They want the repo to be the source of truth for what ships, while keeping credentials and personal tooling out of it.",
+      "stem": "Which two items should be committed to the repository? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "The prompt templates and system prompts the service deploys, each carrying a version identifier."
+        },
+        {
+          "id": "B",
+          "text": "The API key for the team's shared account, so every environment authenticates identically."
+        },
+        {
+          "id": "C",
+          "text": "The eval datasets and grading rubrics used to gate prompt and model changes."
+        },
+        {
+          "id": "D",
+          "text": "Each developer's personal .claude/settings.local.json with their local permission grants and model preferences."
+        },
+        {
+          "id": "E",
+          "text": "Raw session transcripts containing customer support conversations, retained for possible future analysis."
+        }
+      ],
+      "correct": [
+        "A",
+        "C"
+      ],
+      "explanation": "Prompts, schemas, evals, CLAUDE.md and shared settings are release artifacts: version them in git so every deploy is reproducible and changes can be gated on evals. Secrets never belong in the repo (inject via environment or a secret manager), personal settings files are local-by-design and excluded, and transcripts with customer data raise privacy concerns and are not build artifacts.",
+      "whyWrong": {
+        "B": "A committed API key is a leak waiting for the first clone or fork; authentication belongs in per-environment secret storage.",
+        "D": "settings.local.json holds personal, machine-specific configuration and is kept out of version control; shared project settings go in .claude/settings.json instead.",
+        "E": "Customer conversations are sensitive data, not source; storing them in the app repo creates privacy and retention problems without benefiting releases."
+      },
+      "difficulty": 2,
+      "mindset": "Version what you ship; never version what unlocks it.",
+      "tags": [
+        "d2",
+        "software-engineering",
+        "version-control",
+        "secrets",
+        "evals"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/settings",
+        "https://everpath-course-content.s3-accelerate.amazonaws.com/instructor%2F6nizmqk8tpzpfjvt6qmmav7rh%2Fpublic%2F1783542875%2FClaude+Certified+Developer+%E2%80%93+Foundations+Exam+Guide.pdf"
+      ]
+    },
+    {
+      "id": "v-d2-g4-014",
+      "taskStatementId": "2.4",
+      "scenario": "An interactive feature makes several Messages API calls per user action under a strict latency budget. During a launch-week traffic spike, unbounded concurrent requests exhausted the client's connection pool, triggered a wave of 429s, and left hung requests holding worker threads for minutes.",
+      "stem": "Which two client changes best stabilize the feature? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Remove all concurrency limits during peak hours so requests queue inside the API rather than in the client."
+        },
+        {
+          "id": "B",
+          "text": "Disable retries entirely so that no request can remain in flight longer than the latency budget."
+        },
+        {
+          "id": "C",
+          "text": "Cap the number of in-flight requests with a bounded worker pool or semaphore sized against the account's rate limits."
+        },
+        {
+          "id": "D",
+          "text": "Retry every failed request immediately without modification, regardless of status code, to avoid losing work."
+        },
+        {
+          "id": "E",
+          "text": "Attach an explicit per-request timeout so hung calls fail fast and release their worker."
+        }
+      ],
+      "correct": [
+        "C",
+        "E"
+      ],
+      "explanation": "Two structural controls fix this: bounded concurrency (a semaphore or worker pool sized to the rate limits — concurrency never bypasses rate limits, it only trips them) and per-request timeouts so a hung call fails fast instead of pinning a worker. Together they convert a spike from a collapse into controlled queuing and fast, retryable failures.",
+      "whyWrong": {
+        "A": "Removing limits pushes the overload into the API as 429s and reconnect storms; the client loses all ability to shape load.",
+        "B": "Retries exist precisely for transient 429/5xx failures; disabling them trades recoverable blips for user-visible errors, and hung calls are a timeout problem, not a retry problem.",
+        "D": "Immediate, unconditional retries — including 4xx — amplify load during exactly the moments the system is struggling and cannot fix client errors."
+      },
+      "difficulty": 3,
+      "mindset": "Bound what you cannot control; time out what will not answer.",
+      "tags": [
+        "d2",
+        "software-engineering",
+        "async",
+        "concurrency",
+        "timeouts"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/rate-limits",
+        "https://platform.claude.com/docs/en/api/errors"
+      ]
+    },
+    {
+      "id": "v-d2-g4-015",
+      "taskStatementId": "2.4",
+      "scenario": "A team runs a Claude Code review job on every pull request in CI. Two problems surfaced: the job sometimes hangs indefinitely waiting for someone to approve a tool use, and when authors push follow-up commits, the reviewer re-posts the same comments it already made on the previous revision.",
+      "stem": "Which two changes best fix the pipeline? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Run the review in the same session that authored the change so it already has the context and needs no extra tools."
+        },
+        {
+          "id": "B",
+          "text": "Run the review in a separate headless instance (claude -p) with pre-scoped, non-interactive permissions and machine-readable JSON output matching a findings schema."
+        },
+        {
+          "id": "C",
+          "text": "On re-review after new commits, pass the previously reported findings into the prompt and ask only for new or unresolved issues."
+        },
+        {
+          "id": "D",
+          "text": "Give the review job an interactive terminal so an on-call engineer can approve permission prompts as they appear."
+        },
+        {
+          "id": "E",
+          "text": "Disable tool use for the reviewer entirely so it can never block on a permission decision."
+        }
+      ],
+      "correct": [
+        "B",
+        "C"
+      ],
+      "explanation": "A CI reviewer must be non-interactive and structured: headless mode with pre-approved, scoped permissions and JSON output (optionally schema-validated) means the job cannot hang waiting for a human and its findings can be posted mechanically. Feeding prior findings into the re-review prompt — and asking only for new or unresolved issues — keeps follow-up reviews additive instead of repetitive.",
+      "whyWrong": {
+        "A": "The authoring session's retained reasoning biases its review of its own change, defeating the purpose of an independent pass.",
+        "D": "Manual approval of prompts in CI is unscalable and reintroduces the hang whenever nobody is watching; permissions should be pre-scoped for unattended runs.",
+        "E": "A reviewer that cannot read the repo or run checks produces shallow commentary; the fix is pre-scoped tools, not no tools."
+      },
+      "difficulty": 2,
+      "mindset": "CI reviewers must be non-interactive and remember what they already said.",
+      "tags": [
+        "d2",
+        "software-engineering",
+        "ci",
+        "code-review",
+        "claude-code"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/headless",
+        "https://code.claude.com/docs/en/github-actions"
+      ]
+    }
+  ]
+}
