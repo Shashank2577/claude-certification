@@ -70,13 +70,16 @@ export async function updateProfile(_: FormResult, form: FormData): Promise<Form
 
   const background = form.get("background") === "non-technical" ? "non-technical" : "technical";
   const activeCert = String(form.get("activeCert") ?? "");
-  const certOk = settings.certIds.includes(activeCert) && !!getCert(activeCert);
+  // Any real exam can be chosen; picking one you had not added yet adds it to your list.
+  const certOk = !!getCert(activeCert);
+  const certIds = certOk && !settings.certIds.includes(activeCert) ? [...settings.certIds, activeCert] : settings.certIds;
 
   const next = {
     dailyMinutes: minutes,
     examDate: examRaw || null,
     background,
     activeCert: certOk ? activeCert : settings.activeCert,
+    certIds,
   } as const;
   const newCert = next.activeCert ?? settings.certIds[0];
   // The plan is built from these four; when any changes, the old plan no longer matches.

@@ -7,7 +7,7 @@ export const metadata: Metadata = { title: "Settings" };
 
 export default async function SettingsPage() {
   const { user, settings, certs } = await getViewer();
-  const myCerts = certs.filter((c) => settings.certIds.includes(c.id)).map((c) => ({ id: c.id, name: c.name }));
+  const allCerts = certs.map((c) => ({ id: c.id, name: c.name }));
   return (
     <>
       <PageHeader title="Settings" />
@@ -18,9 +18,9 @@ export default async function SettingsPage() {
           dailyMinutes: settings.dailyMinutes,
           examDate: settings.examDate ?? "",
           background: settings.background,
-          activeCert: settings.activeCert ?? myCerts[0]?.id ?? "",
+          activeCert: settings.activeCert ?? settings.certIds[0] ?? allCerts[0]?.id ?? "",
         }}
-        certs={myCerts}
+        certs={allCerts}
       />
     </>
   );

@@ -69,7 +69,7 @@ export function SettingsForms({ profile, certs }: { profile: Profile; certs: { i
           </label>
           {certs.length > 1 ? (
             <label className="block text-sm font-medium">
-              Studying now
+              Studying now <span className="font-normal text-muted">(pick any exam to add it)</span>
               <select name="activeCert" defaultValue={profile.activeCert} className={input}>
                 {certs.map((c) => (
                   <option key={c.id} value={c.id}>
