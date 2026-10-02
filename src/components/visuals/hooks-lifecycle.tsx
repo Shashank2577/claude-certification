@@ -262,7 +262,7 @@ export default function HooksLifecycle() {
         <p className="text-xs text-muted">Arrow keys move through {mode === "explore" ? "events" : "steps"}</p>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1fr_1.15fr]">
+      <div className="grid grid-cols-1 gap-4 @2xl:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
         <div className="rounded-xl bg-surface-2/50 p-2" tabIndex={0} role="group" aria-label="One Claude Code session, top to bottom">
           <div className="relative">
             <span className="absolute top-5 bottom-5 left-[18px] w-px -translate-x-1/2 bg-line-strong" aria-hidden />
@@ -305,7 +305,7 @@ export default function HooksLifecycle() {
             {mode === "explore" ? (
               <motion.div key={`ex-${sel}`} initial={reduce ? false : { opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={reduce ? undefined : { opacity: 0 }} transition={{ duration: 0.18 }} className="space-y-3">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h4 className="font-mono text-base font-semibold text-ink">{sel}</h4>
+                  <p className="font-mono text-base font-semibold text-ink">{sel}</p>
                   <BlockBadge block={info.block} />
                 </div>
                 <p className="text-sm text-ink-2">{info.plain}</p>
@@ -366,7 +366,7 @@ export default function HooksLifecycle() {
         </div>
       </div>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 @lg:flex-row @lg:items-center @lg:justify-between">
         <p className="min-h-12 text-[0.95rem] text-ink-2" aria-live="polite">
           {mode === "simulate" ? (
             <>
@@ -412,7 +412,7 @@ export default function HooksLifecycle() {
         ) : null}
       </div>
 
-      <div className="grid gap-2 sm:grid-cols-3" aria-label="Exit codes">
+      <div className="grid grid-cols-1 gap-2 @lg:grid-cols-3" aria-label="Exit codes">
         <ExitChip code="0" color="var(--good)" text="Success. Carry on (stdout may be parsed as JSON)." />
         <ExitChip code="2" color="var(--accent)" ink="var(--accent-ink)" text="Blocking error. Blocks where the event allows; stderr goes back." />
         <ExitChip code="1, 127…" color="var(--bad)" text="Non-blocking error. The action still proceeds." />
@@ -498,7 +498,7 @@ function Determinism({ reduce }: { reduce: boolean }) {
                 {run ? ` · ${RUNS - r.miss.length}/${RUNS} stopped` : ""}
               </p>
             </div>
-            <div className="mt-1.5 grid grid-cols-10 gap-1 sm:grid-cols-20" role="img" aria-label={run ? `${r.label}: ${RUNS - r.miss.length} of ${RUNS} sessions stopped the command` : `${r.label}: not run yet`}>
+            <div className="mt-1.5 grid grid-cols-10 gap-1 @lg:grid-cols-20" role="img" aria-label={run ? `${r.label}: ${RUNS - r.miss.length} of ${RUNS} sessions stopped the command` : `${r.label}: not run yet`}>
               {Array.from({ length: RUNS }, (_, i) => {
                 const bad = r.miss.includes(i);
                 return (

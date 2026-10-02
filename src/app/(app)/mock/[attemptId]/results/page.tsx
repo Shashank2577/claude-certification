@@ -68,7 +68,7 @@ export default async function MockResultsPage({ params }: PageProps<"/mock/[atte
         title="Mock results"
         sub={`${cert?.name ?? "Mock exam"}, submitted ${new Date(attempt.submittedAt ?? attempt.startedAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}`}
         action={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <ButtonLink href="/mock" variant="outline">
               All attempts
             </ButtonLink>
@@ -81,8 +81,8 @@ export default async function MockResultsPage({ params }: PageProps<"/mock/[atte
         }
       />
 
-      <div className="grid gap-6 lg:grid-cols-[1.1fr_1fr]">
-        <Card className="p-6 sm:p-8">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.1fr_1fr]">
+        <Card className="min-w-0 p-6 sm:p-8">
           <div className="flex flex-col items-center gap-6 sm:flex-row sm:items-center">
             <ScoreDial score={score} pass={pass} />
             <div className="text-center sm:text-left">
@@ -99,7 +99,7 @@ export default async function MockResultsPage({ params }: PageProps<"/mock/[atte
           </div>
         </Card>
 
-        <Card className="p-6">
+        <Card className="min-w-0 p-6">
           <CardHeader title="By domain" sub="Weighted as on the real exam" />
           <ul className="mt-5 space-y-4">
             {attempt.breakdown.map((d) => (
@@ -126,7 +126,7 @@ export default async function MockResultsPage({ params }: PageProps<"/mock/[atte
                 <a href={`#q-${x.n}`} className="inline-flex items-center gap-2 rounded-xl border border-line bg-surface px-3 py-1.5 text-sm hover:border-line-strong">
                   <span className="font-semibold tabular">Q{x.n}</span>
                   <span className="text-muted tabular">{fmtDuration(x.ms)}</span>
-                  <span className={x.correct ? "text-good" : "text-bad"}>{x.correct ? "right" : "wrong"}</span>
+                  <span className={x.correct ? "text-good" : x.selected.length === 0 ? "text-muted" : "text-bad"}>{x.correct ? "right" : x.selected.length === 0 ? "skipped" : "wrong"}</span>
                 </a>
               </li>
             ))}

@@ -143,7 +143,7 @@ function Sorter({ reduce }: { reduce: boolean }) {
               whileDrag={{ scale: 1.04, zIndex: 20 }}
               onDragEnd={(_, info) => onDrop(j.id, info)}
               className={clsx(
-                "w-full rounded-lg border border-line bg-surface px-3 py-2 sm:w-[calc(50%-0.25rem)] lg:w-[calc(33.33%-0.35rem)]",
+                "w-full rounded-lg border border-line bg-surface px-3 py-2 @lg:w-[calc(50%-0.25rem)] @2xl:w-[calc(33.33%-0.35rem)]",
                 canDrag && "cursor-grab touch-none active:cursor-grabbing",
               )}
             >
@@ -157,7 +157,7 @@ function Sorter({ reduce }: { reduce: boolean }) {
           ))}
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 @lg:grid-cols-2">
           {(["batch", "sync"] as Lane[]).map((lane) => (
             <div
               key={lane}
@@ -196,7 +196,7 @@ function Sorter({ reduce }: { reduce: boolean }) {
           ))}
         </div>
 
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex flex-col gap-2 @lg:flex-row @lg:items-start @lg:justify-between">
           <p className="min-h-12 text-[0.95rem] text-ink-2" aria-live="polite">
             {msg}
           </p>
@@ -265,7 +265,7 @@ function Lifecycle({ reduce }: { reduce: boolean }) {
 
           <motion.rect initial={false} animate={{ opacity: inBatch ? 1 : 0.35 }} transition={t} x={BATCH.x} y={BATCH.y} width={BATCH.w} height={BATCH.h} rx={14} fill="var(--ink)" />
           <text x={BATCH.cx} y={122} textAnchor="middle" fill="var(--bg)" style={{ font: "600 18px var(--font-display)" }}>Batch</text>
-          <text x={BATCH.cx} y={142} textAnchor="middle" fill="var(--accent)" style={{ font: "500 14px var(--font-mono)" }}>
+          <text x={BATCH.cx} y={142} textAnchor="middle" fill="var(--bg)" fillOpacity={0.8} style={{ font: "500 14px var(--font-mono)" }}>
             {step < 1 ? "not sent" : step === 2 ? "in_progress" : "ended"}
           </text>
           {/* 24h clock ring: fills a little to show "most batches finish in under an hour" */}
@@ -311,7 +311,7 @@ function Lifecycle({ reduce }: { reduce: boolean }) {
         </svg>
       </div>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 @lg:flex-row @lg:items-center @lg:justify-between">
         <p className="min-h-12 text-[0.95rem] text-ink-2" aria-live="polite">
           <span className="mr-2 font-display font-semibold text-ink tabular">{step + 1}/{LIFE.length} {LIFE[step].title}.</span>
           {LIFE[step].caption}

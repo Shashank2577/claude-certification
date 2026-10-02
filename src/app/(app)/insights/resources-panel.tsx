@@ -12,11 +12,21 @@ import { EmptyState, Pill } from "@/components/ui/card";
 const PRIORITY_LABEL: Record<Resource["priority"], string> = { must: "Must read", should: "Should read", nice: "Nice to have" };
 const PRIORITY_ORDER: Record<Resource["priority"], number> = { must: 0, should: 1, nice: 2 };
 
+const PAGE = 10;
+
 export function ResourcesPanel({ resources, domains, initialDone }: { resources: Resource[]; domains: { id: string; name: string }[]; initialDone: string[] }) {
   const [type, setType] = useState("all");
   const [domain, setDomain] = useState("all");
   const [priority, setPriority] = useState("all");
   const [hideDone, setHideDone] = useState(false);
+  const [limit, setLimit] = useState(PAGE);
+  // Changing a filter starts the list over at the first page.
+  const filter =
+    <T,>(set: (v: T) => void) =>
+    (v: T) => {
+      set(v);
+      setLimit(PAGE);
+    };
   const [done, setDone] = useState(() => new Set(initialDone));
   const [optimisticDone, setOptimisticDone] = useOptimistic(done);
   const [, start] = useTransition();
@@ -52,12 +62,12 @@ export function ResourcesPanel({ resources, domains, initialDone }: { resources:
   return (
     <div>
       <div className="flex flex-col gap-3 rounded-2xl bg-surface-2/70 p-4 sm:flex-row sm:flex-wrap sm:items-end">
-        <Select label="Type" value={type} onChange={setType} options={[["all", "All types"], ...types.map((t) => [t, t[0].toUpperCase() + t.slice(1)] as [string, string])]} />
-        <Select label="Domain" value={domain} onChange={setDomain} options={[["all", "All domains"], ...domains.map((d) => [d.id, d.name] as [string, string])]} />
+        <Select label="Type" value={type} onChange={filter(setType)} options={[["all", "All types"], ...types.map((t) => [t, t[0].toUpperCase() + t.slice(1)] as [string, string])]} />
+        <Select label="Domain" value={domain} onChange={filter(setDomain)} options={[["all", "All domains"], ...domains.map((d) => [d.id, d.name] as [string, string])]} />
         <Select
           label="Priority"
           value={priority}
-          onChange={setPriority}
+          onChange={filter(setPriority)}
           options={[
             ["all", "Any priority"],
             ["must", "Must read"],
@@ -66,12 +76,13 @@ export function ResourcesPanel({ resources, domains, initialDone }: { resources:
           ]}
         />
         <label className="flex h-10 items-center gap-2 text-sm text-ink-2 sm:ml-auto">
-          <input type="checkbox" checked={hideDone} onChange={(e) => setHideDone(e.target.checked)} className="size-4 accent-[var(--ink)]" />
+          <input type="checkbox" checked={hideDone} onChange={(e) => filter(setHideDone)(e.target.checked)} className="size-4 accent-[var(--ink)]" />
           Hide finished
         </label>
       </div>
       <p className="mt-3 text-sm text-muted tabular" aria-live="polite">
-        Showing {list.length} of {resources.length}. {doneCount} finished.
+        Showing {Math.min(limit, list.length)} of {list.length}
+        {list.length === resources.length ? "" : ` matching (${resources.length} in all)`}. {doneCount} finished.
       </p>
 
       {list.length === 0 ? (
@@ -79,7 +90,7 @@ export function ResourcesPanel({ resources, domains, initialDone }: { resources:
       ) : (
         <ul className="mt-3 grid gap-2">
           <AnimatePresence initial={false}>
-            {list.map((r) => {
+            {list.slice(0, limit).map((r) => {
               const isDone = optimisticDone.has(r.id);
               return (
                 <motion.li
@@ -88,7 +99,7 @@ export function ResourcesPanel({ resources, domains, initialDone }: { resources:
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
-                  className={clsx("flex gap-3 rounded-2xl border bg-surface p-4 transition-colors", isDone ? "border-line" : "border-line shadow-card")}
+                  className={clsx("flex min-w-0 gap-3 rounded-2xl border bg-surface p-4 transition-colors", isDone ? "border-line" : "border-line shadow-card")}
                 >
                   <button
                     type="button"
@@ -131,18 +142,28 @@ export function ResourcesPanel({ resources, domains, initialDone }: { resources:
           </AnimatePresence>
         </ul>
       )}
+      {list.length > limit ? (
+        <button
+          type="button"
+          onClick={() => setLimit((n) => n + PAGE)}
+          className="mt-4 w-full rounded-xl border border-line-strong bg-surface px-4 py-2.5 text-sm font-medium text-ink-2 hover:border-ink hover:text-ink"
+        >
+          Show {Math.min(PAGE, list.length - limit)} more
+          <span className="text-muted"> ({list.length - limit} left)</span>
+        </button>
+      ) : null}
     </div>
   );
 }
 
 function Select({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: [string, string][] }) {
   return (
-    <label className="flex flex-col gap-1 text-xs font-medium text-ink-2">
+    <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-ink-2">
       {label}
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="h-10 min-w-40 rounded-xl border border-line-strong bg-surface px-3 text-sm text-ink focus:border-ink focus:outline-none"
+        className="h-10 w-full min-w-0 rounded-xl sm:w-auto sm:min-w-40 border border-line-strong bg-surface px-3 text-sm text-ink focus:border-ink focus:outline-none"
       >
         {options.map(([v, l]) => (
           <option key={v} value={v}>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
 import { clsx } from "clsx";
@@ -48,6 +48,9 @@ export function MockRunner({
   const [navOpen, setNavOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [saveState, setSaveState] = useState<"saved" | "saving" | "offline">("saved");
+  // Roving tab stop inside the question navigator.
+  const [navFocus, setNavFocus] = useState(index);
+  const heading = useRef<HTMLHeadingElement>(null);
 
   // Server clock offset so the countdown matches the deadline the server enforces.
   const offset = useRef(0);
@@ -143,6 +146,7 @@ export function MockRunner({
       if (i < 0 || i >= questions.length || i === index) return;
       commitTime();
       setIndex(i);
+      setNavFocus(i);
       setNavOpen(false);
     },
     [commitTime, index, questions.length],
@@ -160,6 +164,42 @@ export function MockRunner({
     return () => window.removeEventListener("keydown", onKey);
   }, [go, index, confirmOpen]);
 
+  // When the question changes, move focus to its heading and bring it into view (below the sticky bars).
+  const firstIndex = useRef(true);
+  useEffect(() => {
+    if (firstIndex.current) {
+      firstIndex.current = false;
+      return;
+    }
+    const h = heading.current;
+    if (!h) return;
+    h.focus({ preventScroll: true });
+    // The heading is visually hidden; scroll its (visible) container instead.
+    const box = h.parentElement;
+    const top = box?.getBoundingClientRect().top ?? 0;
+    if (box && (top < 120 || top > window.innerHeight * 0.5)) box.scrollIntoView({ block: "start" });
+  }, [index]);
+
+  const onNavKey = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    const grid = e.currentTarget;
+    const cols = Math.max(1, getComputedStyle(grid).gridTemplateColumns.split(" ").filter(Boolean).length);
+    const last = questions.length - 1;
+    let next = navFocus;
+    if (e.key === "ArrowRight") next = navFocus + 1;
+    else if (e.key === "ArrowLeft") next = navFocus - 1;
+    else if (e.key === "ArrowDown") next = navFocus + cols;
+    else if (e.key === "ArrowUp") next = navFocus - cols;
+    else if (e.key === "Home") next = 0;
+    else if (e.key === "End") next = last;
+    else return;
+    // Keep the arrows from also reaching the page-level previous/next shortcut.
+    e.preventDefault();
+    e.stopPropagation();
+    next = Math.max(0, Math.min(last, next));
+    setNavFocus(next);
+    grid.querySelectorAll<HTMLButtonElement>("button")[next]?.focus();
+  };
+
   const answeredCount = useMemo(() => questions.filter((x) => (answers[x.id]?.length ?? 0) > 0).length, [answers, questions]);
   const unanswered = questions.length - answeredCount;
   const flaggedSet = useMemo(() => new Set(flags), [flags]);
@@ -170,7 +210,7 @@ export function MockRunner({
 
   const navigator = (
     <div>
-      <div className="grid grid-cols-6 gap-1.5 sm:grid-cols-8 lg:grid-cols-5">
+      <div role="group" aria-label="Question navigator" onKeyDown={onNavKey} className="grid grid-cols-6 gap-1.5 sm:grid-cols-8 lg:grid-cols-5">
         {questions.map((x, i) => {
           const answered = (answers[x.id]?.length ?? 0) > 0;
           const flagged = flaggedSet.has(x.id);
@@ -178,11 +218,13 @@ export function MockRunner({
             <button
               key={x.id}
               type="button"
+              tabIndex={i === navFocus ? 0 : -1}
+              onFocus={() => setNavFocus(i)}
               onClick={() => go(i)}
               aria-label={`Question ${i + 1}${answered ? ", answered" : ", unanswered"}${flagged ? ", flagged" : ""}${i === index ? ", current" : ""}`}
               aria-current={i === index ? "step" : undefined}
               className={clsx(
-                "relative grid h-9 place-items-center rounded-lg border font-display text-sm font-semibold tabular transition-colors",
+                "relative grid h-9 min-w-0 place-items-center rounded-lg border font-display text-sm font-semibold tabular transition-colors",
                 i === index ? "border-ink bg-ink text-bg" : answered ? "border-transparent bg-surface-2 text-ink" : "border-line-strong text-muted hover:border-ink",
               )}
             >
@@ -206,44 +248,18 @@ export function MockRunner({
     </div>
   );
 
-  return (
-    <div>
-      <div className="sticky top-14 z-20 -mx-4 mb-5 border-b border-line bg-bg/90 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6 lg:-mx-10 lg:px-10">
-        <div className="flex items-center gap-3">
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm text-muted">{certName}</p>
-            <p className="text-sm font-medium tabular">
-              {answeredCount} of {questions.length} answered
-              <span className="ml-2 text-xs font-normal text-muted" aria-live="polite">
-                {saveState === "saving" ? "Saving…" : saveState === "offline" ? "Not saved, retrying" : "Saved"}
-              </span>
-            </p>
-          </div>
-          <div
-            className={clsx(
-              "flex items-center gap-1.5 rounded-xl px-3 py-1.5 font-display text-lg font-semibold tabular",
-              urgent ? "bg-bad text-white" : low ? "bg-accent-soft text-accent-text" : "bg-surface-2",
-            )}
-            role="timer"
-            aria-label={`Time remaining ${clock(remaining)}`}
-          >
-            <Clock size={16} />
-            {clock(remaining)}
-          </div>
-          <Button variant="outline" size="sm" className="lg:hidden" onClick={() => setNavOpen(true)} aria-label="Open question navigator">
-            <Grid3x3 size={16} />
-          </Button>
-          <Button size="sm" onClick={() => setConfirmOpen(true)} disabled={submitting}>
-            Submit
-          </Button>
-        </div>
-        <div className="mt-3 h-1 overflow-hidden rounded-full bg-surface-2">
-          <motion.div className="h-full bg-ink" style={{ originX: 0 }} animate={{ scaleX: answeredCount / questions.length }} transition={{ duration: 0.4 }} />
-        </div>
-      </div>
+  const isFlagged = flaggedSet.has(q.id);
+  const setFlag = (f: boolean) => setFlags((fl) => (f ? [...new Set([...fl, q.id])] : fl.filter((x) => x !== q.id)));
+  const saveLabel = saveState === "saving" ? "Saving…" : saveState === "offline" ? "Not saved, retrying" : "Saved";
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_260px]">
-        <div>
+  return (
+    // The exam bar comes after the question in the DOM (so Tab reaches the question first) but is shown on top.
+    <div className="flex flex-col">
+      <div className="relative order-2 grid scroll-mt-36 gap-6 lg:grid-cols-[1fr_260px]">
+      <h1 ref={heading} tabIndex={-1} className="sr-only">
+        Mock exam, question {index + 1} of {questions.length}
+      </h1>
+        <div className="min-w-0">
           <AnimatePresence mode="wait">
             <motion.div key={q.id} initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -16 }} transition={{ duration: 0.18 }}>
               <QuestionCard
@@ -251,8 +267,8 @@ export function MockRunner({
                 selected={answers[q.id] ?? []}
                 onSelect={(ids) => setAnswers((a) => ({ ...a, [q.id]: ids }))}
                 onSubmit={() => go(index + 1)}
-                flagged={flaggedSet.has(q.id)}
-                onFlag={(f) => setFlags((fl) => (f ? [...new Set([...fl, q.id])] : fl.filter((x) => x !== q.id)))}
+                flagged={isFlagged}
+                onFlag={setFlag}
                 keyboard={!confirmOpen && !navOpen}
                 label={`Question ${index + 1} of ${questions.length}`}
                 domainName={domainNames[q.domainId]}
@@ -281,6 +297,56 @@ export function MockRunner({
             {navigator}
           </div>
         </aside>
+      </div>
+
+      <div className="sticky top-14 z-20 order-1 -mx-4 mb-5 border-b border-line bg-bg/90 px-4 py-2.5 backdrop-blur sm:-mx-6 sm:px-6 sm:py-3 lg:-mx-10 lg:px-10">
+        <div className="flex items-center gap-1.5 sm:gap-3">
+          <div className="mr-auto shrink-0 sm:min-w-0 sm:flex-1">
+            <p className="hidden truncate text-sm text-muted sm:block">{certName}</p>
+            <p className="truncate text-sm font-medium tabular">
+              <span className="sm:hidden" aria-hidden>
+                {answeredCount}/{questions.length}
+              </span>
+              <span className="sr-only sm:not-sr-only">
+                {answeredCount} of {questions.length} answered
+              </span>
+              <span className="ml-2 hidden text-xs font-normal text-muted sm:inline">{saveLabel}</span>
+            </p>
+            <span className="sr-only" aria-live="polite">
+              {saveState === "saved" ? "" : saveLabel}
+            </span>
+          </div>
+          <div
+            className={clsx(
+              "flex shrink-0 items-center gap-1 rounded-xl px-2 py-1 font-display text-base font-semibold tabular sm:px-3 sm:py-1.5 sm:text-lg",
+              urgent ? "bg-bad text-white" : low ? "bg-accent-soft text-accent-text" : "bg-surface-2",
+            )}
+            role="timer"
+            aria-label={`Time remaining ${clock(remaining)}`}
+          >
+            <Clock size={16} aria-hidden className="hidden min-[360px]:block" />
+            {clock(remaining)}
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className={clsx("shrink-0 px-2! sm:hidden", isFlagged && "bg-accent-soft text-accent-text")}
+            onClick={() => setFlag(!isFlagged)}
+            aria-pressed={isFlagged}
+            aria-label={`Flag question ${index + 1}`}
+          >
+            <Flag size={16} fill={isFlagged ? "currentColor" : "none"} />
+          </Button>
+          <Button variant="outline" size="sm" className="shrink-0 px-2! lg:hidden" onClick={() => setNavOpen(true)} aria-label="Open question navigator">
+            <Grid3x3 size={16} />
+          </Button>
+          <Button size="sm" className="shrink-0" onClick={() => setConfirmOpen(true)} disabled={submitting}>
+            Submit
+          </Button>
+        </div>
+        <div className="mt-2 h-1 overflow-hidden rounded-full bg-surface-2 sm:mt-3">
+          <motion.div className="h-full bg-ink" style={{ originX: 0 }} animate={{ scaleX: answeredCount / questions.length }} transition={{ duration: 0.4 }} />
+        </div>
       </div>
 
       <Modal open={navOpen} onClose={() => setNavOpen(false)} title="Question navigator">

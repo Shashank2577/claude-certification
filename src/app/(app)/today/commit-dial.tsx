@@ -38,7 +38,7 @@ export function CommitDial({ href, nextTitle, kindLabel }: { href: string; nextT
         onFocus={() => setHover(true)}
         onBlur={() => setHover(false)}
         whileTap={{ scale: 0.96 }}
-        className="group relative grid size-[248px] place-items-center rounded-full outline-offset-4 sm:size-[268px]"
+        className="group relative grid size-[200px] place-items-center rounded-full outline-offset-4 min-[400px]:size-[248px] sm:size-[268px]"
         aria-label={`Start the next five minutes: ${nextTitle}`}
       >
         <svg viewBox="0 0 268 268" className="absolute inset-0 size-full" aria-hidden>
@@ -79,8 +79,8 @@ export function CommitDial({ href, nextTitle, kindLabel }: { href: string; nextT
           />
         </svg>
         <span className="relative flex flex-col items-center text-bg">
-          <span className="text-sm text-bg/70">{busy ? "Timer running" : "Commit to"}</span>
-          <span className="font-display text-[3.4rem] leading-none font-semibold tracking-[-0.04em] tabular">5:00</span>
+          <span className="text-xs text-bg/70 min-[400px]:text-sm">{busy ? "Timer running" : "Commit to"}</span>
+          <span className="font-display text-[2.7rem] leading-none font-semibold tracking-[-0.04em] tabular min-[400px]:text-[3.4rem]">5:00</span>
           <span className="mt-1.5 rounded-full bg-accent px-3 py-1 text-sm font-semibold text-accent-ink">{launching ? "Here we go" : "Start now"}</span>
         </span>
       </motion.button>

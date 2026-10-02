@@ -5,13 +5,15 @@ import { AlertTriangle, ArrowLeft, BookMarked, Check, ChevronLeft, ChevronRight,
 import { getCert, getCertLessons, getCertQuestions } from "@/lib/content";
 import { toPublicQuestion } from "@/lib/content-types";
 import { questionHistory } from "@/lib/repo/attempts";
+import { minutesOnDay } from "@/lib/repo/activity";
 import { getLessonProgress, markLessonStarted } from "@/lib/repo/progress";
+import { dayKey } from "@/lib/dates";
 import { getViewer } from "@/lib/viewer";
 import { Markdown } from "@/components/ui/markdown";
 import { Pill } from "@/components/ui/card";
 import { Visual } from "@/components/visuals/visual";
 import { CheckYourself } from "@/components/quiz/check-yourself";
-import { CompleteButton } from "./complete-button";
+import { CompleteButton, type NextLesson } from "./complete-button";
 
 type Props = PageProps<"/learn/[certId]/[domainId]/[lessonId]">;
 
@@ -19,6 +21,13 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { certId, lessonId } = await params;
   const l = getCertLessons(certId).find((x) => x.id === lessonId);
   return { title: l?.title ?? "Lesson" };
+}
+
+/** Minutes left in today's goal once `pending` more minutes are logged; null if it can't be worked out. */
+async function goalMinutesLeft(userId: number, tz: string, dailyMinutes: number, pending: number): Promise<number | null> {
+  if (!dailyMinutes) return null;
+  const today = await minutesOnDay(userId, dayKey(Date.now(), tz)).catch(() => null);
+  return today == null ? null : Math.max(0, Math.round(dailyMinutes - today - pending));
 }
 
 export default async function LessonPage({ params }: Props) {
@@ -32,9 +41,16 @@ export default async function LessonPage({ params }: Props) {
   if (!cert || !domain || !lesson) notFound();
 
   await markLessonStarted(user.id, lesson);
-  const done = (await getLessonProgress(user.id)).get(lesson.id)?.status === "done";
+  const progress = await getLessonProgress(user.id);
+  const done = progress.get(lesson.id)?.status === "done";
   const prev = lessons[idx - 1];
   const next = lessons[idx + 1];
+
+  // Momentum after "Mark complete": the next unfinished core lesson in cert order (wrapping to earlier gaps).
+  const unfinished = (l: (typeof lessons)[number]) => l.id !== lesson.id && l.level !== "deep" && progress.get(l.id)?.status !== "done";
+  const upNext = lessons.slice(idx + 1).find(unfinished) ?? lessons.slice(0, idx).find(unfinished);
+  const nextLesson: NextLesson | null = upNext ? { href: `/learn/${cert.id}/${upNext.domainId}/${upNext.id}`, title: upNext.title, minutes: upNext.estMinutes || 0 } : null;
+  const goalLeftAfter = await goalMinutesLeft(user.id, settings.tz, settings.dailyMinutes, done ? 0 : lesson.estMinutes || 0);
 
   // Up to three questions for this lesson's task statements, unseen first, then ones last missed.
   const history = await questionHistory(user.id);
@@ -53,8 +69,8 @@ export default async function LessonPage({ params }: Props) {
   const color = domain.color || "var(--accent)";
 
   return (
-    <article className="mx-auto max-w-3xl">
-      <Link href={`/learn/${cert.id}/${domain.id}`} className="mb-6 inline-flex items-center gap-1.5 text-sm text-ink-2 hover:text-ink">
+    <article className="mx-auto w-full max-w-3xl min-w-0">
+      <Link href={`/learn/${cert.id}/${domain.id}`} className="-my-3 mb-3 inline-flex min-h-11 items-center gap-1.5 text-sm text-ink-2 hover:text-ink">
         <ArrowLeft size={15} /> {domain.name}
       </Link>
 
@@ -95,13 +111,16 @@ export default async function LessonPage({ params }: Props) {
       ) : null}
 
       {lesson.visualId ? (
-        <div className="mt-8">
+        // min-w-0 + overflow-x-auto: a wide figure scrolls inside itself instead of widening the page.
+        <div className="mt-8 max-w-full min-w-0 overflow-x-auto">
           <Visual id={lesson.visualId} />
         </div>
       ) : null}
 
-      <div className="mt-8">
-        <Markdown variant="lesson">{lesson.body}</Markdown>
+      <div className="mt-8 min-w-0">
+        <Markdown variant="lesson" collapseCode={settings.background === "non-technical"}>
+          {lesson.body}
+        </Markdown>
       </div>
 
       {lesson.keyTakeaways.length > 0 ? (
@@ -113,7 +132,7 @@ export default async function LessonPage({ params }: Props) {
             {lesson.keyTakeaways.map((t, i) => (
               <li key={i} className="flex gap-3">
                 <Check size={18} className="mt-0.5 shrink-0 text-good" aria-hidden />
-                <span>{t}</span>
+                <span className="min-w-0 [overflow-wrap:anywhere]">{t}</span>
               </li>
             ))}
           </ul>
@@ -121,7 +140,7 @@ export default async function LessonPage({ params }: Props) {
       ) : null}
 
       {lesson.examTips.length > 0 || lesson.commonTraps.length > 0 ? (
-        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+        <div className="mt-4 grid gap-4 sm:grid-cols-[repeat(2,minmax(0,1fr))]">
           {lesson.examTips.length > 0 ? (
             <section className="rounded-2xl bg-info-soft/70 p-5" aria-labelledby="tips-h">
               <h2 id="tips-h" className="flex items-center gap-2 font-display font-semibold text-info">
@@ -131,7 +150,7 @@ export default async function LessonPage({ params }: Props) {
                 {lesson.examTips.map((t, i) => (
                   <li key={i} className="flex gap-2">
                     <span className="mt-2 size-1.5 shrink-0 rounded-full bg-info" aria-hidden />
-                    <span>{t}</span>
+                    <span className="min-w-0 [overflow-wrap:anywhere]">{t}</span>
                   </li>
                 ))}
               </ul>
@@ -146,7 +165,7 @@ export default async function LessonPage({ params }: Props) {
                 {lesson.commonTraps.map((t, i) => (
                   <li key={i} className="flex gap-2">
                     <span className="mt-2 size-1.5 shrink-0 rounded-full bg-bad" aria-hidden />
-                    <span>{t}</span>
+                    <span className="min-w-0 [overflow-wrap:anywhere]">{t}</span>
                   </li>
                 ))}
               </ul>
@@ -177,7 +196,7 @@ export default async function LessonPage({ params }: Props) {
         </section>
       ) : null}
 
-      <section className="mt-12" aria-labelledby="check-h">
+      <section className="mt-12 min-w-0" aria-labelledby="check-h">
         <h2 id="check-h" className="font-display text-xl font-semibold tracking-tight">
           Check yourself
         </h2>
@@ -186,11 +205,8 @@ export default async function LessonPage({ params }: Props) {
       </section>
 
       <footer className="mt-12 border-t border-line pt-8">
-        <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <CompleteButton lessonId={lesson.id} done={done} />
-          <p className="text-sm text-muted">+50 XP the first time you finish a lesson.</p>
-        </div>
-        <nav className="mt-8 grid gap-3 sm:grid-cols-2" aria-label="Lesson navigation">
+        <CompleteButton lessonId={lesson.id} done={done} next={nextLesson} goalLeftAfter={goalLeftAfter} />
+        <nav className="mt-8 grid gap-3 sm:grid-cols-[repeat(2,minmax(0,1fr))]" aria-label="Lesson navigation">
           {prev ? (
             <Link href={`/learn/${cert.id}/${prev.domainId}/${prev.id}`} className="group rounded-2xl border border-line p-4 transition-colors hover:border-line-strong">
               <span className="flex items-center gap-1 text-xs text-muted">

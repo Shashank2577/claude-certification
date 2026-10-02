@@ -12,7 +12,7 @@ type SubId = "web" | "news" | "reg";
 type Rect = { x: number; y: number; w: number; h: number };
 type Pt = { x: number; y: number };
 
-/** Geometry for one orientation. The wide layout is used from `sm` up, the tall one on phones. */
+/** Geometry for one orientation. The wide layout is used when the figure is at least 36rem wide (@xl), the tall one below that. */
 interface Layout {
   vb: string;
   coord: Rect;
@@ -36,7 +36,7 @@ const WIDE: Layout = {
   abort: { x: 81, y: 232, anchor: "middle" },
   chips: { x: 404, y: 272 },
   chipsLabel: { x: 404, y: 302 },
-  font: { label: 14, sub: 11.5 },
+  font: { label: 15, sub: 12.5 },
 };
 
 const TALL: Layout = {
@@ -49,7 +49,7 @@ const TALL: Layout = {
   abort: { x: 74, y: 326, anchor: "middle" },
   chips: { x: 194, y: 250 },
   chipsLabel: { x: 194, y: 283 },
-  font: { label: 15, sub: 12.5 },
+  font: { label: 16, sub: 13.5 },
 };
 
 const SUB_IDS: SubId[] = ["web", "news", "reg"];
@@ -265,13 +265,14 @@ function PipelineView() {
         ))}
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1.5fr_1fr]">
-        <div className="rounded-xl bg-surface-2/50 p-2" tabIndex={0} role="group" aria-label="Multi-agent run diagram. Use left and right arrow keys to step.">
-          <Diagram L={WIDE} pts={ARC_PTS.wide} className="hidden sm:block" {...diagram} />
-          <Diagram L={TALL} pts={ARC_PTS.tall} className="sm:hidden" {...diagram} />
+      {/* Side by side only when the figure is 48rem+; any narrower and the diagram text would drop below ~11px. */}
+      <div className="grid grid-cols-1 gap-4 @3xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
+        <div className="min-w-0 rounded-xl bg-surface-2/50 p-2" tabIndex={0} role="group" aria-label="Multi-agent run diagram. Use left and right arrow keys to step.">
+          <Diagram L={WIDE} pts={ARC_PTS.wide} className="hidden @xl:block" {...diagram} />
+          <Diagram L={TALL} pts={ARC_PTS.tall} className="@xl:hidden" {...diagram} />
         </div>
 
-        <div className="flex min-h-56 flex-col gap-3 rounded-xl border border-line bg-bg/60 p-3">
+        <div className="flex min-h-56 min-w-0 flex-col gap-3 rounded-xl border border-line bg-bg/60 p-3">
           <div>
             <p className="px-1 text-xs font-medium text-muted">What the coordinator receives from Regulator DB</p>
             <AnimatePresence mode="wait" initial={false}>
@@ -299,8 +300,8 @@ function PipelineView() {
         </div>
       </div>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="min-h-12 text-[0.95rem] text-ink-2" aria-live="polite">
+      <div className="flex flex-col gap-3 @lg:flex-row @lg:items-center @lg:justify-between">
+        <p className="min-h-12 min-w-0 text-[0.95rem] text-ink-2" aria-live="polite">
           <span className="mr-2 font-display font-semibold text-ink tabular">{phase + 1}/{last + 1}</span>
           {caption}
         </p>
@@ -326,7 +327,7 @@ function Diagram({ L, pts, className, phase, strategy, reduce, crashed, label }:
   return (
     <svg viewBox={L.vb} className={clsx("h-auto w-full", className)} role="img" aria-label={label}>
       <path d={arcPath(L.arc)} fill="none" stroke={synth ? "var(--accent-strong)" : "var(--line-strong)"} strokeWidth={synth ? 2.5 : 1.25} strokeDasharray={crashed ? "4 6" : undefined} style={{ transition: "stroke 200ms ease" }} />
-      <text x={L.arcLabel.x} y={L.arcLabel.y} textAnchor={L.arcLabel.anchor} fill="var(--muted)" style={{ font: `500 ${L.font.sub}px var(--font-mono)` }}>synthesis</text>
+      <text x={L.arcLabel.x} y={L.arcLabel.y} textAnchor={L.arcLabel.anchor} fill="var(--ink-2)" style={{ font: `500 ${L.font.sub}px var(--font-mono)` }}>synthesis</text>
 
       {SUB_IDS.map((id) => {
         const failing = id === "reg" && phase >= 1;
@@ -355,11 +356,11 @@ function Diagram({ L, pts, className, phase, strategy, reduce, crashed, label }:
         <>
           {["1s", "2s", "4s"].map((t, i) => (
             <motion.g key={t} initial={reduce ? false : { opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: reduce ? 0 : 0.25 * i, duration: dur }}>
-              <rect x={L.chips.x + i * 23} y={L.chips.y} width={21} height={17} rx={5} fill="var(--info-soft)" stroke="var(--info)" />
-              <text x={L.chips.x + 10.5 + i * 23} y={L.chips.y + 12.5} textAnchor="middle" fill="var(--info)" style={{ font: "600 10px var(--font-mono)" }}>{t}</text>
+              <rect x={L.chips.x + i * 30} y={L.chips.y} width={27} height={20} rx={5} fill="var(--info-soft)" stroke="var(--info)" />
+              <text x={L.chips.x + 13.5 + i * 30} y={L.chips.y + 14.5} textAnchor="middle" fill="var(--info)" style={{ font: "600 12.5px var(--font-mono)" }}>{t}</text>
             </motion.g>
           ))}
-          <text x={L.chipsLabel.x} y={L.chipsLabel.y} fill="var(--muted)" style={{ font: `500 ${L.font.sub - 1}px var(--font-mono)` }}>local retries</text>
+          <text x={L.chipsLabel.x} y={L.chipsLabel.y} fill="var(--ink-2)" style={{ font: `500 ${L.font.sub}px var(--font-mono)` }}>local retries</text>
         </>
       ) : null}
 
@@ -399,13 +400,13 @@ function ClassifyView() {
   const flagB = e.kind === "api" ? "retry: yes, with backoff" : e.cat === "empty" ? "retry: not needed" : `isRetryable: ${e.retry}`;
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[1fr_1.4fr]">
-      <div className="flex flex-col gap-1.5" role="radiogroup" aria-label="Pick a failure to classify" onKeyDown={(ev) => rove(ev, ERRORS.length, idx, (i) => setSel(ERRORS[i].id))}>
+    <div className="grid grid-cols-1 gap-4 @2xl:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
+      <div className="flex min-w-0 flex-col gap-1.5" role="radiogroup" aria-label="Pick a failure to classify" onKeyDown={(ev) => rove(ev, ERRORS.length, idx, (i) => setSel(ERRORS[i].id))}>
         {ERRORS.map((x) => (
           <button key={x.id} type="button" role="radio" aria-checked={sel === x.id} tabIndex={sel === x.id ? 0 : -1} aria-label={x.label} onClick={() => setSel(x.id)}
             className={clsx("flex items-center justify-between gap-2 rounded-xl border px-3 py-2 text-left transition-colors active:scale-[0.98]",
               sel === x.id ? "border-ink bg-surface text-ink" : "border-line bg-surface/60 text-ink-2 hover:border-line-strong")}>
-            <span className="font-mono text-xs">{x.label}</span>
+            <span className="min-w-0 font-mono text-xs wrap-anywhere">{x.label}</span>
             <span className="size-2 shrink-0 rounded-full" style={{ background: CAT_STYLE[x.cat].color }} />
           </button>
         ))}
@@ -416,7 +417,7 @@ function ClassifyView() {
 
       <AnimatePresence mode="wait" initial={false}>
         <motion.div key={e.id} initial={reduce ? false : { opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} transition={{ duration: reduce ? 0 : 0.22 }}
-          className="flex flex-col gap-3 rounded-xl border border-line bg-bg/60 p-3">
+          className="flex min-w-0 flex-col gap-3 rounded-xl border border-line bg-bg/60 p-3">
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-full px-2.5 py-0.5 text-xs font-semibold" style={{ background: c.soft, color: c.color }}>{c.label}</span>
             <span className="rounded-full border border-line-strong px-2.5 py-0.5 font-mono text-xs text-muted">{flagA}</span>
@@ -466,7 +467,7 @@ function Box({ r, font, label, sub, dark, stroke }: { r: Rect; font: Layout["fon
       <rect x={r.x} y={r.y} width={r.w} height={r.h} rx={14} fill={dark ? "var(--ink)" : "var(--surface)"} stroke={stroke ?? "var(--line-strong)"} strokeWidth={stroke ? 2.5 : 1.25} style={{ transition: "stroke 200ms ease" }} />
       <text x={r.x + r.w / 2} y={r.y + r.h / 2 - 2} textAnchor="middle" fill={dark ? "var(--bg)" : "var(--ink)"} style={{ font: `600 ${font.label}px var(--font-display)` }}>{label}</text>
       {/* On the dark box, --bg (not --accent) keeps contrast in both themes: in dark mode --ink is light. */}
-      <text x={r.x + r.w / 2} y={r.y + r.h / 2 + 14} textAnchor="middle" fill={dark ? "var(--bg)" : "var(--muted)"} fillOpacity={dark ? 0.8 : 1} style={{ font: `400 ${font.sub}px var(--font-sans)` }}>{sub}</text>
+      <text x={r.x + r.w / 2} y={r.y + r.h / 2 + 14} textAnchor="middle" fill={dark ? "var(--bg)" : "var(--ink-2)"} fillOpacity={dark ? 0.8 : 1} style={{ font: `400 ${font.sub}px var(--font-sans)` }}>{sub}</text>
     </g>
   );
 }

@@ -208,8 +208,8 @@ export default function ContextWindow() {
         </span>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1.6fr_1fr]">
-        <div className="rounded-xl bg-surface-2/50 p-2 sm:p-3">
+      <div className="grid grid-cols-1 gap-4 @2xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+        <div className="rounded-xl bg-surface-2/50 p-2 @lg:p-3">
           <div className="relative">
             <svg viewBox={`0 0 ${W} ${VB_H}`} className="h-auto w-full" role="img" aria-label={`Context window ${fmt(used)}K of 200K used. ${display.map((d) => `${STYLE[d.kind].name} ${fmt(d.k)}K`).join(", ")}. ${RESERVE}K kept free for the reply.`}>
               <defs>
@@ -385,7 +385,7 @@ export default function ContextWindow() {
         </div>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 @xl:grid-cols-2">
         <Group title="Fill the window">
           <Act icon={<MessageSquare size={15} />} label="Add turn +3K" onClick={addTurn} />
           <Act

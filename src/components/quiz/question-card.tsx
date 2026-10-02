@@ -126,7 +126,7 @@ export function QuestionCard({
         </p>
       ) : null}
 
-      <div role={multi ? "group" : "radiogroup"} aria-labelledby={`${groupId}-stem`} className="mt-5 grid gap-2.5">
+      <div role={multi ? "group" : "radiogroup"} aria-labelledby={`${groupId}-stem`} className="mt-5 grid grid-cols-1 gap-2.5">
         {question.options.map((o, i) => {
           const isSel = selected.includes(o.id);
           const isRight = feedback?.correctIds.includes(o.id) ?? false;
@@ -177,7 +177,7 @@ export function QuestionCard({
                     )}
                   </AnimatePresence>
                 </span>
-                <span className="min-w-0 flex-1 pt-0.5 text-[0.98rem] leading-snug">
+                <span className="min-w-0 flex-1 pt-0.5 text-[0.98rem] leading-snug [overflow-wrap:anywhere]">
                   <Markdown>{o.text}</Markdown>
                 </span>
               </button>

@@ -174,3 +174,17 @@ export function sanitizeMockState(input: Partial<MockState>, base: MockState, va
     currentIndex: Number.isInteger(ci) ? Math.max(0, Math.min(ids.length - 1, ci)) : base.currentIndex,
   };
 }
+
+/** Below this share of questions answered, finishing a mock earns no completion XP. */
+export const MOCK_MIN_ANSWERED_SHARE = 0.25;
+
+/**
+ * XP for finishing a mock, scaled by how much of it was actually attempted so that
+ * submitting a near-empty exam can't be farmed. The pass bonus is added on top.
+ */
+export function mockXp(answered: number, total: number, passed: boolean, completeXp: number, passXp: number): number {
+  if (total <= 0) return 0;
+  const share = Math.min(1, Math.max(0, answered) / total);
+  const completion = share < MOCK_MIN_ANSWERED_SHARE ? 0 : Math.round(completeXp * share);
+  return completion + (passed ? passXp : 0);
+}

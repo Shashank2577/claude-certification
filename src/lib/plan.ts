@@ -24,29 +24,115 @@ export interface PlanInput {
   daysUntilExam: number | null;
   dailyMinutes: number;
   background: "technical" | "non-technical";
+  /** Lessons already finished; they are never scheduled again. */
+  doneLessonIds?: Iterable<string>;
+  /**
+   * normal: fit everything, packing days tighter than the goal if needed.
+   * crunch: the learner raised their goal to fit; scheduled like normal.
+   * triage: keep the goal, core lessons only, highest-weight domains first; what doesn't fit is dropped.
+   */
+  mode?: PlanMode;
 }
+
+export type PlanMode = "normal" | "crunch" | "triage";
 
 export interface GeneratedPlan extends StudyPlan {
   tight: boolean;
+  mode: PlanMode;
+  /** Lessons that didn't fit before the exam (triage, or capped non-technical plans). */
+  dropped: number;
 }
 
 const DEFAULT_DAYS = 21;
 const MAX_DAYS = 120;
+/** Share of the daily goal given to reading lessons; the rest goes to a quiz and flashcards. */
+const LESSON_SHARE = 0.7;
 
-export function planLength(daysUntilExam: number | null): number {
-  if (daysUntilExam == null || !Number.isFinite(daysUntilExam)) return DEFAULT_DAYS;
+export function planLength(daysUntilExam: number | null, selfPaced?: { coreMinutes: number; dailyMinutes: number }): number {
+  if (daysUntilExam == null || !Number.isFinite(daysUntilExam)) {
+    if (!selfPaced) return DEFAULT_DAYS;
+    // No exam date means no deadline: stretch the plan so the core lessons fit the daily goal.
+    return selfPacedDays(Math.ceil(selfPaced.coreMinutes / lessonShareOf(selfPaced.dailyMinutes)));
+  }
   return Math.max(1, Math.min(MAX_DAYS, Math.floor(daysUntilExam)));
 }
 
+/** Learn days plus ~15% spare days (weak-area practice, mid-plan mock) and the two rehearsal days; 7 to MAX_DAYS. */
+function selfPacedDays(learnDays: number): number {
+  return Math.max(7, Math.min(MAX_DAYS, learnDays + Math.ceil(learnDays * 0.15) + 2));
+}
+
+/** Days the greedy daily packing in generatePlan needs: each day takes lessons while they fit, and always at least one. */
+function packedDays(lessonMinutes: readonly number[], perDay: number): number {
+  let days = 0;
+  for (let i = 0; i < lessonMinutes.length; days++) {
+    let used = 0;
+    while (i < lessonMinutes.length && (used === 0 || used + lessonMinutes[i] <= perDay)) used += lessonMinutes[i++];
+  }
+  return days;
+}
+
+/** Days of a plan left for learning once the final mock and review days are reserved. */
+export function learnDaysFor(totalDays: number): number {
+  return totalDays >= 4 ? totalDays - 2 : totalDays;
+}
+
+function lessonShareOf(dailyMinutes: number): number {
+  return Math.max(5, Math.round(Math.max(5, dailyMinutes) * LESSON_SHARE));
+}
+
+/**
+ * Daily goal (minutes) needed to read `coreMinutes` of lessons over `learnDays` days,
+ * including the short quiz and flashcards each day gets. Pure, rounded up to whole minutes.
+ */
+export function requiredMinutesPerDay(coreMinutes: number, learnDays: number): number {
+  if (coreMinutes <= 0) return 0;
+  return Math.ceil(coreMinutes / Math.max(1, learnDays) / LESSON_SHARE);
+}
+
+export interface Feasibility {
+  /** Daily goal the remaining core lessons need. */
+  required: number;
+  goal: number;
+  feasible: boolean;
+  /** Goal to suggest for crunch mode: `required` rounded up to 5, capped at 240. */
+  crunchGoal: number;
+  learnDays: number;
+}
+
+/** Can `coreMinutes` of lessons fit before the exam at `dailyMinutes` a day? */
+export function planFeasibility(coreMinutes: number, daysUntilExam: number | null, dailyMinutes: number): Feasibility {
+  const selfPaced = daysUntilExam == null;
+  const learnDays = learnDaysFor(planLength(daysUntilExam, { coreMinutes, dailyMinutes }));
+  const required = requiredMinutesPerDay(coreMinutes, learnDays);
+  const goal = Math.max(5, dailyMinutes);
+  return {
+    required,
+    goal,
+    // Without an exam date the plan simply gets longer, so any goal works.
+    feasible: selfPaced || required <= goal,
+    crunchGoal: Math.min(240, Math.max(goal, Math.ceil(required / 5) * 5)),
+    learnDays,
+  };
+}
+
 export function generatePlan(input: PlanInput): GeneratedPlan {
-  const totalDays = planLength(input.daysUntilExam);
+  const mode: PlanMode = input.mode ?? "normal";
   const budget = Math.max(5, input.dailyMinutes);
   const domainOrder = [...input.domains].sort((a, b) => b.weight - a.weight);
   const domainName = new Map(input.domains.map((d) => [d.id, d.name]));
+  const done = new Set(input.doneLessonIds ?? []);
+  const todo = input.lessons.filter((l) => !done.has(l.id));
+  const totalDays =
+    input.daysUntilExam == null
+      ? selfPacedDays(packedDays(todo.filter((l) => l.level !== "deep").map((l) => l.estMinutes), lessonShareOf(budget)))
+      : planLength(input.daysUntilExam);
+  // Triage and non-technical plans never pack a day past the goal plus one lesson.
+  const capped = mode === "triage" || input.background === "non-technical";
 
   // Lessons in weight order; deep dives only for technical learners with room to spare.
-  const core = domainOrder.flatMap((d) => input.lessons.filter((l) => l.domainId === d.id && l.level !== "deep"));
-  const deep = domainOrder.flatMap((d) => input.lessons.filter((l) => l.domainId === d.id && l.level === "deep"));
+  const core = domainOrder.flatMap((d) => todo.filter((l) => l.domainId === d.id && l.level !== "deep"));
+  const deep = domainOrder.flatMap((d) => todo.filter((l) => l.domainId === d.id && l.level === "deep"));
 
   // Reserve the end of the plan for exam rehearsal.
   const tail: PlanDay[] = [];
@@ -63,17 +149,18 @@ export function generatePlan(input: PlanInput): GeneratedPlan {
   }
   const learnDays = totalDays - tail.length;
 
-  const lessonShare = Math.max(5, Math.round(budget * 0.7));
+  const lessonShare = lessonShareOf(budget);
   const coreMinutes = core.reduce((s, l) => s + l.estMinutes, 0);
   const capacity = learnDays * lessonShare;
   const queue = [...core];
-  if (input.background === "technical" && coreMinutes + deep.reduce((s, l) => s + l.estMinutes, 0) <= capacity * 0.85) {
+  if (input.background === "technical" && mode !== "triage" && coreMinutes + deep.reduce((s, l) => s + l.estMinutes, 0) <= capacity * 0.85) {
     queue.push(...deep);
   }
   const queueMinutes = queue.reduce((s, l) => s + l.estMinutes, 0);
   const tight = queueMinutes > capacity;
-  // When time is tight, spread evenly instead of by minutes so every lesson still gets a slot.
-  const perDayMinutes = tight ? Math.ceil(queueMinutes / Math.max(1, learnDays)) : lessonShare;
+  // When time is tight, spread evenly instead of by minutes so every lesson still gets a slot,
+  // unless the plan is capped: then each day keeps to the goal and the overflow is dropped.
+  const perDayMinutes = tight && !capped ? Math.ceil(queueMinutes / Math.max(1, learnDays)) : lessonShare;
 
   const days: PlanDay[] = [];
   let midMockPlaced = totalDays < 10;
@@ -107,6 +194,9 @@ export function generatePlan(input: PlanInput): GeneratedPlan {
       });
     }
   }
+  // Capped plans drop what doesn't fit rather than overloading a day.
+  const dropped = capped ? queue.length : 0;
+  if (capped) queue.length = 0;
   // Anything left over (only possible with a one-day plan) lands on the final learn day.
   if (queue.length > 0 && days.length > 0) {
     const last = days[days.length - 1];
@@ -120,11 +210,16 @@ export function generatePlan(input: PlanInput): GeneratedPlan {
     id: "personal",
     title: `Your ${all.length}-day plan`,
     certId: input.certId,
-    description: tight
-      ? `Your exam is close, so lessons are packed tighter than your ${budget}-minute goal. Prioritise the core lessons.`
-      : `Built around ${budget} minutes a day, weighted toward the domains that carry the most marks.`,
+    description:
+      dropped > 0
+        ? `Kept to about ${budget} minutes a day, highest-weight domains first. ${dropped} lesson${dropped === 1 ? "" : "s"} won’t fit before your exam.`
+        : tight
+          ? `Your exam is close, so lessons are packed tighter than your ${budget}-minute goal. Prioritise the core lessons.`
+          : `Built around ${budget} minutes a day, weighted toward the domains that carry the most marks.`,
     days: all,
     tight,
+    mode,
+    dropped,
   };
 }
 

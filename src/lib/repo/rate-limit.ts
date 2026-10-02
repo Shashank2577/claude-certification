@@ -12,6 +12,8 @@ export interface RateLimitRule {
 }
 
 export const LOGIN_RULE: RateLimitRule = { scope: "login", limit: 8, windowMs: 15 * 60 * 1000 };
+/** Keyed on the normalized email alone, so rotating the client IP can't bypass it. */
+export const LOGIN_EMAIL_RULE: RateLimitRule = { scope: "login-email", limit: 20, windowMs: 60 * 60 * 1000 };
 export const LOGIN_IP_RULE: RateLimitRule = { scope: "login-ip", limit: 40, windowMs: 15 * 60 * 1000 };
 export const SIGNUP_RULE: RateLimitRule = { scope: "signup", limit: 5, windowMs: 60 * 60 * 1000 };
 

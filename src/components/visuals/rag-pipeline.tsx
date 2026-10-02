@@ -78,16 +78,16 @@ export default function RagPipeline() {
     <div className="space-y-4" onKeyDown={onKey}>
       {/* Stage rail */}
       <div tabIndex={0} role="group" aria-label="Retrieval pipeline stages. Use left and right arrow keys to move between stages." className="relative rounded-xl bg-surface-2/50 p-2">
-        <div className="absolute top-[29px] h-0.5 bg-line sm:top-[33px]" style={{ left: "calc(0.5rem + 7.14%)", width: "calc(85.7% - 1rem)" }} aria-hidden />
+        <div className="absolute top-[29px] h-0.5 bg-line @lg:top-[33px]" style={{ left: "calc(0.5rem + 7.14%)", width: "calc(85.7% - 1rem)" }} aria-hidden />
         <motion.div
           aria-hidden
-          className="absolute top-[29px] h-0.5 origin-left bg-accent-strong sm:top-[33px]"
+          className="absolute top-[29px] h-0.5 origin-left bg-accent-strong @lg:top-[33px]"
           style={{ left: "calc(0.5rem + 7.14%)", width: "calc(85.7% - 1rem)" }}
           initial={false}
           animate={{ scaleX: stage / (STAGES.length - 1) }}
           transition={spring}
         />
-        <ol className="relative grid grid-cols-7 gap-0.5 sm:gap-1">
+        <ol className="relative grid grid-cols-7 gap-0.5 @lg:gap-1">
           {STAGES.map((st, i) => {
             const Icon = st.icon;
             const on = i === stage;
@@ -100,12 +100,12 @@ export default function RagPipeline() {
                   aria-label={`Stage ${i + 1}: ${st.label}`}
                   title={st.label}
                   aria-current={on ? "step" : undefined}
-                  className="group flex flex-col items-center gap-1.5 rounded-lg px-0.5 py-1 sm:px-1"
+                  className="group flex flex-col items-center gap-1.5 rounded-lg px-0.5 py-1 @lg:px-1"
                 >
                   <span
                     className={clsx(
-                      "relative grid size-9 place-items-center rounded-full border transition-colors sm:size-11",
-                      on ? "border-accent-strong bg-ink text-accent" : done ? "border-accent-strong bg-accent-soft text-accent-text" : "border-line-strong bg-surface text-muted group-hover:border-ink group-hover:text-ink",
+                      "relative grid size-9 place-items-center rounded-full border transition-colors @lg:size-11",
+                      on ? "border-accent-strong bg-ink text-bg" : done ? "border-accent-strong bg-accent-soft text-accent-text" : "border-line-strong bg-surface text-muted group-hover:border-ink group-hover:text-ink",
                     )}
                   >
                     {on && !reduce ? (
@@ -113,7 +113,7 @@ export default function RagPipeline() {
                     ) : null}
                     <Icon size={18} />
                   </span>
-                  <span className={clsx("hidden text-center text-xs leading-tight sm:block", on ? "font-semibold text-ink" : "text-muted")}>{st.label}</span>
+                  <span className={clsx("hidden text-center text-xs leading-tight @lg:block", on ? "font-semibold text-ink" : "text-muted")}>{st.label}</span>
                 </button>
               </li>
             );
@@ -121,7 +121,7 @@ export default function RagPipeline() {
         </ol>
       </div>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div className="flex flex-col gap-3 @lg:flex-row @lg:items-start @lg:justify-between">
         <p className="text-[0.95rem] text-ink-2" aria-live="polite">
           <span className="mr-2 font-display font-semibold text-ink tabular">
             {stage + 1}/{STAGES.length} {s.label}
@@ -145,7 +145,7 @@ export default function RagPipeline() {
           animate={{ opacity: 1, y: 0 }}
           exit={reduce ? undefined : { opacity: 0, y: -6 }}
           transition={{ duration: reduce ? 0 : 0.22, ease: [0.22, 1, 0.36, 1] }}
-          className="min-h-72 rounded-xl border border-line bg-bg/60 p-3 sm:p-4"
+          className="min-h-72 rounded-xl border border-line bg-bg/60 p-3 @lg:p-4"
         >
           {s.id === "chunk" && <ChunkStage size={size} setSize={setSize} overlap={overlap} setOverlap={setOverlap} reduce={reduce} />}
           {s.id === "context" && <ContextStage on={contextual} set={setContextual} reduce={reduce} />}
@@ -191,7 +191,7 @@ function ChunkStage({ size, setSize, overlap, setOverlap, reduce }: { size: Size
         <Toggle label="Overlap" on={overlap} onClick={() => setOverlap(!overlap)} />
       </div>
       {/* One grid row per line; two lanes of chunk bars on the right (alternating lanes so overlapping chunks don't collide). */}
-      <ol className="grid grid-cols-[minmax(0,1fr)_10px_10px_auto] gap-x-1.5 rounded-lg border border-line bg-surface p-2 font-mono text-xs sm:text-[13px]" aria-label={`Report split into ${chunks.length} chunks. ${text}`}>
+      <ol className="grid grid-cols-[minmax(0,1fr)_10px_10px_auto] gap-x-1.5 rounded-lg border border-line bg-surface p-2 font-mono text-xs @lg:text-[13px]" aria-label={`Report split into ${chunks.length} chunks. ${text}`}>
         {DOC.map((line, i) => {
           const inAnswer = answer.includes(i);
           const starts = chunks.findIndex((c) => c[0] === i);
@@ -218,8 +218,8 @@ function ChunkStage({ size, setSize, overlap, setOverlap, reduce }: { size: Size
               <span className={clsx("self-center whitespace-nowrap text-xs font-semibold leading-5", starts >= 0 && chunks[starts] === answer ? "text-accent-text" : "text-muted")}>
                 {starts >= 0 ? (
                   <>
-                    <span className="hidden sm:inline">chunk </span>
-                    <span className="sm:hidden">#</span>
+                    <span className="hidden @lg:inline">chunk </span>
+                    <span className="@lg:hidden">#</span>
                     {starts + 1}
                     {chunks[starts] === answer ? " ★" : ""}
                   </>
@@ -244,7 +244,7 @@ function ContextStage({ on, set, reduce }: { on: boolean; set: (b: boolean) => v
     { label: "+ reranking", v: 67 },
   ];
   return (
-    <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
+    <div className="grid grid-cols-1 gap-4 @2xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
       <div className="space-y-3">
         <Toggle label="Prepend context with Claude" on={on} onClick={() => set(!on)} />
         <div className="rounded-lg border border-line bg-surface p-3 font-mono text-[13px] leading-relaxed">
@@ -315,7 +315,7 @@ function IndexStage({ hybrid, setHybrid }: { hybrid: boolean; setHybrid: (b: boo
         <span className="text-muted">query › </span>
         {q.q}
       </p>
-      <div className="grid gap-2 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-2 @lg:grid-cols-2">
         {lanes.map((l) => (
           <div key={l.name} className={clsx("rounded-lg border p-3 transition-opacity", l.active ? "border-line-strong bg-surface" : "border-dashed border-line opacity-50")}>
             <p className="font-display text-sm font-semibold text-ink">{l.name}</p>
@@ -353,14 +353,14 @@ function RetrieveStage(p: { k: number; setK: (k: number) => void; rank: number; 
           animate={{ width: `${(p.k / 20) * 100}%` }}
           transition={{ duration: p.reduce ? 0 : 0.4, ease: [0.22, 1, 0.36, 1] }}
         />
-        <div className="relative grid grid-cols-[repeat(20,minmax(0,1fr))] gap-0.5 px-0.5 pt-2 pb-1 sm:gap-1">
+        <div className="relative grid grid-cols-[repeat(20,minmax(0,1fr))] gap-0.5 px-0.5 pt-2 pb-1 @lg:gap-1">
           {Array.from({ length: 20 }, (_, i) => {
             const gold = i + 1 === p.rank;
             const tick = i === 0 || (i + 1) % 5 === 0;
             return (
               <div key={i} className="flex flex-col items-center gap-1">
                 <span className={clsx("h-8 w-full max-w-4 rounded-sm border", gold ? "border-good bg-good" : "border-line-strong bg-surface")} />
-                <span className={clsx("h-4 text-center font-mono text-[11px] leading-4 tabular sm:text-xs", gold ? "font-semibold text-ink" : "text-muted")}>{gold || tick ? i + 1 : ""}</span>
+                <span className={clsx("h-4 text-center font-mono text-[11px] leading-4 tabular @lg:text-xs", gold ? "font-semibold text-ink" : "text-muted")}>{gold || tick ? i + 1 : ""}</span>
               </div>
             );
           })}
@@ -424,7 +424,7 @@ function GroundStage({ inPrompt, hit, allowIdk, setAllowIdk, reduce }: { inPromp
   const [hover, setHover] = useState(false);
   const show = peek || hover;
   return (
-    <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
+    <div className="grid grid-cols-1 gap-4 @2xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
       <div className="space-y-2">
         <Toggle label={'Allow "I don\'t know"'} on={allowIdk} onClick={() => setAllowIdk(!allowIdk)} />
         <p className="text-xs font-medium text-muted">What Claude receives (documents first, question last)</p>

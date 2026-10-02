@@ -39,6 +39,10 @@ Order matters on the first deploy: run step 4 before the first sign-up, otherwis
 
 On a hosting platform the app never falls back to the embedded database and never writes to the filesystem. Without a database URL it fails with a clear error instead.
 
+**Client IP for rate limiting.** Only the header the platform itself overwrites is trusted: `x-nf-client-connection-ip` on Netlify (detected by `NETLIFY`, or `SITE_ID` + `SITE_NAME` at function runtime) and `x-real-ip` on Vercel (`VERCEL`). Anywhere else the last `x-forwarded-for` hop is used, so behind your own proxy make sure it appends the client address. A per-email login limit that ignores the IP backs this up either way.
+
+**Security headers** (`X-Frame-Options`, `frame-ancestors` CSP, `nosniff`, `Referrer-Policy`, `Permissions-Policy`, and HSTS in production) are set in `next.config.ts`, not `netlify.toml`, so they apply on every platform.
+
 ## Scripts
 
 | Command | What it does |
@@ -55,7 +59,7 @@ PGlite is single-process: stop `pnpm dev` before running `pnpm db:migrate` or `p
 
 ## Environment
 
-See `.env.example`. The important ones: `DATABASE_URL` (or Netlify DB's `NETLIFY_DATABASE_URL`), `AUTH_SECRET`, `ADMIN_EMAILS`. `CONTENT_DIR=content/_sample pnpm dev` runs against the fixture content.
+See `.env.example`. The important ones: `DATABASE_URL` (or Netlify DB's `NETLIFY_DATABASE_URL`), `AUTH_SECRET`, `ADMIN_EMAILS`. `CONTENT_DIR=content/_sample pnpm dev` runs against the fixture content. `INSECURE_COOKIES=1` is local-only: it drops the `Secure` flag so `pnpm start` works over plain http, and it is ignored on a hosting platform.
 
 ## CI
 
@@ -111,8 +115,9 @@ The Neon connection uses `@neondatabase/serverless`'s WebSocket `Pool`, because 
 
 ## Security notes
 
-- Passwords hashed with bcrypt (cost 12). Sessions are HS256 JWTs in an `httpOnly`, `SameSite=Lax` cookie (`Secure` in production).
+- Passwords hashed with bcrypt (cost 12). Sessions are HS256 JWTs in an `httpOnly`, `SameSite=Lax` cookie (`Secure` in production, always on a hosting platform).
 - Password resets bump a per-user token version, which signs that user out everywhere.
-- Login is rate limited per account+IP (8 per 15 minutes) and per IP (40 per 15 minutes); sign-up per IP (5 per hour). Counters live in the `rate_limits` table with hashed keys, so limits hold across serverless instances and restarts. The client IP comes from Netlify's `x-nf-client-connection-ip` header when present.
+- Login is rate limited per account+IP (8 per 15 minutes), per IP (40 per 15 minutes) and per account regardless of IP (20 per hour); sign-up per IP (5 per hour). Counters live in the `rate_limits` table with hashed keys, so limits hold across serverless instances and restarts. The client IP header is trusted only on the platform that sets it (see Deploy).
+- The post-login `next` redirect accepts only same-site paths (`src/lib/safe-next.ts`): backslashes, control characters and anything resolving off-origin fall back to `/today`.
 - Admin pages and admin actions check the role on the server. The first-admin rule is decided inside the sign-up transaction.
 - Answers are never sent to the browser before you submit. Mock exams are scored on the server from the saved state.

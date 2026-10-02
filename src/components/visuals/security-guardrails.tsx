@@ -200,8 +200,8 @@ export default function SecurityGuardrails() {
 
   return (
     <div className="space-y-4" onKeyDown={onKey}>
-      <div className="grid gap-4 lg:grid-cols-[1fr_1.3fr]">
-        <div className="space-y-3">
+      <div className="grid min-w-0 gap-4 @2xl:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]">
+        <div className="min-w-0 space-y-3">
           <div role="radiogroup" aria-label="Injected instruction" className="grid grid-cols-3 gap-1 rounded-xl bg-surface-2/60 p-1">
             {(Object.keys(SCENARIOS) as ScnId[]).map((id) => (
               <button
@@ -211,17 +211,17 @@ export default function SecurityGuardrails() {
                 aria-checked={scn === id}
                 aria-label={`Attack: ${SCENARIOS[id].label}`}
                 onClick={() => change(setScn)(id)}
-                className={clsx("rounded-lg px-2 py-1.5 text-xs font-semibold transition-colors", scn === id ? "bg-surface text-ink shadow-card" : "text-muted hover:text-ink")}
+                className={clsx("min-w-0 rounded-lg px-2 py-1.5 text-xs font-semibold wrap-anywhere transition-colors", scn === id ? "bg-surface text-ink shadow-card" : "text-muted hover:text-ink")}
               >
                 {SCENARIOS[id].label}
               </button>
             ))}
           </div>
 
-          <div className="overflow-hidden rounded-xl border border-line bg-surface">
+          <div className="min-w-0 overflow-hidden rounded-xl border border-line bg-surface">
             <div className="flex items-center gap-2 border-b border-line bg-surface-2/60 px-3 py-2">
               <Globe size={14} className="text-muted" aria-hidden />
-              <span className="truncate font-mono text-xs text-muted">WebFetch → blog.example.com/caching-tips</span>
+              <span className="min-w-0 font-mono text-xs wrap-anywhere text-muted">WebFetch → blog.example.com/caching-tips</span>
               <button
                 type="button"
                 onClick={() => setReveal((r) => !r)}
@@ -242,7 +242,7 @@ export default function SecurityGuardrails() {
                     initial={reduce ? false : { opacity: 0, y: 4 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0 }}
-                    className="rounded-md border border-dashed border-bad bg-bad-soft px-2 py-1.5 font-mono text-xs text-bad"
+                    className="rounded-md border border-dashed border-bad bg-bad-soft px-2 py-1.5 font-mono text-xs wrap-anywhere text-bad"
                   >
                     {s.injected}
                   </motion.p>
@@ -266,12 +266,12 @@ export default function SecurityGuardrails() {
             className="flex w-full items-center gap-3 rounded-xl border border-line bg-bg/60 px-3 py-2 text-left"
           >
             <Switch on={fooled} tone="bad" />
-            <span className="text-xs text-ink-2">
+            <span className="min-w-0 text-xs text-ink-2">
               <span className="font-semibold text-ink">Worst case: the model is fooled.</span> Assume Claude follows the planted text, as a careful architect should.
             </span>
           </button>
 
-          <div className="rounded-xl border border-line bg-bg/60 p-3">
+          <div className="min-w-0 rounded-xl border border-line bg-bg/60 p-3">
             <p className="text-xs font-medium text-muted">Permission mode (set with --permission-mode, defaultMode or Shift+Tab)</p>
             <div role="radiogroup" aria-label="Permission mode" className="mt-2 flex flex-wrap gap-1.5">
               {MODES.map((m) => (
@@ -283,7 +283,7 @@ export default function SecurityGuardrails() {
                   aria-label={`Permission mode ${m.id}`}
                   onClick={() => change(setMode)(m.id)}
                   className={clsx(
-                    "rounded-lg border px-2 py-1 font-mono text-xs transition-colors",
+                    "max-w-full rounded-lg border px-2 py-1 font-mono text-xs wrap-anywhere transition-colors",
                     mode === m.id ? "border-accent-strong bg-accent-soft text-accent-text" : "border-line text-ink-2 hover:border-line-strong",
                   )}
                 >
@@ -295,9 +295,9 @@ export default function SecurityGuardrails() {
           </div>
         </div>
 
-        <div className="rounded-xl bg-surface-2/50 p-2" tabIndex={0} role="group" aria-label="Defence layers. Use arrow keys to step the attack through them.">
+        <div className="min-w-0 rounded-xl bg-surface-2/50 p-2" tabIndex={0} role="group" aria-label="Defence layers. Use arrow keys to step the attack through them.">
           <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-2 pt-1 pb-2">
-            <p className="font-mono text-xs text-ink-2">
+            <p className="min-w-0 font-mono text-xs wrap-anywhere text-ink-2">
               Claude tries <span className="text-bad">{s.call}</span>
             </p>
             <span className={clsx("shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold tabular", catchers ? "bg-good-soft text-good" : "bg-bad-soft text-bad")}>
@@ -335,7 +335,7 @@ export default function SecurityGuardrails() {
                         {l.name}
                         <span className={clsx("rounded px-1 text-xs font-medium", l.kind === "Guidance" ? "bg-info-soft text-info" : "bg-surface-2 text-ink-2")}>{l.kind}</span>
                       </p>
-                      <p className="truncate font-mono text-xs text-muted">{l.id === "mode" ? `mode: ${mode}` : l.spec(s)}</p>
+                      <p className="font-mono text-xs wrap-anywhere text-muted">{l.id === "mode" ? `mode: ${mode}` : l.spec(s)}</p>
                     </div>
                     {reached && !isStop ? <span className="shrink-0 text-xs font-semibold text-bad">passed</span> : null}
                     {toggleable ? (
@@ -371,7 +371,7 @@ export default function SecurityGuardrails() {
                   {breached ? <Skull size={14} className="text-bad" /> : <ShieldX size={14} />}
                   {cursor === LAYERS.length ? <motion.span layoutId="sg-packet" transition={{ duration: reduce ? 0 : 0.45 }} className="absolute -inset-1 rounded-full border-2 border-bad" /> : null}
                 </span>
-                <p className={clsx("text-[0.82rem] font-semibold", breached ? "text-bad" : done && cursor >= 0 ? "text-good" : "text-muted")}>
+                <p className={clsx("min-w-0 text-[0.82rem] font-semibold", breached ? "text-bad" : done && cursor >= 0 ? "text-good" : "text-muted")}>
                   {breached ? s.harm : done && cursor >= 0 ? "Your machine and data are untouched." : "Your machine, repo and secrets"}
                 </p>
               </div>
@@ -383,8 +383,8 @@ export default function SecurityGuardrails() {
         </div>
       </div>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="min-h-12 text-[0.95rem] text-ink-2" aria-live="polite">
+      <div className="flex flex-col gap-3 @xl:flex-row @xl:items-center @xl:justify-between">
+        <p className="min-h-12 min-w-0 text-[0.95rem] text-ink-2" aria-live="polite">
           {cursor >= 0 ? <span className={clsx("mr-2 font-display font-semibold", breached ? "text-bad" : done ? "text-good" : "text-ink")}>{done ? (breached ? "Breach" : "Blocked") : `Layer ${cursor + 1}`}</span> : null}
           {caption}
         </p>

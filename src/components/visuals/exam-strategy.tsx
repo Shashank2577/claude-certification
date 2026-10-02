@@ -125,7 +125,7 @@ export default function ExamStrategy() {
   };
   return (
     <div className="space-y-4">
-      <div role="tablist" aria-label="Exam strategy view" onKeyDown={onTabKey} className="flex max-w-full rounded-xl border border-line bg-surface-2/60 p-1 sm:inline-flex">
+      <div role="tablist" aria-label="Exam strategy view" onKeyDown={onTabKey} className="flex max-w-full rounded-xl border border-line bg-surface-2/60 p-1 @lg:inline-flex">
         {TABS.map((t) => (
           <button
             key={t.id}
@@ -137,7 +137,7 @@ export default function ExamStrategy() {
             tabIndex={mode === t.id ? 0 : -1}
             onClick={() => setMode(t.id)}
             className={clsx(
-              "flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors sm:flex-none",
+              "flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors @lg:flex-none",
               mode === t.id ? "bg-surface text-ink shadow-sm" : "text-muted hover:text-ink",
             )}
           >
@@ -199,8 +199,8 @@ function Walkthrough() {
 
   return (
     <div className="space-y-4" onKeyDown={onKey}>
-      <div className="grid gap-4 lg:grid-cols-[1.6fr_1fr]">
-        <div className="space-y-3 rounded-xl bg-surface-2/50 p-3 sm:p-4" tabIndex={0} role="group" aria-label="Practice question. Use left and right arrow keys to step through the funnel.">
+      <div className="grid grid-cols-1 gap-4 @3xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+        <div className="space-y-3 rounded-xl bg-surface-2/50 p-3 @lg:p-4" tabIndex={0} role="group" aria-label="Practice question. Use left and right arrow keys to step through the funnel.">
           <p className="font-mono text-xs font-semibold tracking-wide text-muted uppercase">Practice question · written for this course</p>
           <p className="text-[0.95rem] leading-relaxed text-ink">
             {STEM.map((s, i) => {
@@ -313,7 +313,7 @@ function Walkthrough() {
         <Funnel step={step} remaining={remaining} reduce={!!reduce} />
       </div>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 @lg:flex-row @lg:items-center @lg:justify-between">
         <p className="min-h-12 text-[0.95rem] text-ink-2" aria-live="polite">
           <span className="mr-2 font-display font-semibold text-ink tabular">
             {step + 1}/{STEPS.length}
@@ -424,7 +424,7 @@ function Pacing() {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-xl bg-surface-2/50 p-3 sm:p-4">
+      <div className="rounded-xl bg-surface-2/50 p-3 @lg:p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="font-display text-lg font-semibold text-ink">
             {n} questions · {MINUTES} minutes · <span className="text-accent-text">≈ {fmt(Math.round(per * 10) / 10)} min each</span>
@@ -484,7 +484,7 @@ function Pacing() {
           {verdict}
         </p>
       </div>
-      <ul className="grid gap-2 sm:grid-cols-3">
+      <ul className="grid grid-cols-1 gap-2 @lg:grid-cols-3">
         <Tip icon={<Clock size={16} />} title="Check every 15">
           On target for {exam.label}: {pace}.
         </Tip>

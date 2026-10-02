@@ -44,7 +44,7 @@ function Definitions() {
   return (
     <div className="space-y-3">
       <p className="text-xs text-muted">Hover or tap any line to see why it helps or hurts. Claude never sees your code, only these labels.</p>
-      <div className="grid gap-3 md:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 @xl:grid-cols-2">
         {[
           { title: "Vague tool", parts: BAD, good: false },
           { title: "Well-designed tool", parts: GOOD, good: true },
@@ -170,7 +170,7 @@ function Selection() {
         ))}
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
+      <div className="grid grid-cols-1 gap-4 @2xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
         <div className="rounded-xl bg-surface-2/50 p-2">
           <svg
             viewBox="0 0 360 240"
@@ -212,7 +212,7 @@ function Selection() {
             <text x={180} y={37} textAnchor="middle" fill="var(--bg)" style={{ font: "600 17px var(--font-display)" }}>
               Claude
             </text>
-            <text x={180} y={57} textAnchor="middle" fill="var(--accent)" style={{ font: "500 14px var(--font-sans)" }}>
+            <text x={180} y={57} textAnchor="middle" fill="var(--bg)" fillOpacity={0.8} style={{ font: "500 14px var(--font-sans)" }}>
               reads only the labels
             </text>
             <motion.circle
@@ -246,7 +246,7 @@ function Selection() {
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center">
+      <div className="grid grid-cols-1 gap-3 @lg:grid-cols-[1fr_auto] @lg:items-center">
         <label className="block">
           <span className="flex justify-between text-xs text-muted">
             <span>Description quality</span>
@@ -328,7 +328,7 @@ function Errors() {
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-2 @lg:flex-row @lg:items-center @lg:justify-between">
         <div className="flex flex-wrap gap-1.5" role="group" aria-label="Failure scenario">
           {(Object.keys(SCENARIOS) as Scenario[]).map((k) => (
             <button
@@ -358,7 +358,7 @@ function Errors() {
         </button>
       </div>
 
-      <div className="grid gap-3 lg:grid-cols-[1.4fr_1fr]">
+      <div className="grid grid-cols-1 gap-3 @2xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
         <AnimatePresence mode="wait" initial={false}>
           <motion.pre
             key={`${scenario}-${structured}`}

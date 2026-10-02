@@ -20,7 +20,7 @@ export function Visual({ id }: { id: string }) {
   const info = VISUALS[id];
   const Component = LAZY[id];
   return (
-    <figure className="not-prose my-2 rounded-2xl border border-line bg-surface p-3 shadow-card sm:p-5">
+    <figure className="not-prose @container my-2 max-w-full min-w-0 overflow-x-clip rounded-2xl border border-line bg-surface p-3 shadow-card sm:p-5">
       {Component ? (
         <Suspense fallback={<Loading />}>
           <Component />

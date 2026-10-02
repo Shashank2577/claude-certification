@@ -20,7 +20,7 @@ export default async function AuthLayout({ children }: LayoutProps<"/">) {
             Short, scheduled sessions for {certs.length > 1 ? "the Foundations and Professional" : "the Claude Certified Architect"} exams, with practice questions that adapt to what you keep missing.
           </p>
         </div>
-        <p className="text-xs text-bg/50">Unofficial study aid, not affiliated with Anthropic.</p>
+        <p className="text-xs text-bg/75">Unofficial study aid, not affiliated with Anthropic.</p>
       </aside>
       <main className="flex items-center justify-center px-4 py-12 sm:px-8">
         <div className="w-full max-w-sm">{children}</div>

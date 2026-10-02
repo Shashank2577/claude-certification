@@ -129,7 +129,7 @@ export default function PromptAnatomy() {
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-4 lg:grid-cols-[1fr_1.15fr]">
+      <div className="grid grid-cols-1 gap-4 @2xl:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
         {/* Builder */}
         <div className="space-y-3">
           <div className="flex items-center justify-between">
@@ -139,7 +139,7 @@ export default function PromptAnatomy() {
               <SmallBtn label="All: turn every part on" onClick={() => setAll(true)}><Sparkles size={13} /> All</SmallBtn>
             </div>
           </div>
-          <ul className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+          <ul className="grid grid-cols-1 gap-1.5 @lg:grid-cols-2 @2xl:grid-cols-1 @3xl:grid-cols-2">
             {PARTS.map((p) => (
               <li key={p.id}>
                 <button

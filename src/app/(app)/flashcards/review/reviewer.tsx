@@ -38,13 +38,28 @@ export function Reviewer({ cards, domains }: { cards: SessionCard[]; domains: Re
   const [xp, setXp] = useState(0);
   const shownAt = useRef(0);
   const doneRef = useRef(false);
+  const heading = useRef<HTMLHeadingElement>(null);
+  const cardButton = useRef<HTMLButtonElement>(null);
+  const firstCard = useRef(true);
 
   const card = queue[index];
   const finished = index >= queue.length;
 
   useEffect(() => {
     shownAt.current = Date.now();
+    // After rating, the grade buttons unmount; move focus to the next card (or the summary) instead of <body>.
+    if (firstCard.current) {
+      firstCard.current = false;
+      return;
+    }
+    heading.current?.focus({ preventScroll: true });
   }, [index]);
+
+  const reveal = () => {
+    setFlipped(true);
+    // The "Show answer" button unmounts on reveal; keep focus on the card.
+    requestAnimationFrame(() => cardButton.current?.focus({ preventScroll: true }));
+  };
 
   useEffect(() => {
     if (finished && queue.length > 0 && !doneRef.current) {
@@ -110,7 +125,9 @@ export function Reviewer({ cards, domains }: { cards: SessionCard[]; domains: Re
     const total = counts[1] + counts[2] + counts[3] + counts[4];
     return (
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mx-auto max-w-lg rounded-3xl border border-line bg-surface p-8 text-center shadow-card">
-        <p className="font-display text-3xl font-semibold tracking-tight">Session done</p>
+        <h2 ref={heading} tabIndex={-1} className="font-display text-3xl font-semibold tracking-tight outline-none">
+          Session done
+        </h2>
         <p className="mt-2 text-ink-2">
           {total} review{total === 1 ? "" : "s"}, +{xp} XP. Cards you missed will come back tomorrow.
         </p>
@@ -137,6 +154,12 @@ export function Reviewer({ cards, domains }: { cards: SessionCard[]; domains: Re
   const dom = domains[card.domainId];
   return (
     <div className="mx-auto max-w-2xl">
+      <h2 ref={heading} tabIndex={-1} className="sr-only">
+        Card {index + 1} of {queue.length}
+      </h2>
+      <p className="sr-only" aria-live="polite">
+        {flipped ? "Answer shown" : ""}
+      </p>
       <div className="mb-4 flex items-center gap-3">
         <ProgressBar value={index / queue.length} label="Session progress" height={6} />
         <span className="shrink-0 text-sm text-muted tabular">
@@ -148,6 +171,7 @@ export function Reviewer({ cards, domains }: { cards: SessionCard[]; domains: Re
         <AnimatePresence mode="wait">
           <motion.div key={`${card.id}-${index}`} initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -24 }} transition={{ duration: 0.2 }}>
             <motion.button
+              ref={cardButton}
               type="button"
               onClick={() => setFlipped((f) => !f)}
               aria-label={flipped ? "Show question side" : "Show answer side"}
@@ -191,7 +215,7 @@ export function Reviewer({ cards, domains }: { cards: SessionCard[]; domains: Re
             ))}
           </motion.div>
         ) : (
-          <Button variant="primary" size="lg" className="w-full" onClick={() => setFlipped(true)}>
+          <Button variant="primary" size="lg" className="w-full" onClick={reveal}>
             <RotateCcw size={16} /> Show answer
           </Button>
         )}

@@ -1,11 +1,10 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { completeFocus } from "@/app/actions/focus";
-import type { Reward } from "@/lib/gamification";
 import { useCelebrate } from "./celebrate";
-import { Modal } from "./ui/modal";
-import { Button, ButtonLink } from "./ui/button";
+import { Button } from "./ui/button";
 
 export type FocusPhase = "idle" | "work" | "break" | "sprint";
 
@@ -57,8 +56,7 @@ export function FocusProvider({ children, workMinutes: initialWork, breakMinutes
   const [sprintDone, setSprintDone] = useState(false);
   const { celebrate, toast } = useCelebrate();
   const finishing = useRef<number | null>(null);
-  const pendingReward = useRef<Reward | null>(null);
-  const sprintOpen = useRef(false);
+  const reduce = useReducedMotion();
 
   // Restore after mount so server and client markup match.
   useEffect(() => {
@@ -92,11 +90,7 @@ export function FocusProvider({ children, workMinutes: initialWork, breakMinutes
       finishing.current = s.endsAt;
       if (s.phase === "work" || s.phase === "sprint") {
         completeFocus(s.blockMinutes, s.phase === "sprint" ? "sprint" : "pomodoro")
-          .then((r) => {
-            // The sprint has its own modal; hold badge/level modals until it is dismissed.
-            if (s.phase === "sprint" && sprintOpen.current) pendingReward.current = r;
-            else celebrate(r);
-          })
+          .then((r) => celebrate(r))
           .catch(() => {});
       }
       if (s.phase === "work") {
@@ -104,7 +98,6 @@ export function FocusProvider({ children, workMinutes: initialWork, breakMinutes
         setState({ phase: "break", endsAt: Date.now() + durations.rest * 60_000, pausedLeft: null, blockMinutes: durations.rest });
       } else if (s.phase === "sprint") {
         setState({ ...IDLE });
-        sprintOpen.current = true;
         setSprintDone(true);
       } else {
         toast("Break over. Ready for another block?", "info");
@@ -126,13 +119,7 @@ export function FocusProvider({ children, workMinutes: initialWork, breakMinutes
     return () => clearInterval(id);
   }, [running, state, finish]);
 
-  const closeSprint = useCallback(() => {
-    sprintOpen.current = false;
-    setSprintDone(false);
-    const r = pendingReward.current;
-    pendingReward.current = null;
-    if (r) celebrate(r);
-  }, [celebrate]);
+  const closeSprint = useCallback(() => setSprintDone(false), []);
 
   const value = useMemo<FocusCtx>(
     () => ({
@@ -154,27 +141,42 @@ export function FocusProvider({ children, workMinutes: initialWork, breakMinutes
   return (
     <Ctx.Provider value={value}>
       {children}
-      <Modal open={sprintDone} onClose={closeSprint} title="Five minutes done">
-        <div className="pt-2">
-          <p className="font-display text-2xl font-semibold tracking-tight">Five minutes done.</p>
-          <p className="mt-2 text-ink-2">Starting was the hard part, and you did it. Most people find the next 20 minutes easier than the first five.</p>
-          <div className="mt-6 flex flex-wrap gap-2">
-            <Button
-              variant="accent"
-              data-autofocus
-              onClick={() => {
-                closeSprint();
-                start("work");
-              }}
+      {/* Non-blocking: the learner may be mid-lesson when the five minutes end. */}
+      <div aria-live="polite" className="pointer-events-none fixed inset-x-3 bottom-24 z-[85] flex justify-center sm:inset-x-auto sm:left-4 lg:bottom-6 lg:left-64">
+        <AnimatePresence>
+          {sprintDone ? (
+            <motion.div
+              key="sprint"
+              role="region"
+              aria-label="Five minutes done"
+              initial={reduce ? { opacity: 0 } : { opacity: 0, y: 12 }}
+              animate={reduce ? { opacity: 1 } : { opacity: 1, y: 0 }}
+              exit={reduce ? { opacity: 0 } : { opacity: 0, y: 8 }}
+              transition={reduce ? { duration: 0 } : { type: "spring", stiffness: 420, damping: 32 }}
+              className="pointer-events-auto w-full max-w-sm rounded-2xl border border-line bg-surface p-4 shadow-card"
             >
-              Keep going for {durations.work} minutes
-            </Button>
-            <ButtonLink href="/today" variant="ghost" onClick={closeSprint}>
-              Stop here for today
-            </ButtonLink>
-          </div>
-        </div>
-      </Modal>
+              <p className="font-display text-lg font-semibold tracking-tight">Five minutes done. Keep going?</p>
+              <p className="mt-1 text-sm text-ink-2">Starting was the hard part. The next {durations.work} minutes are usually easier.</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button
+                  variant="accent"
+                  size="sm"
+                  className="min-h-11"
+                  onClick={() => {
+                    closeSprint();
+                    start("work");
+                  }}
+                >
+                  Keep going ({durations.work} min)
+                </Button>
+                <Button variant="ghost" size="sm" className="min-h-11" onClick={closeSprint}>
+                  Stop
+                </Button>
+              </div>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+      </div>
     </Ctx.Provider>
   );
 }

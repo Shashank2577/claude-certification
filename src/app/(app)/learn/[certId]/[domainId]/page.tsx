@@ -30,7 +30,7 @@ export default async function DomainPage({ params }: PageProps<"/learn/[certId]/
 
   return (
     <>
-      <Link href={`/learn?cert=${cert.id}`} className="mb-5 inline-flex items-center gap-1.5 text-sm text-ink-2 hover:text-ink">
+      <Link href={`/learn?cert=${cert.id}`} className="-my-3 mb-2 inline-flex min-h-11 items-center gap-1.5 text-sm text-ink-2 hover:text-ink">
         <ArrowLeft size={15} /> All domains
       </Link>
 
@@ -49,18 +49,19 @@ export default async function DomainPage({ params }: PageProps<"/learn/[certId]/
         </div>
         <div className="mt-6 flex flex-wrap gap-2">
           {next ? (
-            <ButtonLink href={`/learn/${cert.id}/${domain.id}/${next.id}`} variant="accent">
-              {progress.has(next.id) ? "Continue" : "Start"} with {next.title}
+            <ButtonLink href={`/learn/${cert.id}/${domain.id}/${next.id}`} variant="accent" size="lg" wrap className="flex-col items-start! gap-0! sm:max-w-sm">
+              <span>{progress.has(next.id) || done > 0 ? "Continue" : `Start lesson ${lessons.indexOf(next) + 1}`}</span>
+              <span className="text-sm font-normal opacity-85">{next.title}</span>
             </ButtonLink>
           ) : null}
-          <ButtonLink href={`/practice?mode=domain&domain=${domain.id}`} variant="outline">
+          <ButtonLink href={`/practice?mode=domain&domain=${domain.id}`} variant="outline" size="lg" className="self-stretch sm:self-auto">
             Practise this domain
           </ButtonLink>
         </div>
       </header>
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_20rem] lg:items-start">
-        <section aria-labelledby="lessons-h">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start">
+        <section aria-labelledby="lessons-h" className="min-w-0">
           <h2 id="lessons-h" className="mb-3 font-display text-lg font-semibold">
             Lessons
           </h2>

@@ -101,7 +101,15 @@ export function CheckYourself({ questions: initial, lessonId }: { questions: Pub
 
   return (
     <div>
-      <div className="mb-3 flex items-center gap-1.5" aria-label={`Question ${index + 1} of ${questions.length}`}>
+      <div
+        className="mb-3 flex items-center gap-1.5"
+        role="progressbar"
+        aria-label="Check yourself progress"
+        aria-valuemin={1}
+        aria-valuemax={questions.length}
+        aria-valuenow={index + 1}
+        aria-valuetext={`Question ${index + 1} of ${questions.length}`}
+      >
         {questions.map((x, i) => (
           <span
             key={x.id}

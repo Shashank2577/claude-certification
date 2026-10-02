@@ -70,7 +70,7 @@ const SCOPES: Record<Scope, { file: string; short: string; who: string; plain: s
   user: { file: "~/.claude.json (top level)", short: "~/.claude.json", who: "Only you, in every project", plain: "For personal servers you want everywhere, like your own notes or calendar." },
 };
 
-/* Two diagram layouts: side-by-side from sm up, stacked on phones (a 340-unit viewBox keeps text legible at 375px). */
+/* Two diagram layouts: side-by-side when the figure is 42rem+ (@2xl), stacked below that (a 340-unit viewBox with 12.5-unit labels stays ~11px+ at 375px). */
 type Pt = [number, number];
 type Layout = {
   w: number; h: number; vertical: boolean;
@@ -160,7 +160,7 @@ export default function McpArchitecture() {
   return (
     <div className="space-y-5">
       {/* Controls */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 @xl:flex-row @xl:items-center @xl:justify-between">
         <Segmented
           label="Transport"
           value={transport}
@@ -179,15 +179,16 @@ export default function McpArchitecture() {
           : "each server listens at one HTTP endpoint, usually on a remote host, so a whole team can share it. The older HTTP+SSE transport is deprecated."}
       </p>
 
-      <div className="grid gap-4 lg:grid-cols-[1.5fr_1fr]">
+      {/* Side by side only when the figure is 48rem+; narrower, the diagram text would drop below ~11px. */}
+      <div className="grid grid-cols-1 gap-4 @3xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
         {/* Diagram: stacked layout on phones, side-by-side from sm up */}
-        <div className="rounded-xl bg-surface-2/50 p-2">
-          <div className="hidden sm:block"><Diagram L={WIDE} {...diagram} /></div>
-          <div className="mx-auto max-w-[26rem] sm:hidden"><Diagram L={NARROW} {...diagram} /></div>
+        <div className="min-w-0 rounded-xl bg-surface-2/50 p-2">
+          <div className="hidden @2xl:block"><Diagram L={WIDE} {...diagram} /></div>
+          <div className="mx-auto max-w-[26rem] @2xl:hidden"><Diagram L={NARROW} {...diagram} /></div>
         </div>
 
         {/* Primitives */}
-        <div className="flex flex-col rounded-xl border border-line bg-bg/60 p-3">
+        <div className="flex min-w-0 flex-col rounded-xl border border-line bg-bg/60 p-3">
           <p className="px-1 text-xs font-medium text-muted">What the {S.label} server exposes</p>
           <div className="mt-2 grid grid-cols-3 gap-1.5" role="group" aria-label="Server primitives">
             {(Object.keys(PRIMS) as Prim[]).map((k) => (
@@ -234,8 +235,8 @@ export default function McpArchitecture() {
       </div>
 
       {/* JSON-RPC flow */}
-      <div className="grid gap-4 lg:grid-cols-[1fr_1.1fr]" onKeyDown={onKey}>
-        <div className="flex flex-col justify-between gap-3 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-accent" tabIndex={0} role="group" aria-label="JSON-RPC message flow. Use left and right arrow keys to step.">
+      <div className="grid grid-cols-1 gap-4 @2xl:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]" onKeyDown={onKey}>
+        <div className="flex min-w-0 flex-col justify-between gap-3 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-accent" tabIndex={0} role="group" aria-label="JSON-RPC message flow. Use left and right arrow keys to step.">
           <div>
             <p className="text-xs font-medium text-muted">JSON-RPC 2.0 on the wire · {S.label}</p>
             <ol className="mt-2 flex flex-wrap gap-1" aria-label="Messages">
@@ -271,7 +272,7 @@ export default function McpArchitecture() {
           <span className="px-1 font-mono text-xs font-semibold text-accent-text">
             {cur.hop === "c2s" ? "client → server" : cur.hop === "s2c" ? "server → client" : cur.hop === "m2c" ? "Claude → client" : "client → Claude"}
           </span>
-          <p className="mt-1 px-1 font-mono text-xs text-muted">{framing(transport, cur.hop, step)}</p>
+          <p className="mt-1 px-1 font-mono text-xs wrap-anywhere text-muted">{framing(transport, cur.hop, step)}</p>
           <AnimatePresence mode="wait" initial={false}>
             <motion.pre
               key={`${server}-${step}`}
@@ -289,13 +290,13 @@ export default function McpArchitecture() {
 
       {/* Claude Code scopes */}
       <div className="rounded-xl border border-line bg-bg/60 p-3">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-2 @xl:flex-row @xl:items-center @xl:justify-between">
           <p className="px-1 text-xs font-medium text-muted">Where Claude Code stores this server</p>
           <Segmented label="Configuration scope" value={scope} onChange={(v) => setScope(v as Scope)} options={(["local", "project", "user"] as Scope[]).map((v) => ({ v, text: v }))} />
         </div>
-        <div className="mt-3 grid gap-3 lg:grid-cols-[1fr_1.1fr]">
-          <div className="space-y-1.5 px-1" aria-live="polite">
-            <p className="font-mono text-sm text-ink">{SCOPES[scope].file}</p>
+        <div className="mt-3 grid grid-cols-1 gap-3 @2xl:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
+          <div className="min-w-0 space-y-1.5 px-1" aria-live="polite">
+            <p className="font-mono text-sm wrap-anywhere text-ink">{SCOPES[scope].file}</p>
             <p className="text-sm font-semibold text-accent-text">{SCOPES[scope].who}</p>
             <p className="text-sm text-ink-2">{SCOPES[scope].plain}</p>
             <p className="text-xs text-muted">Same server name in several scopes? Local beats project, project beats user. Fields are not merged.</p>
@@ -343,14 +344,14 @@ function Diagram({ L, transport, server, lit, hop, stepLabel, stepKey, reduce, o
         {T ? (
           <motion.g key="local" {...fade}>
             <rect {...box(L.all)} rx={18} fill="none" stroke="var(--line-strong)" strokeDasharray="5 6" />
-            <Label x={L.allLabel[0]} y={L.allLabel[1]} end>your machine · subprocesses</Label>
+            <Label x={L.allLabel[0]} y={L.allLabel[1]} size={V ? 12.5 : 11} end>your machine · subprocesses</Label>
           </motion.g>
         ) : (
           <motion.g key="remote" {...fade}>
             <rect {...box(L.local)} rx={18} fill="none" stroke="var(--line-strong)" strokeDasharray="5 6" />
             <rect {...box(L.remote)} rx={18} fill="var(--info-soft)" fillOpacity={0.5} stroke="var(--info)" strokeDasharray="5 6" />
-            <Label x={L.localLabel[0]} y={L.localLabel[1]} end>your machine</Label>
-            <Label x={L.remoteLabel[0]} y={L.remoteLabel[1]} end>remote · HTTPS</Label>
+            <Label x={L.localLabel[0]} y={L.localLabel[1]} size={V ? 12.5 : 11} end>your machine</Label>
+            <Label x={L.remoteLabel[0]} y={L.remoteLabel[1]} size={V ? 12.5 : 11} end>remote · HTTPS</Label>
           </motion.g>
         )}
       </AnimatePresence>
@@ -360,7 +361,7 @@ function Diagram({ L, transport, server, lit, hop, stepLabel, stepKey, reduce, o
       <text x={L.host.x + 14} y={L.host.y + 20} fill="var(--ink)" style={{ font: "600 13px var(--font-display)" }}>Host · Claude Code</text>
       <rect {...box(L.model)} rx={14} fill="var(--ink)" stroke={inHost ? "var(--accent-strong)" : "none"} strokeWidth={2.5} />
       <text x={L.model.x + L.model.w / 2} y={L.model.y + L.model.h / 2 - 3} textAnchor="middle" fill="var(--bg)" style={{ font: "600 16px var(--font-display)" }}>Claude</text>
-      <text x={L.model.x + L.model.w / 2} y={L.model.y + L.model.h / 2 + 14} textAnchor="middle" fill="var(--line)" style={{ font: "400 12px var(--font-sans)" }}>the model</text>
+      <text x={L.model.x + L.model.w / 2} y={L.model.y + L.model.h / 2 + 14} textAnchor="middle" fill="var(--line)" style={{ font: `400 ${V ? 13.5 : 12}px var(--font-sans)` }}>the model</text>
 
       {IDS.map((id, i) => {
         const on = id === lit;
@@ -378,27 +379,27 @@ function Diagram({ L, transport, server, lit, hop, stepLabel, stepKey, reduce, o
             <line x1={bx} y1={by} x2={sx} y2={sy} stroke={on ? "var(--accent-strong)" : "var(--line-strong)"} strokeWidth={on ? 2.5 : 1.25} strokeDasharray={T ? undefined : "6 4"} style={{ transition: "stroke 200ms ease" }} />
             {on ? (
               <g>
-                {V ? <rect x={mx - 48} y={my - 9} width={96} height={18} rx={6} fill="var(--surface)" /> : null}
-                <text x={mx} y={V ? my + 4 : my - 8} textAnchor="middle" fill="var(--muted)" style={{ font: `500 ${V ? 10.5 : 11}px var(--font-mono)` }}>
+                {V ? <rect x={mx - 58} y={my - 10} width={116} height={20} rx={6} fill="var(--surface)" /> : null}
+                <text x={mx} y={V ? my + 4.5 : my - 8} textAnchor="middle" fill="var(--ink-2)" style={{ font: `500 ${V ? 12.5 : 11}px var(--font-mono)` }}>
                   {T ? "stdin ⇄ stdout" : "POST /mcp"}
                 </text>
               </g>
             ) : null}
             <rect {...box(c)} rx={12} fill="var(--surface-2)" stroke={on ? "var(--accent-strong)" : "var(--line-strong)"} strokeWidth={on ? 2 : 1} />
             <text x={c.x + c.w / 2} y={c.y + c.h / 2 - 3} textAnchor="middle" fill="var(--ink)" style={{ font: "600 13px var(--font-display)" }}>Client</text>
-            <text x={c.x + c.w / 2} y={c.y + c.h / 2 + 13} textAnchor="middle" fill="var(--muted)" style={{ font: "400 11px var(--font-sans)" }}>
-              {V ? `1:1 · ${SERVERS[id].label}` : `1:1 with ${SERVERS[id].label}`}
+            <text x={c.x + c.w / 2} y={c.y + c.h / 2 + 14} textAnchor="middle" fill="var(--ink-2)" style={{ font: `400 ${V ? 12.5 : 11}px var(--font-sans)` }}>
+              {V ? "1:1" : `1:1 with ${SERVERS[id].label}`}
             </text>
             <rect {...box(s)} rx={14} fill="var(--surface)" stroke={on ? "var(--accent-strong)" : "var(--line-strong)"} strokeWidth={on ? 2.5 : 1.25} />
             <text x={s.x + s.w / 2} y={s.y + 23} textAnchor="middle" fill="var(--ink)" style={{ font: "600 14px var(--font-display)" }}>{SERVERS[id].label}{V ? "" : " server"}</text>
-            <text x={s.x + s.w / 2} y={s.y + 41} textAnchor="middle" fill="var(--muted)" style={{ font: "400 11px var(--font-mono)" }}>
-              {T ? (V ? "stdio server" : "local subprocess") : V ? "server · /mcp" : `${id}.example.com/mcp`}
+            <text x={s.x + s.w / 2} y={s.y + 42} textAnchor="middle" fill="var(--ink-2)" style={{ font: `400 ${V ? 12.5 : 11}px var(--font-mono)` }}>
+              {T ? (V ? "subprocess" : "local subprocess") : V ? "HTTP /mcp" : `${id}.example.com/mcp`}
             </text>
           </g>
         );
       })}
       {T ? (
-        <text x={Sv.x + Sv.w / 2} y={Sv.y + Sv.h + 13} textAnchor="middle" fill="var(--muted)" style={{ font: "500 11px var(--font-mono)" }}>logs → stderr only</text>
+        <text x={Sv.x + Sv.w / 2} y={Sv.y + Sv.h + 13} textAnchor="middle" fill="var(--ink-2)" style={{ font: `500 ${V ? 12.5 : 11}px var(--font-mono)` }}>logs → stderr only</text>
       ) : null}
 
       <motion.circle
@@ -415,9 +416,9 @@ function Diagram({ L, transport, server, lit, hop, stepLabel, stepKey, reduce, o
   );
 }
 
-function Label({ x, y, end, children }: { x: number; y: number; end?: boolean; children: ReactNode }) {
+function Label({ x, y, end, size, children }: { x: number; y: number; end?: boolean; size: number; children: ReactNode }) {
   return (
-    <text x={x} y={y} textAnchor={end ? "end" : "start"} fill="var(--muted)" style={{ font: "500 11px var(--font-mono)" }}>
+    <text x={x} y={y} textAnchor={end ? "end" : "start"} fill="var(--ink-2)" style={{ font: `500 ${size}px var(--font-mono)` }}>
       {children}
     </text>
   );

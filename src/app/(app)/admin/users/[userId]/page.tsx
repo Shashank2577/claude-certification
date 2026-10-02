@@ -4,10 +4,13 @@ import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { Card, CardHeader, Pill } from "@/components/ui/card";
 import { ProgressBar } from "@/components/ui/progress";
-import { achievementById, levelFor } from "@/lib/gamification";
+import { levelFor } from "@/lib/gamification";
 import { userDetail } from "@/lib/repo/admin";
 import { totalXp } from "@/lib/repo/activity";
 import { getAdminViewer } from "@/lib/viewer";
+import { daysUntil } from "@/lib/plan-builder";
+import { Readiness } from "../../readiness";
+import { ActivityTimeline } from "./activity-timeline";
 import { UserControls } from "./user-controls";
 
 export const metadata: Metadata = { title: "User detail" };
@@ -15,27 +18,15 @@ export const metadata: Metadata = { title: "User detail" };
 const dt = new Intl.DateTimeFormat("en", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 const d = new Intl.DateTimeFormat("en", { month: "short", day: "numeric", year: "numeric" });
 
-const KIND_LABEL: Record<string, string> = {
-  lesson: "Completed a lesson",
-  answer: "Answered a question",
-  quiz: "Finished a practice set",
-  flashcard: "Reviewed a flashcard",
-  mock: "Finished a mock exam",
-  focus: "Finished a focus block",
-  resource: "Marked a resource done",
-  "daily-goal": "Hit the daily goal",
-  onboarding: "Set up a study plan",
-  achievement: "Unlocked a badge",
-};
-
 export default async function AdminUserPage({ params }: PageProps<"/admin/users/[userId]">) {
-  const { user: me } = await getAdminViewer();
+  const { user: me, settings: mySettings } = await getAdminViewer();
   const { userId } = await params;
   const id = Number(userId);
   if (!Number.isInteger(id) || id <= 0) notFound();
   const detail = await userDetail(id);
   if (!detail) notFound();
-  const { user, settings, cert, mastery, readiness, streak, activity, mocks } = detail;
+  const { user, settings, cert, mastery, readiness, readinessAnswers, passingScore, lastMock, lastStudiedAt, streak, timeline, mocks } = detail;
+  const left = daysUntil(settings.examDate, settings.tz);
   const lvl = levelFor(await totalXp(user.id));
 
   return (
@@ -44,9 +35,9 @@ export default async function AdminUserPage({ params }: PageProps<"/admin/users/
         <ArrowLeft size={16} /> All users
       </Link>
       <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="font-display text-3xl font-semibold tracking-[-0.025em] sm:text-4xl">{user.name}</h1>
-          <p className="mt-1 text-ink-2">
+        <div className="min-w-0">
+          <h1 className="font-display text-3xl font-semibold tracking-[-0.025em] break-words sm:text-4xl">{user.name}</h1>
+          <p className="mt-1 break-all text-ink-2">
             {user.email}
             {user.role === "admin" ? (
               <Pill tone="info" className="ml-2 align-middle">
@@ -60,17 +51,24 @@ export default async function AdminUserPage({ params }: PageProps<"/admin/users/
 
       <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Stat label="Joined" value={d.format(user.createdAt)} />
-        <Stat label="Last active" value={user.lastActiveAt ? dt.format(user.lastActiveAt) : "Never"} />
+        <Stat label="Last studied" value={lastStudiedAt ? dt.format(lastStudiedAt) : "Never studied"} />
         <Stat label="Current streak" value={`${streak.current} day${streak.current === 1 ? "" : "s"}`} />
-        <Stat label="Readiness" value={readiness == null ? "Not enough data" : String(readiness)} />
-        <Stat label="Exam date" value={settings.examDate ?? "Not set"} />
+        <div className="min-w-0 rounded-2xl border border-line bg-surface px-4 py-3">
+          <dd className="font-display text-lg font-semibold">
+            <Readiness score={readiness} answers={readinessAnswers} pass={passingScore} />
+          </dd>
+          <dt className="text-xs text-muted">
+            Readiness{lastMock ? `, last mock ${lastMock.score} (${lastMock.passed ? "pass" : "fail"})` : ", no mock yet"}
+          </dt>
+        </div>
+        <Stat label={left == null ? "Exam date" : left < 0 ? "Exam date (passed)" : `Exam date, ${left} day${left === 1 ? "" : "s"} left`} value={settings.examDate ?? "Not set"} />
         <Stat label="Daily goal" value={`${settings.dailyMinutes} min`} />
         <Stat label="Background" value={settings.background === "technical" ? "Technical" : "Non-technical"} />
         <Stat label="XP and level" value={`${lvl.xp.toLocaleString()} XP, level ${lvl.level}`} />
       </dl>
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_1.1fr]">
-        <Card className="p-5">
+      <div className="mt-6 grid min-w-0 gap-6 lg:grid-cols-[1fr_1.1fr]">
+        <Card className="min-w-0 p-5">
           <CardHeader title="Domain mastery" sub={cert?.name} />
           {mastery.length === 0 ? (
             <p className="mt-4 text-sm text-muted">No exam content loaded.</p>
@@ -89,7 +87,7 @@ export default async function AdminUserPage({ params }: PageProps<"/admin/users/
           )}
         </Card>
 
-        <Card className="p-5">
+        <Card className="min-w-0 p-5">
           <CardHeader title="Mock exams" sub={`${mocks.filter((m) => m.status === "submitted").length} submitted`} />
           {mocks.length === 0 ? (
             <p className="mt-4 text-sm text-muted">No mock exams yet.</p>
@@ -117,7 +115,7 @@ export default async function AdminUserPage({ params }: PageProps<"/admin/users/
                     <div className="mt-2 grid gap-1">
                       {m.breakdown.map((b) => (
                         <div key={b.domainId} className="flex items-center gap-2 text-xs">
-                          <span className="w-40 truncate text-ink-2 sm:w-56">{b.name}</span>
+                          <span className="w-40 shrink-0 leading-snug text-ink-2 sm:w-56">{b.name}</span>
                           <div className="flex-1">
                             <ProgressBar value={b.total ? b.correct / b.total : 0} height={5} color="var(--ink-2)" label={`${b.name} score`} />
                           </div>
@@ -136,27 +134,8 @@ export default async function AdminUserPage({ params }: PageProps<"/admin/users/
       </div>
 
       <Card className="mt-6 p-5">
-        <CardHeader title="Activity" sub="Most recent 60 events" />
-        {activity.length === 0 ? (
-          <p className="mt-4 text-sm text-muted">No activity yet.</p>
-        ) : (
-          <ol className="relative mt-4 ml-2 border-l border-line">
-            {activity.map((a) => (
-              <li key={a.id} className="relative pb-3 pl-5">
-                <span className="absolute top-1.5 -left-[5px] size-2.5 rounded-full border-2 border-surface bg-line-strong" aria-hidden />
-                <div className="flex flex-wrap items-baseline gap-x-3">
-                  <span className="text-sm">
-                    {KIND_LABEL[a.kind] ?? a.kind}
-                    {a.kind === "achievement" && a.refId ? `: ${achievementById(a.refId)?.title ?? a.refId}` : a.refId && (a.kind === "lesson" || a.kind === "answer" || a.kind === "flashcard" || a.kind === "resource") ? ` (${a.refId})` : ""}
-                    {a.kind === "answer" && typeof a.meta.correct !== "undefined" ? (a.meta.correct ? ", correct" : ", wrong") : ""}
-                  </span>
-                  <span className="text-xs text-muted">{dt.format(a.createdAt)}</span>
-                  {a.xp ? <span className="text-xs font-medium text-accent-text tabular">+{a.xp} XP</span> : null}
-                </div>
-              </li>
-            ))}
-          </ol>
-        )}
+        <CardHeader title="Activity" sub={`Most recent ${timeline.length} events, grouped by the user’s day`} />
+        {timeline.length === 0 ? <p className="mt-4 text-sm text-muted">No activity yet.</p> : <ActivityTimeline items={timeline} tz={mySettings.tz} />}
       </Card>
     </>
   );
@@ -164,8 +143,8 @@ export default async function AdminUserPage({ params }: PageProps<"/admin/users/
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-line bg-surface px-4 py-3">
-      <dd className="truncate font-display text-lg font-semibold">{value}</dd>
+    <div className="min-w-0 rounded-2xl border border-line bg-surface px-4 py-3">
+      <dd className="truncate font-display text-lg font-semibold" title={value}>{value}</dd>
       <dt className="text-xs text-muted">{label}</dt>
     </div>
   );

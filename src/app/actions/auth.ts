@@ -2,7 +2,8 @@
 
 import { redirect } from "next/navigation";
 import { clientIp, createSession, destroySession } from "@/lib/auth";
-import { hitRateLimit, LOGIN_IP_RULE, LOGIN_RULE, resetRateLimit, SIGNUP_RULE } from "@/lib/repo/rate-limit";
+import { hitRateLimit, LOGIN_EMAIL_RULE, LOGIN_IP_RULE, LOGIN_RULE, resetRateLimit, SIGNUP_RULE } from "@/lib/repo/rate-limit";
+import { safeNext } from "@/lib/safe-next";
 import { hashPassword, isAdminEmail, normalizeEmail, validateEmail, validateName, validatePassword, verifyPassword } from "@/lib/auth-core";
 import { createUser, getUserWithHashByEmail } from "@/lib/repo/users";
 
@@ -13,11 +14,6 @@ export interface AuthState {
 
 // Spend comparable time whether or not the email exists, so response timing doesn't reveal accounts.
 const DUMMY_HASH = "$2b$12$ObUNokHPDjSxpu.nGgrohuRx.tXXmTRo3VPDhT4vkDxd5rsn1v.gy";
-
-function safeNext(next: FormDataEntryValue | null): string {
-  const n = typeof next === "string" ? next : "";
-  return n.startsWith("/") && !n.startsWith("//") ? n : "/today";
-}
 
 export async function signUp(_: AuthState, form: FormData): Promise<AuthState> {
   const email = normalizeEmail(String(form.get("email") ?? ""));
@@ -51,8 +47,13 @@ export async function logIn(_: AuthState, form: FormData): Promise<AuthState> {
   const fields = { email };
 
   const ip = await clientIp();
-  // Per account (stops guessing one password) and per IP (stops spraying many accounts).
-  const wait = Math.max(await hitRateLimit(LOGIN_RULE, `${ip}:${email}`), await hitRateLimit(LOGIN_IP_RULE, ip));
+  // Per account+IP (stops guessing one password), per IP (stops spraying many accounts), and per
+  // account alone (holds even if the client IP can be rotated or spoofed).
+  const wait = Math.max(
+    await hitRateLimit(LOGIN_RULE, `${ip}:${email}`),
+    await hitRateLimit(LOGIN_IP_RULE, ip),
+    await hitRateLimit(LOGIN_EMAIL_RULE, email),
+  );
   if (wait) return { error: `Too many attempts. Try again in ${Math.ceil(wait / 60)} minutes.`, fields };
 
   const user = await getUserWithHashByEmail(email);
@@ -60,6 +61,7 @@ export async function logIn(_: AuthState, form: FormData): Promise<AuthState> {
   if (!user || !ok) return { error: "That email and password don't match an account.", fields };
 
   await resetRateLimit(LOGIN_RULE, `${ip}:${email}`);
+  await resetRateLimit(LOGIN_EMAIL_RULE, email);
   await createSession(user);
   redirect(safeNext(form.get("next")));
 }

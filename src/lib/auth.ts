@@ -7,7 +7,7 @@ import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { dataDir } from "./db";
 import { isHostedRuntime } from "./env";
-import { SESSION_COOKIE, SESSION_TTL_SECONDS, signSession, verifySession } from "./auth-core";
+import { pickClientIp, SESSION_COOKIE, SESSION_TTL_SECONDS, signSession, verifySession } from "./auth-core";
 import { getUserById, type User } from "./repo/users";
 
 let secretCache: string | null = null;
@@ -40,7 +40,8 @@ export async function createSession(user: Pick<User, "id" | "tokenVersion">) {
   jar.set(SESSION_COOKIE, token, {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production" && process.env.INSECURE_COOKIES !== "1",
+    // INSECURE_COOKIES is a local escape hatch (e.g. `pnpm start` over plain http); never honored when hosted.
+    secure: isHostedRuntime() || (process.env.NODE_ENV === "production" && process.env.INSECURE_COOKIES !== "1"),
     path: "/",
     maxAge: SESSION_TTL_SECONDS,
   });
@@ -76,15 +77,11 @@ export async function requireAdmin(): Promise<User> {
 }
 
 /**
- * Best-effort client IP for rate limiting. Prefer headers the platform sets itself
- * (Netlify: x-nf-client-connection-ip); the first x-forwarded-for entry can be spoofed by the client.
+ * Best-effort client IP for rate limiting. Only trusts a header the current platform overwrites:
+ * Netlify sets x-nf-client-connection-ip, Vercel sets x-real-ip. A client can send either header
+ * itself, so neither is read on any other platform. Elsewhere, the last x-forwarded-for hop
+ * (appended by the nearest proxy) is used.
  */
 export async function clientIp(): Promise<string> {
-  const h = await headers();
-  return (
-    h.get("x-nf-client-connection-ip") ||
-    h.get("x-real-ip") ||
-    h.get("x-forwarded-for")?.split(",").at(-1)?.trim() ||
-    "local"
-  );
+  return pickClientIp(await headers(), process.env);
 }

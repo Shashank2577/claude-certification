@@ -12,15 +12,26 @@ interface Row {
   xp: number;
 }
 
+const COLLAPSED_ROWS = 3;
+
 export function Leaderboard({ week, all, meId, optedOut }: { week: Row[]; all: Row[]; meId: number; optedOut: boolean }) {
   const [range, setRange] = useState<"week" | "all">("week");
   const [out, setOut] = useState(optedOut);
   const [pending, start] = useTransition();
+  const [expanded, setExpanded] = useState(false);
   const rows = range === "week" ? week : all;
   const max = rows[0]?.xp || 1;
+  // Standard competition ranking: equal XP shares a rank.
+  const ranks = rows.map((r) => rows.findIndex((x) => x.xp === r.xp) + 1);
+  const allTied = rows.length > 1 && rows.every((r) => r.xp === rows[0].xp);
+  const collapsible = rows.length > COLLAPSED_ROWS + 1 || (allTied && rows.length > COLLAPSED_ROWS);
+  const myIndex = rows.findIndex((r) => r.userId === meId);
+  const visible = rows
+    .map((r, i) => ({ r, i }))
+    .filter(({ i }) => expanded || !collapsible || i < COLLAPSED_ROWS || i === myIndex);
 
   return (
-    <Card className="p-5">
+    <Card className="min-w-0 p-5">
       <CardHeader
         title="Leaderboard"
         sub="Everyone studying on this site, by XP."
@@ -31,7 +42,10 @@ export function Leaderboard({ week, all, meId, optedOut }: { week: Row[]; all: R
                 key={r}
                 role="tab"
                 aria-selected={range === r}
-                onClick={() => setRange(r)}
+                onClick={() => {
+                  setRange(r);
+                  setExpanded(false);
+                }}
                 className={clsx("rounded-lg px-3 py-1 font-medium", range === r ? "bg-surface text-ink shadow-card" : "text-muted hover:text-ink")}
               >
                 {r === "week" ? "This week" : "All time"}
@@ -43,30 +57,54 @@ export function Leaderboard({ week, all, meId, optedOut }: { week: Row[]; all: R
       {rows.length === 0 ? (
         <p className="mt-6 rounded-xl bg-surface-2 px-4 py-6 text-center text-sm text-ink-2">No one has earned XP {range === "week" ? "this week" : "yet"}. Answer a question to take first place.</p>
       ) : (
-        <ol className="mt-4 space-y-1.5">
-          {rows.map((r, i) => {
+        <>
+        {allTied ? (
+          <p className="mt-4 text-sm text-ink-2">
+            All {rows.length} people are tied on {rows[0].xp.toLocaleString()} XP. One more session puts you ahead.
+          </p>
+        ) : null}
+        <ol className="mt-4 min-w-0 space-y-1.5">
+          {visible.map(({ r, i }, k) => {
             const me = r.userId === meId;
+            const gap = k > 0 && i - visible[k - 1].i > 1;
             return (
-              <li key={r.userId} className={clsx("relative overflow-hidden rounded-xl px-3 py-2", me ? "ring-2 ring-accent" : "")}>
+              <li
+                key={r.userId}
+                value={ranks[i]}
+                className={clsx("relative min-w-0 overflow-hidden rounded-xl px-3 py-2", me ? "ring-2 ring-accent" : "", gap && "mt-4")}
+              >
                 <motion.span
                   aria-hidden
-                  className="absolute inset-y-0 left-0 bg-surface-2"
+                  className="absolute inset-y-0 left-0 bg-surface-2/50"
                   initial={{ width: 0 }}
                   animate={{ width: `${(r.xp / max) * 100}%` }}
                   transition={{ duration: 0.6, delay: i * 0.03, ease: [0.22, 1, 0.36, 1] }}
                 />
-                <span className="relative flex items-center gap-3">
-                  <span className="w-6 text-right font-display font-semibold text-muted tabular">{i + 1}</span>
-                  <span className={clsx("flex-1 truncate", me && "font-semibold")}>
-                    {r.name}
-                    {me ? <span className="ml-1.5 text-xs font-normal text-muted">(you)</span> : null}
+                <span className="relative flex min-w-0 items-center gap-3">
+                  <span className="w-6 shrink-0 text-right font-display font-semibold text-muted tabular">{ranks[i]}</span>
+                  <span className={clsx("flex min-w-0 flex-1 items-baseline", me && "font-semibold")}>
+                    <span className="min-w-0 truncate" title={r.name}>
+                      {r.name}
+                    </span>
+                    {me ? <span className="ml-1.5 shrink-0 text-xs font-normal text-muted">(you)</span> : null}
                   </span>
-                  <span className="font-display font-semibold tabular">{r.xp.toLocaleString()}</span>
+                  <span className="shrink-0 font-display font-semibold tabular">{r.xp.toLocaleString()}</span>
                 </span>
               </li>
             );
           })}
         </ol>
+        {collapsible ? (
+          <button
+            type="button"
+            aria-expanded={expanded}
+            onClick={() => setExpanded((e) => !e)}
+            className="mt-3 text-sm font-medium text-ink-2 underline-offset-4 hover:text-ink hover:underline"
+          >
+            {expanded ? "Show top 3" : `Show all ${rows.length}`}
+          </button>
+        ) : null}
+        </>
       )}
       <label className="mt-5 flex cursor-pointer items-start gap-3 border-t border-line pt-4 text-sm">
         <input

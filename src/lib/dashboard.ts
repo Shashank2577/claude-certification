@@ -1,15 +1,15 @@
 import "server-only";
 import { sql } from "drizzle-orm";
 import { num, one, rows } from "./db";
-import { getCertLessons } from "./content";
+import { getCert, getCertLessons } from "./content";
 import type { Cert, LessonRef, PlanBlock } from "./content-types";
-import { dayKey, daysBetween, localHour } from "./dates";
+import { addDays, dayKey, daysBetween, localHour } from "./dates";
 import { achievementById, levelFor } from "./gamification";
-import { planDayIndex } from "./plan";
+import { planDayIndex, planFeasibility } from "./plan";
 import { daysUntil } from "./plan-builder";
 import { readiness, type Readiness } from "./scoring";
 import { buildDeck } from "./flashcard-deck";
-import { dailySeries, minutesOnDay, recentActivity, streakFor, totalXp } from "./repo/activity";
+import { dailySeries, frozenDays, minutesOnDay, recentActivity, streakFor, STUDY_KIND, totalXp } from "./repo/activity";
 import { answerTotals, domainStats, type DomainStat } from "./repo/attempts";
 import { getLessonProgress, lastStartedLesson } from "./repo/progress";
 import type { Viewer } from "./viewer";
@@ -63,6 +63,34 @@ export interface Dashboard {
   lessonsTotal: number;
   messages: string[];
   recent: { id: number; text: string; xp: number; at: number }[];
+  /** Set when the saved plan belongs to another cert (legacy data); no blocks are shown then. */
+  planMismatch: { planCertName: string } | null;
+  /** The first `mustCount` blocks fit the daily goal (always at least one); the rest are stretch. */
+  mustCount: number;
+  mustMinutes: number;
+  /** Unfinished lessons from earlier plan days, capped to what fits in the daily goal. */
+  catchUp: { missedDays: number[]; blocks: TodayBlock[]; minutes: number; remaining: number } | null;
+  /** A streak freeze consumed for a recent day. */
+  freezeNotice: { day: string } | null;
+  calendarHref: string;
+}
+
+/** First word of the name, capped at 20 characters so long names can't break the layout. */
+export function displayName(name: string): string {
+  const first = name.trim().split(/\s+/)[0] || "there";
+  return first.length > 20 ? `${first.slice(0, 19)}…` : first;
+}
+
+/** How many leading blocks fit inside the daily goal (at least one when there are any). */
+export function mustDoSplit(blocks: readonly { minutes: number }[], goal: number): { count: number; minutes: number } {
+  let count = 0;
+  let minutes = 0;
+  for (const b of blocks) {
+    if (count > 0 && minutes + b.minutes > goal) break;
+    minutes += b.minutes;
+    count++;
+  }
+  return { count, minutes };
 }
 
 function lessonHref(l: LessonRef) {
@@ -84,7 +112,7 @@ export async function buildDashboard(v: Viewer, now = Date.now()): Promise<Dashb
   const lessonById = new Map(lessons.map((l) => [l.id, l]));
 
   // Everything the page needs, fetched in one parallel batch.
-  const [xp, streak, progress, recentRows, cardsToday, mockCount, resourceRows, deck, resume, stats, totals, minutesToday, series, recentLog, lastActiveRow] =
+  const [xp, streak, progress, recentRows, cardsToday, mockCount, resourceRows, deck, resume, stats, totals, minutesToday, series, recentLog, lastActiveRow, frozen, lastMock] =
     await Promise.all([
       totalXp(user.id),
       streakFor(user.id, tz, now),
@@ -107,7 +135,11 @@ export async function buildDashboard(v: Viewer, now = Date.now()): Promise<Dashb
       minutesOnDay(user.id, today),
       dailySeries(user.id, tz, 7, now),
       recentActivity(user.id, 8),
-      one<{ d: string | null }>(sql`SELECT MAX(day) d FROM activity_log WHERE user_id = ${user.id} AND day < ${today}`),
+      one<{ d: string | null }>(sql`SELECT MAX(day) d FROM activity_log WHERE user_id = ${user.id} AND day < ${today} AND ${STUDY_KIND}`),
+      frozenDays(user.id),
+      one<{ score: number | string | null; submitted_at: number | string | null }>(
+        sql`SELECT score, submitted_at FROM mock_attempts WHERE user_id = ${user.id} AND cert_id = ${cert.id} AND status = 'submitted' AND score IS NOT NULL ORDER BY submitted_at DESC NULLS LAST LIMIT 1`,
+      ),
     ]);
   const isDone = (id: string) => progress.get(id)?.status === "done";
 
@@ -116,11 +148,14 @@ export async function buildDashboard(v: Viewer, now = Date.now()): Promise<Dashb
   const mockToday = mockCount > 0;
   const resourcesDone = new Set(resourceRows.map((r) => r.resource_id));
 
-  const plan = settings.plan && settings.plan.days.length > 0 ? settings.plan : null;
+  const savedPlan = settings.plan && settings.plan.days.length > 0 ? settings.plan : null;
+  // A plan built for another cert would map to dead rows; flag it instead of rendering it.
+  const planMismatch = savedPlan && savedPlan.certId !== cert.id ? { planCertName: getCert(savedPlan.certId)?.name ?? savedPlan.certId } : null;
+  const plan = planMismatch ? null : savedPlan;
   const planDay = plan && settings.planStart ? planDayIndex(settings.planStart, today, plan.days.length) : 1;
   const day = plan?.days[planDay - 1] ?? null;
 
-  const blocks: TodayBlock[] = (day?.blocks ?? []).map((b) => {
+  const toBlock = (b: PlanBlock): TodayBlock => {
     switch (b.kind) {
       case "lesson": {
         const l = b.refId ? lessonById.get(b.refId) : undefined;
@@ -142,7 +177,42 @@ export async function buildDashboard(v: Viewer, now = Date.now()): Promise<Dashb
       default:
         return { ...b, href: "/practice?mode=mistakes", done: answeredToday.length >= 5 };
     }
-  });
+  };
+  const blocks: TodayBlock[] = (day?.blocks ?? []).map(toBlock);
+  const must = mustDoSplit(blocks, settings.dailyMinutes);
+
+  // Re-entry: lessons from earlier plan days that never got done move to today.
+  let catchUp: Dashboard["catchUp"] = null;
+  if (plan && planDay > 1) {
+    const todayIds = new Set(blocks.filter((b) => b.kind === "lesson").map((b) => b.refId));
+    const seen = new Set<string>();
+    const missed: { day: number; block: TodayBlock }[] = [];
+    for (const pd of plan.days.slice(0, planDay - 1)) {
+      for (const b of pd.blocks) {
+        if (b.kind !== "lesson" || !b.refId || seen.has(b.refId) || todayIds.has(b.refId)) continue;
+        const l = lessonById.get(b.refId);
+        if (!l || isDone(l.id)) continue;
+        seen.add(b.refId);
+        missed.push({ day: pd.day, block: toBlock(b) });
+      }
+    }
+    if (missed.length > 0) {
+      const fit = mustDoSplit(
+        missed.map((m) => m.block),
+        settings.dailyMinutes,
+      );
+      const taken = missed.slice(0, fit.count);
+      catchUp = {
+        missedDays: [...new Set(taken.map((m) => m.day))],
+        blocks: taken.map((m) => m.block),
+        minutes: fit.minutes,
+        remaining: missed.length,
+      };
+    }
+  }
+
+  // A freeze spent on one of the last few days, so the learner knows why the streak survived.
+  const recentFreeze = [...frozen].sort().reverse().find((f) => f < today && f >= addDays(today, -3));
 
   // The single next thing to do: first open plan block, else the next unfinished core lesson, else practice.
   const resumeLesson = resume ? lessonById.get(resume) : undefined;
@@ -166,9 +236,11 @@ export async function buildDashboard(v: Viewer, now = Date.now()): Promise<Dashb
       lessonsTotal: dl.length,
     };
   });
+  const mockScore = lastMock?.score != null ? Number(lastMock.score) : null;
   const ready = readiness(
     domains.map((d) => ({ domainId: d.domainId, weight: d.weight, mastery: d.mastery, attempts: d.attempts })),
     cert.examInfo.passingScore,
+    mockScore != null && Number.isFinite(mockScore) ? { score: mockScore, ageDays: Math.max(0, (now - Number(lastMock?.submitted_at ?? now)) / 86_400_000) } : null,
   );
 
   const lessonsDone = lessons.filter((l) => isDone(l.id)).length;
@@ -185,7 +257,7 @@ export async function buildDashboard(v: Viewer, now = Date.now()): Promise<Dashb
   return {
     now,
     hour: localHour(now, tz),
-    firstName: user.name.split(" ")[0],
+    firstName: displayName(user.name),
     xp,
     level: levelFor(xp),
     streak: streak.current,
@@ -211,6 +283,12 @@ export async function buildDashboard(v: Viewer, now = Date.now()): Promise<Dashb
     lessonsTotal: lessons.length,
     messages: motivation({ cert, domains, streak: streak.current, activeToday: streak.activeToday, ready, examDaysLeft, lessons, isDone, totals, lastActive: lastActiveRow?.d ?? null, today, minutesToday, goal: settings.dailyMinutes }),
     recent,
+    planMismatch,
+    mustCount: must.count,
+    mustMinutes: must.minutes,
+    catchUp,
+    freezeNotice: recentFreeze ? { day: recentFreeze } : null,
+    calendarHref: "/api/calendar",
   };
 }
 
@@ -273,7 +351,7 @@ function motivation(o: {
   }
 
   if (o.streak > 0 && !o.activeToday) out.push(`Your ${o.streak}-day streak is still alive. One lesson or five questions today keeps it going.`);
-  else if (o.streak >= 2) out.push(`Day ${o.streak} of your streak, and today already counts.`);
+  else if (o.streak >= 2 && o.activeToday && o.minutesToday > 0) out.push(`Day ${o.streak} of your streak, and today already counts.`);
 
   if (!o.activeToday && o.minutesToday === 0 && o.goal > 0 && o.streak === 0) out.push(`Today’s goal is ${o.goal} minutes. The first five are the only hard ones.`);
   else if (o.minutesToday > 0 && o.minutesToday < o.goal) out.push(`${Math.round(o.minutesToday)} of ${o.goal} minutes done today. ${Math.max(1, Math.ceil(o.goal - o.minutesToday))} more closes the ring.`);
@@ -284,18 +362,31 @@ function motivation(o: {
     out.push(`${weakest.short} is your weakest area at ${Math.round(weakest.mastery * 100)}% mastery and ${weakest.weight}% of the exam. Ten questions there moves your score the most.`);
   }
 
-  if (o.ready.passProbabilityLabel !== "not enough data") {
+  if (!o.ready.locked) {
     const gapPts = o.cert.examInfo.passingScore - o.ready.predicted;
-    out.push(
-      gapPts > 0
-        ? `Predicted score ${o.ready.predicted}. That’s ${gapPts} points below the ${o.cert.examInfo.passingScore} pass line.`
-        : `Predicted score ${o.ready.predicted}, ${-gapPts} points above the pass line. A timed mock will tell you if it holds under pressure.`,
-    );
+    if (o.ready.confidenceLabel === "baseline") {
+      out.push(`Baseline set: somewhere around ${o.ready.low}–${o.ready.high}. Every answer narrows the range.`);
+    } else {
+      out.push(
+        gapPts > 0
+          ? `Your score is likely in the ${o.ready.low}–${o.ready.high} range. The middle is ${gapPts} points below the ${o.cert.examInfo.passingScore} pass line.`
+          : `Your score is likely in the ${o.ready.low}–${o.ready.high} range, above the pass line. A timed mock will tell you if it holds under pressure.`,
+      );
+    }
   }
 
-  const left = o.lessons.filter((l) => l.level !== "deep" && !o.isDone(l.id)).length;
+  const coreLeft = o.lessons.filter((l) => l.level !== "deep" && !o.isDone(l.id));
+  const left = coreLeft.length;
   if (o.examDaysLeft != null && o.examDaysLeft > 0 && left > 0) {
-    out.push(`${left} core lesson${left === 1 ? "" : "s"} left and ${o.examDaysLeft} day${o.examDaysLeft === 1 ? "" : "s"} to the exam: about ${Math.ceil(left / Math.max(1, o.examDaysLeft))} a day.`);
+    const f = planFeasibility(
+      coreLeft.reduce((s, l) => s + (l.estMinutes || 8), 0),
+      o.examDaysLeft,
+      o.goal,
+    );
+    out.push(
+      `${left} core lesson${left === 1 ? "" : "s"} left and ${o.examDaysLeft} day${o.examDaysLeft === 1 ? "" : "s"} to the exam: about ${f.required} minutes a day. ` +
+        (f.feasible ? `Your ${o.goal}-minute goal covers it.` : `That’s more than your ${o.goal}-minute goal. Adjust your plan to raise the goal or keep to the highest-weight lessons.`),
+    );
   }
 
   if (o.totals.answered >= 10) out.push(`${o.totals.answered} questions answered at ${Math.round((o.totals.correct / o.totals.answered) * 100)}% accuracy.`);

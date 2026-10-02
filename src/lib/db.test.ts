@@ -99,6 +99,23 @@ describe("rewards transaction", () => {
     expect((await getSettings(u.id)).freezes).toBe(0);
   });
 
+  it("doesn't count onboarding (or its bonus XP) toward the streak", async () => {
+    const u = await user("fresh@example.com");
+    await updateSettings(u.id, { tz: "UTC", dailyMinutes: 10 });
+    const now = Date.UTC(2026, 3, 1, 12);
+    const r = await recordActivity(u.id, { kind: "onboarding", xp: 20 }, now);
+    expect(r.streak).toBe(0);
+    expect(await totalXp(u.id)).toBeGreaterThanOrEqual(20); // the welcome bonus stays
+    const s = await streakFor(u.id, "UTC", now);
+    expect(s.current).toBe(0);
+    expect(s.activeToday).toBe(false);
+    // The next day still shows no streak, and the onboarding day isn't bridged with a freeze.
+    expect((await streakFor(u.id, "UTC", now + 86_400_000)).current).toBe(0);
+    // The first real study action starts it at 1.
+    const first = await recordActivity(u.id, { kind: "answer", xp: 3, minutes: 1 }, now + 86_400_000);
+    expect(first.streak).toBe(1);
+  });
+
   it("serialises concurrent rewards so totals stay exact and the goal fires once", async () => {
     const u = await user("race@example.com");
     const now = Date.UTC(2026, 2, 1, 12);

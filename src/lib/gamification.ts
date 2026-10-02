@@ -132,3 +132,41 @@ export interface Reward {
 }
 
 export const EMPTY_REWARD: Reward = { xp: 0, totalXp: 0, levelUp: null, achievements: [], goalHit: false, streak: 0 };
+
+/** The stat and threshold behind each count-based achievement (time-of-day and comeback badges have none). */
+const ACHIEVEMENT_TARGETS: Record<string, [keyof UserStats, number]> = {
+  "first-lesson": ["lessonsCompleted", 1],
+  "ten-lessons": ["lessonsCompleted", 10],
+  "domain-done": ["domainsCompleted", 1],
+  "first-answer": ["questionsAnswered", 1],
+  "hundred-questions": ["questionsAnswered", 100],
+  "five-hundred-questions": ["questionsAnswered", 500],
+  "perfect-quiz": ["perfectQuizzes", 1],
+  "streak-3": ["currentStreak", 3],
+  "streak-7": ["currentStreak", 7],
+  "streak-30": ["currentStreak", 30],
+  "first-mock": ["mockAttempts", 1],
+  "pass-mock": ["mocksPassed", 1],
+  "mock-900": ["bestMockScore", 900],
+  "cards-50": ["flashcardReviews", 50],
+  "focus-1": ["focusSessions", 1],
+  "focus-10": ["focusSessions", 10],
+  "goal-5": ["dailyGoalsHit", 5],
+  reader: ["resourcesDone", 5],
+};
+
+export interface AchievementProgress {
+  id: string;
+  current: number;
+  target: number;
+}
+
+/** Progress toward every count-based achievement, in ACHIEVEMENTS order. `current` is capped at `target`. */
+export function achievementProgress(stats: UserStats): AchievementProgress[] {
+  return ACHIEVEMENTS.flatMap((a) => {
+    const t = ACHIEVEMENT_TARGETS[a.id];
+    if (!t) return [];
+    const [key, target] = t;
+    return [{ id: a.id, current: Math.max(0, Math.min(target, stats[key])), target }];
+  });
+}

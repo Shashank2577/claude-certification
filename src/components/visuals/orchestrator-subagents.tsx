@@ -132,38 +132,40 @@ interface Layout {
   bracket: { x1: number; x2: number; y: number };
   f: { title: number; body: number; mono: number };
 }
-// Three subagents side by side: used between the sm and lg breakpoints, where the SVG spans the full column.
+// Three subagents side by side: used when the figure is 42rem-48rem wide (@2xl), where the SVG spans the full width.
 const WIDE: Layout = {
   id: "w",
   vb: "0 0 640 372",
-  cls: "hidden sm:block lg:hidden",
-  coord: { x: 196, y: 14, w: 248, h: 104, bar: { x: 244, w: 152 }, rows: [28, 46, 60, 92] },
-  subs: [16, 228, 440].map((x) => ({ x, y: 236 })),
-  subW: 184,
+  cls: "hidden @2xl:block @3xl:hidden",
+  coord: { x: 196, y: 14, w: 248, h: 110, bar: { x: 244, w: 152 }, rows: [28, 46, 60, 92] },
+  // 196 wide so the title and the right-aligned status ("researching…") never touch.
+  subs: [8, 222, 436].map((x) => ({ x, y: 236 })),
+  subW: 196,
   subH: 104,
   barW: 152,
   rows: [24, 42, 56, 88],
-  link: (c) => `M320 118 L${c.x} 236`,
-  pkt: (c, i, down) => (down ? { from: { x: 320, y: 124 }, to: { x: c.x, y: 224 } } : { from: { x: c.x, y: 224 }, to: { x: 264 + i * 56, y: 134 } }),
+  link: (c) => `M320 124 L${c.x} 236`,
+  pkt: (c, i, down) => (down ? { from: { x: 320, y: 130 }, to: { x: c.x, y: 224 } } : { from: { x: c.x, y: 224 }, to: { x: 264 + i * 56, y: 140 } }),
   note: { x: 320, y: 178, anchor: "middle" },
   bracket: { x1: 24, x2: 616, y: 354 },
   f: { title: 16, body: 12, mono: 12 },
 };
-// Stacked rows: used on phones and beside the inspector on large screens, where the column is narrow.
+// Stacked rows: used below @2xl and beside the inspector at @3xl+, where the column is narrow.
 const COMPACT: Layout = {
   id: "c",
-  vb: "0 0 340 492",
-  cls: "sm:hidden lg:block",
-  coord: { x: 12, y: 10, w: 316, h: 100, bar: { x: 52, w: 236 }, rows: [30, 50, 66, 96] },
-  subs: [156, 260, 364].map((y) => ({ x: 70, y })),
+  vb: "0 0 340 500",
+  cls: "@2xl:hidden @3xl:block",
+  // Bottom row sits 16 units above the box edge so the "context" line never touches the border.
+  coord: { x: 12, y: 10, w: 316, h: 108, bar: { x: 52, w: 236 }, rows: [30, 50, 66, 92] },
+  subs: [164, 268, 372].map((y) => ({ x: 70, y })),
   subW: 258,
   subH: 92,
   barW: 230,
   rows: [24, 42, 54, 82],
-  link: (c) => `M28 110 V${c.y} H70`,
-  pkt: (c, i, down) => (down ? { from: { x: 28, y: 116 }, to: { x: 42, y: c.y } } : { from: { x: 42, y: c.y }, to: { x: 100 + i * 70, y: 122 } }),
-  note: { x: 70, y: 147, anchor: "start" },
-  bracket: { x1: 70, x2: 328, y: 476 },
+  link: (c) => `M28 118 V${c.y} H70`,
+  pkt: (c, i, down) => (down ? { from: { x: 28, y: 124 }, to: { x: 42, y: c.y } } : { from: { x: 42, y: c.y }, to: { x: 100 + i * 70, y: 130 } }),
+  note: { x: 70, y: 155, anchor: "start" },
+  bracket: { x1: 70, x2: 328, y: 484 },
   f: { title: 17, body: 13.5, mono: 13 },
 };
 
@@ -235,8 +237,8 @@ export default function OrchestratorSubagents() {
 
   return (
     <div className="space-y-4" onKeyDown={onKey}>
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div role="group" aria-label="What the coordinator passes to each subagent" className="inline-flex self-start rounded-xl border border-line-strong bg-surface p-1">
+      <div className="flex flex-col gap-2 @xl:flex-row @xl:items-center @xl:justify-between">
+        <div role="group" aria-label="What the coordinator passes to each subagent" className="inline-flex max-w-full self-start rounded-xl border border-line-strong bg-surface p-1">
           {(
             [
               ["brief", "Brief only", FileText],
@@ -249,7 +251,7 @@ export default function OrchestratorSubagents() {
               aria-pressed={mode === m}
               aria-label={m === "brief" ? "Pass each subagent an explicit brief only" : "Pass each subagent the brief plus the coordinator's full history"}
               onClick={() => setMode(m)}
-              className={clsx("relative flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium whitespace-nowrap transition-colors", mode === m ? "text-accent-ink" : "text-ink-2 hover:text-ink")}
+              className={clsx("relative flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-medium whitespace-nowrap transition-colors @sm:px-3", mode === m ? "text-accent-ink" : "text-ink-2 hover:text-ink")}
             >
               {mode === m && <motion.span layoutId="os-mode" className={clsx("absolute inset-0 rounded-lg", m === "brief" ? "bg-accent" : "bg-bad-soft ring-1 ring-bad")} transition={{ duration: reduce ? 0 : 0.3 }} />}
               <Icon size={15} className={clsx("relative", m === "history" && mode === m && "text-bad")} />
@@ -276,8 +278,8 @@ export default function OrchestratorSubagents() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
-        <div className="rounded-xl bg-surface-2/50 p-2" tabIndex={0} role="group" aria-label="Orchestrator and subagents diagram. Use left and right arrow keys to step.">
+      <div className="grid grid-cols-1 gap-4 @3xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
+        <div className="min-w-0 rounded-xl bg-surface-2/50 p-2" tabIndex={0} role="group" aria-label="Orchestrator and subagents diagram. Use left and right arrow keys to step.">
           <Diagram L={WIDE} {...diagram} />
           <Diagram L={COMPACT} {...diagram} />
           <div className="flex flex-wrap gap-x-3 gap-y-1 px-2 pt-1 pb-1 text-xs text-ink-2">
@@ -299,10 +301,11 @@ export default function OrchestratorSubagents() {
           </div>
         </div>
 
-        <div className="flex min-h-72 flex-col rounded-xl border border-line bg-bg/60 p-3">
-          <div className="flex items-center justify-between gap-2">
+        <div className="flex min-h-72 min-w-0 flex-col rounded-xl border border-line bg-bg/60 p-3">
+          {/* Label and chips on separate rows so the label never wraps into a cramped column. */}
+          <div className="flex flex-col items-start gap-1.5">
             <p className="px-1 text-xs font-medium text-muted">Inside the context window of</p>
-            <div className="flex gap-1" role="group" aria-label="Choose whose context to inspect">
+            <div className="flex flex-wrap gap-1" role="group" aria-label="Choose whose context to inspect">
               {(["coord", 0, 1, 2] as Focus[]).map((f) => (
                 <button
                   key={String(f)}
@@ -383,7 +386,7 @@ export default function OrchestratorSubagents() {
         <Stat label="Parent history items copied into each subagent" value={step >= 2 ? (leaky ? "5" : "0") : "—"} bad={leaky && step >= 2} reduce={reduce} />
       </div>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div className="flex flex-col gap-3 @xl:flex-row @xl:items-start @xl:justify-between">
         <div className="min-h-16" aria-live="polite">
           <p className="text-[0.95rem] text-ink-2">
             <span className="mr-2 font-display font-semibold text-ink tabular">
@@ -459,7 +462,8 @@ function Diagram({ L, step, mode, focus, setFocus, reduce }: { L: Layout; step: 
         <text x={cx} y={C.y + C.rows[0]} textAnchor="middle" fill="var(--bg)" style={{ font: `600 ${L.f.title}px var(--font-display)` }}>
           Coordinator
         </text>
-        <text x={cx} y={C.y + C.rows[1]} textAnchor="middle" fill="var(--accent)" style={{ font: `400 ${L.f.body}px var(--font-sans)` }}>
+        {/* --bg (not --accent) on the ink fill keeps AA contrast in both themes: in dark mode --ink is light. */}
+        <text x={cx} y={C.y + C.rows[1]} textAnchor="middle" fill="var(--bg)" fillOpacity={0.8} style={{ font: `400 ${L.f.body}px var(--font-sans)` }}>
           lead agent · plans, delegates, aggregates
         </text>
         <Bar id={`${L.id}-coord`} x={C.bar.x} y={C.y + C.rows[2]} w={C.bar.w} segs={coord} dur={dur} dark />
@@ -492,7 +496,7 @@ function Diagram({ L, step, mode, focus, setFocus, reduce }: { L: Layout; step: 
             <text x={s.x + L.subW - 12} y={s.y + L.rows[0]} textAnchor="end" fill={step === 3 ? "var(--info)" : step >= 4 ? "var(--good)" : "var(--muted)"} style={mono(L.f.mono)}>
               {status}
             </text>
-            <text x={s.x + 14} y={s.y + L.rows[1]} fill="var(--muted)" style={{ font: `400 ${L.f.body}px var(--font-sans)` }}>
+            <text x={s.x + 14} y={s.y + L.rows[1]} fill="var(--ink-2)" style={{ font: `400 ${L.f.body}px var(--font-sans)` }}>
               web-researcher · {SUBS[i].vendor}
             </text>
             <Bar id={`${L.id}-sub${i}`} x={s.x + 14} y={s.y + L.rows[2]} w={L.barW} segs={segs} dur={dur} />

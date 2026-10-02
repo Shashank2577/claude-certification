@@ -120,7 +120,7 @@ export default function EvalLoop() {
 
   return (
     <div className="space-y-4" onKeyDown={onKey}>
-      <div className="grid gap-4 lg:grid-cols-[1fr_1.25fr]">
+      <div className="grid grid-cols-1 gap-4 @2xl:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)]">
         <div className="rounded-xl bg-surface-2/50 p-2" tabIndex={0} role="group" aria-label="Evaluation loop diagram. Use left and right arrow keys to step.">
           <svg viewBox="-24 6 364 312" className="h-auto w-full" role="img" aria-label={`Round ${round}, stage ${step + 1} of 7, ${stage.title}: ${stage.caption}`}>
             <defs>
@@ -221,7 +221,7 @@ export default function EvalLoop() {
               </p>
 
               {step === 0 && (
-                <ul className="grid gap-2 sm:grid-cols-2">
+                <ul className="grid grid-cols-1 gap-2 @lg:grid-cols-2">
                   {CRITERIA.map((c) => (
                     <li key={c.k} className="rounded-lg border border-line bg-surface px-3 py-2">
                       <p className="flex items-center justify-between font-display text-sm font-semibold text-ink">
@@ -231,7 +231,7 @@ export default function EvalLoop() {
                       <p className="mt-0.5 text-xs text-ink-2">{c.target}</p>
                     </li>
                   ))}
-                  <li className="text-xs text-muted sm:col-span-2">“Be accurate” is not a criterion. A number with a threshold is. A hard gate must pass no matter how good the other numbers look.</li>
+                  <li className="text-xs text-muted @lg:col-span-2">“Be accurate” is not a criterion. A number with a threshold is. A hard gate must pass no matter how good the other numbers look.</li>
                 </ul>
               )}
 
@@ -247,7 +247,7 @@ export default function EvalLoop() {
                       ))}
                     </div>
                   )}
-                  <ul className="grid grid-cols-2 gap-1.5 sm:grid-cols-3" aria-label="Eval cases">
+                  <ul className="grid grid-cols-2 gap-1.5 @lg:grid-cols-3" aria-label="Eval cases">
                     {cases.map((c, i) => {
                       const v = verdictOf(c, grader);
                       const wrong = step === 3 && v !== null && v !== c.truth;
@@ -331,7 +331,7 @@ export default function EvalLoop() {
         </div>
       </div>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 @lg:flex-row @lg:items-center @lg:justify-between">
         <p className="min-h-12 text-[0.95rem] text-ink-2" aria-live="polite">
           <span className="mr-2 font-display font-semibold text-ink tabular">
             {step + 1}/{STAGES.length}

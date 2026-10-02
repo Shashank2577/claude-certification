@@ -75,3 +75,23 @@ export function isAdminEmail(email: string, adminEmails: string | undefined): bo
     .filter(Boolean)
     .includes(e);
 }
+
+/**
+ * Netlify functions only get URL, SITE_NAME and SITE_ID at runtime (NETLIFY=true is build-time),
+ * so detect either. These are reserved by Netlify and can't be set by a request.
+ */
+export function isNetlifyRuntime(env: Record<string, string | undefined>): boolean {
+  return !!(env.NETLIFY || (env.SITE_ID && env.SITE_NAME));
+}
+
+/** Client IP from request headers, trusting only the header the current platform sets itself. */
+export function pickClientIp(h: { get(name: string): string | null }, env: Record<string, string | undefined>): string {
+  if (isNetlifyRuntime(env)) {
+    const ip = h.get("x-nf-client-connection-ip")?.trim();
+    if (ip) return ip;
+  } else if (env.VERCEL) {
+    const ip = h.get("x-real-ip")?.trim();
+    if (ip) return ip;
+  }
+  return h.get("x-forwarded-for")?.split(",").at(-1)?.trim() || "local";
+}

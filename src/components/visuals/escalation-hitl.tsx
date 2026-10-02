@@ -28,7 +28,7 @@ const CASES: Case[] = [
 
 type PK = "start" | "d1" | "d2" | "d3" | "res" | "o1" | "o2" | "o3";
 interface Layout { vb: string; dw: number; vertical: boolean; P: Record<PK, [number, number]> }
-// Wide layout for tablets and up; tall layout keeps text at full size on phones.
+// Wide layout when the figure is 42rem+ (@2xl); the tall layout keeps text at ~11px+ on phones.
 const WIDE: Layout = { vb: "0 0 680 250", dw: 62, vertical: false, P: { start: [46, 62], d1: [168, 62], d2: [328, 62], d3: [488, 62], res: [623, 62], o1: [168, 196], o2: [328, 196], o3: [488, 196] } };
 const TALL: Layout = { vb: "0 0 340 548", dw: 56, vertical: true, P: { start: [110, 28], d1: [110, 124], d2: [110, 258], d3: [110, 392], res: [110, 510], o1: [262, 124], o2: [262, 258], o3: [262, 392] } };
 const ROUTE: Record<Outcome, PK[]> = {
@@ -50,7 +50,7 @@ const OUTS: { k: PK; label: string; sub: string; tone: string; text: string }[] 
 ];
 const LABEL: Record<Outcome, string> = { now: "Escalate immediately", gap: "Escalate (policy gap)", ask: "Ask a clarifying question", resolve: "Resolve it" };
 const naiveEscalates = (c: Case) => c.sentiment <= -0.5 || c.selfConf < 6;
-const MONO12 = { font: "500 12px var(--font-mono)" };
+const MONO = { font: "500 13px var(--font-mono)" };
 
 function Flow({ L, path, label, i, reduce, className }: { L: Layout; path: PK[]; label: string; i: number; reduce: boolean; className: string }) {
   const { P, dw } = L;
@@ -74,8 +74,8 @@ function Flow({ L, path, label, i, reduce, className }: { L: Layout; path: PK[];
             <path d={`M${x} ${y - 44} L${x + dw} ${y} L${x} ${y + 44} L${x - dw} ${y} Z`} fill="var(--surface)" stroke={lit ? "var(--accent-strong)" : "var(--line-strong)"} strokeWidth={lit ? 2.5 : 1.25} />
             <text x={x} y={y - 3} textAnchor="middle" fill="var(--ink)" style={{ font: "600 13px var(--font-display)" }}>{d.l1}</text>
             <text x={x} y={y + 13} textAnchor="middle" fill="var(--ink)" style={{ font: "600 13px var(--font-display)" }}>{d.l2}</text>
-            <text x={nextAt.x} y={nextAt.y} textAnchor={nextAt.a} fill="var(--muted)" style={MONO12}>{d.next}</text>
-            <text x={outAt.x} y={outAt.y} textAnchor={outAt.a} fill="var(--muted)" style={MONO12}>{d.out}</text>
+            <text x={nextAt.x} y={nextAt.y} textAnchor={nextAt.a} fill="var(--ink-2)" style={MONO}>{d.next}</text>
+            <text x={outAt.x} y={outAt.y} textAnchor={outAt.a} fill="var(--ink-2)" style={MONO}>{d.out}</text>
           </g>
         );
       })}
@@ -86,13 +86,13 @@ function Flow({ L, path, label, i, reduce, className }: { L: Layout; path: PK[];
           <g key={o.k}>
             <rect x={x - 66} y={y - 22} width={132} height={48} rx={12} fill={lit ? o.tone : "var(--surface)"} stroke={lit ? o.tone : "var(--line-strong)"} strokeWidth={1.25} style={{ transition: "fill 250ms ease" }} />
             <text x={x} y={y - 1} textAnchor="middle" fill={lit ? o.text : "var(--ink)"} style={{ font: "600 13px var(--font-display)" }}>{o.label}</text>
-            <text x={x} y={y + 15} textAnchor="middle" fill={lit ? o.text : "var(--muted)"} style={{ font: "400 11.5px var(--font-sans)" }}>{o.sub}</text>
+            <text x={x} y={y + 16} textAnchor="middle" fill={lit ? o.text : "var(--ink-2)"} style={{ font: "400 13px var(--font-sans)" }}>{o.sub}</text>
           </g>
         );
       })}
       <rect x={P.res[0] - 51} y={P.res[1] - 24} width={102} height={48} rx={12} fill={on("res") ? "var(--good)" : "var(--surface)"} stroke={on("res") ? "var(--good)" : "var(--line-strong)"} style={{ transition: "fill 250ms ease" }} />
       <text x={P.res[0]} y={P.res[1] - 2} textAnchor="middle" fill={on("res") ? "var(--bg)" : "var(--ink)"} style={{ font: "600 13px var(--font-display)" }}>Resolve</text>
-      <text x={P.res[0]} y={P.res[1] + 14} textAnchor="middle" fill={on("res") ? "var(--bg)" : "var(--muted)"} style={{ font: "400 11.5px var(--font-sans)" }}>agent handles it</text>
+      <text x={P.res[0]} y={P.res[1] + 14} textAnchor="middle" fill={on("res") ? "var(--bg)" : "var(--ink-2)"} style={{ font: "400 13px var(--font-sans)" }}>agent handles it</text>
       <motion.circle key={i} r={8} fill="var(--accent)" stroke="var(--accent-ink)" strokeWidth={1.5}
         initial={reduce ? false : { cx: P.start[0], cy: P.start[1] }}
         animate={{ cx: path.map((k) => P[k][0]), cy: path.map((k) => P[k][1]) }}
@@ -128,13 +128,13 @@ function Route({ reduce, onHandoff }: { reduce: boolean; onHandoff: () => void }
         ))}
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1.6fr_1fr]">
-        <div className="rounded-xl bg-surface-2/50 p-2" tabIndex={0} role="group" aria-label="Escalation decision flow. Left and right arrow keys switch messages.">
-          <Flow L={WIDE} path={path} label={imgLabel} i={i} reduce={reduce} className="hidden sm:block" />
-          <Flow L={TALL} path={path} label={imgLabel} i={i} reduce={reduce} className="sm:hidden" />
+      <div className="grid grid-cols-1 gap-4 @3xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+        <div className="min-w-0 rounded-xl bg-surface-2/50 p-2" tabIndex={0} role="group" aria-label="Escalation decision flow. Left and right arrow keys switch messages.">
+          <Flow L={WIDE} path={path} label={imgLabel} i={i} reduce={reduce} className="hidden @2xl:block" />
+          <Flow L={TALL} path={path} label={imgLabel} i={i} reduce={reduce} className="mx-auto max-w-[26rem] @2xl:hidden" />
         </div>
 
-        <div className="flex flex-col gap-3 rounded-xl border border-line bg-bg/60 p-3">
+        <div className="flex min-w-0 flex-col gap-3 rounded-xl border border-line bg-bg/60 p-3">
           <p className="text-xs font-medium text-muted">Customer says</p>
           <AnimatePresence mode="wait" initial={false}>
             <motion.p key={i} initial={reduce ? false : { opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={reduce ? undefined : { opacity: 0 }}
@@ -163,7 +163,7 @@ function Route({ reduce, onHandoff }: { reduce: boolean; onHandoff: () => void }
         </div>
       </div>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 @lg:flex-row @lg:items-center @lg:justify-between">
         <p className="min-h-12 text-[0.95rem] text-ink-2" aria-live="polite">
           <span className="mr-2 font-display font-semibold text-ink">{LABEL[c.outcome]}.</span>
           {c.why}
@@ -257,8 +257,8 @@ function Calibrate({ reduce }: { reduce: boolean }) {
 
   return (
     <div className="space-y-3">
-      <div className="grid gap-4 lg:grid-cols-[1.5fr_1fr]">
-        <div className="space-y-3 rounded-xl bg-surface-2/50 p-3">
+      <div className="grid grid-cols-1 gap-4 @2xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
+        <div className="min-w-0 space-y-3 rounded-xl bg-surface-2/50 p-3">
           <svg viewBox="0 0 640 160" className="h-auto w-full" role="img" aria-label={`Threshold ${t.toFixed(2)}: ${pct(s.load)} of cases sent to people, ${pct(s.error, 1)} of automated answers wrong.`}>
             {band.length ? <rect x={cx(band[0].t)} y={18} width={cx(band[band.length - 1].t) - cx(band[0].t)} height={132} fill="var(--good-soft)" /> : null}
             <line x1={40} y1={150} x2={600} y2={150} stroke="var(--line-strong)" />
@@ -291,7 +291,7 @@ function Calibrate({ reduce }: { reduce: boolean }) {
           </div>
         </div>
 
-        <div className="space-y-3 rounded-xl border border-line bg-bg/60 p-3 text-xs">
+        <div className="min-w-0 space-y-3 rounded-xl border border-line bg-bg/60 p-3 text-xs">
           <div className="grid grid-cols-2 gap-2">
             <Stat label="Sent to people" value={pct(s.load)} ok={okLoad} />
             <Stat label="Wrong auto-answers" value={pct(s.error, 1)} ok={okErr} />
@@ -385,13 +385,13 @@ function Handoff({ reduce }: { reduce: boolean }) {
     : "The human never saw the chat. With “please help”, they must re-identify the customer and re-diagnose everything, and the customer repeats their story.";
   return (
     <div className="space-y-3">
-      <div className="flex rounded-lg border border-line-strong p-0.5 text-xs sm:w-fit" role="group" aria-label="Handoff quality">
+      <div className="flex rounded-lg border border-line-strong p-0.5 text-xs @lg:w-fit" role="group" aria-label="Handoff quality">
         {[["Weak handoff", false], ["Structured handoff", true]].map(([l, v]) => (
           <button key={String(l)} type="button" aria-pressed={strong === v} onClick={() => setStrong(v as boolean)}
             className={clsx("flex-1 rounded-md px-3 py-1 font-medium transition-colors", strong === v ? "bg-ink text-bg" : "text-ink-2")}>{l}</button>
         ))}
       </div>
-      <div className="grid gap-4 lg:grid-cols-[1.5fr_1fr]">
+      <div className="grid grid-cols-1 gap-4 @2xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
         <div className="rounded-xl bg-surface-2/50 p-3">
           <p className="mb-2 font-mono text-xs font-semibold text-accent-text">escalate_to_human(…)</p>
           <AnimatePresence mode="wait" initial={false}>

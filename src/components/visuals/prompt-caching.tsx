@@ -171,10 +171,10 @@ export default function PromptCaching() {
         ))}
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1.35fr_1fr]">
+      <div className="grid grid-cols-1 gap-4 @2xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
         {/* Request stack */}
-        <div className="rounded-xl bg-surface-2/50 p-3">
-          <div className="flex items-center justify-between px-1 pb-2 text-xs font-medium text-muted">
+        <div className="min-w-0 rounded-xl bg-surface-2/50 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-x-2 px-1 pb-2 text-xs font-medium text-muted">
             <span>The request, in the order Claude reads it</span>
             <span className="font-mono tabular" aria-live="polite">
               breakpoints {bps.length}/{MAX_BP}
@@ -210,17 +210,17 @@ export default function PromptCaching() {
                           {" · "}
                           {st ? (
                             // On narrow screens the status badge is hidden, so say it here instead of relying on colour alone.
-                            <span className={clsx("font-mono font-semibold sm:hidden", st === "read" ? "text-good" : st === "write" ? "text-accent-text" : "text-ink-2")}>
+                            <span className={clsx("font-mono font-semibold @lg:hidden", st === "read" ? "text-good" : st === "write" ? "text-accent-text" : "text-ink-2")}>
                               {statusLabel(st, writeMult)}
                             </span>
                           ) : null}
-                          <span className={st ? "max-sm:hidden" : undefined}>{b.plain}</span>
+                          <span className={st ? "@max-lg:hidden" : undefined}>{b.plain}</span>
                         </p>
                       </div>
                       {st ? (
                         <span
                           className={clsx(
-                            "hidden shrink-0 rounded-md px-1.5 py-0.5 font-mono text-xs font-semibold sm:inline",
+                            "hidden shrink-0 rounded-md px-1.5 py-0.5 font-mono text-xs font-semibold @lg:inline",
                             st === "read" ? "text-good" : st === "write" ? "text-accent-text" : "text-muted",
                           )}
                         >
@@ -252,8 +252,8 @@ export default function PromptCaching() {
                         className="overflow-hidden"
                       >
                         <div className="flex items-center gap-2 px-1 py-1">
-                          <span className="h-0 flex-1 border-t-2 border-dashed" style={{ borderColor: CUM[i] < minLen ? "var(--bad)" : "var(--accent-strong)" }} />
-                          <span className={clsx("font-mono text-[11px] font-semibold", CUM[i] < minLen ? "text-bad" : "text-accent-text")}>
+                          <span className="h-0 min-w-4 flex-1 border-t-2 border-dashed" style={{ borderColor: CUM[i] < minLen ? "var(--bad)" : "var(--accent-strong)" }} />
+                          <span className={clsx("min-w-0 font-mono text-[11px] font-semibold wrap-anywhere", CUM[i] < minLen ? "text-bad" : "text-accent-text")}>
                             cache_control · prefix {fmt(CUM[i])} tok{CUM[i] < minLen ? " · below minimum" : ""}
                           </span>
                         </div>
@@ -281,7 +281,7 @@ export default function PromptCaching() {
         </div>
 
         {/* Settings and results */}
-        <div className="flex flex-col gap-3 rounded-xl border border-line bg-bg/60 p-3">
+        <div className="flex min-w-0 flex-col gap-3 rounded-xl border border-line bg-bg/60 p-3">
           <Segmented
             label="Cache lifetime (TTL)"
             options={["5 min · write 1.25x", "1 hour · write 2x"]}
@@ -291,13 +291,13 @@ export default function PromptCaching() {
           <Segmented label="Model's minimum cacheable length" options={MINS.map((m) => `${m.label} tok`)} value={minIdx} onChange={setMinIdx} hint={MINS[minIdx].eg} />
 
           <div>
-            <label htmlFor="pc-gap" className="flex justify-between text-xs font-medium text-muted">
+            <label htmlFor="pc-gap" className="flex flex-wrap justify-between gap-x-2 text-xs font-medium text-muted">
               <span>Wait before request 2</span>
               <span className={clsx("font-mono tabular", alive ? "text-good" : "text-bad")}>
                 {gap} min · {alive ? "cache alive" : "expired"}
               </span>
             </label>
-            <svg viewBox="0 0 300 22" className="mt-1 h-auto w-full" aria-hidden>
+            <svg viewBox="0 0 300 22" className="mt-1 h-auto w-full max-w-md" aria-hidden>
               <rect x="0" y="8" width="300" height="6" rx="3" fill="var(--surface-2)" />
               <motion.rect
                 x="0"
@@ -336,7 +336,7 @@ export default function PromptCaching() {
 
           <div>
             <p className="text-xs font-medium text-muted">Input cost relative to no caching</p>
-            <svg viewBox="0 0 300 92" className="mt-1 h-auto w-full" role="img" aria-label={ariaSvg}>
+            <svg viewBox="0 0 300 92" className="mt-1 h-auto w-full max-w-md" role="img" aria-label={ariaSvg}>
               {[r1, r2].map((r, k) => {
                 const visible = phase > k;
                 const y = 6 + k * 40;
@@ -349,10 +349,10 @@ export default function PromptCaching() {
                 let x = 0;
                 return (
                   <g key={k}>
-                    <text x="0" y={y + 7} fill="var(--ink-2)" style={{ font: "600 12px var(--font-sans)" }}>
+                    <text x="0" y={y + 8} fill="var(--ink-2)" style={{ font: "600 14px var(--font-sans)" }}>
                       Request {k + 1}
                     </text>
-                    <text x="300" y={y + 7} textAnchor="end" fill={visible ? "var(--ink)" : "var(--muted)"} style={{ font: "600 12px var(--font-mono)" }}>
+                    <text x="300" y={y + 8} textAnchor="end" fill={visible ? "var(--ink)" : "var(--muted)"} style={{ font: "600 14px var(--font-mono)" }}>
                       {visible ? `${pct(r)}%` : "not sent"}
                     </text>
                     <rect x="0" y={y + 12} width="300" height="14" rx="4" fill="var(--surface-2)" />
@@ -375,7 +375,7 @@ export default function PromptCaching() {
                 );
               })}
               <line x1="150" x2="150" y1="14" y2="88" stroke="var(--ink)" strokeDasharray="3 3" strokeWidth="1.25" />
-              <text x="153" y="90" fill="var(--muted)" style={{ font: "500 11px var(--font-mono)" }}>
+              <text x="154" y="90" fill="var(--ink-2)" style={{ font: "500 13px var(--font-mono)" }}>
                 1x = no cache
               </text>
             </svg>
@@ -397,7 +397,7 @@ export default function PromptCaching() {
                 ["input_tokens", shown?.plain, "text-ink"],
               ].map(([k, v, c]) => (
                 <div key={k as string} className="flex items-center justify-between gap-2 rounded-md border border-line bg-surface px-2 py-1">
-                  <dt className="truncate text-muted">{k}</dt>
+                  <dt className="min-w-0 wrap-anywhere text-muted">{k}</dt>
                   <dd className={clsx("shrink-0 font-semibold tabular", c as string)}>{v === undefined ? "–" : fmt(v as number)}</dd>
                 </div>
               ))}
@@ -406,8 +406,8 @@ export default function PromptCaching() {
         </div>
       </div>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="min-h-12 text-[0.95rem] text-ink-2" aria-live="polite">
+      <div className="flex flex-col gap-3 @lg:flex-row @lg:items-center @lg:justify-between">
+        <p className="min-h-12 min-w-0 text-[0.95rem] text-ink-2" aria-live="polite">
           <span className="mr-2 font-display font-semibold text-ink tabular">{phase + 1}/3</span>
           {explain}
         </p>
@@ -454,7 +454,7 @@ function IconToggle(props: { label: string; on: boolean; tone: "accent" | "bad";
 function Segmented({ label, options, value, onChange, hint }: { label: string; options: string[]; value: number; onChange: (v: number) => void; hint?: string }) {
   return (
     <div>
-      <p className="flex justify-between text-xs font-medium text-muted">
+      <p className="flex flex-wrap justify-between gap-x-2 text-xs font-medium text-muted">
         <span>{label}</span>
         {hint ? <span>{hint}</span> : null}
       </p>
@@ -471,7 +471,7 @@ function Segmented({ label, options, value, onChange, hint }: { label: string; o
             onClick={() => onChange(i)}
             aria-pressed={value === i}
             aria-label={`${label}: ${o}`}
-            className={clsx("rounded-md px-2 py-1 font-mono text-xs font-semibold transition-colors", value === i ? "bg-ink text-bg" : "text-ink-2 hover:text-ink")}
+            className={clsx("min-w-0 rounded-md px-2 py-1 font-mono text-xs font-semibold wrap-anywhere transition-colors", value === i ? "bg-ink text-bg" : "text-ink-2 hover:text-ink")}
           >
             {o}
           </button>

@@ -62,22 +62,74 @@ export interface Readiness {
   predicted: number;
   passProbabilityLabel: "not enough data" | "unlikely" | "borderline" | "likely" | "very likely";
   confidence: number; // 0..1, how much evidence backs the estimate
+  /** Answers behind the estimate (all domains). */
+  attempts: number;
+  /** Fewer than READINESS_UNLOCK answers and no mock yet: show no number at all. */
+  locked: boolean;
+  /** Plausible score range, narrower as confidence grows. */
+  low: number;
+  high: number;
+  /** "baseline" until there is real evidence, then "rough" and finally "predicted". */
+  confidenceLabel: "baseline" | "rough" | "predicted";
+  /** Whether a submitted mock was blended in. */
+  fromMock: boolean;
 }
 
-/** Predicted scaled score from exam-weighted domain mastery. */
-export function readiness(domains: readonly DomainReadinessInput[], passingScore = 720): Readiness {
+export const READINESS_UNLOCK = 10;
+
+export interface MockSample {
+  /** Scaled 100–1000 score of the latest submitted mock. */
+  score: number;
+  ageDays: number;
+}
+
+const MOCK_WEIGHT = 0.5;
+
+function clampScale(v: number) {
+  return Math.min(SCALE_MAX, Math.max(SCALE_MIN, v));
+}
+
+/** Half-width of the range: ±150 with no evidence, ±30 at full confidence. Rounded to 10. */
+export function readinessRange(predicted: number, confidence: number): { low: number; high: number } {
+  const half = 30 + 120 * (1 - Math.min(1, Math.max(0, confidence)));
+  return {
+    low: clampScale(Math.floor((predicted - half) / 10) * 10),
+    high: clampScale(Math.ceil((predicted + half) / 10) * 10),
+  };
+}
+
+export function confidenceLabelFor(confidence: number): Readiness["confidenceLabel"] {
+  if (confidence < 0.4) return "baseline";
+  if (confidence < 0.75) return "rough";
+  return "predicted";
+}
+
+/**
+ * Predicted scaled score from exam-weighted domain mastery, optionally blended
+ * with the latest submitted mock (weighted by recency, half-life 14 days).
+ */
+export function readiness(domains: readonly DomainReadinessInput[], passingScore = 720, mock?: MockSample | null): Readiness {
   const totalWeight = domains.reduce((s, d) => s + d.weight, 0) || 1;
   const frac = domains.reduce((s, d) => s + (d.weight / totalWeight) * d.mastery, 0);
-  const predicted = Math.round(SCALE_MIN + (SCALE_MAX - SCALE_MIN) * frac);
+  let predicted = Math.round(SCALE_MIN + (SCALE_MAX - SCALE_MIN) * frac);
   const attempts = domains.reduce((s, d) => s + d.attempts, 0);
-  const confidence = Math.min(1, attempts / Math.max(30, domains.length * 10));
+  let confidence = Math.min(1, attempts / Math.max(30, domains.length * 10));
+  const fromMock = !!mock && Number.isFinite(mock.score);
+  if (mock && fromMock) {
+    const decay = Math.pow(0.5, Math.max(0, mock.ageDays) / HALF_LIFE_DAYS);
+    const w = MOCK_WEIGHT * decay;
+    predicted = Math.round((1 - w) * predicted + w * clampScale(mock.score));
+    confidence = Math.min(1, confidence + 0.3 * decay);
+  }
+  const locked = attempts < READINESS_UNLOCK && !fromMock;
   let label: Readiness["passProbabilityLabel"];
-  if (attempts < 10) label = "not enough data";
+  if (locked) label = "not enough data";
   else if (predicted >= passingScore + 80) label = "very likely";
   else if (predicted >= passingScore + 20) label = "likely";
   else if (predicted >= passingScore - 40) label = "borderline";
   else label = "unlikely";
-  return { predicted, passProbabilityLabel: label, confidence };
+  const { low, high } = readinessRange(predicted, confidence);
+  return { predicted, passProbabilityLabel: label, confidence, attempts, locked, low, high, confidenceLabel: confidenceLabelFor(confidence), fromMock };
 }
 
 /** Allocate n items across buckets proportionally to weight (largest remainder), capped by availability. */

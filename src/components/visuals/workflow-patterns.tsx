@@ -230,10 +230,11 @@ export default function WorkflowPatterns() {
         ))}
       </div>
 
-      <div id="wp-panel" role="tabpanel" className="grid gap-4 lg:grid-cols-[1.5fr_1fr]">
-        <div className="space-y-3">
-          <div ref={panRef} className="overflow-x-auto rounded-xl bg-surface-2/50 p-2" tabIndex={0} role="group" aria-label={`${meta.name} diagram. Use left and right arrow keys to step.`} onKeyDown={onStepKey}>
-            <svg ref={svgRef} viewBox="0 0 640 260" className="h-auto w-full min-w-[560px] sm:min-w-0" role="img" aria-label={`${meta.name}, step ${step + 1} of ${d.steps.length}: ${cur.caption}`}>
+      {/* Always stacked: beside the detail card the diagram would shrink its labels below ~11px. */}
+      <div id="wp-panel" role="tabpanel" className="grid min-w-0 gap-4">
+        <div className="min-w-0 space-y-3">
+          <div ref={panRef} className="max-w-full min-w-0 overflow-x-auto rounded-xl bg-surface-2/50 p-2" tabIndex={0} role="group" aria-label={`${meta.name} diagram. Use left and right arrow keys to step.`} onKeyDown={onStepKey}>
+            <svg ref={svgRef} viewBox="0 0 640 260" className="h-auto w-full min-w-[560px]" role="img" aria-label={`${meta.name}, step ${step + 1} of ${d.steps.length}: ${cur.caption}`}>
               <defs>
                 {[["wp-a", "var(--line-strong)"], ["wp-a-on", "var(--accent-strong)"]].map(([id, c]) => (
                   <marker key={id} id={id} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
@@ -284,7 +285,7 @@ export default function WorkflowPatterns() {
             <span className="flex items-center gap-1.5"><span className="inline-block size-3 rounded bg-ink" /> LLM call (the model)</span>
             <span className="flex items-center gap-1.5"><span className="inline-block size-3 rounded border border-dashed border-line-strong bg-surface-2" /> Plain code (no model)</span>
             <span className="flex items-center gap-1.5"><span className="inline-block h-0 w-4 border-t border-dashed border-line-strong" /> Path not taken</span>
-            <span className="sm:hidden">Swipe the diagram sideways; it follows each step.</span>
+            <span className="@xl:hidden">Scroll the diagram sideways; it follows each step.</span>
           </div>
 
           {options ? (
@@ -309,9 +310,9 @@ export default function WorkflowPatterns() {
 
         <AnimatePresence mode="wait">
           <motion.div key={pattern} initial={reduce ? false : { opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={reduce ? undefined : { opacity: 0, y: -4 }} transition={{ duration: reduce ? 0 : 0.25 }}
-            className="flex flex-col gap-3 rounded-xl border border-line bg-bg/60 p-4">
+            className="flex min-w-0 flex-col gap-3 rounded-xl border border-line bg-bg/60 p-4">
             <div>
-              <h3 className="font-display text-lg font-semibold text-ink">{meta.name}</h3>
+              <p className="font-display text-lg font-semibold text-ink">{meta.name}</p>
               <div className="mt-1 flex flex-wrap gap-1.5 text-xs font-medium text-ink">
                 <span className={clsx("rounded-full px-2 py-0.5", pattern === "agent" ? "bg-accent-soft" : "bg-surface-2")}>{pattern === "agent" ? "Not a workflow: an agent" : "Workflow pattern"}</span>
                 <span className={clsx("rounded-full px-2 py-0.5", meta.who === "code" ? "bg-info-soft" : "bg-accent-soft")}>
@@ -326,8 +327,8 @@ export default function WorkflowPatterns() {
         </AnimatePresence>
       </div>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="min-h-12 text-[0.95rem] text-ink-2" aria-live="polite">
+      <div className="flex flex-col gap-3 @xl:flex-row @xl:items-center @xl:justify-between">
+        <p className="min-h-12 min-w-0 text-[0.95rem] text-ink-2" aria-live="polite">
           <span className="mr-2 font-display font-semibold text-ink tabular">{step + 1}/{d.steps.length}</span>
           {cur.caption}
         </p>
@@ -357,7 +358,7 @@ function Quiz({ reduce, onShow }: { reduce: boolean; onShow: (p: PatternId) => v
   return (
     <section className="rounded-xl border border-line bg-surface-2/40 p-4" aria-label="Quiz: which pattern fits this scenario?">
       <div className="flex items-baseline justify-between gap-3">
-        <h3 className="font-display text-base font-semibold text-ink">Which pattern fits this scenario?</h3>
+        <p className="font-display text-base font-semibold text-ink">Which pattern fits this scenario?</p>
         <span className="font-mono text-xs text-muted tabular">{done ? `${score}/${QUIZ.length}` : `${i + 1}/${QUIZ.length} · score ${score}`}</span>
       </div>
       <AnimatePresence mode="wait">
@@ -372,12 +373,12 @@ function Quiz({ reduce, onShow }: { reduce: boolean; onShow: (p: PatternId) => v
           ) : (
             <>
               <p className="text-[0.95rem] text-ink">{q.q}</p>
-              <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+              <div className="grid grid-cols-2 gap-1.5 @xl:grid-cols-3">
                 {ORDER.map((p) => {
                   const right = picked && p === q.answer, wrong = picked === p && p !== q.answer;
                   return (
                     <button key={p} type="button" onClick={() => answer(p)} disabled={!!picked} aria-label={`Answer: ${META[p].name}`}
-                      className={clsx("flex items-center justify-between gap-1 rounded-lg border px-2.5 py-2 text-left text-sm transition-colors",
+                      className={clsx("flex min-w-0 items-center justify-between gap-1 rounded-lg border px-2.5 py-2 text-left text-sm transition-colors",
                         right ? "border-good bg-good-soft text-ink" : wrong ? "border-bad bg-bad-soft text-ink" : "border-line bg-surface text-ink-2 enabled:hover:border-line-strong disabled:opacity-60")}>
                       {META[p].name}
                       {right ? <Check size={15} className="shrink-0 text-good" /> : wrong ? <X size={15} className="shrink-0 text-bad" /> : null}
@@ -387,8 +388,8 @@ function Quiz({ reduce, onShow }: { reduce: boolean; onShow: (p: PatternId) => v
               </div>
               <div aria-live="polite">
                 {picked ? (
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                    <p className="text-sm text-ink-2">
+                  <div className="flex flex-col gap-2 @xl:flex-row @xl:items-start @xl:justify-between">
+                    <p className="min-w-0 text-sm text-ink-2">
                       <span className={clsx("font-semibold", picked === q.answer ? "text-good" : "text-bad")}>{picked === q.answer ? "Correct. " : `Not quite: it's ${META[q.answer].name}. `}</span>
                       {q.why}
                     </p>

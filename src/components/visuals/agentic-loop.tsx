@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { ChevronLeft, ChevronRight, Pause, Play, RotateCcw } from "lucide-react";
 
@@ -68,6 +68,17 @@ export default function AgenticLoop() {
   const current = STEPS[step];
   const edge = EDGES[current.edge];
   const iteration = step >= 5 ? 2 : 1;
+  const panRef = useRef<HTMLDivElement>(null);
+  const focusX = (NODES[edge.from].x + NODES[edge.from].w / 2 + NODES[edge.to].x + NODES[edge.to].w / 2) / 2;
+
+  // On narrow figures the diagram scrolls sideways; keep the active hop in view.
+  useEffect(() => {
+    const box = panRef.current;
+    const svg = box?.querySelector("svg");
+    if (!box || !svg || box.scrollWidth <= box.clientWidth + 4) return;
+    const left = Math.max(0, (focusX * svg.clientWidth) / 620 - box.clientWidth / 2);
+    box.scrollTo({ left, behavior: reduce ? "auto" : "smooth" });
+  }, [focusX, reduce]);
 
   useEffect(() => {
     if (!playing) return;
@@ -101,83 +112,89 @@ export default function AgenticLoop() {
 
   return (
     <div className="space-y-4" onKeyDown={onKey}>
-      <div className="grid gap-4 lg:grid-cols-[1.5fr_1fr]">
-        <div className="rounded-xl bg-surface-2/50 p-2" tabIndex={0} role="group" aria-label="Agentic loop diagram. Use left and right arrow keys to step.">
-          <svg viewBox="0 0 620 270" className="h-auto w-full" role="img" aria-label={`Step ${step + 1}: ${current.caption}`}>
-            <defs>
-              <marker id="al-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-                <path d="M0 0 L10 5 L0 10 z" fill="var(--line-strong)" />
-              </marker>
-              <marker id="al-arrow-on" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-                <path d="M0 0 L10 5 L0 10 z" fill="var(--accent-strong)" />
-              </marker>
-            </defs>
-
-            {/* Loop hint behind the app ↔ Claude ↔ tool cycle */}
-            <path d="M 390 30 A 130 110 0 0 1 390 250" fill="none" stroke="var(--line)" strokeDasharray="4 6" strokeWidth="1.5" />
-            <text x="372" y="140" textAnchor="middle" fill="var(--muted)" style={{ font: "500 11px var(--font-mono)" }}>
-              loop {iteration}
-            </text>
-
-            {(Object.keys(EDGES) as EdgeId[]).map((id) => {
-              const e = EDGES[id];
-              const on = id === current.edge;
-              return (
-                <line
-                  key={id}
-                  x1={e.x1}
-                  y1={e.y1}
-                  x2={e.x2}
-                  y2={e.y2}
-                  stroke={on ? "var(--accent-strong)" : "var(--line-strong)"}
-                  strokeWidth={on ? 2.5 : 1.25}
-                  markerEnd={on ? "url(#al-arrow-on)" : "url(#al-arrow)"}
-                  style={{ transition: "stroke 200ms ease, stroke-width 200ms ease" }}
-                />
-              );
-            })}
-
-            {(Object.keys(NODES) as NodeId[]).map((id) => {
-              const n = NODES[id];
-              const on = id === edge.from || id === edge.to;
-              const isClaude = id === "claude";
-              return (
-                <g key={id}>
-                  <rect
-                    x={n.x}
-                    y={n.y}
-                    width={n.w}
-                    height={n.h}
-                    rx={14}
-                    fill={isClaude ? "var(--ink)" : "var(--surface)"}
+      {/* Side by side only when the figure is 48rem+; narrower, the diagram text would drop below ~11px. */}
+      <div className="grid grid-cols-1 gap-4 @3xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
+        <div className="min-w-0 space-y-1">
+          {/* Below ~540px the diagram keeps its width and scrolls sideways instead of shrinking its labels. */}
+          <div ref={panRef} className="max-w-full min-w-0 overflow-x-auto rounded-xl bg-surface-2/50 p-2" tabIndex={0} role="group" aria-label="Agentic loop diagram. Use left and right arrow keys to step.">
+            <svg viewBox="0 0 620 270" className="h-auto w-full min-w-[540px]" role="img" aria-label={`Step ${step + 1}: ${current.caption}`}>
+              <defs>
+                <marker id="al-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                  <path d="M0 0 L10 5 L0 10 z" fill="var(--line-strong)" />
+                </marker>
+                <marker id="al-arrow-on" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                  <path d="M0 0 L10 5 L0 10 z" fill="var(--accent-strong)" />
+                </marker>
+              </defs>
+  
+              {/* Loop hint behind the app ↔ Claude ↔ tool cycle */}
+              <path d="M 390 30 A 130 110 0 0 1 390 250" fill="none" stroke="var(--line)" strokeDasharray="4 6" strokeWidth="1.5" />
+              <text x="372" y="140" textAnchor="middle" fill="var(--ink-2)" style={{ font: "500 13px var(--font-mono)" }}>
+                loop {iteration}
+              </text>
+  
+              {(Object.keys(EDGES) as EdgeId[]).map((id) => {
+                const e = EDGES[id];
+                const on = id === current.edge;
+                return (
+                  <line
+                    key={id}
+                    x1={e.x1}
+                    y1={e.y1}
+                    x2={e.x2}
+                    y2={e.y2}
                     stroke={on ? "var(--accent-strong)" : "var(--line-strong)"}
                     strokeWidth={on ? 2.5 : 1.25}
-                    style={{ transition: "stroke 200ms ease" }}
+                    markerEnd={on ? "url(#al-arrow-on)" : "url(#al-arrow)"}
+                    style={{ transition: "stroke 200ms ease, stroke-width 200ms ease" }}
                   />
-                  <text x={n.x + n.w / 2} y={n.y + 25} textAnchor="middle" fill={isClaude ? "var(--bg)" : "var(--ink)"} style={{ font: "600 15px var(--font-display)" }}>
-                    {n.label}
-                  </text>
-                  <text x={n.x + n.w / 2} y={n.y + 43} textAnchor="middle" fill={isClaude ? "var(--accent)" : "var(--muted)"} style={{ font: "400 11px var(--font-sans)" }}>
-                    {n.sub}
-                  </text>
-                </g>
-              );
-            })}
-
-            <motion.circle
-              key={step}
-              r={7}
-              fill="var(--accent)"
-              stroke="var(--accent-ink)"
-              strokeWidth={1.5}
-              initial={reduce ? { cx: edge.x2, cy: edge.y2 } : { cx: edge.x1, cy: edge.y1, opacity: 0 }}
-              animate={{ cx: edge.x2, cy: edge.y2, opacity: 1 }}
-              transition={{ duration: reduce ? 0 : 0.8, ease: [0.22, 1, 0.36, 1] }}
-            />
-          </svg>
+                );
+              })}
+  
+              {(Object.keys(NODES) as NodeId[]).map((id) => {
+                const n = NODES[id];
+                const on = id === edge.from || id === edge.to;
+                const isClaude = id === "claude";
+                return (
+                  <g key={id}>
+                    <rect
+                      x={n.x}
+                      y={n.y}
+                      width={n.w}
+                      height={n.h}
+                      rx={14}
+                      fill={isClaude ? "var(--ink)" : "var(--surface)"}
+                      stroke={on ? "var(--accent-strong)" : "var(--line-strong)"}
+                      strokeWidth={on ? 2.5 : 1.25}
+                      style={{ transition: "stroke 200ms ease" }}
+                    />
+                    <text x={n.x + n.w / 2} y={n.y + 25} textAnchor="middle" fill={isClaude ? "var(--bg)" : "var(--ink)"} style={{ font: "600 16px var(--font-display)" }}>
+                      {n.label}
+                    </text>
+                    {/* On the ink-filled node, --bg (not --accent) keeps AA contrast in both themes: in dark mode --ink is light. */}
+                    <text x={n.x + n.w / 2} y={n.y + 44} textAnchor="middle" fill={isClaude ? "var(--bg)" : "var(--ink-2)"} fillOpacity={isClaude ? 0.8 : 1} style={{ font: "400 13px var(--font-sans)" }}>
+                      {n.sub}
+                    </text>
+                  </g>
+                );
+              })}
+  
+              <motion.circle
+                key={step}
+                r={7}
+                fill="var(--accent)"
+                stroke="var(--accent-ink)"
+                strokeWidth={1.5}
+                initial={reduce ? { cx: edge.x2, cy: edge.y2 } : { cx: edge.x1, cy: edge.y1, opacity: 0 }}
+                animate={{ cx: edge.x2, cy: edge.y2, opacity: 1 }}
+                transition={{ duration: reduce ? 0 : 0.8, ease: [0.22, 1, 0.36, 1] }}
+              />
+            </svg>
+          </div>
+          <p className="px-1 text-xs text-muted @xl:hidden">Scroll the diagram sideways; it follows each step.</p>
         </div>
 
-        <div className="flex min-h-56 flex-col rounded-xl border border-line bg-bg/60 p-3">
+        <div className="flex min-h-56 min-w-0 flex-col rounded-xl border border-line bg-bg/60 p-3">
           <p className="px-1 text-xs font-medium text-muted">Transcript</p>
           <ol className="mt-2 flex-1 space-y-2 overflow-y-auto" aria-label="Messages so far">
             <AnimatePresence initial={false}>
@@ -202,8 +219,8 @@ export default function AgenticLoop() {
         </div>
       </div>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="min-h-12 text-[0.95rem] text-ink-2" aria-live="polite">
+      <div className="flex flex-col gap-3 @lg:flex-row @lg:items-center @lg:justify-between">
+        <p className="min-h-12 min-w-0 text-[0.95rem] text-ink-2" aria-live="polite">
           <span className="mr-2 font-display font-semibold text-ink tabular">
             {step + 1}/{STEPS.length}
           </span>

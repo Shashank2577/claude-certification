@@ -243,7 +243,7 @@ function ShapePart({ onNext }: { onNext: () => void }) {
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-2 sm:grid-cols-3" role="radiogroup" aria-label="How you ask for JSON">
+      <div className="grid grid-cols-1 gap-2 @lg:grid-cols-3" role="radiogroup" aria-label="How you ask for JSON">
         {(Object.keys(MODES) as ModeId[]).map((id) => (
           <button
             key={id}
@@ -264,7 +264,7 @@ function ShapePart({ onNext }: { onNext: () => void }) {
         ))}
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1.3fr_1fr]">
+      <div className="grid grid-cols-1 gap-4 @2xl:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
         <div className="rounded-xl bg-surface-2/50 p-3">
           <div className="flex items-center justify-between gap-2">
             <p className="text-xs font-medium text-muted">12 invoices through the pipeline</p>
@@ -351,7 +351,7 @@ function ShapePart({ onNext }: { onNext: () => void }) {
       <p className="min-h-12 text-[0.95rem] text-ink-2" aria-live="polite">
         {m.caption}
       </p>
-      <div className="flex flex-col gap-2 rounded-xl border border-dashed border-line-strong px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-2 rounded-xl border border-dashed border-line-strong px-3 py-2.5 @lg:flex-row @lg:items-center @lg:justify-between">
         <p className="text-sm text-ink-2">
           <span className="font-semibold text-ink">But:</span> a perfect shape can still hold a wrong total. Schemas guarantee syntax, not truth.
         </p>
@@ -453,10 +453,10 @@ function MeaningPart() {
       </div>
       <p className="text-xs text-muted">{SCENARIOS[scenario].blurb} The invoice has no PO number printed on it at all.</p>
 
-      <div className="grid gap-4 lg:grid-cols-[1.5fr_1fr]">
+      <div className="grid grid-cols-1 gap-4 @3xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
         <div className="rounded-xl bg-surface-2/50 p-2" tabIndex={0} role="group" aria-label="Validation loop diagram. Use left and right arrow keys to step.">
-          <Diagram id="w" layout={LAYOUTS.wide} className="hidden sm:block" {...diagram} />
-          <Diagram id="t" layout={LAYOUTS.tall} className="sm:hidden" {...diagram} />
+          <Diagram id="w" layout={LAYOUTS.wide} className="hidden @lg:block" {...diagram} />
+          <Diagram id="t" layout={LAYOUTS.tall} className="@lg:hidden" {...diagram} />
         </div>
 
         <div className="flex min-h-56 flex-col gap-2 rounded-xl border border-line bg-bg/60 p-3">
@@ -488,7 +488,7 @@ function MeaningPart() {
         </div>
       </div>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 @lg:flex-row @lg:items-center @lg:justify-between">
         <p className="min-h-12 text-[0.95rem] text-ink-2" aria-live="polite">
           <span className="mr-2 font-display font-semibold text-ink tabular">
             {step + 1}/{steps.length}

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { allocateByWeight, domainMastery, isCorrect, rawFractionFor, readiness, scaledScore } from "./scoring";
+import { allocateByWeight, confidenceLabelFor, domainMastery, isCorrect, rawFractionFor, readiness, readinessRange, scaledScore } from "./scoring";
 import { NEW_CARD, previewIntervals, review } from "./sm2";
 import { priority, selectAdaptive, type CandidateQuestion } from "./adaptive";
-import { generatePlan, pickCuratedPlan, planDayIndex, planLength } from "./plan";
+import { generatePlan, pickCuratedPlan, planDayIndex, planFeasibility, planLength } from "./plan";
 import { computeStreak, missedDaysToFreeze } from "./dates";
 import { levelFor, newlyUnlocked, xpForLevel, type UserStats } from "./gamification";
 import { hashPassword, isAdminEmail, signSession, validateEmail, validatePassword, verifyPassword, verifySession } from "./auth-core";
@@ -59,6 +59,42 @@ describe("domain mastery and readiness", () => {
     expect(r.predicted).toBe(910);
     expect(r.passProbabilityLabel).toBe("very likely");
     expect(readiness([{ domainId: "a", weight: 1, mastery: 1, attempts: 2 }]).passProbabilityLabel).toBe("not enough data");
+  });
+  it("stays locked with fewer than 10 answers and no mock", () => {
+    const empty = readiness([
+      { domainId: "a", weight: 50, mastery: 0.25, attempts: 0 },
+      { domainId: "b", weight: 50, mastery: 0.25, attempts: 0 },
+    ]);
+    expect(empty.locked).toBe(true);
+    expect(empty.confidence).toBe(0);
+    expect(readiness([{ domainId: "a", weight: 1, mastery: 0.5, attempts: 9 }]).locked).toBe(true);
+    expect(readiness([{ domainId: "a", weight: 1, mastery: 0.5, attempts: 10 }]).locked).toBe(false);
+  });
+  it("reports a range that narrows as confidence grows, labelled by confidence", () => {
+    const few = readiness([{ domainId: "a", weight: 1, mastery: 0.6, attempts: 10 }]);
+    const many = readiness([{ domainId: "a", weight: 1, mastery: 0.6, attempts: 60 }]);
+    expect(few.low).toBeLessThanOrEqual(few.predicted);
+    expect(few.high).toBeGreaterThanOrEqual(few.predicted);
+    expect(few.high - few.low).toBeGreaterThan(many.high - many.low);
+    expect(few.confidenceLabel).toBe("baseline"); // 10 of 30 answers
+    expect(readiness([{ domainId: "a", weight: 1, mastery: 0.6, attempts: 15 }]).confidenceLabel).toBe("rough");
+    expect(many.confidenceLabel).toBe("predicted");
+    expect(readinessRange(150, 0)).toEqual({ low: 100, high: 300 }); // ±150, clamped to the scale
+    expect(readinessRange(700, 1)).toEqual({ low: 670, high: 730 });
+    expect(confidenceLabelFor(0.39)).toBe("baseline");
+    expect(confidenceLabelFor(0.75)).toBe("predicted");
+  });
+  it("blends the latest mock, weighting recent mocks more", () => {
+    const domains = [{ domainId: "a", weight: 1, mastery: 0.5, attempts: 20 }]; // 550 on its own
+    const fresh = readiness(domains, 720, { score: 850, ageDays: 0 });
+    const old = readiness(domains, 720, { score: 850, ageDays: 28 });
+    expect(fresh.predicted).toBe(700); // half and half
+    expect(old.predicted).toBeGreaterThan(550);
+    expect(old.predicted).toBeLessThan(fresh.predicted);
+    expect(fresh.fromMock).toBe(true);
+    expect(fresh.confidence).toBeGreaterThan(readiness(domains).confidence);
+    // A mock unlocks readiness even without 10 practice answers.
+    expect(readiness([{ domainId: "a", weight: 1, mastery: 0.25, attempts: 0 }], 720, { score: 600, ageDays: 1 }).locked).toBe(false);
   });
   it("allocates seats proportionally and respects availability", () => {
     const out = allocateByWeight(
@@ -152,11 +188,28 @@ describe("plan generation", () => {
   };
   const lessonIds = (p: ReturnType<typeof generatePlan>) => p.days.flatMap((d) => d.blocks.filter((b) => b.kind === "lesson").map((b) => b.refId));
 
-  it("defaults to 21 days with no exam date and ends with a mock then review", () => {
+  it("sizes a no-exam-date plan to the goal (min 7 days) and ends with a mock then review", () => {
     const p = generatePlan({ ...base, daysUntilExam: null });
-    expect(p.days).toHaveLength(21);
-    expect(p.days[19].blocks[0].kind).toBe("mock");
-    expect(p.days[20].blocks.some((b) => b.kind === "review")).toBe(true);
+    expect(p.days).toHaveLength(7);
+    expect(p.days[5].blocks[0].kind).toBe("mock");
+    expect(p.days[6].blocks.some((b) => b.kind === "review")).toBe(true);
+  });
+  it("never blocks onboarding without an exam date: the plan stretches to fit a small goal", () => {
+    const lessons = Array.from({ length: 40 }, (_, i) => ({ id: `l${i}`, title: `L${i}`, domainId: i % 2 ? "big" : "small", estMinutes: 10, level: "core" as const }));
+    const coreMinutes = 400;
+    const f = planFeasibility(coreMinutes, null, 20);
+    expect(f.feasible).toBe(true);
+    // Estimate from minutes: 20-minute goal → 14 minutes of reading a day → 29 learn days, +15% spare, +2 rehearsal days.
+    expect(planLength(null, { coreMinutes, dailyMinutes: 20 })).toBe(36);
+    // The real plan packs whole 10-minute lessons, one a day at this goal: 40 learn days, +6 spare, +2.
+    const p = generatePlan({ ...base, lessons, daysUntilExam: null, dailyMinutes: 20 });
+    expect(p.days).toHaveLength(48);
+    expect(p.tight).toBe(false);
+    expect(p.dropped).toBe(0);
+    expect(lessonIds(p)).toHaveLength(40);
+    expect(Math.max(...p.days.map((d) => d.blocks.filter((b) => b.kind === "lesson").reduce((s, b) => s + b.minutes, 0)))).toBeLessThanOrEqual(20);
+    // With a real deadline, the same goal is still flagged as not fitting.
+    expect(planFeasibility(coreMinutes, 7, 20).feasible).toBe(false);
   });
   it("teaches heavier domains first and includes every core lesson once", () => {
     const p = generatePlan({ ...base, daysUntilExam: 10 });

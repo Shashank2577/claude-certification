@@ -40,12 +40,20 @@ export interface ActivityRow {
 
 const MAX_FREEZES = 2;
 
+/**
+ * Activity that isn't studying: the onboarding welcome bonus, badges and the daily-goal bonus
+ * (which only ever follows real study). None of these may start or extend a streak.
+ */
+export const NON_STUDY_KINDS: readonly ActivityKind[] = ["achievement", "onboarding", "daily-goal"];
+/** SQL predicate matching only real study activity in activity_log. */
+export const STUDY_KIND = sql.raw(`kind NOT IN (${NON_STUDY_KINDS.map((k) => `'${k}'`).join(", ")})`);
+
 export async function totalXp(userId: number, ex?: Executor): Promise<number> {
   return num(sql`SELECT COALESCE(SUM(xp), 0)::int n FROM activity_log WHERE user_id = ${userId}`, ex);
 }
 
 export async function activeDays(userId: number, ex?: Executor): Promise<string[]> {
-  const rs = await rows<{ day: string }>(sql`SELECT DISTINCT day FROM activity_log WHERE user_id = ${userId} AND kind <> 'achievement'`, ex);
+  const rs = await rows<{ day: string }>(sql`SELECT DISTINCT day FROM activity_log WHERE user_id = ${userId} AND ${STUDY_KIND}`, ex);
   return rs.map((r) => r.day);
 }
 
@@ -185,8 +193,8 @@ export async function recordActivity(userId: number, input: ActivityInput, now =
     const hour = localHour(now, tz);
     const xpBefore = await totalXp(userId, q);
 
-    const activeToday = (await num(sql`SELECT COUNT(*)::int n FROM activity_log WHERE user_id = ${userId} AND day = ${today} AND kind <> 'achievement'`, q)) > 0;
-    const last = await one<{ d: string | null }>(sql`SELECT MAX(day) d FROM activity_log WHERE user_id = ${userId} AND day < ${today} AND kind <> 'achievement'`, q);
+    const activeToday = (await num(sql`SELECT COUNT(*)::int n FROM activity_log WHERE user_id = ${userId} AND day = ${today} AND ${STUDY_KIND}`, q)) > 0;
+    const last = await one<{ d: string | null }>(sql`SELECT MAX(day) d FROM activity_log WHERE user_id = ${userId} AND day < ${today} AND ${STUDY_KIND}`, q);
     const lastActive = last?.d ?? null;
     const gapDays = !activeToday && lastActive ? daysBetween(lastActive, today) : 0;
 

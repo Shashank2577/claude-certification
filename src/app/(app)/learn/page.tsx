@@ -33,6 +33,8 @@ export default async function LearnPage({ searchParams }: PageProps<"/learn">) {
   const nextUp = resume ?? lessons.find((l) => progress.get(l.id)?.status !== "done" && l.level !== "deep");
   const myCerts = certs.filter((c) => settings.certIds.includes(c.id));
   const doneTotal = lessons.filter((l) => progress.get(l.id)?.status === "done").length;
+  const nextUpNumber = nextUp ? lessons.filter((l) => l.domainId === nextUp.domainId).findIndex((l) => l.id === nextUp.id) + 1 : 0;
+  const started = !!resume || progress.size > 0;
 
   return (
     <>
@@ -41,8 +43,9 @@ export default async function LearnPage({ searchParams }: PageProps<"/learn">) {
         sub={`${cert.name}. ${doneTotal} of ${lessons.length} lessons done.`}
         action={
           nextUp ? (
-            <ButtonLink href={`/learn/${cert.id}/${nextUp.domainId}/${nextUp.id}`} variant="accent">
-              {resume ? "Resume" : "Start"}: {nextUp.title.length > 28 ? `${nextUp.title.slice(0, 27)}…` : nextUp.title}
+            <ButtonLink href={`/learn/${cert.id}/${nextUp.domainId}/${nextUp.id}`} variant="accent" size="lg" wrap className="flex-col items-start! gap-0! sm:max-w-sm">
+              <span>{started ? "Continue" : `Start lesson ${nextUpNumber}`}</span>
+              <span className="text-sm font-normal opacity-85">{nextUp.title}</span>
             </ButtonLink>
           ) : null
         }
@@ -75,18 +78,20 @@ export default async function LearnPage({ searchParams }: PageProps<"/learn">) {
             <li key={d.id}>
               <Link
                 href={`/learn/${cert.id}/${d.id}`}
-                className="group grid gap-4 rounded-2xl border border-line bg-surface p-5 shadow-card transition-[border-color] hover:border-line-strong sm:grid-cols-[3rem_1fr_12rem] sm:items-center"
+                className="group grid min-w-0 gap-4 rounded-2xl border border-line bg-surface p-5 shadow-card transition-[border-color] hover:border-line-strong sm:grid-cols-[3rem_1fr_12rem] sm:items-center"
               >
                 <span
                   className="grid size-12 place-items-center rounded-xl font-display text-lg font-semibold tabular"
-                  style={{ background: `color-mix(in oklab, ${d.color || "var(--accent)"} 18%, transparent)`, color: "var(--ink)" }}
+                  style={{ background: `color-mix(in oklab, ${d.color || "var(--accent)"} var(--tile-mix), transparent)`, color: "var(--ink)" }}
                   aria-hidden
                 >
                   {i + 1}
                 </span>
                 <div className="min-w-0">
                   <h2 className="font-display text-lg font-semibold tracking-tight group-hover:underline group-hover:underline-offset-4">{d.name}</h2>
-                  <p className="mt-1 line-clamp-2 text-sm text-ink-2">{d.summary}</p>
+                  <p className="mt-1 line-clamp-2 text-sm text-ink-2" title={d.summary}>
+                    {d.summary}
+                  </p>
                   <p className="mt-2 text-xs text-muted tabular">
                     {d.weight}% of the exam. {dl.length} lessons, about {minutes} min.
                   </p>

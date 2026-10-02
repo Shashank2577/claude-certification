@@ -25,7 +25,7 @@ export function ProgressBar({
       aria-valuemin={0}
       aria-valuemax={100}
       aria-valuenow={Math.round(v * 100)}
-      className={clsx("w-full overflow-hidden rounded-full bg-surface-2", className)}
+      className={clsx("w-full overflow-hidden rounded-full bg-track", className)}
       style={{ height }}
     >
       <motion.div
@@ -44,7 +44,7 @@ export function Ring({
   size = 96,
   stroke = 9,
   color = "var(--accent)",
-  track = "var(--surface-2)",
+  track = "var(--track)",
   children,
   label,
 }: {

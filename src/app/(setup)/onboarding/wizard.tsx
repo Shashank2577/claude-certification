@@ -3,9 +3,10 @@
 import { useMemo, useState, useTransition } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { clsx } from "clsx";
-import { ArrowLeft, Check, Code2, Loader2, MessageCircle } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Check, Code2, Loader2, MessageCircle } from "lucide-react";
 import { completeOnboarding } from "@/app/actions/onboarding";
 import { Button, ButtonLink } from "@/components/ui/button";
+import { generatePlan, planFeasibility, type PlanDomain, type PlanLesson, type PlanMode } from "@/lib/plan";
 
 interface CertOption {
   id: string;
@@ -16,6 +17,9 @@ interface CertOption {
   minutes: number;
   passingScore: number;
   questionCount: number;
+  planDomains: PlanDomain[];
+  /** Lessons not yet finished. */
+  planLessons: PlanLesson[];
 }
 
 interface PlanOption {
@@ -47,13 +51,42 @@ export function OnboardingWizard({
   const [minutes, setMinutes] = useState(initial.dailyMinutes || 20);
   const [background, setBackground] = useState(initial.background);
   const [planChoice, setPlanChoice] = useState("personal");
+  const [planMode, setPlanMode] = useState<PlanMode>("normal");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   const primary = certs.find((c) => c.id === certIds[0]);
   const curated = plans.filter((p) => p.certId === certIds[0]);
-  const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  // Local calendar day (en-CA formats as YYYY-MM-DD), matching how the server counts days.
+  const today = useMemo(() => new Date().toLocaleDateString("en-CA"), []);
   const daysLeft = examDate ? Math.max(0, Math.round((Date.parse(examDate) - Date.parse(today)) / 86_400_000)) : null;
+  const studyDays = daysLeft == null ? null : Math.max(1, daysLeft);
+
+  // Does the goal fit the core lessons before the exam? Only the personal plan adapts to it.
+  const fit = useMemo(() => {
+    if (!primary) return null;
+    const coreMinutes = primary.planLessons.filter((l) => l.level !== "deep").reduce((s, l) => s + l.estMinutes, 0);
+    const f = planFeasibility(coreMinutes, studyDays, minutes);
+    const triage = f.feasible
+      ? null
+      : generatePlan({
+          certId: primary.id,
+          certName: primary.name,
+          domains: primary.planDomains,
+          lessons: primary.planLessons,
+          daysUntilExam: studyDays,
+          dailyMinutes: minutes,
+          background,
+          mode: "triage",
+        });
+    return { ...f, dropped: triage?.dropped ?? 0 };
+  }, [primary, studyDays, minutes, background]);
+  const needsChoice = planChoice === "personal" && !!fit && !fit.feasible && planMode !== "triage";
+  const pickMinutes = (m: number) => {
+    setMinutes(m);
+    setPlanMode("normal");
+  };
+  const minuteOptions = MINUTES.includes(minutes) ? MINUTES : [...MINUTES, minutes].sort((a, b) => a - b);
 
   const go = (n: number) => {
     setDir(n > step ? 1 : -1);
@@ -72,6 +105,7 @@ export function OnboardingWizard({
         background,
         tz: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
         planChoice,
+        planMode: planChoice === "personal" ? planMode : "normal",
       });
       if (res?.error) setError(res.error);
     });
@@ -122,7 +156,7 @@ export function OnboardingWizard({
           >
             {step === 0 ? (
               <>
-                <h1 className="font-display text-3xl font-semibold tracking-[-0.025em] sm:text-4xl">Hi {name.split(" ")[0]}. Which exam are you preparing for?</h1>
+                <h1 className="font-display text-3xl font-semibold tracking-[-0.025em] [overflow-wrap:anywhere] sm:text-4xl">Hi {shortName(name)}. Which exam are you preparing for?</h1>
                 <p className="mt-3 text-ink-2">Pick one or both. Your plan starts with the first one you choose.</p>
                 <div className="mt-8 grid gap-3">
                   {certs.map((c) => {
@@ -176,12 +210,12 @@ export function OnboardingWizard({
                 <fieldset className="mt-8">
                   <legend className="text-sm font-medium">Daily goal</legend>
                   <div className="mt-2 flex flex-wrap gap-2">
-                    {MINUTES.map((m) => (
+                    {minuteOptions.map((m) => (
                       <button
                         key={m}
                         type="button"
                         aria-pressed={minutes === m}
-                        onClick={() => setMinutes(m)}
+                        onClick={() => pickMinutes(m)}
                         className={clsx(
                           "h-11 min-w-16 rounded-xl border px-4 font-display font-semibold tabular transition-colors",
                           minutes === m ? "border-ink bg-ink text-bg" : "border-line-strong bg-surface hover:border-ink",
@@ -192,6 +226,7 @@ export function OnboardingWizard({
                     ))}
                   </div>
                 </fieldset>
+                <FitNotice fit={fit} mode={planMode} minutes={minutes} onCrunch={(goal) => { setMinutes(goal); setPlanMode("crunch"); }} onTriage={() => setPlanMode("triage")} />
               </>
             ) : null}
 
@@ -229,7 +264,7 @@ export function OnboardingWizard({
               <>
                 <h1 className="font-display text-3xl font-semibold tracking-[-0.025em] sm:text-4xl">Your plan</h1>
                 <p className="mt-3 text-ink-2">
-                  {primary?.name}: {minutes} minutes a day{daysLeft != null ? `, ${daysLeft} days until the exam` : ""}. Every day has a short list; finish it and the day is done.
+                  {primary?.name}: {minutes} minutes a day{daysLeft != null ? `, ${daysLeft} days until the exam` : ""}. Every day has a short list that fits your {minutes}-minute goal; finish it and the day is done.
                 </p>
                 <div className="mt-8 grid gap-3">
                   <PlanChoice id="personal" active={planChoice} onPick={setPlanChoice} title="Personal plan" body="Built from your date and daily goal, weighted toward the domains worth the most marks. Ends with a mock exam and a light review day." recommended />
@@ -237,6 +272,9 @@ export function OnboardingWizard({
                     <PlanChoice key={p.id} id={p.id} active={planChoice} onPick={setPlanChoice} title={`${p.title} (${p.days} days)`} body={p.description} />
                   ))}
                 </div>
+                {planChoice === "personal" ? (
+                  <FitNotice fit={fit} mode={planMode} minutes={minutes} onCrunch={(goal) => { setMinutes(goal); setPlanMode("crunch"); }} onTriage={() => setPlanMode("triage")} />
+                ) : null}
                 {error ? (
                   <p role="alert" className="mt-4 rounded-xl bg-bad-soft px-3 py-2 text-sm text-bad">
                     {error}
@@ -261,7 +299,7 @@ export function OnboardingWizard({
             Continue
           </Button>
         ) : (
-          <Button size="lg" variant="accent" onClick={finish} disabled={pending}>
+          <Button size="lg" variant="accent" onClick={finish} disabled={pending || needsChoice} title={needsChoice ? "Pick crunch or triage mode first" : undefined}>
             {pending ? <Loader2 size={18} className="animate-spin" /> : null}
             {initial.returning ? "Rebuild my plan" : "Start my plan"}
           </Button>
@@ -269,6 +307,56 @@ export function OnboardingWizard({
       </div>
     </div>
   );
+}
+
+type Fit = (ReturnType<typeof planFeasibility> & { dropped: number }) | null;
+
+/** Warns when the goal can't cover the core lessons in time, and offers crunch or triage. */
+function FitNotice({ fit, mode, minutes, onCrunch, onTriage }: { fit: Fit; mode: PlanMode; minutes: number; onCrunch: (goal: number) => void; onTriage: () => void }) {
+  if (!fit) return null;
+  if (mode === "crunch" && fit.feasible) {
+    return <p className="mt-6 rounded-xl bg-surface-2 px-4 py-3 text-sm text-ink-2">Crunch mode: your goal is {minutes} minutes a day, enough to cover every core lesson before the exam.</p>;
+  }
+  if (fit.feasible) return null;
+  return (
+    <div role="status" className="mt-6 rounded-2xl border border-line-strong bg-surface p-4 sm:p-5">
+      <p className="flex items-start gap-2 font-medium">
+        <AlertTriangle size={18} className="mt-0.5 shrink-0 text-accent-text" aria-hidden />
+        <span>
+          Your core lessons need about {fit.required} minutes a day before the exam. Your goal is {fit.goal}.
+        </span>
+      </p>
+      <div className="mt-4 grid gap-2 sm:grid-cols-2">
+        <button
+          type="button"
+          aria-pressed={mode === "crunch"}
+          onClick={() => onCrunch(fit.crunchGoal)}
+          className="rounded-xl border border-line bg-surface/60 p-3.5 text-left hover:border-ink"
+        >
+          <span className="block font-display font-semibold">Crunch mode</span>
+          <span className="mt-0.5 block text-sm text-ink-2">Raise the daily goal to {fit.crunchGoal} minutes and cover everything.</span>
+        </button>
+        <button
+          type="button"
+          aria-pressed={mode === "triage"}
+          onClick={onTriage}
+          className={clsx("rounded-xl border p-3.5 text-left", mode === "triage" ? "border-ink bg-surface shadow-card" : "border-line bg-surface/60 hover:border-ink")}
+        >
+          <span className="block font-display font-semibold">Triage mode{mode === "triage" ? " (chosen)" : ""}</span>
+          <span className="mt-0.5 block text-sm text-ink-2">
+            Keep {fit.goal} minutes. Highest-weight core lessons only, no deep dives.{" "}
+            {fit.dropped > 0 ? `${fit.dropped} lesson${fit.dropped === 1 ? "" : "s"} won’t fit before your exam.` : ""}
+          </span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** First word of the name, capped at 20 characters so long names can't overflow the heading. */
+function shortName(name: string) {
+  const first = name.trim().split(/\s+/)[0] || "there";
+  return first.length > 20 ? `${first.slice(0, 19)}…` : first;
 }
 
 function readingTime(minutes: number) {

@@ -59,9 +59,9 @@ function MemoryTab({ reduce }: { reduce: boolean }) {
   };
   return (
     <div className="space-y-4">
-      <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
-        <div className="rounded-xl bg-surface-2/50 p-3" role="group" aria-label="CLAUDE.md file tree. Click a file for details.">
-          <ul className="space-y-0.5 font-mono text-xs sm:text-[12.5px]">
+      <div className="grid grid-cols-1 gap-4 @2xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+        <div className="min-w-0 rounded-xl bg-surface-2/50 p-3" role="group" aria-label="CLAUDE.md file tree. Click a file for details.">
+          <ul className="space-y-0.5 font-mono text-xs @lg:text-[12.5px]">
             {TREE.map((r, i) => {
               const on = r.id ? loaded.includes(r.id) : false;
               const hot = r.trigger !== undefined && r.trigger === moment;
@@ -82,21 +82,21 @@ function MemoryTab({ reduce }: { reduce: boolean }) {
                         transition={{ duration: reduce ? 0 : 0.45, ease: EASE }}
                       />
                       <FileText size={14} className="relative shrink-0 text-muted" />
-                      <span className="relative truncate">{r.name}</span>
-                      <span className="relative ml-auto hidden shrink-0 font-sans text-xs text-muted sm:inline">{FILES[r.id].label}</span>
+                      <span className="relative min-w-0 wrap-anywhere">{r.name}</span>
+                      <span className="relative ml-auto hidden shrink-0 font-sans text-xs text-muted @lg:inline">{FILES[r.id].label}</span>
                     </button>
                   ) : r.trigger !== undefined ? (
                     <div className={clsx("flex items-center gap-2 rounded-lg px-2 py-1 transition-colors", hot ? "bg-accent-soft text-ink" : "text-muted")} aria-current={hot ? "step" : undefined}>
                       <span className="size-2.5 shrink-0" />
                       <FileCode size={14} className="shrink-0" />
-                      <span className="truncate">{r.name}</span>
+                      <span className="min-w-0 wrap-anywhere">{r.name}</span>
                       {hot && <span className="ml-auto shrink-0 font-sans text-xs font-medium text-accent-text">Claude reads this</span>}
                     </div>
                   ) : (
                     <div className="flex items-center gap-2 px-2 py-1 text-muted">
                       <Folder size={14} className="shrink-0" />
-                      <span className="truncate font-semibold text-ink-2">{r.name}</span>
-                      {r.hint && <span className="ml-auto shrink-0 font-sans text-xs italic">{r.hint}</span>}
+                      <span className="min-w-0 font-semibold wrap-anywhere text-ink-2">{r.name}</span>
+                      {r.hint && <span className="ml-auto shrink-0 text-right font-sans text-xs italic">{r.hint}</span>}
                     </div>
                   )}
                 </li>
@@ -112,7 +112,7 @@ function MemoryTab({ reduce }: { reduce: boolean }) {
             animate={{ opacity: 1, y: 0 }}
             exit={reduce ? undefined : { opacity: 0, y: -4 }}
             transition={{ duration: reduce ? 0 : 0.22 }}
-            className="flex flex-col gap-3 rounded-xl border border-line bg-bg/60 p-4"
+            className="flex min-w-0 flex-col gap-3 rounded-xl border border-line bg-bg/60 p-4"
           >
             <div className="flex items-center justify-between gap-2">
               <p className="font-display text-lg font-semibold text-ink">{f.label}</p>
@@ -121,17 +121,17 @@ function MemoryTab({ reduce }: { reduce: boolean }) {
             <Fact k="Who it affects" v={f.who} />
             <Fact k="How it travels" v={f.sharing} />
             <Fact k="When it loads" v={f.when} />
-            {f.code && <pre className="rounded-lg border border-line bg-surface px-3 py-2 font-mono text-xs whitespace-pre-wrap text-ink-2">{f.code}</pre>}
+            {f.code && <pre className="rounded-lg border border-line bg-surface px-3 py-2 font-mono text-xs whitespace-pre-wrap wrap-anywhere text-ink-2">{f.code}</pre>}
             <p className="text-sm text-ink-2">{f.note}</p>
           </motion.div>
         </AnimatePresence>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
-        <div className="space-y-2">
+      <div className="grid grid-cols-1 gap-4 @2xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+        <div className="min-w-0 space-y-2">
           <div className="flex items-center gap-2" role="group" aria-label="Session moments. Use the left and right arrow keys to step." tabIndex={0} onKeyDown={onKey}>
             <Ctrl label="Previous moment" onClick={() => setMoment((m) => Math.max(0, m - 1))} disabled={moment === 0}><ChevronLeft size={18} /></Ctrl>
-            <div className="flex-1 truncate rounded-xl border border-line bg-surface px-3 py-2 font-mono text-xs text-ink">{MOMENTS[moment].event}</div>
+            <div className="min-w-0 flex-1 rounded-xl border wrap-anywhere border-line bg-surface px-3 py-2 font-mono text-xs text-ink">{MOMENTS[moment].event}</div>
             <Ctrl label="Next moment" onClick={() => setMoment((m) => Math.min(2, m + 1))} disabled={moment === 2}><ChevronRight size={18} /></Ctrl>
           </div>
           <p className="min-h-16 text-[0.95rem] text-ink-2" aria-live="polite">
@@ -139,7 +139,7 @@ function MemoryTab({ reduce }: { reduce: boolean }) {
             {MOMENTS[moment].caption}
           </p>
         </div>
-        <div className="rounded-xl border border-line bg-bg/60 p-3">
+        <div className="min-w-0 rounded-xl border border-line bg-bg/60 p-3">
           <p className="px-1 text-xs font-medium text-muted">Claude&apos;s context: stacked, broadest first</p>
           <ol className="mt-2 space-y-1">
             <AnimatePresence initial={false}>
@@ -151,10 +151,10 @@ function MemoryTab({ reduce }: { reduce: boolean }) {
                   animate={{ opacity: 1, x: 0, backgroundColor: "var(--surface)" }}
                   exit={{ opacity: 0 }}
                   transition={{ duration: reduce ? 0 : 0.5, ease: EASE }}
-                  className="flex items-center justify-between rounded-md border border-line px-2.5 py-1 text-xs"
+                  className="flex items-center justify-between gap-2 rounded-md border border-line px-2.5 py-1 text-xs"
                 >
-                  <span className="text-ink">{FILES[id].label}</span>
-                  <span className="font-mono text-xs text-muted">{id === "testing" || id === "sub" ? "on demand" : "launch"}</span>
+                  <span className="min-w-0 text-ink">{FILES[id].label}</span>
+                  <span className="shrink-0 font-mono text-xs text-muted">{id === "testing" || id === "sub" ? "on demand" : "launch"}</span>
                 </motion.li>
               ))}
             </AnimatePresence>
@@ -197,8 +197,8 @@ function SettingsTab({ reduce }: { reduce: boolean }) {
         <span className="text-xs text-muted">Tap a step to make that file set the key.</span>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
-        <ol className="space-y-2" aria-label="Settings precedence, highest first">
+      <div className="grid grid-cols-1 gap-4 @2xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+        <ol className="min-w-0 space-y-2" aria-label="Settings precedence, highest first">
           {RUNGS.map((r, i) => {
             const isOn = on[r.id];
             const wins = mode === "scalar" && winner?.id === r.id;
@@ -216,8 +216,8 @@ function SettingsTab({ reduce }: { reduce: boolean }) {
                   {wins && <motion.span layoutId="ccc-win" className="absolute inset-0 rounded-xl border-2 border-accent-strong" transition={{ duration: reduce ? 0 : 0.35, ease: EASE }} />}
                   <span className="grid size-7 shrink-0 place-items-center rounded-full bg-ink font-display text-xs font-semibold text-bg tabular">{i + 1}</span>
                   <span className="min-w-0 flex-1">
-                    <span className="flex items-center gap-1.5 text-sm font-semibold text-ink">{r.label}{r.id === "managed" && <Lock size={12} className="text-muted" aria-label="cannot be overridden" />}</span>
-                    <span className="block truncate font-mono text-xs text-muted">{file}</span>
+                    <span className="flex flex-wrap items-center gap-1.5 text-sm font-semibold text-ink">{r.label}{r.id === "managed" && <Lock size={12} className="text-muted" aria-label="cannot be overridden" />}</span>
+                    <span className="block font-mono text-xs wrap-anywhere text-muted">{file}</span>
                     <span className="block text-xs text-ink-2">{r.who}</span>
                   </span>
                   <span className={clsx("max-w-[42%] min-w-0 rounded-md px-2 py-1 text-right font-mono text-xs break-all", !isOn ? "text-muted" : wins ? "bg-accent-soft text-accent-text" : lost ? "text-muted line-through" : "bg-good-soft text-good")}>
@@ -230,7 +230,7 @@ function SettingsTab({ reduce }: { reduce: boolean }) {
           })}
         </ol>
 
-        <div className="flex flex-col rounded-xl border border-line bg-bg/60 p-4">
+        <div className="flex min-w-0 flex-col rounded-xl border border-line bg-bg/60 p-4">
           <p className="text-xs font-medium text-muted">What Claude Code actually uses</p>
           <pre className="mt-2 flex-1 overflow-x-auto rounded-lg border border-line bg-surface p-3 font-mono text-xs text-ink">
             {mode === "scalar" ? (
@@ -276,12 +276,12 @@ function PlacesTab({ reduce }: { reduce: boolean }) {
           </button>
         ))}
       </div>
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 @lg:grid-cols-2">
         {([["team", "Team", "In the repo, committed to git. Everyone who clones gets it.", GitBranch, "info"], ["me", "Just you", "In your home folder. Follows you to every project, reaches no one else.", User, "good"]] as const).map(([key, title, desc, Icon, tone]) => (
-          <div key={key} className="rounded-xl border border-line bg-surface-2/50 p-4">
+          <div key={key} className="min-w-0 rounded-xl border border-line bg-surface-2/50 p-4">
             <div className="flex items-center gap-2"><Badge tone={tone}><Icon size={12} />{title}</Badge></div>
             <AnimatePresence mode="wait" initial={false}>
-              <motion.p key={sel} initial={reduce ? false : { opacity: 0, y: 6, filter: "blur(3px)" }} animate={{ opacity: 1, y: 0, filter: "blur(0px)" }} exit={reduce ? undefined : { opacity: 0, y: -6 }} transition={{ duration: reduce ? 0 : 0.25 }} className="mt-3 rounded-lg border border-line bg-surface px-3 py-2.5 font-mono text-xs break-all text-ink sm:text-[12.5px]">
+              <motion.p key={sel} initial={reduce ? false : { opacity: 0, y: 6, filter: "blur(3px)" }} animate={{ opacity: 1, y: 0, filter: "blur(0px)" }} exit={reduce ? undefined : { opacity: 0, y: -6 }} transition={{ duration: reduce ? 0 : 0.25 }} className="mt-3 rounded-lg border border-line bg-surface px-3 py-2.5 font-mono text-xs break-all text-ink @lg:text-[12.5px]">
                 {k[key]}
               </motion.p>
             </AnimatePresence>

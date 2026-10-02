@@ -1,7 +1,7 @@
 import "server-only";
 import { getCert, getCertQuestions, getQuestionMap } from "./content";
 import { XP, type Reward } from "./gamification";
-import { matchScenario, sampleMockQuestions, sampleScenarioMock, sanitizeMockState, scoreMock } from "./mock-core";
+import { matchScenario, mockXp, sampleMockQuestions, sampleScenarioMock, sanitizeMockState, scoreMock } from "./mock-core";
 import type { MockState } from "./quiz-types";
 import { recordActivity } from "./repo/activity";
 import { recordAttempt } from "./repo/attempts";
@@ -67,13 +67,14 @@ export async function finalizeMock(userId: number, attempt: MockAttempt, clientS
       sessionId: attempt.id,
     });
   }
+  const answered = result.perQuestion.filter((p) => (state.answers[p.id]?.length ?? 0) > 0).length;
   const minutes = Math.min((Date.now() - attempt.startedAt) / 60_000, (attempt.endsAt - attempt.startedAt) / 60_000 + 1);
   return recordActivity(userId, {
     kind: "mock",
     refId: attempt.id,
-    xp: XP.mockComplete + (result.passed ? XP.mockPass : 0),
+    xp: mockXp(answered, result.total, result.passed, XP.mockComplete, XP.mockPass),
     minutes,
-    meta: { score: result.score, passed: result.passed ? 1 : 0, correct: result.correct, total: result.total },
+    meta: { score: result.score, passed: result.passed ? 1 : 0, correct: result.correct, total: result.total, answered },
   });
 }
 

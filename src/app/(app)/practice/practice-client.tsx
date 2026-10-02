@@ -144,16 +144,16 @@ export function PracticeClient({
   const selectedDomain = domains.find((d) => d.id === config.domainId) ?? domains[0];
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
-      <div>
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
+      <div className="min-w-0">
         {autoStart && starting ? (
           <p className="mb-4 flex items-center gap-2 text-ink-2">
             <Loader2 size={16} className="animate-spin" /> Building your set…
           </p>
         ) : null}
-        <fieldset>
+        <fieldset className="min-w-0">
           <legend className="font-display text-lg font-semibold">What do you want to practise?</legend>
-          <div className="mt-3 grid gap-2.5 sm:grid-cols-2">
+          <div className="mt-3 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
             {MODE_CARDS.map(({ mode, title, body, icon: Icon }) => {
               const reason = disabledReason(mode);
               const on = config.mode === mode;
@@ -226,7 +226,7 @@ export function PracticeClient({
           ) : null}
         </AnimatePresence>
 
-        <fieldset className="mt-6">
+        <fieldset className="mt-6 min-w-0">
           <legend className="text-sm font-medium">Questions</legend>
           <div className="mt-2 flex gap-2">
             {COUNTS.map((n) => (
@@ -320,8 +320,15 @@ function Session({
   const [flags, setFlags] = useState(() => new Set(flagged));
   const [elapsed, setElapsed] = useState(0);
   const startedAt = useRef(0);
+  const heading = useRef<HTMLHeadingElement>(null);
 
   const q = questions[index];
+
+  // Each new question (including the first, right after "Start practice") takes focus,
+  // so keyboard and screen reader users don't fall back to <body>.
+  useEffect(() => {
+    heading.current?.focus({ preventScroll: true });
+  }, [index]);
   const domainName = domains.find((d) => d.id === q?.domainId)?.name;
 
   useEffect(() => {
@@ -387,6 +394,9 @@ function Session({
 
   return (
     <div className="mx-auto max-w-3xl">
+      <h2 ref={heading} tabIndex={-1} className="sr-only">
+        Question {index + 1} of {questions.length}
+      </h2>
       <div className="mb-5 flex items-center gap-4">
         <ProgressBar value={answered / questions.length} label="Session progress" className="flex-1" color="var(--ink)" height={6} />
         <span className="text-sm text-muted tabular">
@@ -472,6 +482,10 @@ function Summary({
     })
     .filter((d) => d.n > 0);
   const missed = results.length - right;
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    heading.current?.focus({ preventScroll: true });
+  }, []);
   const headline =
     results.length === 0 ? "No answers this time" : acc === 1 ? "Clean sheet" : acc >= 0.8 ? "Strong set" : acc >= 0.5 ? "Getting there" : "Good practice. The misses are the useful part.";
 
@@ -490,7 +504,7 @@ function Summary({
             </span>
           </Ring>
           <div className="text-center sm:text-left">
-            <h2 className="font-display text-2xl font-semibold tracking-tight">{headline}</h2>
+            <h2 ref={heading} tabIndex={-1} className="font-display text-2xl font-semibold tracking-tight outline-none">{headline}</h2>
             <p className="mt-1 text-ink-2">
               You earned <span className="font-semibold text-ink tabular">{xp} XP</span>.{" "}
               {missed > 0 ? `${missed} question${missed === 1 ? "" : "s"} went to your mistakes list for another go.` : "Nothing added to your mistakes list."}
