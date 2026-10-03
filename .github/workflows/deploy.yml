@@ -1,0 +1,43 @@
+name: Deploy to Netlify
+
+# Deploys every push to main once the NETLIFY_AUTH_TOKEN repo secret exists.
+# Until then the job exits cleanly without deploying.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+      NETLIFY_SITE_ID: 9a705324-a045-43b7-ae4c-264490af80bf
+    steps:
+      - name: Check for token
+        id: gate
+        run: |
+          if [ -z "$NETLIFY_AUTH_TOKEN" ]; then
+            echo "NETLIFY_AUTH_TOKEN is not set; skipping deploy."
+            echo "go=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "go=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.go == 'true'
+      - uses: pnpm/action-setup@v4
+        if: steps.gate.outputs.go == 'true'
+      - uses: actions/setup-node@v4
+        if: steps.gate.outputs.go == 'true'
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+        if: steps.gate.outputs.go == 'true'
+      - name: Build and deploy
+        if: steps.gate.outputs.go == 'true'
+        run: npx --yes netlify-cli@latest deploy --build --prod --site "$NETLIFY_SITE_ID" --message "${GITHUB_SHA::7} ${{ github.event.head_commit.message }}"
