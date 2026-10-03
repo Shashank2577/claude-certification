@@ -10,11 +10,11 @@
       "options": [
         {
           "id": "A",
-          "text": "Add three few-shot examples of correctly formatted JSON replies so the model imitates the exact format it sees in context."
+          "text": "Add three few-shot examples of correctly formatted JSON replies so the model imitates the exact format shown in context."
         },
         {
           "id": "B",
-          "text": "Generate the reply through structured outputs, supplying the JSON schema via output_config.format so responses are constrained to the schema before they reach the parser."
+          "text": "Generate the reply with structured outputs, supplying the schema via output_config.format so responses are constrained to it before parsing."
         },
         {
           "id": "C",
@@ -299,7 +299,7 @@
       "explanation": "The newest models reject forced `tool_choice` (any or a specific tool) with a 400. The documented replacement is `auto` plus `strict: true`, which still guarantees **schema-valid tool inputs** without forcing the call, or structured outputs for pure JSON. The conformance guarantee moves to the strict flag rather than disappearing.",
       "whyWrong": {
         "B": "A 400 is a client error, not transient — retrying re-sends a request the API will always reject.",
-        "C": "Assistant prefill is itself rejected on Claude 4.6 and later, so this compounds the problem.",
+        "C": "Assistant prefill is itself rejected on current Claude models, so this compounds the problem.",
         "D": "Discarding the schema throws away the conformance guarantee and pushes everything onto fragile parsing."
       },
       "difficulty": 3,
@@ -344,7 +344,7 @@
       "explanation": "With structured outputs, enum **membership** is guaranteed but enum **casing** is not — the guidance is explicitly to compare case-insensitively. A one-line normalization where the value is consumed is deterministic, free, and immune to model variation. Every model-side alternative re-relies on the behavior that already proved unreliable.",
       "whyWrong": {
         "A": "A description nudges but does not constrain casing; the failures just become rarer.",
-        "B": "Enumerating variants bloats the schema and still misses unforeseen casings.",
+        "B": "Enumerating casing variants bloats the schema and the router, and since enum casing is not constrained even under the grammar, no enumeration is guaranteed to be matched exactly — it is unmaintainable, not a fix.",
         "C": "Adding a model call to lowercase a string is over-engineering — this is a string operation, not a language task."
       },
       "difficulty": 2,
@@ -412,19 +412,19 @@
       "options": [
         {
           "id": "A",
-          "text": "Treat stop_reason as part of response handling: before parsing, detect refusal (reading stop_details where available) and route those responses to a fallback model or review path instead of storing them."
+          "text": "Make stop_reason part of response handling: before parsing, detect refusal via stop_details and route those responses to a fallback model or review path."
         },
         {
           "id": "B",
-          "text": "Retry automatically whenever a 200 arrives with an empty content array, leaving HTTP status as the pipeline's only error signal."
+          "text": "Retry automatically whenever a 200 arrives with an empty content array, and otherwise leave HTTP status as the pipeline's only error signal."
         },
         {
           "id": "C",
-          "text": "Treat these responses as platform overload and requeue them after a cooldown, exactly as the service handles 529 errors."
+          "text": "Treat these responses as platform overload, the same as 529 errors, and requeue them for retry after a cooldown period."
         },
         {
           "id": "D",
-          "text": "Mark any response whose output is under a small token threshold as failed, regardless of its stop_reason value."
+          "text": "Mark any response whose output falls under a small token threshold as failed, regardless of its stop_reason value, and requeue it."
         }
       ],
       "correct": [
@@ -452,7 +452,7 @@
     {
       "id": "v-d6-g3-011",
       "taskStatementId": "6.3",
-      "scenario": "A legacy summarizer forces JSON by prefilling the assistant turn with an opening brace, which also suppresses preamble. After upgrading to Claude 4.6-and-later models, every request fails with HTTP 400 stating that the model does not support assistant message prefill. The team wants the smallest sound migration.",
+      "scenario": "A legacy summarizer forces JSON by prefilling the assistant turn with an opening brace, which also suppresses preamble. After the service was moved to newer Claude models, every request fails with HTTP 400 stating that the model does not support assistant message prefill. The team wants the smallest sound migration.",
       "stem": "Which change best fits?",
       "options": [
         {
@@ -475,7 +475,7 @@
       "correct": [
         "C"
       ],
-      "explanation": "Prefill is unsupported on Claude 4.6 and later — a prefilled final assistant message returns a 400 — and the documented migration is: format control via structured outputs or a strict tool, continuations via the user turn. Option C adopts the replacement mechanisms instead of imitating the removed one.",
+      "explanation": "Prefill is no longer supported on current Claude models — a prefilled final assistant message returns a 400 — and the documented migration is: format control via structured outputs or a strict tool, continuations via the user turn. Option C adopts the replacement mechanisms instead of imitating the removed one.",
       "whyWrong": {
         "A": "A brace in the user message is just text; it does not constrain the reply's shape.",
         "B": "No header re-enables prefill, and prefill is incompatible with structured outputs anyway.",
@@ -502,7 +502,7 @@
       "options": [
         {
           "id": "A",
-          "text": "Have Claude append a brief self-assessment confirming the JSON is valid before the response ends."
+          "text": "Have Claude append a brief self-assessment to every response confirming the JSON is valid before the response ends."
         },
         {
           "id": "B",
@@ -510,11 +510,11 @@
         },
         {
           "id": "C",
-          "text": "Disable prompt caching so every stored record comes from a freshly generated response."
+          "text": "Disable prompt caching for this flow so every stored record comes from a freshly generated response rather than a reused prefix."
         },
         {
           "id": "D",
-          "text": "Retry without bound until validation passes, so no invalid record can ever enter the pipeline."
+          "text": "Retry without bound until validation passes, so that no invalid record can ever enter the pipeline downstream."
         },
         {
           "id": "E",
@@ -602,7 +602,7 @@
       "options": [
         {
           "id": "A",
-          "text": "Require the model to state its confidence for each instruction and auto-execute anything at or above 95 percent."
+          "text": "Require the model to state a confidence score for each instruction and auto-execute anything scoring at or above 95 percent."
         },
         {
           "id": "B",
@@ -610,7 +610,7 @@
         },
         {
           "id": "C",
-          "text": "Add 'be careful and avoid mistakes' to the system prompt so the model hedges appropriately on risky changes."
+          "text": "Add an instruction to be careful and avoid mistakes in the system prompt so the model hedges appropriately on risky changes."
         },
         {
           "id": "D",
@@ -618,7 +618,7 @@
         },
         {
           "id": "E",
-          "text": "Increase the number of few-shot examples of flawless instructions so the model pattern-matches them exactly."
+          "text": "Increase the number of few-shot examples of flawless instructions so the model pattern-matches them closely and reproduces their quality."
         }
       ],
       "correct": [
@@ -668,17 +668,17 @@
         },
         {
           "id": "E",
-          "text": "A tool definition marked strict: true whose input schema is the desired shape."
+          "text": "A tool definition marked strict: true whose input schema is the desired shape, reading the JSON from tool_use input."
         }
       ],
       "correct": [
         "A",
         "E"
       ],
-      "explanation": "Only two mechanisms use **grammar-constrained sampling** — structured outputs (`output_config.format`) and strict tool use (`strict: true`) — and together they define what 'guaranteed shape' means in the current API. Prompt instructions, prefill, and self-validation are probabilistic; prefill is in fact rejected on Claude 4.6 and later.",
+      "explanation": "Only two mechanisms use **grammar-constrained sampling** — structured outputs (`output_config.format`) and strict tool use (`strict: true`) — and together they define what 'guaranteed shape' means in the current API. Prompt instructions, prefill, and self-validation are probabilistic; prefilled assistant messages are in fact rejected outright on current models.",
       "whyWrong": {
         "B": "Instructions raise consistency but the model can still deviate from a pasted schema.",
-        "C": "Prefill nudges the start of the reply but constrains nothing after it — and now returns a 400 on current models.",
+        "C": "Prefill nudges the start of the reply but constrains nothing after it — and current models reject prefilled assistant messages outright.",
         "D": "Self-validation is performed by the same sampling process and cannot certify grammar conformance."
       },
       "difficulty": 1,

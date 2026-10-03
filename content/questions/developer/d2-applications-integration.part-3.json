@@ -28,7 +28,7 @@
       "correct": [
         "B"
       ],
-      "explanation": "The Messages API keeps no server-side conversation state. Every call must carry the entire history you want Claude to see — prior user turns, assistant replies, and tool results — and your application owns storing and resending it. Session concepts in tools like the Agent SDK are conversation transcripts managed on the client side, not server memory.",
+      "explanation": "The Messages API keeps no server-side conversation state. Every call must carry the entire history you want Claude to see — prior user turns, assistant replies, and tool results — and your application owns storing and resending it. Session concepts in tools like the Agent SDK are conversation transcripts persisted on the client side, not server memory.",
       "whyWrong": {
         "A": "There are no server-side sessions or timeouts to restore; nothing is retained between calls.",
         "C": "Truncation (stop_reason max_tokens) affects a single response's completeness and has nothing to do with cross-request memory.",
@@ -114,7 +114,7 @@
       "correct": [
         "A"
       ],
-      "explanation": "Who is waiting decides the access pattern: a human watching the screen requires realtime requests. Batches trade latency for a 50% discount and only return results once the batch finishes — within minutes to hours, with a 24-hour ceiling — so they are categorically wrong for interactive features.",
+      "explanation": "Who is waiting decides the access pattern: a human watching the screen requires realtime requests. Batches trade latency for a 50% discount and only return results once the batch finishes — typically within minutes to hours, with a 24-hour ceiling — so they are categorically wrong for interactive features.",
       "whyWrong": {
         "B": "Polling cannot make a batch fast; results appear when the whole batch completes, not per request on demand.",
         "C": "Batch requests do not support streaming; there is no progressive output to enable.",
@@ -261,7 +261,8 @@
         "freshness"
       ],
       "sourceRefs": [
-        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls"
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls",
+        "https://www.anthropic.com/engineering/writing-tools-for-agents"
       ]
     },
     {
@@ -400,7 +401,7 @@
     {
       "id": "v-d2-g3-010",
       "taskStatementId": "2.3",
-      "scenario": "A compliance assistant must read each customer's 60-page policy PDF in full to answer questions — summaries or partial excerpts are not acceptable. The same documents are reused across many requests for weeks. Today each request inlines the PDF as a base64 document block; payloads are large, some requests approach the Messages API's per-request size limit, and the full document cost repeats on every call.",
+      "scenario": "A compliance assistant must read each customer's 60-page policy PDF in full to answer questions — summaries or partial excerpts are not acceptable. The same documents are reused across many requests for weeks. Today every request inlines the PDF as a fresh base64 document block: the payload is re-uploaded on each call, requests that attach several policies push toward the Messages API per-request size limit, and the full document token cost repeats on every call.",
       "stem": "Which data access pattern BEST fits this workload's size and reuse profile?",
       "options": [
         {
@@ -413,7 +414,7 @@
         },
         {
           "id": "C",
-          "text": "Upload each document once via the Files API and reference it by file id in requests, keeping a stable, cache-controlled prefix for the shared instructions and rubric."
+          "text": "Upload each document once via the Files API and reference it by file id, keeping the document and the shared rubric behind an explicit cache breakpoint in a stable prefix so they are not re-uploaded and re-billed at full input price every call."
         },
         {
           "id": "D",
@@ -423,14 +424,14 @@
       "correct": [
         "C"
       ],
-      "explanation": "Data access patterns are chosen by size, freshness, reuse, and sensitivity. Here the documents are large, fully consumed, and heavily reused — exactly the profile for uploading once to the Files API (designed for payloads well above the per-request inline limit) and referencing by id, with prompt caching covering the stable shared prefix so instructions don't re-bill every call.",
+      "explanation": "Data access patterns are chosen by size, freshness, reuse, and sensitivity. Large, fully consumed, heavily reused documents are the Files API profile: upload once and reference by id (the Files API accepts far larger payloads than the Messages per-request limit), then put the document block plus the shared instructions behind an explicit `cache_control` breakpoint on an identical prefix so repeat reads are billed at the cache-read rate instead of full input price. Inlining base64 on every call repeats the upload, repeats the tokens, and caps out at the message size limit.",
       "whyWrong": {
-        "A": "Nothing is cached 'automatically'; caching requires explicit breakpoints on an identical prefix, and inlining still duplicates the payload and approaches request size limits.",
+        "A": "Nothing is cached 'automatically' — caching requires explicit breakpoints on an identical prefix; document blocks belong in messages, not the system parameter; and inlining still repeats the payload and token cost.",
         "B": "Retrieval returns excerpts, but the requirement is that the whole document be read — the pattern fights the requirement.",
         "D": "Re-fetching the full PDF through a tool on every turn repeats the payload and token cost and adds a server to operate, solving neither problem."
       },
       "difficulty": 3,
-      "mindset": "Match the access pattern to the data's profile: large + reused + fully read → Files API, not re-inlining.",
+      "mindset": "Match the access pattern to the data's profile: large + reused + fully read → Files API plus a cached prefix, not re-inlining.",
       "tags": [
         "data-access-patterns",
         "files-api",
@@ -533,8 +534,7 @@
         "verification"
       ],
       "sourceRefs": [
-        "https://everpath-course-content.s3-accelerate.amazonaws.com/instructor%2F6nizmqk8tpzpfjvt6qmmav7rh%2Fpublic%2F1783542875%2FClaude+Certified+Developer+%E2%80%93+Foundations+Exam+Guide.pdf",
-        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching"
+        "https://everpath-course-content.s3-accelerate.amazonaws.com/instructor%2F6nizmqk8tpzpfjvt6qmmav7rh%2Fpublic%2F1783542875%2FClaude+Certified+Developer+%E2%80%93+Foundations+Exam+Guide.pdf"
       ]
     },
     {
@@ -621,7 +621,7 @@
       "whyWrong": {
         "A": "Positional mapping breaks precisely because ordering is not guaranteed; custom_id is the correlation mechanism.",
         "C": "Batch requests do not support streaming; there is no progressive output.",
-        "D": "A single batch request does not run an interactive multi-step tool loop; grading must be structured as independent requests."
+        "D": "Each batch request is processed independently with no interactive tool-result round trips, so one request cannot run an iterative grading loop; the workload must be structured as independent requests."
       },
       "difficulty": 2,
       "mindset": "Batches are fire-and-correlate: custom_id for matching, long-TTL caching for shared prefixes.",

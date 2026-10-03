@@ -1,0 +1,696 @@
+{
+  "certId": "developer",
+  "domainId": "d5-model-optimization",
+  "questions": [
+    {
+      "id": "v-d5-g4-001",
+      "taskStatementId": "5.4",
+      "scenario": "A support-copilot team added prompt caching to their Claude integration to cut input costs. The system prompt, tool definitions, and few-shot examples are stable, but their middleware prepends a line such as 'Current time: 14:32:07 - agents online: 6' to the system prompt on every request so replies can reference live stats. After a week, average cache_read_input_tokens is near zero and the bill is unchanged.",
+      "stem": "With minimal redesign, what should they change to make prompt caching actually pay off?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Switch the stable-prefix breakpoint to the longer one-hour TTL so cache entries survive longer between requests."
+        },
+        {
+          "id": "B",
+          "text": "Add a second cache_control marker after the most recent conversation message so a larger share of each request is covered."
+        },
+        {
+          "id": "C",
+          "text": "Move the timestamp and other per-request values out of the system prompt into the per-turn message content so the cached prefix stays byte-identical across requests."
+        },
+        {
+          "id": "D",
+          "text": "Migrate the copilot to the Message Batches API so batch discounts offset the cost of the uncached input."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Prompt caching reuses an **exact-match prefix** in the order tools → system → messages: any change at a point invalidates that point and everything after it. A system prompt that changes on every request defeats caching no matter where the breakpoints sit or how long the TTL is. Live values belong in the per-turn content **after** the last breakpoint. After the fix, rising `cache_read_input_tokens` confirms the cache is hitting.",
+      "whyWrong": {
+        "A": "A longer TTL only helps when the prefix is unchanged; theirs mutates every request, so nothing survives long enough to expire.",
+        "B": "A second, advancing checkpoint is good practice for long conversations, but it sits downstream of a system prompt that changes on every call, so no read can ever match.",
+        "D": "Batches halve cost for latency-tolerant workloads, but an interactive copilot needs realtime responses, and batching would not fix a prefix that mutates per request."
+      },
+      "difficulty": 2,
+      "mindset": "An exact-match cache forgives nothing - anything per-request lives after the breakpoint.",
+      "tags": [
+        "prompt-caching",
+        "cache-invalidation",
+        "exact-prefix-match",
+        "cost-optimization"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching"
+      ]
+    },
+    {
+      "id": "v-d5-g4-002",
+      "taskStatementId": "5.4",
+      "scenario": "A conversational product keeps long sessions, often 60+ turns. The system prompt and tools never change, and the team placed a single cache_control breakpoint at the end of the system prompt. Early turns hit the cache, but as histories grow, most of each request is billed as fresh input and latency climbs.",
+      "stem": "Which change best makes caching effective across the full conversation?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Trim every request to the ten most recent messages so the region outside the system-prompt breakpoint stays small."
+        },
+        {
+          "id": "B",
+          "text": "Keep the breakpoint on the stable prefix and move a second breakpoint forward to the latest turn as the conversation grows."
+        },
+        {
+          "id": "C",
+          "text": "Enable the model's long-context variant so the single system-prompt breakpoint covers a larger share of each request."
+        },
+        {
+          "id": "D",
+          "text": "Put a separate cache_control marker on each user message in the history, staying within the per-request breakpoint limit."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "This is cache **check-pointing**: one breakpoint fences the static prefix (tools, system prompt), and a second marker advances with the conversation tail. Each turn then reads the previously written prefix at a fraction of base input and writes only the new tokens at a premium. Advancing the marker also matters because the system searches only a limited number of content blocks (about 20) back from each breakpoint - a checkpoint that lags far behind the tail stops matching in long conversations.",
+      "whyWrong": {
+        "A": "Dropping history changes what the model sees and can degrade answers; it also never caches the growing prefix.",
+        "C": "Window size and cache coverage are unrelated; a larger window does not make the messages-level prefix cacheable.",
+        "D": "The API caps explicit breakpoints (four) per request, so one marker per message cannot cover a 60+ turn history - and scattering markers is not the mechanism anyway. The goal is a single checkpoint that advances with the latest turn, so each request reads the prior prefix and writes only the new tail."
+      },
+      "difficulty": 3,
+      "mindset": "Checkpoint the stable prefix once, then march a second marker forward with the dialogue.",
+      "tags": [
+        "prompt-caching",
+        "cache-checkpointing",
+        "multi-turn",
+        "cost-optimization"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching"
+      ]
+    },
+    {
+      "id": "v-d5-g4-003",
+      "taskStatementId": "5.4",
+      "scenario": "A high-volume classification route sends an identical 300-token system prompt plus short user snippets on every call; the team also maintains a larger set of shared few-shot examples that the route does not currently send. They added cache_control to the system prompt expecting near-total cache hits. The route returns normally with no errors, but cache_creation_input_tokens and cache_read_input_tokens are both 0 on every response. Another internal service with a 9,000-token cached prefix caches fine on the same account.",
+      "stem": "What is the most likely explanation and the appropriate response?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The cache needs a one-time warm-up request with max_tokens set to zero before production traffic can create entries on this route."
+        },
+        {
+          "id": "B",
+          "text": "Cache entries are only written for non-streaming requests, and this route streams its responses, so it can never benefit."
+        },
+        {
+          "id": "C",
+          "text": "Short system prompts are never cacheable on any model, so the team should permanently remove cache_control from this route."
+        },
+        {
+          "id": "D",
+          "text": "The prompt is below the model's minimum cacheable length: the request silently succeeds with nothing cached, so they must either grow the stable prefix or accept uncached pricing."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "Each model has a **minimum cacheable prompt length** (from a few hundred to a few thousand tokens). Below it, the request succeeds silently - no error and no cache entry - and both cache usage fields stay 0. Diagnose with `cache_read_input_tokens`, not with the absence of failures. The options are to enlarge the stable prefix (moving the shared few-shot examples into the cached block can push it over the threshold and helps consistency) or to accept that this route will not benefit.",
+      "whyWrong": {
+        "A": "A warm-up call helps when parallel requests race the first write; it does nothing for a prefix below the minimum cacheable length.",
+        "B": "Caching is independent of streaming; streamed responses create and read cache entries the same way.",
+        "C": "Too absolute: the limit is a length threshold, not a prohibition - the same model caches fine once the stable prefix crosses its threshold."
+      },
+      "difficulty": 3,
+      "mindset": "Silent success is not caching - confirm with cache_read_input_tokens.",
+      "tags": [
+        "prompt-caching",
+        "minimum-cacheable-length",
+        "usage-tracking",
+        "debugging"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching"
+      ]
+    },
+    {
+      "id": "v-d5-g4-004",
+      "taskStatementId": "5.4",
+      "scenario": "An internal assistant is used in bursts: users typically return every 10-30 minutes rather than typing continuously. Caching works within a burst, but the default cache TTL expires between messages, so most turns must recreate the whole conversation prefix instead of landing cheap reads.",
+      "stem": "What is the lowest-cost change that keeps caching effective for this usage pattern?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Set the longer one-hour TTL on the stable-prefix breakpoint, accepting the higher write premium in exchange for cheap reads across the gaps between bursts."
+        },
+        {
+          "id": "B",
+          "text": "Stop caching and resend the full history uncached on every turn so write premiums are never paid."
+        },
+        {
+          "id": "C",
+          "text": "Instruct the model to keep its answers short so each turn's input is cheaper to process."
+        },
+        {
+          "id": "D",
+          "text": "Move the assistant's traffic to the Message Batches API so every message is billed at the batch discount."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The default TTL is five minutes, refreshed at no cost on each hit - fine for continuous traffic, useless for 10-30 minute gaps. The optional one-hour TTL costs more to write but lets reads land across the gaps, and every hit refreshes the TTL for free. For users who return in bursts, the extra write premium is far cheaper than re-processing and re-billing the whole prefix as fresh input every turn.",
+      "whyWrong": {
+        "B": "Uncached resends pay base price for the entire prefix every turn - exactly the cost they already have, plus the write premium is avoided only by giving up all discounts.",
+        "C": "Shorter answers trim output tokens; the problem is input re-processing, and changing answer length risks quality.",
+        "D": "Batches serve latency-tolerant workloads with results within about a day; an interactive assistant cannot wait for them."
+      },
+      "difficulty": 2,
+      "mindset": "Match the cache TTL to how often traffic returns.",
+      "tags": [
+        "prompt-caching",
+        "ttl",
+        "bursty-traffic",
+        "cost-optimization"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
+        "https://platform.claude.com/docs/en/about-claude/pricing"
+      ]
+    },
+    {
+      "id": "v-d5-g4-005",
+      "taskStatementId": "5.4",
+      "scenario": "A nightly job classifies 40,000 support tickets through the Message Batches API. Every request carries the same 8,000-token system prompt and few-shot examples. Leadership wants the job cheaper still, with minimal changes and no change in classification behavior.",
+      "stem": "What should the team do next?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Move the route to the smallest model tier and only re-run accuracy evals if complaints arrive."
+        },
+        {
+          "id": "B",
+          "text": "Mark the shared system prompt and examples with cache breakpoints using the one-hour TTL, since batch processing can outlast the five-minute default."
+        },
+        {
+          "id": "C",
+          "text": "Delete the few-shot examples from each request, cutting roughly 8,000 input tokens per ticket."
+        },
+        {
+          "id": "D",
+          "text": "Turn on streaming for the batch requests so responses are delivered incrementally at a lower rate."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Batch discounts and prompt caching **stack**. Because every request reuses an identical prefix, cache reads replace most of that input at a small fraction of base price, with no change to the tokens the model sees - so classification behavior is untouched. Use the one-hour TTL for shared context in batches, since batch processing can easily exceed the five-minute default between a write and later reads.",
+      "whyWrong": {
+        "A": "Downsizing the model is a quality tradeoff that must be gated by evals run up front, not by waiting for complaints.",
+        "C": "Removing the examples changes the prompt the model receives and can shift consistency and accuracy - exactly what leadership ruled out.",
+        "D": "Batch requests do not support streaming, and streaming is a latency technique, not a discount."
+      },
+      "difficulty": 2,
+      "mindset": "Stack the no-quality-loss levers first: batch, then a long-TTL cache.",
+      "tags": [
+        "batch-api",
+        "prompt-caching",
+        "cost-optimization",
+        "stacking-discounts"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/batch-processing",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching"
+      ]
+    },
+    {
+      "id": "v-d5-g4-006",
+      "taskStatementId": "5.4",
+      "scenario": "An engineer reports that average input_tokens on the flagship route is about 500 per call and forecasts monthly spend from that number. The invoice comes in several times higher. The route uses prompt caching, and the model reasons before answering.",
+      "stem": "Which TWO statements correctly explain the gap? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "input_tokens already reports every input token the request is billed for, including tokens served from cache."
+        },
+        {
+          "id": "B",
+          "text": "Total billed input is the sum of input_tokens, cache_creation_input_tokens and cache_read_input_tokens; input_tokens alone covers only the tokens after the last cache breakpoint."
+        },
+        {
+          "id": "C",
+          "text": "Tokens served from cache are free, so the gap must come entirely from the output side."
+        },
+        {
+          "id": "D",
+          "text": "The count_tokens endpoint returns the exact billed usage for each request and should replace response-level usage logging."
+        },
+        {
+          "id": "E",
+          "text": "Thinking tokens are billed as output, so output-side charges can be much larger than the visible response text suggests."
+        }
+      ],
+      "correct": [
+        "B",
+        "E"
+      ],
+      "explanation": "When caching is active, `input_tokens` reports only the tokens **after the last breakpoint**; cache writes (`cache_creation_input_tokens`) and reads (`cache_read_input_tokens`) are billed separately, and the three fields sum to total input. Meanwhile, reasoning tokens are billed as **output** even when they are summarized or hidden, so a thinking-heavy route's output bill exceeds its visible text. Forecast from the full usage object, never one field.",
+      "whyWrong": {
+        "A": "This is the trap that caused the bad forecast: cached tokens appear in the other two fields, not in input_tokens.",
+        "C": "Cache reads are billed at a small fraction of base input - cheap, not free.",
+        "D": "count_tokens returns an estimate for pre-flight sizing and does not simulate caching; billed usage comes from each response's usage object."
+      },
+      "difficulty": 2,
+      "mindset": "Read the whole usage object - input_tokens is only the tail after the last breakpoint.",
+      "tags": [
+        "usage-tracking",
+        "cost-modeling",
+        "prompt-caching",
+        "thinking-tokens"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
+        "https://platform.claude.com/docs/en/build-with-claude/extended-thinking",
+        "https://platform.claude.com/docs/en/build-with-claude/token-counting"
+      ]
+    },
+    {
+      "id": "v-d5-g4-007",
+      "taskStatementId": "5.4",
+      "scenario": "A consumer summarization product is priced out of some deals. Its cost is dominated by output: each article input is fixed in size, but summaries average about 1,200 tokens, and output tokens are billed at roughly five times the input rate. The UI only ever displays the first three or four sentences of each summary.",
+      "stem": "What is the best way to cut cost per summary without hurting usefulness?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add a cheaper pre-pass model call that compresses each article before the main summarization call runs."
+        },
+        {
+          "id": "B",
+          "text": "Set temperature near zero so the model produces tighter, more deterministic summaries with less variation between runs."
+        },
+        {
+          "id": "C",
+          "text": "Constrain the response explicitly - require a three-to-four sentence summary in the prompt and set a max_tokens ceiling sized to that - so typical outputs are far shorter."
+        },
+        {
+          "id": "D",
+          "text": "Cache each article's input tokens so the summaries are generated at the discounted cache-read rate for repeated content."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Where output dominates cost, the durable lever is **controlling output length**. Concrete structural constraints (sentence or paragraph limits - more reliable than word counts, since models count tokens) plus a max_tokens ceiling sized to the constraint cut typical output dramatically without changing what the summaries contain. The product only shows a few sentences anyway, so usefulness is preserved.",
+      "whyWrong": {
+        "A": "An extra pre-pass adds a whole new call's input and output cost and risks losing source detail - over-engineering for a length problem.",
+        "B": "Temperature shapes the sampling distribution, not response length; the docs note lower temperature only *may* shorten output, which makes it an unreliable cost lever rather than a control.",
+        "D": "Prompt caching discounts input tokens only - it never reduces the output tokens billed, which is where this product's cost lives."
+      },
+      "difficulty": 2,
+      "mindset": "When output dominates cost, shrink output deliberately - caching never touches it.",
+      "tags": [
+        "output-tokens",
+        "cost-optimization",
+        "prompt-constraints",
+        "max-tokens"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/about-claude/pricing",
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-latency",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching"
+      ]
+    },
+    {
+      "id": "v-d5-g4-008",
+      "taskStatementId": "5.4",
+      "scenario": "A data-extraction pipeline caps cost by setting max_tokens low. About 15% of responses return with stop_reason 'max_tokens' and truncated JSON. Validation rejects them, and the pipeline retries the whole request - sometimes twice. The team notes the low per-call token counts, but spend per successful extraction keeps rising.",
+      "stem": "What should they change?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Keep the low cap and retry until outputs happen to fit, since retries are cheaper than longer successful outputs."
+        },
+        {
+          "id": "B",
+          "text": "Add a system-prompt instruction telling the model to verify that its JSON is complete and well-formed before it finishes generating."
+        },
+        {
+          "id": "C",
+          "text": "Route truncated requests to a larger model on the assumption that it has a higher effective output limit per request."
+        },
+        {
+          "id": "D",
+          "text": "Raise max_tokens to comfortably cover complete outputs, constrain typical length through the prompt, and track cost per successful extraction rather than per raw call."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "`stop_reason: max_tokens` means the output was **truncated, not finished** - the tokens were generated and billed yet produced no usable result. Retrying re-sends the input and regenerates the output, so the 'cheap' cap actually multiplies cost per completed task. Size max_tokens from the observed distribution of complete outputs, constrain verbosity in the prompt, and measure cost per **successful** extraction to see the true economics.",
+      "whyWrong": {
+        "A": "Retries re-bill input and output for work already paid for once; cost per completed task rises exactly as observed.",
+        "B": "The model cannot see its remaining token budget mid-generation; a self-check instruction does not prevent truncation and adds prompt tokens.",
+        "C": "max_tokens is a request parameter the caller sets - a larger model does not raise it - and the switch costs more per token while changing extraction behavior without eval gating."
+      },
+      "difficulty": 3,
+      "mindset": "A cap that truncates does not save money - retries pay for the output twice.",
+      "tags": [
+        "max-tokens",
+        "truncation",
+        "cost-per-task",
+        "stop-reason"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons",
+        "https://platform.claude.com/docs/en/about-claude/pricing"
+      ]
+    },
+    {
+      "id": "v-d5-g4-009",
+      "taskStatementId": "5.4",
+      "scenario": "Before launch, a team sized their token budget using a generic open-source tokenizer and their previous provider's published token counts for a 'comparable' model. After launch, actual billed usage runs about 30% higher than forecast, and they overran the quarterly budget.",
+      "stem": "What is the most reliable way to budget tokens going forward?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Call the count_tokens endpoint with the exact target model against the full request - system prompt, tools, and messages - before launch, and re-run it whenever the prompts, tools, or model change."
+        },
+        {
+          "id": "B",
+          "text": "Estimate from character counts using a fixed four-characters-per-token rule of thumb plus a modest safety buffer."
+        },
+        {
+          "id": "C",
+          "text": "Reuse the previous provider's token counts, adjusting them by a flat 10% safety margin on every route."
+        },
+        {
+          "id": "D",
+          "text": "Forecast per-request usage by dividing last month's total billed tokens evenly by the request count."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Tokenizers are model-specific - the same text can tokenize roughly 30% longer on a different model's tokenizer - so estimates from another vendor or a generic tokenizer systematically miss. `count_tokens` accepts the actual request contents (system, tools, messages, images) and returns the count for the model you will actually call. It is still an estimate, so keep a margin, but it removes the tokenizer-mismatch error that caused the overrun.",
+      "whyWrong": {
+        "B": "Character heuristics ignore how subword tokenizers split text; the error compounds across millions of tokens.",
+        "C": "A flat margin on another vendor's tokenizer preserves the systematic mismatch that caused the overrun.",
+        "D": "Averages hide prompt changes, route mix, and long-tail requests; they describe the past rather than sizing the request."
+      },
+      "difficulty": 1,
+      "mindset": "Budget tokens with the target model's own tokenizer, never a proxy.",
+      "tags": [
+        "token-counting",
+        "budgeting",
+        "tokenizer",
+        "pre-flight"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/token-counting"
+      ]
+    },
+    {
+      "id": "v-d5-g4-010",
+      "taskStatementId": "5.4",
+      "scenario": "A developer wants to load a large reference corpus into every request and argues that once the prefix is cached, those tokens 'don't really count' against the context window - so caching effectively expands how much material the model can work with.",
+      "stem": "Which response is correct?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Agree - cached tokens are removed from the context window, so caching expands usable capacity."
+        },
+        {
+          "id": "B",
+          "text": "Cached tokens still occupy the context window; caching lowers input cost and processing time only, so window space must still be budgeted and content curated."
+        },
+        {
+          "id": "C",
+          "text": "Cached tokens count double against the window, so caching halves effective capacity."
+        },
+        {
+          "id": "D",
+          "text": "The context window applies only to output tokens, so input size is unconstrained either way."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Everything in the request counts toward the context window - system, messages, tool definitions and results, images, thinking, and output - **including tokens served from cache**. Caching discounts the bill (reads at a fraction of base input) and cuts processing time; it does not create capacity. Budget the window as if nothing were cached, and curate content rather than relying on the cache to 'fit more'.",
+      "whyWrong": {
+        "A": "This is the misconception itself; the cache changes pricing, not the window arithmetic.",
+        "C": "An invented penalty; cached tokens count once, the same as uncached ones.",
+        "D": "The window covers input and output together; oversized inputs overflow it just as outputs do."
+      },
+      "difficulty": 1,
+      "mindset": "Caching discounts the bill, not the context window.",
+      "tags": [
+        "context-window",
+        "prompt-caching",
+        "cost-vs-capacity"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/context-windows",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching"
+      ]
+    },
+    {
+      "id": "v-d5-g4-011",
+      "taskStatementId": "5.4",
+      "scenario": "Leadership wants a double-digit cut in Claude spend on a customer Q&A service. Any change that could alter answer quality must go through re-evaluation first, and the team wants to avoid that overhead this quarter. The service has a stable system prompt and tool set; it also runs latency-tolerant nightly re-indexing and report jobs.",
+      "stem": "Which TWO changes cut spend without changing the text the model processes or the answers it gives? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Mark the stable system prompt and tool definitions with cache breakpoints so repeated prefixes are read at a fraction of the input price."
+        },
+        {
+          "id": "B",
+          "text": "Route half of the live Q&A traffic to the smallest model tier and spot-check a handful of answers before fully switching."
+        },
+        {
+          "id": "C",
+          "text": "Move the nightly re-indexing and report-generation jobs to the Message Batches API, which bills tokens at a discount for latency-tolerant workloads."
+        },
+        {
+          "id": "D",
+          "text": "Set temperature to zero across the service so the model generates fewer tokens per answer."
+        },
+        {
+          "id": "E",
+          "text": "Instruct the model to answer more briefly on every route."
+        }
+      ],
+      "correct": [
+        "A",
+        "C"
+      ],
+      "explanation": "Caching and batching are the two **no-quality-loss** cost levers, and they stack. Caching sends the identical prefix and simply re-prices repeated reads; batching moves latency-tolerant work into a half-price lane without touching the requests' content. Both avoid the re-evaluation overhead the team wants to skip this quarter.",
+      "whyWrong": {
+        "B": "Changing the model is a quality tradeoff requiring eval-gated rollout; spot-checking a few answers is not a substitute.",
+        "D": "Temperature affects sampling, not how many tokens are generated - at best it *may* marginally shorten output. Setting it to zero across the service also changes which outputs get sampled, i.e., the answers themselves, which is exactly the re-evaluation trigger to avoid.",
+        "E": "Asking for brevity changes the answers themselves - precisely the quality risk to avoid this quarter."
+      },
+      "difficulty": 2,
+      "mindset": "Cut the price per token before cutting tokens or capability.",
+      "tags": [
+        "cost-optimization",
+        "prompt-caching",
+        "batch-api",
+        "no-quality-loss"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
+        "https://platform.claude.com/docs/en/build-with-claude/batch-processing",
+        "https://platform.claude.com/docs/en/about-claude/pricing"
+      ]
+    },
+    {
+      "id": "v-d5-g4-012",
+      "taskStatementId": "5.4",
+      "scenario": "Shortly after shipping an agentic research feature, cost per user session tripled. The feature runs a tool-use loop, sometimes retries failed steps, and shares a long system prompt across steps. The team needs to find the cause quickly rather than guess.",
+      "stem": "Which TWO actions are the highest-value diagnostic steps? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Temporarily move all interactive Q&A traffic to the Message Batches API to slow the burn while the investigation proceeds."
+        },
+        {
+          "id": "B",
+          "text": "Ask the model to append a short self-reported token estimate to each reply and audit those numbers for a week."
+        },
+        {
+          "id": "C",
+          "text": "Log stop_reason and the full usage fields on every call, and look for retry loops, truncation (stop_reason max_tokens), and failed steps that re-send the whole conversation."
+        },
+        {
+          "id": "D",
+          "text": "Rebuild the quarterly forecast with a higher per-request token assumption and wait for usage to stabilize before acting."
+        },
+        {
+          "id": "E",
+          "text": "Check whether the tool definitions or their ordering differ between calls, since a change at the tools level invalidates the cache from that point onward."
+        }
+      ],
+      "correct": [
+        "C",
+        "E"
+      ],
+      "explanation": "Cost diagnosis starts with **per-call observability**: stop_reason and all usage fields reveal the retry loops, truncation-driven re-asks, and history re-sends that inflate cost per completed task. Second, the cache prefix begins at the tools array; if tool definitions or their order differ between calls, everything from tools down is re-billed - a common silent regression in dynamically built tool lists.",
+      "whyWrong": {
+        "A": "Batching interactive traffic breaks the product's realtime behavior and does not locate the cause.",
+        "B": "Models cannot reliably report their own token usage; billed truth lives in the response's usage object.",
+        "D": "Adjusting the forecast documents the problem; it does not diagnose it."
+      },
+      "difficulty": 2,
+      "mindset": "Find spend in per-call logs, not in the model's self-assessment.",
+      "tags": [
+        "usage-tracking",
+        "observability",
+        "cache-invalidation",
+        "debugging"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
+        "https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons"
+      ]
+    },
+    {
+      "id": "v-d5-g4-013",
+      "taskStatementId": "5.4",
+      "scenario": "A map-reduce analyzer fans out 12 simultaneous requests that each carry the same 30,000-token shared-analysis prefix, marked with a cache breakpoint. The team expected one full-price write and 11 cheap reads, but usage shows cache_creation_input_tokens on nearly every request and almost no reads.",
+      "stem": "What explains this, and what is the minimal fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Cache entries are only created for non-streaming requests, so the fan-out must stop streaming to share entries."
+        },
+        {
+          "id": "B",
+          "text": "The per-request breakpoint limit is far below 12, so the workers cannot share one entry; reduce the fan-out."
+        },
+        {
+          "id": "C",
+          "text": "Place each worker's breakpoint on a different slice of the shared prefix so the writes spread out instead of colliding."
+        },
+        {
+          "id": "D",
+          "text": "A cache entry only exists once the first response begins, so simultaneously launched workers all miss and each pays a write; run one request first and launch the remaining 11 after it completes."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "A cache entry is created only once the first response starts - requests fired in the same instant all arrive before any entry exists, so each pays the full write. The fix is sequencing: issue one request (or a deliberate warm-up call with max_tokens set to zero), then launch the rest once it completes; each subsequent worker reads the shared prefix at a small fraction of base input.",
+      "whyWrong": {
+        "A": "Streaming and caching are independent; streamed requests create and read entries normally.",
+        "B": "The breakpoint limit is per request, not per entry shared across requests; twelve workers can read one entry.",
+        "C": "Different breakpoints on different slices break the exact-prefix match, guaranteeing misses rather than fixing them."
+      },
+      "difficulty": 3,
+      "mindset": "Warm the cache before you fan out.",
+      "tags": [
+        "prompt-caching",
+        "parallel-requests",
+        "pre-warm",
+        "cost-optimization"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching"
+      ]
+    },
+    {
+      "id": "v-d5-g4-014",
+      "taskStatementId": "5.4",
+      "scenario": "An integration builds its tools array dynamically: it reorders tools by recent usage and conditionally includes a seasonal tool, so the array differs between calls. The system prompt and conversation content are stable, and cache_control is set, yet cache reads stay near zero and input costs do not fall.",
+      "stem": "What is the minimal change that restores caching?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Send an identical tools array on every request - same definitions, same order, all routinely needed tools - so the tools-level prefix matches exactly."
+        },
+        {
+          "id": "B",
+          "text": "Embed the tool schemas in the system prompt as documentation and send an empty tools array, keeping the tools level trivially stable."
+        },
+        {
+          "id": "C",
+          "text": "Move the only cache breakpoint to the final user message, downstream of the changing tools array."
+        },
+        {
+          "id": "D",
+          "text": "Drop native tool use on this route and have the model emit JSON commands that application code parses and dispatches."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The cache prefix runs in the order **tools → system → messages**, and a change at the tools level invalidates that level and everything after it - effectively the whole request. Reordering or toggling tools per call therefore defeats caching regardless of how stable the prompts are. Keep the tools array byte-identical across requests, and treat any tool-set change as a deliberate, cache-resetting release.",
+      "whyWrong": {
+        "B": "Embedding schemas as prose removes native tool calling (no tool_use blocks, no schema-enforced inputs), forcing hand-rolled parsing - a bigger redesign, and a seasonal section in the prompt would still mutate the system prompt unless frozen.",
+        "C": "Misreads the mechanism: a breakpoint caches its entire preceding prefix, so placing it on the last message does not skip the tools array. The mutation sits at the very start of the prefix, so no breakpoint placement can produce a match.",
+        "D": "Replacing native tool use with hand-rolled command parsing is a large architectural change with real quality and maintenance risk for what is a prefix-stability problem."
+      },
+      "difficulty": 2,
+      "mindset": "The cache begins at the tools array - keep it byte-stable.",
+      "tags": [
+        "prompt-caching",
+        "tools-prefix",
+        "cache-invalidation",
+        "tool-use"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching"
+      ]
+    },
+    {
+      "id": "v-d5-g4-015",
+      "taskStatementId": "5.4",
+      "scenario": "During a design review, the team debates how prompt caching affects the bill before approving a cost plan built almost entirely around it.",
+      "stem": "Which TWO statements about prompt-caching costs are correct? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "A cache read is billed at a small fraction of the base input price, and each hit refreshes the entry's TTL at no extra charge."
+        },
+        {
+          "id": "B",
+          "text": "A cache write is billed below the base input price because storing tokens is cheaper than processing them."
+        },
+        {
+          "id": "C",
+          "text": "Adding breakpoints is generally worthwhile because each one creates another opportunity for a cheap read, up to the maximum the API allows."
+        },
+        {
+          "id": "D",
+          "text": "A cache write is billed at a premium over the base input price, so caching pays off once the same prefix is read again after the write."
+        },
+        {
+          "id": "E",
+          "text": "Cache hits also reduce the output tokens billed for the generated response."
+        }
+      ],
+      "correct": [
+        "A",
+        "D"
+      ],
+      "explanation": "Reads are the prize - billed at a small fraction of base input - and every hit refreshes the TTL for free, keeping repeated traffic cheap. Writes, however, cost a **premium** over base input (higher for the one-hour TTL, which needs more reads to pay off), so the economics only work when the prefix is read again afterward. Place breakpoints where reuse is real, not everywhere.",
+      "whyWrong": {
+        "B": "Backwards: writes bill above base input, which is why unused breakpoints cost money.",
+        "C": "The API caps breakpoints per request and every write carries a premium - markers without genuine reuse add cost rather than saving it.",
+        "E": "Caching applies to the input prefix only; output tokens are always billed at the full output price."
+      },
+      "difficulty": 1,
+      "mindset": "Cache reads are cheap, writes carry a premium, and only reads refresh the TTL.",
+      "tags": [
+        "prompt-caching",
+        "cost-modeling",
+        "cache-economics"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
+        "https://platform.claude.com/docs/en/about-claude/pricing"
+      ]
+    }
+  ]
+}
