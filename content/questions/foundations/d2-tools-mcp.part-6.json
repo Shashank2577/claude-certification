@@ -1,0 +1,1033 @@
+{
+  "certId": "foundations",
+  "domainId": "d2-tools-mcp",
+  "questions": [
+    {
+      "id": "f-d2-z6-001",
+      "taskStatementId": "2.1",
+      "scenario": "Multi-Agent Research System: the coordinator delegates to a document-analysis subagent. The team is writing tool descriptions for two tools that overlap in purpose: `extract_facts(document_id, topic)` returns every sentence in a document relevant to a topic, and `extract_summary(document_id)` returns the document's own abstract.",
+      "stem": "Which TWO changes to the interface would most improve selection accuracy between these tools? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "State in each description which situation it is for — `extract_summary` for the document's stated conclusions, `extract_facts` for specific claims you need located — and note that `extract_facts` returns many passages while `extract_summary` returns one."
+        },
+        {
+          "id": "B",
+          "text": "Rename `extract_summary` to `get_abstract_so_quick` so the naming convention matches the rest of the team's tools."
+        },
+        {
+          "id": "C",
+          "text": "Merge them into a single `extract(document_id, mode)` tool with a `mode` enum of `summary` or `facts`, so the model has fewer tools to choose between."
+        },
+        {
+          "id": "D",
+          "text": "Add examples of correct arguments for each tool's `input_schema` so the model fills the parameters accurately."
+        },
+        {
+          "id": "E",
+          "text": "Add a `priority` integer to each tool's schema so the runtime can rank them when both look relevant."
+        }
+      ],
+      "correct": [
+        "A",
+        "D"
+      ],
+      "explanation": "Selection accuracy is mostly a **description problem**, and A addresses it directly: it names the situation each tool is for and describes the shape of the result, which is often the deciding detail. D helps too, because accurate argument filling is part of getting a tool call right. B is a naming convention issue that doesn't disambiguate anything; C merges two genuinely different operations behind a flag, which removes the model's chance to reason about them separately; E invents a mechanism that isn't part of how tool selection works.",
+      "whyWrong": {
+        "B": "A whimsical name makes the tool harder to recognise, not easier. Nothing about 'so_quick' distinguishes it from `extract_facts`.",
+        "C": "Combining distinct operations behind a `mode` parameter reduces the number of tools but removes the semantic cues that let the model choose correctly — and returns one answer shaped by a flag instead of two tools whose contracts are clear.",
+        "E": "There is no priority field in tool schemas, and tool choice is made by the model, not by a runtime ranking field."
+      },
+      "difficulty": 2,
+      "visualId": "tool-design",
+      "mindset": "Overlapping tools are fixed in the description: say when to use each one and what comes back.",
+      "tags": [
+        "tool-descriptions",
+        "tool-selection",
+        "overlapping-tools",
+        "multi-select"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/writing-tools-for-agents",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools"
+      ]
+    },
+    {
+      "id": "f-d2-z6-002",
+      "taskStatementId": "2.1",
+      "scenario": "Customer Support Resolution Agent: the team has an MCP server with 24 tools, most of which wrap one REST endpoint each: `list_users`, `get_user`, `update_user`, `list_tickets`, `get_ticket`, `assign_ticket`, `close_ticket`, and so on.",
+      "stem": "Traces show the agent calling three or four tools to complete one routine task, and the init message is dominated by tool definitions. Which change follows tool-set construction guidance BEST?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Consolidate related operations into a smaller number of task-shaped tools, such as `manage_ticket(ticket_id, action, fields)`, so a routine case is one call rather than a chain."
+        },
+        {
+          "id": "B",
+          "text": "Keep all 24 tools but shorten each description to a single sentence, which is the main driver of context use."
+        },
+        {
+          "id": "C",
+          "text": "Keep all 24 tools and rely on `allowedTools` to list only the five an agent normally needs."
+        },
+        {
+          "id": "D",
+          "text": "Rename the tools with numeric prefixes so the agent calls them in the right order."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Guidance on writing tools for agents favours **fewer, task-shaped tools** over one tool per endpoint, because each tool carries a description and schema into every request, and each call is another turn with latency and error surface. Collapsing read-then-update sequences into a single operation removes most of both problems. B misses the main cost — descriptions still cost context — and C only limits which tools are *permitted*, not which are *present* in the request.",
+      "whyWrong": {
+        "B": "Trimming sentences helps a little, but the dominant cost here is 24 tools' worth of names, schemas and descriptions, not verbosity within them.",
+        "C": "`allowedTools` governs what the agent may call, not what it is shown. The tool definitions are still sent in the request, so the context cost remains — and a list of permitted-but-present tools invites the agent to try one and be blocked.",
+        "D": "Numeric prefixes don't encode semantics and don't reduce round trips; they just make the names less descriptive."
+      },
+      "difficulty": 2,
+      "mindset": "Design the tool set around tasks, not endpoints — fewer, wider tools cut context and turns together.",
+      "tags": [
+        "tool-set-construction",
+        "context-budget",
+        "consolidation",
+        "tool-design"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/writing-tools-for-agents",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools"
+      ]
+    },
+    {
+      "id": "f-d2-z6-003",
+      "taskStatementId": "2.1",
+      "scenario": "Customer Support Resolution Agent: `get_customer(identifier)` takes a free-text `identifier`, and its description says \"Gets a customer.\" The agent has been sending internal agent IDs to it, which mostly works but sometimes collides with an account number and returns the wrong record.",
+      "stem": "What is the MOST effective interface change?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Rename the parameter to `customer_id`, make it a required string, and state in the description which identifier formats are valid and that the agent should ask the user if the value is ambiguous."
+        },
+        {
+          "id": "B",
+          "text": "Change the parameter type from string to integer so invalid formats are rejected by the schema."
+        },
+        {
+          "id": "C",
+          "text": "Add a `strict: true` flag to the tool definition so the runtime validates the arguments."
+        },
+        {
+          "id": "D",
+          "text": "Add a system prompt instruction telling the agent to be careful about which identifier it sends."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The bug is that `identifier` doesn't say what an identifier is, so the model guesses. Renaming it to `customer_id` puts the meaning in the name, and describing valid formats plus what to do when a value is ambiguous gives it a way to act rather than guess — the strongest fix, because it removes the ambiguity at the source. Strict mode validates against the schema, which can't help here since a valid string of the wrong kind still passes.",
+      "whyWrong": {
+        "B": "Customer IDs in these systems are strings, often with a prefix. Forcing an integer would reject valid inputs and still wouldn't say which identifier is expected.",
+        "C": "`strict: true` guarantees the arguments conform to the schema. A well-formed but wrong-kind identifier conforms perfectly, so the collision survives.",
+        "D": "Carefulness in the prompt doesn't remove the ambiguity that caused the error, and the prompt is the least reliable place to enforce a format."
+      },
+      "difficulty": 2,
+      "visualId": "tool-design",
+      "mindset": "If the model keeps guessing an argument, the parameter's name and description are the bug.",
+      "tags": [
+        "tool-descriptions",
+        "schema-design",
+        "parameters",
+        "ambiguity"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/writing-tools-for-agents",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools"
+      ]
+    },
+    {
+      "id": "f-d2-z6-004",
+      "taskStatementId": "2.1",
+      "scenario": "Multi-Agent Research System: the document-analysis subagent has `search_documents(query, limit)` returning ranked matches, and `read_document(doc_id, section)`. Traces show the agent calling `search_documents` with `limit: 50`, reading the first few results, abandoning them, and searching again with different terms.",
+      "stem": "Which change to the tool interface would MOST reduce this behaviour?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Make `limit` optional with a documented default of 10, and add a `section` filter so a follow-up read is targeted rather than a full document fetch."
+        },
+        {
+          "id": "B",
+          "text": "Raise the maximum allowed `limit` so the agent can see more results per call and stop re-querying."
+        },
+        {
+          "id": "C",
+          "text": "Add a `confidence` float to each result so the agent can tell which matches are worth reading."
+        },
+        {
+          "id": "D",
+          "text": "Add an instruction telling the agent to use a small limit and to refine its query rather than retrying broadly."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The agent is over-fetching because nothing tells it what a sensible request looks like or lets it narrow the follow-up read. A documented default removes the need to guess, and a `section` filter gives it the granularity it lacked — that's an interface fix. B makes the over-fetch worse; C adds a field nobody computes or guarantees; D is guidance that will be inconsistently followed when the interface still invites the wrong shape of call.",
+      "whyWrong": {
+        "B": "A higher ceiling removes the constraint that was causing waste, not the cause of it. Bigger result sets mean more context and still no targeted read.",
+        "C": "A confidence score is only useful if something meaningful populates it. Inventing a field the server can't fill creates data the agent must interpret without basis.",
+        "D": "Instruction-level guidance is the fallback when the interface is wrong. If the API lets the agent read a whole document when it needs one section, fix the API."
+      },
+      "difficulty": 3,
+      "visualId": "tool-design",
+      "mindset": "Over-fetching is an interface signal: give defaults and filters, not instructions telling the model to be careful.",
+      "tags": [
+        "tool-design",
+        "parameters",
+        "context-budget",
+        "iteration"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/writing-tools-for-agents",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools"
+      ]
+    },
+    {
+      "id": "f-d2-z6-005",
+      "taskStatementId": "2.1",
+      "scenario": "Developer Productivity with Claude Code: the team maintains an internal MCP server with `search_wiki(query)` and `search_tickets(query)`. A new engineer asks which of the two to use before filing a ticket.",
+      "stem": "Which description pairing is MOST likely to produce correct selection?",
+      "options": [
+        {
+          "id": "A",
+          "text": "`search_wiki`: \"Search the team's documentation for how things are meant to work and the agreed processes. Use for questions about policy, setup and intended usage. Not for a specific past issue.\" `search_tickets`: \"Search previously filed tickets for issues matching a symptom. Use when something is broken or has happened before. Not for documentation.\""
+        },
+        {
+          "id": "B",
+          "text": "`search_wiki`: \"Searches things.\" `search_tickets`: \"Searches other things.\" Both: \"Returns matching results as JSON.\""
+        },
+        {
+          "id": "C",
+          "text": "`search_wiki`: \"Searches the wiki. Returns up to 10 results, each with a title, URL and snippet.\" `search_tickets`: \"Searches tickets. Returns up to 10 results, each with an ID, title and status.\""
+        },
+        {
+          "id": "D",
+          "text": "`search_wiki`: \"Searches the wiki — this is the correct tool for documentation questions.\" `search_tickets`: \"Searches tickets — note that this tool is preferred for bug reports.\""
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Good descriptions tell the model **when to use the tool and when not to**, using the vocabulary the user brings. A gives the intent behind each tool and explicitly fences the overlap, which is exactly where the two calls get confused. C describes return shape accurately but never says which one to reach for — the model has to infer it from the nouns. D asserts priority without giving the reasoning needed to apply it to a new case.",
+      "whyWrong": {
+        "B": "These descriptions carry almost no information, and they overlap in wording. The model has nothing to distinguish them on.",
+        "C": "Describing the response is useful but secondary. Without a statement of purpose, the model still has to work out which tool fits the request, which was the original problem.",
+        "D": "\"This is the correct tool\" and \"preferred\" are assertions without conditions. Faced with a genuinely ambiguous request, the model still has to decide, and it has no grounds to decide well."
+      },
+      "difficulty": 3,
+      "visualId": "tool-design",
+      "mindset": "Describe intent and fences — what the tool is for and when not to use it — not just what it returns.",
+      "tags": [
+        "tool-descriptions",
+        "tool-selection",
+        "mcp",
+        "overlapping-tools"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/writing-tools-for-agents",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools"
+      ]
+    },
+    {
+      "id": "f-d2-z6-006",
+      "taskStatementId": "2.2",
+      "scenario": "Customer Support Resolution Agent: `lookup_order` calls an internal service that can fail in four distinct ways: the database times out, the caller passes a malformed order ID, the order belongs to a business account with a different API, and the service account lacks permission for the business-account endpoint.",
+      "stem": "Which TWO pieces of information should the tool's error result carry so the agent can respond correctly? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "The specific reason — for example `validation: malformed order_id`, `permission: business account requires partner API`, `transient: upstream timeout` — rather than a generic failure string."
+        },
+        {
+          "id": "B",
+          "text": "What the agent can do next: retry, ask the customer for a corrected ID, or escalate, so it doesn't have to infer the right action."
+        },
+        {
+          "id": "C",
+          "text": "A stack trace and the internal host name of the service, so support engineers can debug from the transcript."
+        },
+        {
+          "id": "D",
+          "text": "The full text of the raw response body from the upstream service."
+        },
+        {
+          "id": "E",
+          "text": "A boolean saying only whether the call succeeded, with no further detail."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "An error result is useful when it tells the model **what went wrong and what to do about it**. A gives a machine-readable category the agent can branch on, and B removes the guesswork about the next step — these are the two things that separate a recoverable failure from a dead end. C and D leak internal details into the model's context and can expose infrastructure or customer data; E is the same \"Operation failed\" problem the team is trying to fix.",
+      "whyWrong": {
+        "C": "Stack traces and internal hostnames are for engineers reading logs, not for a model choosing a next step. They burn context and can disclose infrastructure details.",
+        "D": "Raw upstream bodies can be enormous, unstructured, and may contain data about the customer. Passing them through hands the model something it must parse rather than act on.",
+        "E": "A bare success flag gives the agent nothing to reason with — it cannot distinguish a retryable timeout from a permission problem, so it will retry everything."
+      },
+      "difficulty": 2,
+      "visualId": "error-recovery",
+      "mindset": "An error the model can act on names the cause and the next step; anything else is just noise it must interpret.",
+      "tags": [
+        "error-handling",
+        "structured-errors",
+        "tool-design",
+        "multi-select"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/writing-tools-for-agents",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls"
+      ]
+    },
+    {
+      "id": "f-d2-z6-007",
+      "taskStatementId": "2.2",
+      "scenario": "Customer Support Resolution Agent: `process_refund` calls a chargeback-reversal API. The MCP server's service account is not authorized for it, so every call returns HTTP 403. The tool returns `isError: true` with the text \"Request failed\", and the agent retries seven times.",
+      "stem": "What is the MOST useful change to the tool's behaviour?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Return a structured, non-retryable error such as `isRetryable: false` with `errorCategory: \"permission\"` and a message saying the integration is not authorized, so the agent escalates instead of retrying."
+        },
+        {
+          "id": "B",
+          "text": "Return HTTP 403 as a JSON-RPC protocol error rather than a tool error, so the client can see the status code."
+        },
+        {
+          "id": "C",
+          "text": "Increase the tool's internal timeout so the call has more time to succeed before failing."
+        },
+        {
+          "id": "D",
+          "text": "Cache the failure and return the cached error on subsequent calls, so the agent stops retrying sooner."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "This is a **permanent, non-retryable failure** — the integration isn't authorized, and no amount of retrying changes that. The tool should say so in a structured form the agent can act on: a category, a retryable flag, and a message naming the real problem. That's what lets the agent escalate to a human instead of burning turns. The current generic text gives it nothing to distinguish this from a transient fault.",
+      "whyWrong": {
+        "B": "Tool execution failures should be surfaced as tool errors with `isError: true`, not as JSON-RPC protocol errors. Protocol errors mean something like an unknown tool; using them here miscategorises a normal failure mode and complicates client handling.",
+        "C": "The call isn't timing out — it's being rejected on authorization grounds. A longer timeout makes each attempt slower and still fails.",
+        "D": "Caching the failure hides the symptom without fixing it, and every first call still pays the full retry cost. The agent still has no idea the failure is permanent."
+      },
+      "difficulty": 2,
+      "visualId": "error-recovery",
+      "mindset": "Classify failures as retryable or not, and say which — a permanent error should escalate, not loop.",
+      "tags": [
+        "error-handling",
+        "isRetryable",
+        "permissions",
+        "retry"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/writing-tools-for-agents",
+        "https://modelcontextprotocol.io/specification/2025-06-18/server/tools"
+      ]
+    },
+    {
+      "id": "f-d2-z6-008",
+      "taskStatementId": "2.2",
+      "scenario": "Customer Support Resolution Agent: `process_refund` accepts several line items at once. A customer returns four items: three refund successfully and one fails because the payment gateway times out. The tool currently returns `isError: true` with \"1 item failed\".",
+      "stem": "Which result shape is MOST appropriate?",
+      "options": [
+        {
+          "id": "A",
+          "text": "A partial-success result: `isError: false` with a per-item outcome list — three succeeded with their refund IDs, one failed with a transient category and retry guidance — so the agent confirms the three and retries only the fourth."
+        },
+        {
+          "id": "B",
+          "text": "`isError: true` with the message \"3 of 4 items refunded; 1 failed\", because the operation did not fully succeed."
+        },
+        {
+          "id": "C",
+          "text": "`isError: false` with just a count of three succeeded, leaving the agent to work out which item failed."
+        },
+        {
+          "id": "D",
+          "text": "Roll back the three successful refunds and return a single error, so the customer is not left in a partially refunded state."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Partial completion is a **successful call that produced a mixed result**, not a failure. Reporting it as an error tells the agent nothing actionable and invites it to redo work that already succeeded — which, for a refund, means double-refunding a customer. A per-item outcome list with a retryable category on the failed item is what lets the agent confirm three refunds and retry exactly one. Non-idempotent operations make this shape essential.",
+      "whyWrong": {
+        "B": "Collapsing the outcome into one error loses the per-item detail the agent needs, and re-running the call risks refunding the same items twice.",
+        "C": "A bare count makes the agent guess which item failed. It could ask the customer, or it could retry the whole batch — either way the ambiguity costs money and trust.",
+        "D": "Rolling back successful refunds makes the customer worse off to produce a tidier log. Real payment systems also make rollback unreliable; the honest result is the partial one."
+      },
+      "difficulty": 3,
+      "visualId": "error-recovery",
+      "mindset": "Partial success is a success with detail; report per item so retries don't repeat completed work.",
+      "tags": [
+        "partial-failure",
+        "error-handling",
+        "idempotency",
+        "tool-results"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/writing-tools-for-agents",
+        "https://modelcontextprotocol.io/specification/2025-06-18/server/tools"
+      ]
+    },
+    {
+      "id": "f-d2-z6-009",
+      "taskStatementId": "2.2",
+      "scenario": "Developer Productivity with Claude Code: an MCP tool `run_query(sql)` executes read-only SQL against the analytics warehouse. Validation failures and permission failures both currently return the same `isError: true` with a generic \"query failed\" message.",
+      "stem": "Why does collapsing these into one message cause problems, and what is the fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The agent can't tell whether rewriting the SQL would help or whether it needs different access, so it retries inappropriately or gives up; return distinct categories — validation versus permission — with a message naming what to change."
+        },
+        {
+          "id": "B",
+          "text": "Nothing is wrong, because the agent can infer the cause from the original SQL text it wrote."
+        },
+        {
+          "id": "C",
+          "text": "The tool should return HTTP status codes instead of `isError`, so the distinction is carried by the protocol layer."
+        },
+        {
+          "id": "D",
+          "text": "The tool should suppress permission failures and return an empty result set, so the agent does not get distracted."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "These two failures need **opposite responses**: a validation error means the model should fix its arguments, while a permission error means no amount of rewriting will work and the request must go to someone with access. One generic message destroys that distinction, which is why the same failure produces both pointless retries and premature give-ups. Categorised errors let the agent choose, and naming what to change makes the choice easy.",
+      "whyWrong": {
+        "B": "The agent cannot reliably infer a permission failure from the SQL it wrote. A perfectly valid query can still be denied, and the model has no way to know that's what happened.",
+        "C": "Tool execution failures belong in the tool result with `isError: true`, not in JSON-RPC protocol errors. Protocol errors are for things like an unknown tool.",
+        "D": "Returning empty results for a permission failure turns a clear diagnostic into a silent wrong answer. The agent would report 'no data' when the truth is 'no access'."
+      },
+      "difficulty": 2,
+      "visualId": "error-recovery",
+      "mindset": "Failures that need different responses must be different errors — otherwise the model picks the wrong response.",
+      "tags": [
+        "error-handling",
+        "error-categories",
+        "permissions",
+        "sql"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/writing-tools-for-agents",
+        "https://modelcontextprotocol.io/specification/2025-06-18/server/tools"
+      ]
+    },
+    {
+      "id": "f-d2-z6-010",
+      "taskStatementId": "2.3",
+      "scenario": "Multi-Agent Research System: the coordinator agent has web search, document loading, citation formatting and report export available. Traces show it calling the web search tool directly for about 20% of claims, pulling in sources the research subagent never vetted.",
+      "stem": "Which change BEST enforces the intended governance model?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Remove the web search tool from the coordinator's tool list entirely, so source vetting stays with the research subagent that owns it."
+        },
+        {
+          "id": "B",
+          "text": "Add a system prompt instruction telling the coordinator to prefer the research subagent's sources."
+        },
+        {
+          "id": "C",
+          "text": "Set `tool_choice` to the research subagent for every coordinator turn."
+        },
+        {
+          "id": "D",
+          "text": "Rename the coordinator's web search tool to `internal_search_archive` so it looks less like general web search."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Distributing tools is how you **enforce** a boundary rather than request one. If a capability exists on an agent, it will sometimes use it — a prompt instruction is guidance with a non-zero failure rate, and 20% unvetted sources is what that rate looks like in production. Removing the tool from the coordinator's list makes the governance model structural. C is wrong on two counts: `tool_choice` selects among the tools on that request, it cannot call a subagent, and forcing one tool every turn would break any turn that needs to answer directly.",
+      "whyWrong": {
+        "B": "This is the reliable route to an occasional policy breach. The coordinator has the tool, so it will use it when it judges its own sources insufficient.",
+        "C": "`tool_choice` chooses among tools supplied in the request — it has no mechanism for invoking a subagent, and pinning it to a single tool would prevent any turn from doing anything else.",
+        "D": "Renaming to discourage use is prompt engineering by naming convention. The tool still does what it does, and a misleading name makes the codebase worse for everyone reading it."
+      },
+      "difficulty": 2,
+      "visualId": "orchestrator-subagents",
+      "mindset": "Boundaries are enforced by which tools an agent has, not by what its prompt asks it not to do.",
+      "tags": [
+        "tool-distribution",
+        "least-privilege",
+        "multi-agent",
+        "governance"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/subagents",
+        "https://www.anthropic.com/engineering/multi-agent-research-system"
+      ]
+    },
+    {
+      "id": "f-d2-z6-011",
+      "taskStatementId": "2.3",
+      "scenario": "Structured Data Extraction: a pipeline uses Claude to extract metadata, then validate it, then produce a plain-English summary. The developer set `tool_choice` to `{\"type\": \"tool\", \"name\": \"extract_metadata\"}` in a shared request config applied to every turn.",
+      "stem": "What breaks, and what is the correct placement?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Every turn forces the tool call, so the validation and summary turns can't proceed; `tool_choice` belongs only on the extraction request, and later turns should omit it or set it to `auto`."
+        },
+        {
+          "id": "B",
+          "text": "Nothing breaks, because forcing a tool call simply guarantees the tool is available when it's needed."
+        },
+        {
+          "id": "C",
+          "text": "The validation turn fails because the schema is strict; set `strict: false` on the schema for the summary turn."
+        },
+        {
+          "id": "D",
+          "text": "It works, but each forced turn returns `stop_reason: \"max_tokens\"`, which the pipeline must handle."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "`tool_choice` constrains the **current request**, so leaving it pinned to `extract_metadata` means the validation and summary turns can never produce prose or a text answer — the model is required to emit a tool call and nothing else. Forcing a tool is the right choice on the one request where a structured result is mandatory; afterwards it must be released. This is the general shape: use forced tool use to guarantee structure, and automatic choice everywhere else.",
+      "whyWrong": {
+        "B": "Forcing a tool is a constraint, not an availability guarantee. On a turn that should produce text, it prevents exactly that.",
+        "C": "Strictness controls schema conformance for the tool's arguments; it has nothing to do with whether the model is allowed to answer in prose.",
+        "D": "This is not a token-limit issue. The model is not running out of room — it is being told it must call the tool instead of writing a summary."
+      },
+      "difficulty": 1,
+      "mindset": "`tool_choice` is per-request: force the tool where structure is mandatory, then let the model choose.",
+      "tags": [
+        "tool-choice",
+        "structured-output",
+        "multi-turn",
+        "pipeline"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools",
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs"
+      ]
+    },
+    {
+      "id": "f-d2-z6-012",
+      "taskStatementId": "2.3",
+      "scenario": "Customer Support Resolution Agent: the team is splitting the support system into a triage subagent that identifies the customer and classifies the request, and a resolution subagent that handles refunds and account changes. Both are built with the Agent SDK.",
+      "stem": "Which tool distribution is the MOST defensible?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Give triage the read tools it needs (`get_customer`, `lookup_order`), and give resolution only the write-capable tools it needs (`process_refund`, `update_account`) — so the subagent that can move money has no reason to be re-establishing who the customer is, and the blast radius of either is smaller."
+        },
+        {
+          "id": "B",
+          "text": "Give both subagents every support tool, so either can handle any part of a conversation without waiting for the other."
+        },
+        {
+          "id": "C",
+          "text": "Give triage every tool including the write tools, since triage sometimes needs to correct a customer's details in the system."
+        },
+        {
+          "id": "D",
+          "text": "Give neither subagent any tools and have the coordinator perform every lookup and every action itself."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Role-specific tool sets are the mechanism that makes multi-agent boundaries real: each subagent gets what its role needs, and nothing that would let it act outside that role. That reduces **blast radius** — the resolution subagent, which can move money, has a smaller surface — and removes tool selection as a source of wasted work, since triage isn't choosing between 19 tools to decide what a customer wants. B and C both give subagents capabilities their roles don't justify; D removes the specialisation that motivated the split.",
+      "whyWrong": {
+        "B": "Giving everything to everyone is the opposite of the point of the split. It maximises blast radius and gives each subagent a larger tool list to select from.",
+        "C": "Correcting customer details is a write with consequences. Handing it to the classification step means the subagent that only identifies callers can change records.",
+        "D": "This keeps a single overloaded agent and adds only coordination overhead. It discards the context isolation that made the split worthwhile."
+      },
+      "difficulty": 2,
+      "visualId": "orchestrator-subagents",
+      "mindset": "Give each agent exactly its role's tools — smaller surface, less to choose from, clearer boundaries.",
+      "tags": [
+        "tool-distribution",
+        "subagents",
+        "least-privilege",
+        "multi-agent"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/subagents",
+        "https://www.anthropic.com/engineering/multi-agent-research-system"
+      ]
+    },
+    {
+      "id": "f-d2-z6-013",
+      "taskStatementId": "2.3",
+      "scenario": "Multi-Agent Research System: the team has one shared tool list in the coordinator's options containing web search, document loading, citation formatting, report export and 16 more tools, so the coordinator can be 'flexible' about which subagent it helps.",
+      "stem": "Which TWO problems does this create? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Every request carries all 17 tool definitions, so the coordinator's context is spent on tools it rarely needs instead of on the delegation task."
+        },
+        {
+          "id": "B",
+          "text": "When the coordinator and a subagent both have a tool, work can be duplicated or done at the wrong level of abstraction, blurring who owns each step."
+        },
+        {
+          "id": "C",
+          "text": "The tools become unreachable, because the Agent SDK refuses to load more than eight tools in one request."
+        },
+        {
+          "id": "D",
+          "text": "The subagents lose their own tools, because tool lists are shared across the whole agent tree rather than set per agent."
+        },
+        {
+          "id": "E",
+          "text": "The coordinator will refuse to delegate, because agents may not call tools they did not define themselves."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Handing the coordinator everything costs **context** — every tool definition travels in the request, on every turn — and it collapses the division of labour the multi-agent design depends on. A is the direct cost; B is the design cost, because shared capability means steps get taken twice, or taken by the wrong layer where nobody has the context to do them well.",
+      "whyWrong": {
+        "C": "There is no such eight-tool limit in the Agent SDK. Large tool sets are supported; the problem is what they cost, not whether they're allowed.",
+        "D": "Tool lists are set per agent. Each subagent defines its own, so giving the coordinator more does not strip a subagent of anything.",
+        "E": "There is no such restriction on which agent may call which tool. A coordinator with a tool can call it, which is precisely the duplication risk in B."
+      },
+      "difficulty": 2,
+      "visualId": "orchestrator-subagents",
+      "mindset": "Tool lists are a budget and a boundary: what the coordinator carries, it pays for on every turn.",
+      "tags": [
+        "tool-distribution",
+        "context-budget",
+        "multi-agent",
+        "multi-select"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/subagents",
+        "https://www.anthropic.com/engineering/multi-agent-research-system"
+      ]
+    },
+    {
+      "id": "f-d2-z6-014",
+      "taskStatementId": "2.3",
+      "scenario": "Developer Productivity with Claude Code: a team wants a coding agent that may read files and search the codebase but must never run commands, and another that may do anything. They are deciding between an allowlist and a denylist of tools.",
+      "stem": "Which assessment is MOST accurate?",
+      "options": [
+        {
+          "id": "A",
+          "text": "An allowlist (`allowedTools` naming Read, Grep, Glob) is the right choice when the permitted set is known and stable: it fails closed, so anything not named stays unavailable. A denylist is safer when the set is large and changing, because it doesn't need updating every time a tool is added."
+        },
+        {
+          "id": "B",
+          "text": "Allowlists and denylists are equivalent, so the team's preference is the only consideration."
+        },
+        {
+          "id": "C",
+          "text": "Deny rules are always stronger, because they are explicit about what must not happen."
+        },
+        {
+          "id": "D",
+          "text": "Neither can restrict tools in the Agent SDK; restrictions must be implemented by not installing the tools."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The tradeoff is **fail-closed versus maintainable**. An allowlist fails closed: a tool you forgot to name is simply not available, which is the right default when you know what the agent should do. A denylist fails open: anything not named is permitted, so the list has to be updated every time a capability is added. Neither dominates — for a stable, known set use the allowlist; for a fast-moving tool set, a denylist of the dangerous few plus other controls may be more practical.",
+      "whyWrong": {
+        "B": "They differ fundamentally in failure mode. An allowlist blocks by default; a denylist permits by default, and that is not a matter of team preference.",
+        "C": "Explicit is not the same as comprehensive. A denylist that omits one dangerous tool permits it, whereas an allowlist that omits one harmless tool simply doesn't offer it.",
+        "D": "`allowedTools` and permission rules in the Agent SDK and Claude Code do restrict tools without needing them uninstalled."
+      },
+      "difficulty": 3,
+      "mindset": "Allowlists fail closed and suit known tool sets; denylists fail open and suit changing ones. Pick deliberately.",
+      "tags": [
+        "tool-distribution",
+        "permissions",
+        "least-privilege",
+        "allowlist"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/permissions",
+        "https://code.claude.com/docs/en/permissions"
+      ]
+    },
+    {
+      "id": "f-d2-z6-015",
+      "taskStatementId": "2.4",
+      "scenario": "Multi-Agent Research System: an `internal-analytics` MCP server exposes `query_table(table, filters)` and `describe_table(table)`. Traces show a subagent making 10-15 `describe_table` calls before almost every real query.",
+      "stem": "What is the MOST effective interface-level change?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Have `query_table` return, alongside results, a short schema note for the columns it used — so the model learns the schema from the query it already needed to make."
+        },
+        {
+          "id": "B",
+          "text": "Add a system prompt instruction telling the subagent to batch its `describe_table` calls."
+        },
+        {
+          "id": "C",
+          "text": "Cache `describe_table` responses on the server so repeated calls are faster."
+        },
+        {
+          "id": "D",
+          "text": "Remove `describe_table` from the server entirely, since the subagent should already know the warehouse schema."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The exploratory calls exist because the schema is needed **before** the query, and there's no other way to get it. Returning the relevant schema with the query result removes the ordering problem: the model learns what it needed to know from a call it had to make anyway. That's an interface fix that eliminates a round of discovery per query. B optimises the existing pattern, C makes it cheaper but keeps the turns, and D removes a capability the model genuinely needs.",
+      "whyWrong": {
+        "B": "Batching reduces call count somewhat but keeps the dependency: the model still must explore before it can query, and prompt guidance to do so less often is inconsistently followed.",
+        "C": "Caching makes repeat lookups faster on the server, but each still costs the model a turn and context. The latency and token cost is paid on the client side.",
+        "D": "The model does not know this warehouse's schema from training. Removing `describe_table` would leave it guessing column names, producing invalid queries."
+      },
+      "difficulty": 3,
+      "visualId": "mcp-architecture",
+      "mindset": "When a tool forces discovery calls before every real call, return what discovery taught you alongside the result.",
+      "tags": [
+        "mcp-tools",
+        "tool-design",
+        "context-budget",
+        "latency"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/writing-tools-for-agents",
+        "https://modelcontextprotocol.io/specification/2025-06-18/server/tools"
+      ]
+    },
+    {
+      "id": "f-d2-z6-016",
+      "taskStatementId": "2.4",
+      "scenario": "Multi-Agent Research System: an MCP server exposes both `search_papers(query)` and a `search_papers_by_doi(doi)` tool, plus resources for the paper corpus's metadata and prompt templates for the report structure.",
+      "stem": "Which placement is MOST appropriate?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Both search tools are actions the model chooses between, so they are tools; the corpus metadata is reference material Claude can read when relevant, so it is a resource; the report structure is a reusable user-invoked template, so it is a prompt."
+        },
+        {
+          "id": "B",
+          "text": "Everything should be tools, because tools are the only mechanism an MCP server exposes to a model."
+        },
+        {
+          "id": "C",
+          "text": "The metadata should be a tool, because it needs to be searched, and the report structure should be a tool so the model can invoke it directly."
+        },
+        {
+          "id": "D",
+          "text": "Both search tools should be one resource, since they only return data, and the report structure belongs in the server's tool descriptions."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "MCP's primitives exist because these are genuinely different kinds of thing. **Tools** are operations the model decides to invoke; **resources** are data addressed by URI that the application or user reads into context, including templated ones for dynamic catalogs; **prompts** are reusable templates the user invokes, often surfacing as slash commands in Claude Code. Choosing by what you're exposing — an action, a piece of data, a template — keeps each primitive doing what it's for.",
+      "whyWrong": {
+        "B": "Servers expose tools, resources and prompts. Collapsing all three into tools loses the distinction between reading data and performing an action.",
+        "C": "Searching is an operation, so a search is a tool; but the corpus metadata is data the client reads, which is what resources are for. And prompts exist precisely so user-invoked templates don't masquerade as model-callable actions.",
+        "D": "Turning searches into resources makes them addressable but not invocable by the model, and burying a report structure in tool descriptions makes it invisible unless the model picks that tool."
+      },
+      "difficulty": 3,
+      "visualId": "mcp-architecture",
+      "mindset": "Pick the primitive by what you're exposing: an action is a tool, addressable data is a resource, a user template is a prompt.",
+      "tags": [
+        "mcp",
+        "resources",
+        "prompts",
+        "tools"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-06-18/architecture",
+        "https://code.claude.com/docs/en/mcp"
+      ]
+    },
+    {
+      "id": "f-d2-z6-017",
+      "taskStatementId": "2.4",
+      "scenario": "A company runs an MCP server that exposes internal deployment status. It is used by Claude Code in engineers' terminals and by two internal applications. The server runs over stdio for the CLI use case, and the team wants to serve the same tool set over HTTP for the applications.",
+      "stem": "Which statement about the two transports is MOST accurate?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Both can expose the same tools: stdio is for a server the client launches as a local subprocess, while Streamable HTTP is for a remote server reachable by several clients, and remote HTTP deployments need authentication and origin validation."
+        },
+        {
+          "id": "B",
+          "text": "The tool set must be reimplemented per transport, because a server can only speak one transport."
+        },
+        {
+          "id": "C",
+          "text": "stdio is deprecated in favour of HTTP and should not be used for new local servers."
+        },
+        {
+          "id": "D",
+          "text": "HTTP transport is insecure by design and must be fronted by a local proxy before use."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Transport is a deployment decision, not an API design one: the same tools can be served over **stdio** — where Claude Code launches the server as a child process and speaks JSON-RPC over its pipes — or **Streamable HTTP**, where the server is a remote service several clients connect to. Stdio is appropriate for local, single-user, no-network tooling; HTTP is what makes shared, centrally governed access possible. That governance requirement is exactly why remote HTTP deployments need authentication, and validation of the `Origin` header against DNS-rebinding attacks.",
+      "whyWrong": {
+        "B": "A server's tool definitions are transport-independent. Serving the same set over both transports is a normal pattern, not a rewrite.",
+        "C": "stdio remains the right transport for local subprocess servers — it's the simplest option and involves no network exposure at all.",
+        "D": "The security requirements around HTTP transport (authentication, `Origin` validation against DNS rebinding, binding to localhost where appropriate) exist precisely because the server must be secured, not because it is insecure by design."
+      },
+      "difficulty": 3,
+      "visualId": "mcp-architecture",
+      "mindset": "Same tools, different deployment: stdio for a local subprocess, HTTP for shared remote access with auth.",
+      "tags": [
+        "mcp-transport",
+        "stdio",
+        "http",
+        "security"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-06-18/basic/transports",
+        "https://code.claude.com/docs/en/mcp"
+      ]
+    },
+    {
+      "id": "f-d2-z6-018",
+      "taskStatementId": "2.4",
+      "scenario": "Developer Productivity with Claude Code: an engineer added an experimental MCP server with `claude mcp add --transport stdio notes -- npx notes-mcp` and no `--scope`, so it works for her in every repository.",
+      "stem": "She wants it available to all her repositories but invisible to teammates. What is the correct scope?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Re-add with `--scope user`, which writes to her personal configuration and applies to every repository she opens without appearing for anyone else."
+        },
+        {
+          "id": "B",
+          "text": "Add `--scope project` and commit the resulting file, since that is the only scope available."
+        },
+        {
+          "id": "C",
+          "text": "Leave it as it is, because the default scope already applies to all of her repositories only."
+        },
+        {
+          "id": "D",
+          "text": "Add the server's launch command to the project CLAUDE.md so Claude Code runs it in every repository."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Claude Code's scopes decide who sees a server. **User** scope is per-person across all their repositories; **project** scope is committed to `.mcp.json` and picked up by everyone who clones; **local** (the default) is per-person but tied to one project path. What she wants is user scope, stated explicitly. Sharing with the team would mean committing to `.mcp.json`, and CLAUDE.md is for context and instructions, not for configuring servers.",
+      "whyWrong": {
+        "B": "Project scope is exactly the opposite of what she wants — it commits the server so every teammate who clones gets it, after approving it.",
+        "C": "The default scope is local, which stores the server against this one project's path in her personal config. It does not follow her to other repositories.",
+        "D": "CLAUDE.md provides context and instructions to Claude. It does not configure or launch MCP servers."
+      },
+      "difficulty": 1,
+      "visualId": "mcp-architecture",
+      "mindset": "Scope decides audience: user for personal-everywhere, project for shared-and-committed, local for one repo.",
+      "tags": [
+        "mcp-config",
+        "scopes",
+        "claude-code",
+        "user-scope"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/mcp"
+      ]
+    },
+    {
+      "id": "f-d2-z6-019",
+      "taskStatementId": "2.5",
+      "scenario": "Developer Productivity with Claude Code: an agent needs to find every occurrence of the string `feature_enabled` across a repository, but it doesn't know which file types contain it. Its context is already about 60% full.",
+      "stem": "Which TWO tool calls together implement this correctly and cheaply? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Grep for the string with output restricted to file paths, to find which files contain it cheaply."
+        },
+        {
+          "id": "B",
+          "text": "Read the matching files (or the relevant slices of them) to see the actual occurrences."
+        },
+        {
+          "id": "C",
+          "text": "Bash with `cat -n src/**/*.ts` to print the source tree into context."
+        },
+        {
+          "id": "D",
+          "text": "Write a small Python script that walks the repository and prints the file names containing the string."
+        },
+        {
+          "id": "E",
+          "text": "Glob for `**/*.ts` to find every TypeScript file, then Read them all."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "This is **Grep to locate, Read to inspect** — Grep works on content and its path-only output mode is cheap even across thousands of files, and Read lets you target the lines that matter. Crucially, the team doesn't know the file types in advance, which rules out any filename-based approach. Both halves matter: without the Read, the model knows filenames but not what's in them.",
+      "whyWrong": {
+        "C": "Printing the tree into context is the most expensive option available and, at 60% context used, is likely to crowd out the answer. Bash output over the inline limit is also handed off to a file rather than shown.",
+        "D": "A custom script re-implements what Grep does, requires Bash permission for the operation, and produces results the model must parse from program output rather than from a dedicated tool.",
+        "E": "Glob matches names, not contents, and reading every TypeScript file loads the whole codebase into a context that is already 60% full."
+      },
+      "difficulty": 1,
+      "visualId": "tool-design",
+      "mindset": "Content search with Grep, paths only, then Read what it points at. Glob for names, never for contents.",
+      "tags": [
+        "grep-tool",
+        "read-tool",
+        "context-budget",
+        "multi-select"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/tools-reference",
+        "https://code.claude.com/docs/en/best-practices"
+      ]
+    },
+    {
+      "id": "f-d2-z6-020",
+      "taskStatementId": "2.5",
+      "scenario": "Developer Productivity with Claude Code: the agent needs to create a new migration file `db/migrations/0042_add_orders_index.sql`. The file does not exist. An engineer wants the change to be captured by the repository's PostToolUse formatting hook and be revertible with `/rewind`.",
+      "stem": "Which approach satisfies both requirements?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Use Write with the new file's path and full contents, so the hook matches on `Edit|Write` and the checkpoint records the file."
+        },
+        {
+          "id": "B",
+          "text": "Use Bash with `cat > db/migrations/0042_add_orders_index.sql <<'EOF'`, which is faster and avoids a second tool call."
+        },
+        {
+          "id": "C",
+          "text": "Use Edit with an empty `old_string`, since the file is empty until it's written."
+        },
+        {
+          "id": "D",
+          "text": "Use Read first to confirm the file doesn't exist, then Bash to write it."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "**Write** is the tool for creating a file, and it is also where the deterministic controls live: hooks matched on `Edit|Write` fire, permission rules that watch file writes apply, and checkpoints track the file so `/rewind` can restore it. A file created by a Bash command passes through none of those — the hook doesn't run, the change isn't recorded, and it can't be rewound. Both requirements point to the same answer here, which is the usual pattern: use the dedicated file tool so the controls apply.",
+      "whyWrong": {
+        "B": "A heredoc writes the file, but the PostToolUse hook doesn't fire for Bash, and checkpoints don't capture files changed by shell commands. The change exists but is invisible to both controls.",
+        "C": "Edit performs exact string replacement in an existing file. There is no text to match yet, so this doesn't create anything.",
+        "D": "The read-before-overwrite check exists to protect files that already have content. A confirmed-absent file doesn't need it, and Bash reintroduces the control gap."
+      },
+      "difficulty": 2,
+      "visualId": "tool-design",
+      "mindset": "New file: Write. Pointed change: Edit. Run something: Bash — and use the file tools so hooks and checkpoints apply.",
+      "tags": [
+        "write-tool",
+        "edit-tool",
+        "bash-tool",
+        "hooks",
+        "checkpointing"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/tools-reference",
+        "https://code.claude.com/docs/en/hooks",
+        "https://code.claude.com/docs/en/checkpointing"
+      ]
+    },
+    {
+      "id": "f-d2-z6-021",
+      "taskStatementId": "2.5",
+      "scenario": "Developer Productivity with Claude Code: an engineer asks the agent to run the test suite and report failures. The agent has already made several edits with Edit, and the engineer wants to know whether the change broke anything before committing.",
+      "stem": "Which combination is the MOST appropriate?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Bash to run the test command, then report the actual output — running code is objective evidence in a way that rereading the diff is not."
+        },
+        {
+          "id": "B",
+          "text": "Read the changed files again and ask the agent to confirm the logic is correct, since Bash is only for installing things."
+        },
+        {
+          "id": "C",
+          "text": "Use Grep for the failing test names in the source, to confirm the fix addresses them."
+        },
+        {
+          "id": "D",
+          "text": "Write a summary of the change to a NOTES file, so the next session can see what was done."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Bash is the tool for **running** things — tests, builds, git — and a test run produces evidence rather than an opinion. That's why it's the right tool here regardless of which tool made the edits. Rereading a diff asks the model to grade its own work, which is exactly the check most likely to agree with it; Grep locates text and doesn't execute anything; and writing notes documents the change without verifying it.",
+      "whyWrong": {
+        "B": "Bash runs commands — that is its purpose. And self-review is the weakest possible verification: the same reasoning that produced the change is asked to confirm it.",
+        "C": "Grep searches file contents. Finding where a test is defined says nothing about whether it now passes.",
+        "D": "Documenting the change is useful for continuity but proves nothing about correctness. Nothing has actually been executed."
+      },
+      "difficulty": 1,
+      "mindset": "Read and Grep find; Edit and Write change; Bash runs. Verification means running the thing.",
+      "tags": [
+        "bash-tool",
+        "verification",
+        "testing",
+        "tool-selection"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/tools-reference",
+        "https://code.claude.com/docs/en/best-practices"
+      ]
+    },
+    {
+      "id": "f-d2-z6-022",
+      "taskStatementId": "2.5",
+      "scenario": "Developer Productivity with Claude Code: a repository has 40,000 files. An engineer asks the agent to find all files matching `**/*.test.ts`. Its context is about half full.",
+      "stem": "Which tool should the agent use, and what does it return?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Glob with that pattern — it matches on file paths and returns matching files sorted by modification time, cheapest first in context terms."
+        },
+        {
+          "id": "B",
+          "text": "Grep with that pattern, because Grep can match file names as well as contents."
+        },
+        {
+          "id": "C",
+          "text": "Bash with `find . -name '*.test.ts'`, which gives the most control over the output format."
+        },
+        {
+          "id": "D",
+          "text": "Read the repository root and let the agent infer the file list from the directory listing shown."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Filename pattern matching is **Glob's** job: it matches on paths and returns the matching file paths, sorted by modification time, without reading any contents — which is what makes it cheap against 40,000 files. Grep is for searching *contents*, so pointing it at a filename pattern is the wrong tool; `find` in Bash works but reinvents a dedicated tool and costs a permission prompt; and reading a directory listing still requires reading contents to identify test files.",
+      "whyWrong": {
+        "B": "Grep searches file contents. Given a glob pattern it has nothing to match against unless the pattern also appears inside files.",
+        "C": "`find` can produce the list, but it bypasses the dedicated tool — and Bash commands need their own permissions and can produce output large enough to be handed off to a file.",
+        "D": "Read returns file contents, not a directory index. Reading every root-level file to infer the structure would spend exactly the context this question is trying to protect."
+      },
+      "difficulty": 1,
+      "mindset": "Glob finds files by name and path, cheap and sorted; Grep finds files by what's inside them.",
+      "tags": [
+        "glob-tool",
+        "tool-selection",
+        "context-budget",
+        "large-repositories"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/tools-reference"
+      ]
+    }
+  ]
+}

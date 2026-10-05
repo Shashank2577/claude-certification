@@ -1,0 +1,1205 @@
+{
+  "certId": "developer",
+  "domainId": "d4-eval-debugging",
+  "questions": [
+    {
+      "id": "v-d4-z3-001",
+      "taskStatementId": "4.1",
+      "scenario": "Brantley Insurance submits its overnight claims-extraction job through the Message Batches API — 180,000 invoices, each tagged with a `custom_id` derived from the claim number. Last night 4,200 results came back with `processing_status` `errored` and an `invalid_request_error`, 900 came back `expired`, and the rest `succeeded`. The on-call engineer re-submits all 185,100 non-succeeded requests in one new batch.",
+      "stem": "What is wrong with that recovery, and what is the correct design?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Resubmitting everything is wasteful but correct, since `errored` and `expired` results carry no model output and therefore cost nothing to regenerate. Brantley is billed only for results it did not receive."
+        },
+        {
+          "id": "B",
+          "text": "A batch is processed as a unit, so a single `invalid_request_error` result means the whole batch is unusable and everything must be resubmitted."
+        },
+        {
+          "id": "C",
+          "text": "Build the retry batch from the results file, keyed by `custom_id`: re-submit only the `errored` and `expired` entries. An `invalid_request_error` in a batch means that individual request was malformed, so fix or quarantine it rather than sending it again unchanged — while `expired` entries never reached the model and are the correct thing to retry."
+        },
+        {
+          "id": "D",
+          "text": "Brantley should abandon batching for this job and switch to synchronous calls, since batch results cannot be correlated back to inputs."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Message Batches gives four result types and each one means something different for recovery. `succeeded` holds the message. `errored` means the request encountered an error and no message was created — and a batch can contain `invalid_request_error` entries whose individual requests were rejected, so resubmitting them byte-identical reproduces the same failure. `canceled` means a user cancelled before the request was sent, and `expired` means the batch hit its 24-hour expiration before the request was sent to the model. Only `errored` and `expired` belong in a retry batch, and only the `expired` ones are safe to resend verbatim; the `errored` ones need triage first. Correlation is not the obstacle to synchronous calls either: each request carries a `custom_id`, so a retry batch is built by reading the results file and selecting by `custom_id` rather than by position. Brantley is not billed for `errored`, `canceled` or `expired` results.",
+      "whyWrong": {
+        "A": "The first clause is right and the conclusion is wrong. Brantley is not billed for unsucceeded results, but resubmitting 185,100 requests still consumes the batch's processing capacity and rate limits, and it re-sends thousands of requests that are known to be malformed.",
+        "B": "Each request in a batch is processed independently, so the docs explicitly say you can mix request types within a single batch. One bad request does not invalidate the rest.",
+        "D": "Batch results do correlate: each result carries the `custom_id` the caller supplied. Nothing about correlation requires leaving the Batches API."
+      },
+      "difficulty": 2,
+      "visualId": "error-recovery",
+      "mindset": "In a batch, classify every non-succeeded result before retrying: `expired` never reached the model, `errored` needs triage, and only then does a retry batch make sense.",
+      "tags": [
+        "message-batches",
+        "recovery",
+        "custom-id"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/batch-processing"
+      ]
+    },
+    {
+      "id": "v-d4-z3-002",
+      "taskStatementId": "4.1",
+      "scenario": "Brantley's claims pipeline starts accepting scanned multi-page PDFs. Some claims now carry 300 pages of images and 120,000 extracted characters, and a subset of requests come back HTTP 413 `request_too_large`. The retry helper treats 413 like a 5xx and keeps trying with exponential backoff for four minutes before giving up.",
+      "stem": "What does the API documentation say about this failure, and what is the correct response?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The ceiling is a hard request-size limit: 32 MB for the Messages API and Token Counting API, 256 MB for the Batch API, 500 MB for the Files API, and exceeding it returns 413 `request_too_large`. On the direct Claude API Cloudflare returns this before the request reaches the API servers, so the request never ran and no retry can help. Fix the payload: page or split the document, or move large files to the Files API."
+        },
+        {
+          "id": "B",
+          "text": "413 is a transient capacity signal like 529, so the right response is a longer backoff window. The request never reached Anthropic's servers, which confirms it was a network-side throttle."
+        },
+        {
+          "id": "C",
+          "text": "The limit is on input tokens rather than bytes. Reducing the extracted text is pointless; the only lever is switching to a model with a larger context window."
+        },
+        {
+          "id": "D",
+          "text": "413 means the organization exceeded its monthly spend cap and the retry helper is misclassifying it as a size error."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "`request_too_large` is a payload-ceiling failure, not a capacity signal, so the retry strategy is exactly backwards. The documented per-endpoint maximums are 32 MB for the Messages API, 32 MB for Token Counting, 256 MB for the Batch API and 500 MB for the Files API, and exceeding one returns 413 `request_too_large`. On the direct Claude API, Cloudflare returns the error before the request reaches the API servers — so there is no `request_id`, no partial work, and nothing a retry could change. The correct recovery is to change the request: page or chunk the document, extract less text, or move the large artefact behind the Files API and reference it. Contrast the neighbours: 504 `timeout_error` and 529 `overloaded_error` are the transient ones, and a monthly spend cap surfaces as a 429 `rate_limit_error` with no `retry-after` header.",
+      "whyWrong": {
+        "B": "413 is a size failure, and the fact that the request never reached Anthropic's servers is the argument against a retry, not for one. Backoff only helps for transient conditions such as 429, 5xx and 529.",
+        "C": "The limit is measured in bytes of request payload, not input tokens. A larger context window does not raise the 32 MB request ceiling.",
+        "D": "A monthly spend cap returns 429 `rate_limit_error`, not 413. The two have entirely different causes and different correct responses."
+      },
+      "difficulty": 1,
+      "visualId": "error-recovery",
+      "mindset": "Classify by whether the request ran: 413 means Cloudflare rejected it on size, so fix the payload — retrying a payload ceiling just burns four minutes per document.",
+      "tags": [
+        "errors",
+        "payload-limits",
+        "recovery"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://platform.claude.com/docs/en/api/errors#request-size-limits"
+      ]
+    },
+    {
+      "id": "v-d4-z3-003",
+      "taskStatementId": "4.1",
+      "scenario": "Brantley's agent calls an internal MCP server for policy lookups. Over a week the on-call log shows three distinct shapes: (a) `tools/call` returns a result with `isError: true` and the text 'no policy found for code PA-4471'; (b) the client's connection to the stdio subprocess dies and the tool call never returns; (c) the server responds with a JSON-RPC error object instead of a result.",
+      "stem": "How should the pipeline classify these three, and what differs between them?",
+      "options": [
+        {
+          "id": "A",
+          "text": "All three are tool errors: the model produced a tool call it should not have made. Return them all to the model as `isError` results and let it decide whether to retry."
+        },
+        {
+          "id": "B",
+          "text": "(a) is a tool-level error — a completed `tools/call` whose result carries `isError: true`, and the model can legitimately react to it. (b) is a transport failure: the subprocess died, so the call never completed and the fix is reconnection, not a message to the model. (c) is a protocol-level failure between client and server. Only (a) is something the model should see and reason about."
+        },
+        {
+          "id": "C",
+          "text": "(a) and (c) are both tool errors and (b) is the only transport failure, because a JSON-RPC error object is the documented way for a server to report a failed tool call."
+        },
+        {
+          "id": "D",
+          "text": "(b) and (c) are equivalent, since in both cases the client cannot distinguish a broken server from a broken tool. Only (a) carries information back to the model."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Three different layers, three different remedies. (a) is the designed path for a tool that ran and failed: the call completed, the result carries `isError: true`, and the content is what the model reads — a legitimate 'this policy does not exist' is exactly the kind of thing the model should be able to reason about. (b) is a transport failure. In the stdio transport the client launches the server as a subprocess and exchanges newline-delimited JSON-RPC on stdin and stdout; if that process dies, the call never completed, there is no result to return to the model, and the only correct action is to reconnect and retry the call at the client level. (c) is a protocol-level failure — the server answered with an error object rather than a result, which is a server bug or a version mismatch rather than a tool outcome. The debugging consequence is that your telemetry must separate these, because only one of them is something the model can fix by changing its next move.",
+      "whyWrong": {
+        "A": "The model did nothing wrong in any of the three cases. (b) and (c) never produced a tool result at all, so there is nothing for the model to read or react to.",
+        "C": "A JSON-RPC error object is not the documented channel for a failed tool call. Tool failures are reported as a result with `isError: true`; a JSON-RPC error is a protocol-level fault.",
+        "D": "The client can distinguish them cleanly: a completed call with `isError` versus a dead subprocess versus an error object instead of a result. Collapsing (b) and (c) is exactly what makes these incidents hard to diagnose."
+      },
+      "difficulty": 2,
+      "visualId": "error-recovery",
+      "mindset": "Sort every MCP failure into transport, protocol or tool-result before you log or retry it — only the tool-result layer is something the model can act on.",
+      "tags": [
+        "mcp",
+        "error-taxonomy",
+        "observability"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-06-18/basic/transports",
+        "https://modelcontextprotocol.io/specification/2025-06-18/server/tools"
+      ]
+    },
+    {
+      "id": "v-d4-z3-004",
+      "taskStatementId": "4.1",
+      "scenario": "Brantley's adjudicator streams SSE. Two weeks ago one stream emitted `event: error` with `data: {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"Overloaded\"}}` after the HTTP 200 and after 8,000 tokens of text had already been delivered to the UI. The pipeline's status-code handler never saw a non-200 and treats the partial text as a complete answer.",
+      "stem": "Why does the existing error handling miss this, and what is the correct consumer design?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Streaming has its own error path. Because the API already returned 200, status-code handling never fires: you must handle `error` events inside the stream, treat the partial text as untrusted, and either discard it or resume deliberately. Note that an `overloaded_error` mid-stream corresponds to what would be a 529 in a non-streaming context, so backoff applies to the retried call, not to the half-finished output."
+        },
+        {
+          "id": "B",
+          "text": "The API promises that a 200 stream never carries an error event, so this is a bug in the proxy rather than documented behaviour, and the pipeline should report it upstream."
+        },
+        {
+          "id": "C",
+          "text": "The right fix is to disable streaming for this route and use non-streaming calls, because streaming cannot surface errors after the headers are sent."
+        },
+        {
+          "id": "D",
+          "text": "Because the response was 200, the call succeeded as far as HTTP is concerned. Store the partial text and let the next turn continue from it, since re-sending would double-charge for tokens already generated."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The docs are explicit that streaming breaks the normal error mechanisms: when you receive a streaming response over SSE, an error can occur after the API returns a 200, and in that case error handling does not follow the standard status-code path. The shape is an `error` event inside the stream, and `overloaded_error` is the documented example. The consumer therefore needs its own branch for `event: error`, and it must decide explicitly what to do with the 8,000 characters already delivered — they are partial output from a failed call and should not be treated as a complete adjudication. Retry with backoff is appropriate because `overloaded_error` is transient, but the retry starts the call again, which is precisely why the partial text cannot simply be kept as if it were a result. This is also a strong argument for keeping the adjudicator's structured output short enough that truncation and mid-stream failure are distinguishable from a genuinely short answer.",
+      "whyWrong": {
+        "B": "The opposite of documented behaviour. The errors page says outright that an error can occur after a 200 on a streaming response and that the standard mechanisms do not apply.",
+        "C": "Non-streaming calls have their own long-request problems, including idle-connection drops and the SDK's 10-minute validation on non-streaming requests. Streaming is the documented answer for long-running work, not the problem.",
+        "D": "A 200 does not make a failed stream a success. Re-sending does not double-charge in a way that justifies storing a partial answer — it produces a second billed call, which is a cost question, not a correctness argument for keeping the fragment."
+      },
+      "difficulty": 2,
+      "visualId": "error-recovery",
+      "mindset": "Once the status line is 200, the stream is your only error channel — handle `error` events explicitly and never let partial output masquerade as a finished answer.",
+      "tags": [
+        "streaming",
+        "error-events",
+        "recovery"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/streaming",
+        "https://platform.claude.com/docs/en/api/errors"
+      ]
+    },
+    {
+      "id": "v-d4-z3-005",
+      "taskStatementId": "4.1",
+      "scenario": "Brantley's adjudicator streams tool calls. For `submit_claim`, the `tool_use` block's `input` arrives as a sequence of `input_json_delta` events carrying partial JSON strings. On three occasions the stream ended after the deltas but before the `content_block_stop` event, and the pipeline executed the tool with a half-parsed argument object — posting a claim for the wrong claimant.",
+      "stem": "What is the correct rule for the SSE consumer, and what should happen to a stream that ends mid-`tool_use`?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Accumulate `input_json_delta` strings and parse the JSON once, at `content_block_stop`; the final `tool_use.input` is always an object, whereas the deltas are partial strings. If the stream ends before `content_block_stop`, treat the tool call as never having been issued — do not execute it, and retry the request from the last complete assistant message."
+        },
+        {
+          "id": "B",
+          "text": "Parse each delta as it arrives and execute as soon as the accumulated object parses. Streaming exists to reduce latency, and waiting for `content_block_stop` defeats that."
+        },
+        {
+          "id": "C",
+          "text": "Partial JSON that fails to parse should be repaired — close any open braces and coerce missing fields to null — so the tool still runs. Losing a claim is worse than posting one with an incomplete argument."
+        },
+        {
+          "id": "D",
+          "text": "The tool call is safe to execute because the assistant turn has already been committed to the transcript. Retrying the request would create a duplicate claim."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The streaming contract is explicit: the deltas that correspond to a `tool_use` block's `input` field are partial JSON strings, whereas the final `tool_use.input` is always an object, and you accumulate the string deltas and parse the JSON once you receive `content_block_stop`, using a partial-JSON parsing library or the SDK's streaming helpers. A stream that stops before `content_block_stop` has therefore produced no complete tool call. Executing a repaired or half-parsed argument object is how the wrong claimant got posted: the model may never have finished deciding, and a syntactically valid prefix is not the model's intent. Recovery starts the request again from the last complete assistant message, which is safe precisely because the interrupted turn never produced a complete tool call. Note the related but distinct case: a stream that completes with a `tool_use` block and no error is a genuine call, and the parallel-tool guidance requires one `tool_result` per `tool_use`, including `is_error: true` with a brief explanation for any you chose not to run.",
+      "whyWrong": {
+        "B": "Parsable prefixes are not complete calls. The documented instruction is to accumulate the deltas and parse once at `content_block_stop`; the latency saved by guessing is the latency spent posting a wrong claim.",
+        "C": "Repairing partial JSON manufactures arguments the model never emitted. The failure mode here was a claim for the wrong claimant, which is exactly what fabrication of missing fields produces.",
+        "D": "A committed assistant turn is not a completed tool call when the block never stopped. And because the interrupted turn issued no complete call, retrying does not duplicate a posting — the opposite reasoning produced the incident."
+      },
+      "difficulty": 3,
+      "visualId": "error-recovery",
+      "mindset": "A tool call exists only at `content_block_stop`: before that, deltas are fragments, so never execute on a parseable prefix.",
+      "tags": [
+        "streaming",
+        "tool-use",
+        "defensive-parsing"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/streaming",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/parallel-tool-use"
+      ]
+    },
+    {
+      "id": "v-d4-z3-006",
+      "taskStatementId": "4.1",
+      "scenario": "Brantley's reconcile agent is a multi-turn tool loop with a 30-turn ceiling. Every HTTP call in it shares one 20-second client timeout, and the SDK's own retries sit above that. When an incident happens the job either hangs for many minutes or fails at an arbitrary point inside a turn, and the runbook has no idea which timeout fired.",
+      "stem": "Which statement about the timeout budget in a multi-turn agent loop is correct?",
+      "options": [
+        {
+          "id": "A",
+          "text": "A single HTTP client timeout is the wrong instrument, because it bounds one call rather than the run. The run's real terminator is a response with no tool calls; `max_turns` is a separate ceiling that counts tool-use turns only; and the SDKs validate that non-streaming Messages requests are not expected to exceed 10 minutes, so the documented levers are different ones. Budget at the turn and run level explicitly — record the turn index and the elapsed time at each API call — and treat an exhausted budget as a distinct `ResultMessage` subtype so the runbook can tell a budget stop from a network fault."
+        },
+        {
+          "id": "B",
+          "text": "Raise the HTTP client timeout to fifteen minutes so the whole loop fits inside it, since the loop makes its calls sequentially."
+        },
+        {
+          "id": "C",
+          "text": "Set `max_turns` to the number of HTTP calls instead of turns, so the ceiling and the timeout describe the same unit."
+        },
+        {
+          "id": "D",
+          "text": "Remove the client timeout entirely and let the SDK's retries and the 10-minute server-side validation decide when a request has failed."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The failure in the runbook is a units problem. A client timeout bounds one HTTP call, while what the on-call engineer needs to reason about is a run: how long it may take, how many tool-using turns it may take, and which of those was exhausted. The documented facts line up into a workable design. The loop's real terminator is a response with no tool calls, and `max_turns` is a distinct ceiling counting tool-use turns only — so a run can hit it long before any timeout fires. The SDKs separately validate that non-streaming Messages requests are not expected to exceed 10 minutes, which is why long work belongs on a streamed or batched transport rather than behind a bigger socket timeout. So the budget has to be explicit at the turn level with the turn index and elapsed time recorded per call, and an exhausted budget should surface as its own `ResultMessage` subtype — `error_max_turns` or `error_max_budget_usd` — because that recorded reason is what separates a deliberate stop from a network fault in triage.",
+      "whyWrong": {
+        "B": "Equates a per-call budget with a run budget and produces a timeout so long that an operator cannot distinguish a hang from progress. The loop's calls are sequential, which is exactly why the bound has to be expressed in turns and elapsed time rather than in one socket timeout.",
+        "C": "Mixes two units. `max_turns` counts tool-use turns, not HTTP calls, and one turn can contain several calls — so the ceiling and the call count do not describe the same thing.",
+        "D": "Removes the only bound the operator controls and delegates to a server-side validation that is a client-side SDK guard, not a deadline the service enforces on a multi-turn loop."
+      },
+      "difficulty": 2,
+      "visualId": "error-recovery",
+      "mindset": "A client timeout bounds a call; a run needs a turn-and-elapsed budget, and an exhausted budget should report its own reason.",
+      "tags": [
+        "timeouts",
+        "max-turns",
+        "observability"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors#long-requests",
+        "https://code.claude.com/docs/en/agent-sdk/overview"
+      ]
+    },
+    {
+      "id": "v-d4-z3-007",
+      "taskStatementId": "4.1",
+      "scenario": "Brantley's platform team writes a client wrapper used by nine services. It adds its own three-attempt exponential backoff on top of the SDK's defaults, and the SDK is configured with `max_retries: 4` because a previous owner read that connection errors 'sometimes' happen. During last month's provider incident, one `post_adjudication` call reached Brantley's claims system five times.",
+      "stem": "What is the actual retry behaviour here, and what should the standard say?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The two layers multiply: the SDK automatically retries transient failures — connection errors, rate limits and 5xx — with exponential backoff, twice by default and configurable with `max_retries`, so `max_retries: 4` means up to five attempts per call and the wrapper's outer loop multiplies that again. The standard should name one layer as the retry owner, keep retries on transient classes only, and make side-effecting tool calls idempotent so a retry cannot duplicate them."
+        },
+        {
+          "id": "B",
+          "text": "The SDK's retries are disabled as soon as application code sets its own backoff loop, because the SDK detects a surrounding retry loop and stands down to avoid nested retries."
+        },
+        {
+          "id": "C",
+          "text": "`max_retries: 4` means four retries after the first attempt, so five calls to the API, and the wrapper's loop is the reason the claim was posted five times. Raising the SDK limit is the fix."
+        },
+        {
+          "id": "D",
+          "text": "Retries should be removed entirely. The right design is to fail fast and page a human, because a provider incident is not something automated retries can survive."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The documented SDK behaviour is that it automatically retries transient failures — connection errors, rate limits and 5xx server errors — with exponential backoff, twice by default, honouring `retry-after` when present, and that `max_retries` configures or disables that. It does not detect a surrounding application retry loop and stand down, so two layers multiply: five inner attempts times three outer attempts is fifteen potential calls, and any of them can arrive after the ERP-style side effect has already committed. That is why the standard has to answer two questions rather than one: which layer owns retries (pick one, and configure the other deliberately), and what makes a retried operation safe. The second is the idempotency requirement, because a retry that duplicates an adjudication is a data-integrity incident, not a latency problem. Neither raising the limit nor removing retries addresses that.",
+      "whyWrong": {
+        "B": "There is no such hand-off. The SDK retries according to its own configuration regardless of what the application does, which is exactly why the two layers compound.",
+        "C": "It attributes the duplication to the wrapper alone and then recommends raising the SDK limit, which multiplies the problem. Five calls is also not a limit — the wrapper's loop makes it fifteen potential attempts.",
+        "D": "Failing fast on every transient failure turns a 30-second provider blip into a page. Retrying transient classes with backoff is the documented behaviour; what needs fixing is the layering and the idempotency of side effects."
+      },
+      "difficulty": 3,
+      "visualId": "error-recovery",
+      "mindset": "Name one layer as the retry owner and make every retried side effect idempotent — nested backoff plus non-idempotent tools is how one call becomes fifteen.",
+      "tags": [
+        "retries",
+        "idempotency",
+        "observability"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://platform.claude.com/docs/en/build-with-claude/batch-processing"
+      ]
+    },
+    {
+      "id": "v-d4-z3-008",
+      "taskStatementId": "4.1",
+      "scenario": "Brantley's recovery matrix is being rewritten. A reviewer proposes a blanket policy: 'retry every non-2xx response up to five times with exponential backoff, except 429, which we already handle separately.' The pipeline includes calls that post an adjudication and calls that only read policy text.",
+      "stem": "Which assessment of that policy is most accurate?",
+      "options": [
+        {
+          "id": "A",
+          "text": "It is wrong in both directions. 4xx responses other than 429 are deterministic — 400 `invalid_request_error`, 401 `authentication_error`, 403, 404 `not_found_error` and 413 `request_too_large` all fail identically on retry, so retrying them adds latency and hides the defect; and a blanket retry of 5xx and 529 is unsafe for side-effecting calls unless they are idempotent. The matrix should pair each failure class with its own strategy."
+        },
+        {
+          "id": "B",
+          "text": "It is correct. All non-2xx responses other than 429 are transient server conditions, and excluding 429 is the only special case because rate limits carry a `retry-after` header."
+        },
+        {
+          "id": "C",
+          "text": "It is nearly right but should also exempt 529 `overloaded_error`, since the docs warn that 529 can occur during high traffic across all users and therefore indicates a problem outside the client's control."
+        },
+        {
+          "id": "D",
+          "text": "It is wrong only because of the retry count. Five attempts is too many for a read path; the classification of 4xx versus 5xx is fine as written."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "A blanket retry policy is wrong in both directions, and the two halves fail for different reasons. On classification: the retryable set is genuinely narrow — connection errors, 429 `rate_limit_error`, 5xx and 529 `overloaded_error` — while 4xx responses other than 429 are deterministic client-side conditions. A 400 fails the same way five times, a 401 needs a rotated credential rather than patience, a 404 needs the identifier fixed, and 413 needs a smaller payload. Retrying them converts a fast, obvious failure into a slow, confusing one. On safety: the SDK's automatic retries are safe for the API call precisely because creating a message is not a side effect on the client's world — but a retried `post_adjudication` is. So the matrix needs two columns, failure class and recovery strategy, with idempotency as the precondition for retrying anything that mutates. 529 is the opposite of exempt: it is one of the documented retryable transient conditions.",
+      "whyWrong": {
+        "B": "Inverts the classification. 4xx other than 429 is the deterministic set; 429, 5xx and 529 are the transient set, and a spend-cap 429 is the one 429 variant that will not clear by retrying.",
+        "C": "529 is the clearest case for retrying with backoff, not for exempting. Being caused by load across all users is exactly what makes it transient, and it is why the SDK retries 5xx.",
+        "D": "The count is not the problem. Retrying a 400 five times is wrong regardless of whether it is three attempts or five, and a side-effecting call needs idempotency before any count is safe."
+      },
+      "difficulty": 2,
+      "visualId": "error-recovery",
+      "mindset": "Retry only what is transient — connection errors, 429, 5xx, 529 — and only where the operation is safe to repeat.",
+      "tags": [
+        "retries",
+        "error-taxonomy",
+        "recovery"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://platform.claude.com/docs/en/api/rate-limits"
+      ]
+    },
+    {
+      "id": "v-d4-z3-009",
+      "taskStatementId": "4.1",
+      "scenario": "Brantley's adjudicator is a Claude app with a small toolset. During last month's provider incident, every request in the pipeline retried 529s at full concurrency, so 8,000 claims retried simultaneously and the recovery attempt extended the overload for eleven minutes. A colleague proposes adding `max_retries` tuning; another proposes a circuit breaker.",
+      "stem": "What does a circuit breaker buy here that more backoff does not, and what should it do?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Backoff alone synchronises retries into waves, so each wave re-hits a recovering API at once. A circuit breaker changes the failure mode: after a threshold of consecutive failures it opens and calls fail fast without touching the network, returning a distinct 'provider unavailable' signal instead of a retried request. After a cooldown it admits a limited number of probe requests, and a success closes it. That bounds both load and latency, and the distinct signal is what lets the pipeline shed load or queue rather than report a per-request 529."
+        },
+        {
+          "id": "B",
+          "text": "A circuit breaker is a cache for error responses. It remembers the last 529 body and replays it for subsequent calls so the client does not have to parse the error each time."
+        },
+        {
+          "id": "C",
+          "text": "The real fix is to raise `max_retries` so that fewer claims are lost while the provider recovers. A breaker would increase the number of failed claims, which is the opposite of the goal."
+        },
+        {
+          "id": "D",
+          "text": "A circuit breaker belongs in front of the claims database rather than the model API, because only a persistent store can decide whether the provider is available."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The distinguishing property is that a breaker stops sending requests. Backoff with jitter spreads attempts but, with 8,000 independent callers, still produces waves that arrive together and keep a struggling provider loaded; that is a plausible reading of why the overload lasted eleven minutes. A circuit breaker is a state machine around the dependency: closed and passing traffic, open after a threshold of consecutive failures and failing fast locally with a distinguishable signal, half-open after a cooldown admitting a limited number of probes, and closed again on success. Two properties matter for Brantley specifically. First, latency: an open breaker returns in microseconds instead of after five timeouts, which is the difference between a degraded pipeline and a stalled one. Second, the signal is semantically different from a 529, so the pipeline can queue, shed load or degrade to a smaller model deliberately rather than reporting eight thousand identical provider errors. Breakers belong around the network dependency, whatever that dependency is.",
+      "whyWrong": {
+        "B": "A breaker does not cache or replay error bodies. It makes no network call while open, which is the entire point.",
+        "C": "More retries against an overloaded provider is what deepened the incident. The goal is not to lose fewer claims to the provider but to stop adding load and to fail in a way the pipeline can act on.",
+        "D": "The breaker belongs around the failing dependency, here the model API. No store is required, and putting it in front of the database would not observe provider availability at all."
+      },
+      "difficulty": 3,
+      "visualId": "deployment-topology",
+      "mindset": "Backoff spreads load; a circuit breaker stops sending — with thousands of independent callers, stopping is what shortens the incident.",
+      "tags": [
+        "circuit-breaker",
+        "rate-limits",
+        "recovery"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://platform.claude.com/docs/en/api/rate-limits"
+      ]
+    },
+    {
+      "id": "v-d4-z3-010",
+      "taskStatementId": "4.1",
+      "scenario": "Brantley's adjudicator calls `get_claim_summary` with a strict schema requiring `excess_amount` to be a number and `claim_type` to be one of `liability`, `property`, `medical`, `other`. Two incidents are being conflated in triage: one where the tool received `{\"excess_amount\": \"n/a\"}` and one where it received `{\"claim_type\": \"Credit memo\"}` when the enum listed `credit_memo`.",
+      "stem": "What is the correct reading of these two cases, and what does it imply about the schema guarantee?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Both are schema-valid-but-wrong rather than malformed, and that is exactly the documented gap: strict tool use and structured outputs guarantee the shape of the output, not the meaning of the values. One case is a type mismatch — a string where a number is expected — and the other is the documented enum-casing caveat, where the response completes normally with no error and no special `stop_reason`, yet a value differs from the schema only in capitalization. The response says to compare enum values case-insensitively and avoid enums that differ only in capitalization; the type mismatch needs an application-level check or a nullable field."
+        },
+        {
+          "id": "B",
+          "text": "The first is malformed and the second is schema-valid. Strict tool use guarantees types, and it is the enum casing that is explicitly not guaranteed."
+        },
+        {
+          "id": "C",
+          "text": "Both indicate that `strict: true` was not actually applied to the tool. With strict mode on, neither a wrong type nor an off-enum value can be returned."
+        },
+        {
+          "id": "D",
+          "text": "Both are expected and harmless. Structured outputs add a system prompt describing the format, so the model self-corrects, and the casing caveat only applies to JSON outputs rather than to strict tool use."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "This is the single most important limit on structured output, and it is documented in both directions. Strict tool use and `output_config.format` guarantee schema compliance in most cases, not semantic correctness — the guarantee is about the shape of the object, and the documented exceptions are refusals (`stop_reason: \"refusal\"`, HTTP 200, billed, output may not match), truncation (`stop_reason: \"max_tokens\"`, output may be incomplete) and enum value casing. The casing caveat is the sharpest one for Brantley: structured outputs do not guarantee the capitalization of string `enum` and `const` values, the response completes normally with no error and no special `stop_reason`, and the guidance is to compare enum values case-insensitively and avoid enum values that differ only in capitalization. The `excess_amount: \"n/a\"` case is the complementary failure: the object validated, so the guarantee held, but the value was not a number — which means the schema or the application has to allow for it, for example with a nullable field plus a presence check. Neither case indicates that strict mode was off.",
+      "whyWrong": {
+        "B": "Splits the guarantee the wrong way. Types are exactly what the grammar constrains; it is the capitalization of `enum` and `const` string values that is explicitly not guaranteed, and that applies to strict tool use as well as JSON outputs.",
+        "C": "`strict: true` constrains the grammar, and the docs state it does not guarantee string `enum` and `const` capitalization. A value differing only in case returns normally with no error, which is precisely what happened.",
+        "D": "The caveat applies to strict tool use as well as JSON outputs. And nothing self-corrects: a case-insensitive comparison is an application responsibility, and a string where a number belongs is a validation failure you must design for."
+      },
+      "difficulty": 3,
+      "visualId": "structured-output",
+      "mindset": "The schema guarantee is about shape, not meaning: plan for refusals, truncation and enum casing, and validate values the grammar cannot constrain.",
+      "tags": [
+        "structured-output",
+        "strict-tool-use",
+        "defensive-parsing"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/strict-tool-use"
+      ]
+    },
+    {
+      "id": "v-d4-z3-011",
+      "taskStatementId": "4.1",
+      "scenario": "Brantley must show a regulator, six months from now, that a specific claim was mis-adjudicated by the model rather than corrupted in transit. The pipeline records HTTP status codes and error strings, plus the adjudication verdict and the `claim_id`. Last month's retention window has already expired for the request payloads.",
+      "stem": "Which groups of fields must be in the trace for that reconstruction to be possible?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The request context — the exact `model`, `system`, `tools` and `messages` array that produced the verdict — and the response context: the `stop_reason`, the full `content` blocks, and the `usage` breakdown including cache read, cache creation and output tokens. Only the first group is strictly necessary; the second is diagnostic."
+        },
+        {
+          "id": "B",
+          "text": "Only the request context is strictly necessary: the exact `model`, `system`, `tools` and `messages` array that produced the verdict, plus the `request_id` so support can trace it. The response side is derivable and need not be retained."
+        },
+        {
+          "id": "C",
+          "text": "The adjudication verdict, the `claim_id` and the model name. That is enough to establish that the model produced the verdict, since the pipeline is the only writer to the claims table."
+        },
+        {
+          "id": "D",
+          "text": "The `request_id` and the HTTP status code. Anthropic retains request data, so a regulator request can be satisfied from the provider's own records."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Reconstructing a specific verdict requires both halves, and this is the point of capturing traces rather than status codes. The request side has to be verbatim — the `model` identifier, the `system` prompt, the tool definitions and the full `messages` array — because any of those could change the output, and a verdict is not reproducible from a claim id and a model name. The response side carries the evidence: the `stop_reason` distinguishes a clean `end_turn` from `max_tokens` truncation or a `refusal`, the `content` blocks are the actual adjudication, and the `usage` breakdown — including `cache_read_input_tokens` and `cache_creation_input_tokens` — tells you whether the call ran under a cached prefix, which matters when a caching change is suspected. And the `request_id`, which appears both as a response header and in error bodies, is what makes the exchange traceable with the provider. The framing matters for retention design: log these fields by default, because the alternative is being unable to answer the question at all once the window closes.",
+      "whyWrong": {
+        "B": "It dismisses the response side as derivable, which it is not. `stop_reason` is what distinguishes a clean answer from a truncated or refused one, and the `usage` breakdown is what explains cost and cache behaviour.",
+        "C": "A verdict plus a claim id establishes nothing about the model's behaviour. The regulator question is what the model was shown and what it returned, which requires the request and the response.",
+        "D": "A `request_id` lets Anthropic trace a request, but it does not give Brantley the system prompt, tools, messages or content blocks it was responsible for capturing. Relying on provider-side records is not a substitute for your own trace."
+      },
+      "difficulty": 1,
+      "visualId": "eval-loop",
+      "mindset": "If you cannot replay the exact request and show the exact response, you cannot attribute an output — so log both halves with `request_id` from the start.",
+      "tags": [
+        "observability",
+        "tracing",
+        "audit"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching"
+      ]
+    },
+    {
+      "id": "v-d4-z3-012",
+      "taskStatementId": "4.1",
+      "scenario": "A Brantley invoice classifier mislabels roughly one invoice in fifty as a refund. The engineers cannot reproduce it with hand-built requests: the same prompt in their local harness returns correct fields. Production traces — model, parameters and the exact `messages` array — are captured verbatim for every incident, and the last two incidents are reproducible by replaying the stored request.",
+      "stem": "Which step best isolates whether the origin is the integration layer or the model output?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Replay the captured request byte-for-byte against a different, more capable model and compare the verdict. If the replay reproduces the misclassification, the request is well-formed and the fault is in the model's output; if the replay returns the correct label on the same messages array, the divergence points at your parameters or environment rather than at the prompt. Both results are useful, which is why storing the exact request is what makes this experiment possible."
+        },
+        {
+          "id": "B",
+          "text": "Rewrite the prompt by hand until the misclassification stops, then ship it. If a cleaner prompt fixes it, the model output was the origin."
+        },
+        {
+          "id": "C",
+          "text": "Run the same request one hundred times and take the majority answer. If the majority is correct, the defect is a sampling artefact rather than an integration bug."
+        },
+        {
+          "id": "D",
+          "text": "Compare the production logs against the local harness configuration, field by field, until a difference appears. The first difference found is the cause."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Isolating origin means holding the request constant and changing one thing, which is only possible because the trace captured the request verbatim. Replaying the exact `messages` array, `system`, `tools` and parameters against a stronger model is a controlled comparison: a reproduced misclassification on a byte-identical request localises the fault in the model's output for that input, while a corrected verdict on the same messages array points at your integration layer — a parameter, a tool definition, a sampling setting or an environment difference. Both outcomes are informative, and the replay also turns an intermittent 1-in-50 into a deterministic, assertable regression case. The distractors each fail methodologically: hand-editing the prompt changes two variables at once and cannot attribute the fix; a majority vote over 100 samples tells you the output is unstable but not which layer produced it; and diffing configurations finds the first difference, which is frequently irrelevant, rather than the causal one.",
+      "whyWrong": {
+        "B": "Editing the prompt while the request changes means you have two variables and one observation. It may well fix the symptom without telling you whether the prompt, the parameters or the environment was at fault.",
+        "C": "Repeated sampling measures variability, not origin. A 1-in-50 rate could come from a genuine model failure on a hard input, and the majority answer says nothing about which layer introduced the bad verdict.",
+        "D": "Configuration diffing surfaces the first discrepancy, not the causal one, and the local-versus-production environment has many benign differences. The documented step is replaying the captured request, which holds everything else constant."
+      },
+      "difficulty": 2,
+      "visualId": "eval-loop",
+      "mindset": "To separate the integration layer from model output, replay the captured request unchanged against a different model — if you cannot replay it, you cannot attribute the fault.",
+      "tags": [
+        "trace-analysis",
+        "origin-isolation",
+        "reproducibility"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests",
+        "https://platform.claude.com/docs/en/api/errors"
+      ]
+    },
+    {
+      "id": "v-d4-z3-013",
+      "taskStatementId": "4.1",
+      "scenario": "Brantley's eval suite grades 200 stored claims with a rubric written in one meeting. Two runs of identical code differ by 8 points on the average, and a prompt change the team believes is an improvement moves the average by 2 points. The grader is the same model family as the system under test.",
+      "stem": "Which TWO changes should Brantley make before drawing any conclusion from these numbers? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Grade with a different model from the one generating the output, which is the docs' stated best practice. A same-family grader shares blind spots with the system under test, so a real improvement can be scored as neutral or worse."
+        },
+        {
+          "id": "B",
+          "text": "Run the eval set multiple times per configuration and compare distributions rather than single averages. Current models reject a `temperature` value, so there is no sampling dial to turn to zero — repeated runs are how you quantify the noise floor and decide whether a 2-point move is signal."
+        },
+        {
+          "id": "C",
+          "text": "Raise the rubric's specificity until the score stabilises. The variance comes from vague wording, so sharper criteria remove the noise without changing the system."
+        },
+        {
+          "id": "D",
+          "text": "Compare the two configurations on a single run each, and treat any difference larger than the historical average as significant. Fewer runs is cheaper and the historical average already captures the variance."
+        },
+        {
+          "id": "E",
+          "text": "Switch the grader to a model with strict tool use so its verdicts are schema-conformant. The 8-point swings come from malformed grader output rather than from judging variance."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "An 8-point spread on identical code is the finding here: it means the measurement instrument is noisier than the effect being measured. Two documented moves fix that. First, judge with a different model from the one whose output you are judging — that is the docs' stated best practice, and it matters most when the grader is the same family as the system, because shared blind spots make real improvements invisible. Second, treat the eval as a repeated measurement: run each configuration several times and compare distributions, because there is no sampling dial to set the noise to zero. Current models reject a non-default `temperature`, `top_p` or `top_k` with a 400, so `temperature: 0` is not an available lever and the honest alternative is to quantify the spread and only then decide whether a 2-point move clears it. Neither of the wrong answers addresses variance: sharper rubric wording does not remove grader-to-grader disagreement, and schema-conformant output would still be a noisy judgement.",
+      "whyWrong": {
+        "C": "Rubric sharpness affects bias and interpretability, not the variance of a grader's calls. Identical code producing 8-point swings is judging noise, and it persists whatever the wording.",
+        "D": "Fewer runs is the opposite of what you need when the instrument is noisier than the signal. A single run per configuration cannot separate a 2-point improvement from an 8-point swing.",
+        "E": "Strict tool use constrains the grader's output shape; it does not make the judgement consistent. Nothing in the scenario indicates malformed grader output — the spread is between well-formed verdicts."
+      },
+      "difficulty": 3,
+      "visualId": "eval-loop",
+      "mindset": "Before believing a 2-point move, prove your instrument can resolve 2 points: different judge model, repeated runs, no sampling dial to lean on.",
+      "tags": [
+        "evals",
+        "grading",
+        "variance"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests",
+        "https://platform.claude.com/docs/en/models/opus-5-5/migration-guide"
+      ]
+    },
+    {
+      "id": "v-d4-z3-014",
+      "taskStatementId": "4.1",
+      "scenario": "Brantley's policy assistant answers questions about a 300-page tariff and return standard. About 5% of the time it produces a fluent answer with a clause reference that does not exist, and reviewers cannot tell which answers came from the document at all. The team wants a permanent test for the class rather than for today's five failures.",
+      "stem": "Which TWO eval designs catch an unsupported-inference defect class? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Include cases where the answer is genuinely not in the corpus, and require the assistant to say so. A defect that only shows up when the model has an answer available cannot be caught by a set where every question is answerable, so the absent-answer case has to be in the suite as a first-class expectation with its own correct behaviour."
+        },
+        {
+          "id": "B",
+          "text": "Grade on whether the claim is supported rather than on similarity. An assertion that fails when the response asserts something without a supporting passage, or that fails when a cited clause reference is not in the document, is the kind of check a confident wrong answer cannot pass — unlike an embedding-similarity score, which rewards fluent overlap."
+        },
+        {
+          "id": "C",
+          "text": "Record the model's answer for today's 300 questions and fail the build whenever any byte of a response differs from the recording."
+        },
+        {
+          "id": "D",
+          "text": "Score every response with an LLM judge on a 1-5 scale for faithfulness, averaging across the set, with a passing mark of 4."
+        },
+        {
+          "id": "E",
+          "text": "Hold out a set of questions the model has never seen and require 95% accuracy on them, which measures generalisation to new questions."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Two designs catch the class, and both attack it at the grading and coverage level rather than the output level. Coverage: a defect that only appears when the model has nothing to draw on is invisible to a suite where every question is answerable, so the absent-answer case has to be present as a first-class expectation — and the documented pattern for long-document work is to quote the relevant passages first and let a missing quote be the signal that the premise is unsupported. Grading: what has to be asserted is support, not resemblance. An assertion that fails when the response states something without a supporting passage, or when a clause reference does not appear in the document, cannot be satisfied by a fluent wrong answer — whereas a similarity score rewards exactly the confident overlap this defect produces. That is the general principle behind the guidance to prefer extraction, quotation or human review when the premise is shaky. The three rejected designs all measure something else: byte-equality to a recording freezes today's behaviour including its bugs, an averaged 1-5 judge score has noise the team has already measured as larger than the effect, and accuracy on held-out questions says nothing about whether an answer was supported.",
+      "whyWrong": {
+        "C": "Byte-equality against a recording freezes today's defects along with today's behaviour, and it will also fail on every legitimately improved answer — which is a change-detector, not an eval.",
+        "D": "Averaged 1-5 faithfulness scores are exactly the measurement with known variance, and a mean hides the small number of confidently wrong answers that matter here.",
+        "E": "Accuracy on unseen questions measures generalisation, not support. An unsupported answer generalises perfectly to new questions, so this check can pass while the defect class is entirely present."
+      },
+      "difficulty": 3,
+      "visualId": "eval-loop",
+      "mindset": "To catch unsupported inference permanently, put the unanswerable case in the suite and assert on support — never on resemblance.",
+      "tags": [
+        "evals",
+        "grounding",
+        "regression"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests",
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-hallucinations"
+      ]
+    },
+    {
+      "id": "v-d4-z3-015",
+      "taskStatementId": "4.1",
+      "scenario": "Brantley's overnight job fails on one batch of 200 claims: 197 post, two fail validation, one times out. The pipeline restarts the entire batch on any failure. Restarting re-posts the 197 that already succeeded, which the claims system accepts as updates, and last week that produced four claims whose original adjudicator note was overwritten by a retry note.",
+      "stem": "Which design is the correct recovery for this batch job?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Make each unit of work independently retryable and idempotent, then retry only the failed units. Record a per-claim outcome as each claim completes, key it by `claim_id`, and gate re-posting on that record or on an idempotency key so a repeat is a no-op rather than an overwrite. A batch failure should resume from the checkpoint, not restart from zero — the same principle applies to Message Batches, where you re-submit only the `errored` and `expired` results rather than the whole batch."
+        },
+        {
+          "id": "B",
+          "text": "Make the whole batch transactional. Wrap all 200 claims in one database transaction so that any failure rolls the batch back and the restart cannot partially re-post."
+        },
+        {
+          "id": "C",
+          "text": "Continue past failures and post whatever succeeded, which is what the pipeline does now. The two validation failures should be routed to a manual queue and the retry should skip any claim that already has an adjudicator note."
+        },
+        {
+          "id": "D",
+          "text": "Stop using the synchronous path and submit the job through the Message Batches API, which processes each request independently and therefore cannot partially apply."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Batch-level restart is only safe when the unit of work is the batch, and here it is not. The correct shape is per-claim idempotency plus per-claim outcome tracking: record a result keyed by `claim_id` as each claim completes, and make the posting operation safe to repeat — via an idempotency key the claims system honours, or by treating an existing record for that claim as already posted rather than as an update to overwrite. Then a retry resumes from the recorded outcomes and touches only the two validation failures and the timeout. This is the same discipline the Message Batches API forces on you: because each request in a batch is processed independently, recovery means re-submitting only the `errored` and `expired` results, keyed by `custom_id`, not the batch. Two nuances are worth keeping straight: a timeout on the claims system is not proof the write did not land, which is precisely why the idempotency key matters, and 'continue past failures' without durable per-unit state is how the same corruption happens again.",
+      "whyWrong": {
+        "B": "A 200-claim transaction would hold locks across external calls to a claims system you do not control, and it still cannot make an external side effect atomic. The problem is repeatability of individual posts, not atomicity of the batch.",
+        "C": "Continuing past failures is right, but skipping on 'already has an adjudicator note' is a heuristic that fails the moment a legitimate re-adjudication is needed. The durable, explicit signal is a recorded outcome or an idempotency key.",
+        "D": "Batching solves independence of processing, not idempotency of your own side effects. Brantley's writes are to its own claims system, and a retried request there can still overwrite unless the operation is idempotent."
+      },
+      "difficulty": 3,
+      "visualId": "error-recovery",
+      "mindset": "Batch recovery is per-unit: record an outcome per claim, make the post idempotent, and resume — the same rule that makes a Message Batches retry submit only failures.",
+      "tags": [
+        "batch",
+        "idempotency",
+        "recovery"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/batch-processing",
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "v-d4-z3-016",
+      "taskStatementId": "4.1",
+      "scenario": "Brantley's adjudicator agent runs a tool loop with six tools. In one assistant turn the model returns four `tool_use` blocks. Brantley executes them with `Promise.all`, and the claims system rejects two of them because they both try to move the same claim to a new state. The model receives the two errors and immediately re-issues both calls.",
+      "stem": "What does the harness owe the model here, and what is the resulting design consideration?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The API doesn't prescribe an execution order: run them concurrently, sequentially in order, or any combination suits your tools. What it does require is one `tool_result` per `tool_use`, all in the next user message, each matched by `tool_use_id`, with every `tool_result` before any text — and if you chose not to run a call, return a `tool_result` for it anyway with `is_error: true` and a brief explanation. The design consequence is that concurrency decisions belong to the harness: independent reads can go in parallel, side-effecting calls that contend for the same entity need sequencing or conflict detection, and an error result must tell the model what to do differently or it will retry identically."
+        },
+        {
+          "id": "B",
+          "text": "The harness must return results in the order the `tool_use` blocks appear. Claude matches results positionally, so an out-of-order array corrupts the conversation."
+        },
+        {
+          "id": "C",
+          "text": "The model should not have returned conflicting calls in one turn. Reject the whole turn and re-prompt with a note that parallel calls must be independent, rather than executing any of them."
+        },
+        {
+          "id": "D",
+          "text": "Execute all four calls concurrently and return the two errors as `is_error: true` results. The model will infer the conflict and choose a different sequence on its next turn."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The documented contract separates execution policy from result formatting. The API doesn't prescribe an execution order — you can run calls concurrently, sequentially in the order they appear, or any combination that suits your tools — but the response format is fixed: return one `tool_result` for each `tool_use` block, all together in the next user message, matched to its call with `tool_use_id`, with every `tool_result` before any text content. And if you decide not to run a particular call, you still return a `tool_result` for it with `is_error: true` and a brief explanation — silence breaks the pairing. The consequence for Brantley is that contention is the harness's problem to manage: independent read-only operations parallelise well for latency, while side-effecting calls that touch the same entity need sequencing or conflict detection, because a rejection with no explanation gives the model nothing to change and it will re-issue the identical call. The specific error text matters as much as the flag.",
+      "whyWrong": {
+        "B": "Results are matched by `tool_use_id`, not by position. Order within the message is not what pairs a result to its call, though every `tool_result` must precede any text.",
+        "C": "Returning multiple tool calls in one turn is normal and is how parallelism is expressed. Rejecting the turn throws away work the harness could have sequenced, and does not teach the model anything durable.",
+        "D": "Executing four calls with `Promise.all` when two contend for the same claim is the cause of the incident. And a bare `is_error` with no actionable message is exactly what produces the identical retry."
+      },
+      "difficulty": 2,
+      "visualId": "error-recovery",
+      "mindset": "One `tool_result` per `tool_use`, matched by id, even for calls you skipped — and contention between side effects is yours to sequence, not the model's to avoid.",
+      "tags": [
+        "tool-use",
+        "parallelism",
+        "error-handling"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/parallel-tool-use",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls"
+      ]
+    },
+    {
+      "id": "v-d4-z3-017",
+      "taskStatementId": "4.1",
+      "scenario": "Brantley's CI pipeline contains one `claude -p \"Review the diff for concurrency bugs\" --output-format json` invocation. The job's next step decides whether to fail the build by checking whether the model's answer was usable, and the on-call engineer wants to know why some runs pass silently with an empty verdict.",
+      "stem": "Which handling makes the empty-verdict case diagnosable rather than silent?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Read `stop_reason` before you read content, on every run. A 200 is not a success: `refusal` returns 200, is billed, and may contain little or no text, and `max_tokens` returns 200 with truncated content. Branch on `stop_reason` first, then treat the text as usable only when it is `end_turn`, and record the reason in the job log so an empty verdict is explained rather than inferred."
+        },
+        {
+          "id": "B",
+          "text": "Check that the response is non-empty and fail the build if it is not. An empty verdict means the model had nothing to say."
+        },
+        {
+          "id": "C",
+          "text": "Add `--output-format stream-json --verbose --include-partial-messages` and read the final result message. If the run produced no text deltas, fail the build."
+        },
+        {
+          "id": "D",
+          "text": "Retry any run whose verdict is empty, up to three times. Empty verdicts are transient and resolve on retry."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The failure mode being described is a 200 that is not a usable answer, and the only reliable discriminator is `stop_reason`. A refusal comes back with HTTP 200, you are billed for the tokens generated, and the message may contain little or no text; a truncated response is also 200 with `stop_reason: \"max_tokens\"`. Neither is a judgement about the diff, and neither is fixed by retrying. So the handler has to read `stop_reason` first and treat content as usable only on `end_turn`, logging the reason for every non-`end_turn` run so that 'silently empty' becomes 'refused' or 'truncated' in the job log. That is also what makes the run replayable, because the reason tells you whether to raise `max_tokens`, adjust the request, or stop expecting output at all. Retrying is the wrong reflex here for the same reason it is wrong in the API path: it multiplies cost on a response that was never going to contain a verdict.",
+      "whyWrong": {
+        "B": "An empty body is not informative. It conflates a refusal, a truncation and a genuine no-opinion, and it hides which one occurred from the job log.",
+        "C": "Token-level streaming changes how you observe a run, not whether a refusal or truncation produces content. The final result message carries the same `stop_reason` the simple format does.",
+        "D": "Retrying does not convert a refusal or a truncation into a verdict, and each attempt is billed. Classify the stop reason, then fix the specific cause."
+      },
+      "difficulty": 1,
+      "visualId": "eval-loop",
+      "mindset": "On HTTP 200, `stop_reason` is the verdict on the response itself — branch on it before you trust any content.",
+      "tags": [
+        "stop-reasons",
+        "ci",
+        "observability"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons",
+        "https://code.claude.com/docs/en/headless"
+      ]
+    },
+    {
+      "id": "v-d4-z3-018",
+      "taskStatementId": "4.1",
+      "scenario": "Brantley's triage service sees 529 `overloaded_error` on about 4% of calls overnight, 500 `api_error` on a fraction of a percent, 429 `rate_limit_error` with a `retry-after` header during the 08:00 backlog drain, and 504 `timeout_error` on the long reconciliation route. The on-call rota has been treating all four as 'the API is down'.",
+      "stem": "Which classification is correct, and what does it change about the response?",
+      "options": [
+        {
+          "id": "A",
+          "text": "All four are documented, but they mean different things and split into two response families. `overloaded_error` (529) is temporary capacity pressure across users, `api_error` (500) is an unexpected internal error to retry with backoff and escalate with the `request_id` if it persists, and `timeout_error` (504) is a processing timeout where the docs suggest streaming or batching for long-running work — all three are transient and retryable. `rate_limit_error` (429) is your own organisation's limit, a tier spend cap, or a Claude Code workspace spend limit, and a spend-cap 429 carries no `retry-after` and keeps failing until access resumes. So: retry with backoff, escalating on persistent 500s and streaming the long route; recognise the no-`retry-after` 429 as an alert, not a retry."
+        },
+        {
+          "id": "B",
+          "text": "All four are transient server errors, so the correct response for each is the same: exponential backoff with jitter, up to five attempts, then alert. Distinguishing them only complicates the runbook."
+        },
+        {
+          "id": "C",
+          "text": "Only 529 is retryable. 500, 429 and 504 indicate a problem with the request or with Brantley's own account, so retrying any of them wastes quota."
+        },
+        {
+          "id": "D",
+          "text": "529 and 500 are retryable; 429 and 504 are not. A rate limit and a timeout both indicate the request was too large or too long, so the fix is to shrink or batch it rather than retry."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The docs give each of these a specific meaning, and conflating them produces the wrong runbook. 529 `overloaded_error` is the API being temporarily overloaded, and can occur when the API has high traffic across all users — transient, retry with backoff. 500 `api_error` is an unexpected error internal to Anthropic's systems, also retried with backoff, escalating to support with the `request_id` if it persists. 504 `timeout_error` means the request timed out while processing, and the documented response is to consider the streaming Messages API for long-running requests — so the fix is a transport change. 429 `rate_limit_error` is different in kind: your organisation hit a rate limit, reached its tier's monthly spend cap, or hit a spend limit on a Claude Code workspace, and the docs note a tier spend-cap 429 has no `retry-after` header and keeps failing until access resumes. So the 429 with no `retry-after` is an alerting condition, not a backoff condition — and that distinction is exactly what the current runbook loses.",
+      "whyWrong": {
+        "B": "Collapsing them is what produced the current runbook. A spend-cap 429 that keeps failing for hours and a 504 that calls for streaming are not the same operational event, and neither is a persistent 500 that needs a `request_id` escalated to support.",
+        "C": "500 and 504 are explicitly transient and retryable, and 429 is retryable when it is a genuine rate limit with a `retry-after` header. Only the spend-cap variant of 429 is not.",
+        "D": "A 429 is a limit on request rate or spend, not a size problem, and it is retryable when `retry-after` is present. A 504 is about duration rather than payload size, and the documented response is streaming or batching rather than shrinking."
+      },
+      "difficulty": 2,
+      "visualId": "error-recovery",
+      "mindset": "Every status carries its own remedy: 529 and 500 back off, 504 changes transport, and a 429 with no `retry-after` is a spend alert rather than a retry.",
+      "tags": [
+        "error-taxonomy",
+        "runbook",
+        "rate-limits"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://platform.claude.com/docs/en/api/rate-limits"
+      ]
+    },
+    {
+      "id": "v-d4-z3-019",
+      "taskStatementId": "4.1",
+      "scenario": "Brantley's adjudicator fails in CI only. It works locally with the same prompt and the same container image. An engineer diffs the two environments and finds that CI sets `ANTHROPIC_MODEL=claude-opus-5-5` while the local shell sets nothing and picks up `model` from `settings.json`, and that CI also passes `--strict-tool-use`-style flags the local harness omits.",
+      "stem": "What does this tell you about the reproduction attempt, and what is the right way to make the two environments comparable?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The environments are not comparable, so the local reproduction attempt does not test the production configuration. Claude Code resolves its model through a documented precedence order — `/model` in session, `--model`, the `ANTHROPIC_MODEL` environment variable, the `model` setting, then `ANTHROPIC_DEFAULT_MODEL` — so the two runs are not using the same model, and every extra flag is another variable. Make the harness read one config file that both environments load, and pin the model with a full identifier so `ANTHROPIC_MODEL` cannot silently override it."
+        },
+        {
+          "id": "B",
+          "text": "Only the model differs, so the reproduction is valid once the engineer sets `ANTHROPIC_MODEL` locally. The extra CI flags are cosmetic and cannot affect behaviour."
+        },
+        {
+          "id": "C",
+          "text": "`ANTHROPIC_MODEL` is ignored whenever a `model` field exists in `settings.json`, so the two runs already use the same model and the difference must be elsewhere."
+        },
+        {
+          "id": "D",
+          "text": "The local shell should simply import the CI environment variables before reproducing. That makes the two runs identical without changing any configuration."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The core lesson is that a reproduction attempt is only informative when it reproduces the configuration, and here two documented precedence rules are in play at once. In the Claude API path, `ANTHROPIC_MODEL` selects the model; in Claude Code, model resolution runs through an ordered list — `/model` in session, then `--model`, then `ANTHROPIC_MODEL`, then the `model` setting, then `ANTHROPIC_DEFAULT_MODEL` — so an exported environment variable outranks the settings file. That means the local run and the CI run were not on the same model, and the additional flags are further variables. The generalisable practice is a single source of configuration read by both environments, plus a fully pinned model identifier so nothing can retarget it silently. The related lesson from the batch context is the same: a `-p` run's behaviour depends on what it loads, which is why `--bare` exists — without it, hooks, plugins, `.mcp.json` servers, auto memory and `CLAUDE.md` all participate.",
+      "whyWrong": {
+        "B": "Ignores both the precedence rule and the extra flags. A different model and additional request parameters are exactly the kind of pair that produces a local-pass, CI-fail split.",
+        "C": "Inverts the precedence. `ANTHROPIC_MODEL` sits above the `model` setting in Claude Code's resolution order, so CI's export wins and the two runs differ.",
+        "D": "Importing CI variables reproduces the environment without addressing why it drifted. The durable fix is one config file both sides load, plus a pinned model identifier."
+      },
+      "difficulty": 1,
+      "visualId": "deployment-topology",
+      "mindset": "A reproduction is only valid if it reproduces the configuration: one config file for both environments, and a pinned model identifier nothing can override.",
+      "tags": [
+        "origin-isolation",
+        "configuration",
+        "reproducibility"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/model-config",
+        "https://code.claude.com/docs/en/headless"
+      ]
+    },
+    {
+      "id": "v-d4-z3-020",
+      "taskStatementId": "4.1",
+      "scenario": "Brantley's overnight reconciliation submits 200,000 requests through the Message Batches API. The team assumed batching would cut per-request cost by roughly half. Finance's actual invoice shows a smaller discount than expected, and the pipeline reports that roughly 6% of results came back `expired` with no `retry-after` guidance.",
+      "stem": "Which TWO statements about the Batches API are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "`expired` means the batch reached its 24-hour expiration before that request could be sent to the model, and you are not billed for it. Rate limits apply both to the Batches API HTTP requests themselves and to the number of requests within a batch waiting to be processed, and processing may be slowed by current demand and your volume — which is when you see more requests expiring after 24 hours."
+        },
+        {
+          "id": "B",
+          "text": "Batches can go slightly over your workspace's configured spend limit, because of high throughput and concurrent processing. That is a documented trade-off to plan for, not a bug, so spend limits should be set with headroom rather than treated as hard ceilings."
+        },
+        {
+          "id": "C",
+          "text": "`max_tokens: 0`, the cache pre-warming trick, is supported inside a batch and is the cheapest way to warm the cache for the follow-up run."
+        },
+        {
+          "id": "D",
+          "text": "Each batched request must have `max_tokens` of at least 1, and `max_tokens: 0` is not supported in a batch because an ephemeral cache entry written during batch processing would likely expire before the follow-up request runs."
+        },
+        {
+          "id": "E",
+          "text": "A batch whose `processing_status` is `ended` means every request succeeded. Individual requests can still be `errored`, `canceled` or `expired`, which is why you read `request_counts` and the results file."
+        }
+      ],
+      "correct": [
+        "A",
+        "D"
+      ],
+      "explanation": "Two are accurate and both are about how batching behaves under load. `expired` is one of the four result types and means the batch hit its 24-hour expiration before that request was sent to the model, and you are not billed for it. The reason expiries cluster is documented alongside the rate limits: rate limits apply both to the Batches API's own HTTP requests and to the number of requests within a batch waiting to be processed, and processing may be slowed by current demand and your volume, which is when you see more requests expire after 24 hours. And each batched request must carry `max_tokens` of at least 1 — `max_tokens: 0`, used for cache pre-warming, is not supported in a batch because an ephemeral cache entry written during batch processing would likely expire before the follow-up request runs. The other two are wrong in opposite directions: overshooting the spend limit is documented as expected behaviour, and `ended` means processing finished, not that every request succeeded.",
+      "whyWrong": {
+        "B": "Accurate as a documented statement but it is not about the reported symptom. The 6% expiries and the discount gap come from the expiries and from per-request billing of succeeded results, not from breaching the spend limit.",
+        "C": "Inverts the rule. `max_tokens: 0` is exactly what is unsupported in a batch, for the stated reason about ephemeral cache entries expiring before the follow-up request.",
+        "E": "Inverts the semantics of `ended`. It means processing has finished and results are ready; `request_counts` and the results file are what tell you how many requests landed in each of the four states."
+      },
+      "difficulty": 2,
+      "visualId": "batch-vs-realtime",
+      "mindset": "In a batch, `ended` means finished rather than successful, `expired` is unbilled but unprocessed, and `max_tokens: 0` cache pre-warming is not supported.",
+      "tags": [
+        "message-batches",
+        "expiry",
+        "cost"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/batch-processing",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching"
+      ]
+    },
+    {
+      "id": "v-d4-z3-021",
+      "taskStatementId": "4.1",
+      "scenario": "Brantley's triage agent is deployed as a long-running service in an autoscaled container group, and it calls several internal systems as well as the Claude API. A recent postmortem found two incidents in the same week: one where the agent hammered an unhealthy internal system for forty minutes, and one where it looped on the same failing call until it hit `max_turns` with no final message.",
+      "stem": "Which TWO controls belong in the deployment topology rather than in the prompt? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Bound the run at the platform: a session-level budget and turn limit so a non-converging loop terminates with a recorded reason instead of spinning. The Agent SDK's `max_turns` counts tool-use turns only and `max_budget_usd` caps spend including subagent spend, and the `ResultMessage` `subtype` — `success`, `error_max_turns`, `error_max_budget_usd` — tells you which ending you got. That reason is the difference between an alert you can triage and one you cannot."
+        },
+        {
+          "id": "B",
+          "text": "Put a circuit breaker and a bounded retry budget in front of each internal dependency, so an unhealthy system is failed fast with a distinguishable signal instead of being retried by every agent turn. This belongs in the topology because it has to hold for every agent in the fleet, not for one prompt."
+        },
+        {
+          "id": "C",
+          "text": "Strengthen the system prompt: 'If a tool call fails three times, stop and report the failure instead of retrying.' The deployment layer should not need changes for a behavioural rule."
+        },
+        {
+          "id": "D",
+          "text": "Give the service a single shared API key so rotation is one operation, and rely on the platform's autoscaler to absorb bursts of retries."
+        },
+        {
+          "id": "E",
+          "text": "Move the agent loop to Managed Agents so Anthropic runs it, which removes the need for any of these controls on your side."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Both incidents are properties of the deployment, not of the prompt. A prompt instruction like 'stop after three failures' is probabilistic — it will be followed most of the time, and most of the time is not good enough for an unbounded loop — whereas the SDK's bounds are structural: `max_turns` counts tool-use turns only, `max_budget_usd` caps spend and includes subagent spend, and the `ResultMessage` `subtype` records whether the run ended in `success`, `error_max_turns` or `error_max_budget_usd`. Having that reason recorded is what makes the incident triageable. The dependency control belongs in the topology for a different reason: it has to hold uniformly for every agent in the fleet, and a breaker returns a distinguishable signal the agent can act on instead of a generic error it will retry. The remaining options each remove a control that is still needed — prompt-only enforcement is probabilistic, a single shared key concentrates blast radius, and Managed Agents moves the harness without removing the need for limits and dependency hygiene.",
+      "whyWrong": {
+        "C": "Prompt instructions are probabilistic, which is exactly why the blueprint pairs hooks with deployment: if something must always happen, it needs a deterministic control. A loop that ignores the instruction still burns tokens until the bound stops it.",
+        "D": "A single shared key concentrates blast radius and makes rotation a single point of failure. And autoscaling absorbs compute, not the wasted spend and the load on the unhealthy dependency that caused the incident.",
+        "E": "Managed Agents means Anthropic runs the loop, not that bounds and dependency controls become unnecessary. Your own services, credentials and budget exposure remain yours to manage."
+      },
+      "difficulty": 3,
+      "visualId": "deployment-topology",
+      "mindset": "If it must always hold — a run bound, a dependency breaker — put it in the platform; the prompt is guidance with a non-zero failure rate.",
+      "tags": [
+        "deployment",
+        "max-turns",
+        "circuit-breaker"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/overview",
+        "https://code.claude.com/docs/en/agent-sdk/hosting"
+      ]
+    },
+    {
+      "id": "v-d4-z3-022",
+      "taskStatementId": "4.1",
+      "scenario": "Brantley's triage agent is used in two places: an interactive CLI where a support lead watches it, and an overnight unattended run. The internal policy MCP server needs the operator to choose one of three handling paths before `create_case` can proceed. In the unattended run the tool call fails with a JSON-RPC error after 30 seconds, and the agent then loops trying the same tool.",
+      "stem": "Which TWO design statements are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "The mechanism for asking the person is elicitation: the server sends an `elicitation/create` request with a `requestedSchema`, the client surfaces it and returns the response, and a client that supports it declares the `elicitation` capability during initialization. In Claude Code dialogs appear automatically, in form mode or URL mode for flows that finish outside the terminal."
+        },
+        {
+          "id": "B",
+          "text": "The unattended run cannot be answered by a person, so the design has to change rather than retry: no human will ever respond, which is the same class of problem as a CI job needing `--permission-prompts none`, where tools that need an answer from a person are removed and any MCP elicitation request that no `Elicitation` hook answers is cancelled. The overnight path should supply the choice from configuration, or use a default path the policy allows."
+        },
+        {
+          "id": "C",
+          "text": "Elicitation is the right mechanism, but the spec requires servers to declare the capability rather than clients, so the server must publish an `elicitation` block in its manifest."
+        },
+        {
+          "id": "D",
+          "text": "A progress notification is the right mechanism, so the server can keep the client informed while it waits for the operator's decision."
+        },
+        {
+          "id": "E",
+          "text": "Sampling is the right mechanism, since the server can ask the client's model to choose the handling path on the operator's behalf."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Two correct statements, one about the mechanism and one about the deployment mismatch that is actually causing the loop. Elicitation is the designed path for a server to request structured input from a user during an interaction: the server sends `elicitation/create` with a `requestedSchema`, and clients that support it must declare the `elicitation` capability during initialization. Claude Code surfaces the request automatically, in form mode for fields and in URL mode when the flow finishes outside the terminal, and an `Elicitation` hook can answer it without a dialog. The spec also warns that servers must not use elicitation to request sensitive information, and clients should make clear which server is asking and allow review before sending. The design problem is the second one: an unattended run has no operator, so the choice has to come from configuration or an allowed default rather than from a retry loop against a request that can never be answered.",
+      "whyWrong": {
+        "C": "Inverts who declares the capability. It is the client that must declare `elicitation` during initialization; a server that does not receive that capability cannot expect the flow.",
+        "D": "Progress notifications are for reporting progress on an in-progress operation — the receiver sends `notifications/progress` against a `progressToken` the sender supplied. They do not collect a decision and cannot unblock the tool.",
+        "E": "Sampling is the opposite: it asks the client's model to generate text, audio or image output, so the answer comes from a model rather than from the person who has to make the decision."
+      },
+      "difficulty": 3,
+      "visualId": "mcp-architecture",
+      "mindset": "Elicitation is for decisions only a person can make — so an unattended run must supply that choice from configuration, not retry a request nobody will answer.",
+      "tags": [
+        "mcp",
+        "elicitation",
+        "deployment"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-06-18/client/elicitation",
+        "https://code.claude.com/docs/en/mcp"
+      ]
+    },
+    {
+      "id": "v-d4-z3-023",
+      "taskStatementId": "4.1",
+      "scenario": "Brantley's adjudicator previously failed open: when its own downstream validator could not be reached, it logged the timeout and let the claim post anyway, on the reasoning that validators fail often. Six weeks later finance found 40 claims posted without adjudication notes, all during the same 20-minute validator outage.",
+      "stem": "What is the most serious problem with that handler, and what should replace it?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Failing open is the wrong default for a control, because an unavailable validator has become indistinguishable from a passing one — the outage looked like success. The replacement is fail-closed for the gated action with an explicit, typed reason: return a distinct 'validation unavailable' outcome, queue the claim, alert, and retry the validation with backoff. Crucially, surface the access failure as different from an empty result, because a wrapper that returns an empty array on timeout teaches the model that no matching records were found — which is how an infrastructure outage becomes a confident false conclusion in the output."
+        },
+        {
+          "id": "B",
+          "text": "The problem is the missing retry. Add three attempts with exponential backoff around the validator call, and post the claim if all three fail, since blocking posts during an outage backs up the queue."
+        },
+        {
+          "id": "C",
+          "text": "The problem is that the handler logs and continues rather than raising. Raise an exception so the pipeline's existing error handling takes over, and leave the posting decision to the existing retry and alerting logic."
+        },
+        {
+          "id": "D",
+          "text": "The problem is the log volume. Replace the free-text timeout log with a structured event carrying `request_id`, claim id and validator latency, so the outage is easier to correlate afterwards."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The failure mode is fail-open on a control, and its worst property is that it destroys the signal you would need to detect it. Once the validator's unavailability is treated as a pass, the outage is indistinguishable from normal operation — which is exactly why 40 claims went out with no notes and nothing fired. The correct design is fail-closed for the gated action with a typed outcome: an explicit 'validation unavailable' state that queues the claim, alerts, and retries with backoff rather than posting. That distinction matters at every layer, not just here. The classic version of this bug is a retrieval or lookup tool that catches a timeout and returns an empty array: the model never sees a failure, and its final answer confidently reports that nothing was found. A structured error that distinguishes 'access failed' from 'no results' is what keeps an infrastructure outage from becoming a false statement about the world.",
+      "whyWrong": {
+        "B": "Retrying the validator and then posting anyway preserves the fail-open behaviour. Backing up the queue is a real cost, but the control has to fail closed or be explicitly reclassified as advisory with a separate gate.",
+        "C": "Raising an exception hands the decision to generic error handling, which is exactly the ambiguity that caused the incident. The important part is the typed reason and the queue, not the mechanism by which control leaves the function.",
+        "D": "Better logs would have shortened the investigation but would not have prevented the 40 unvalidated posts, and the root cause was the decision to proceed, not the log format."
+      },
+      "difficulty": 2,
+      "visualId": "error-recovery",
+      "mindset": "A control that fails open makes an outage invisible: fail closed with a typed reason, and never let 'access failed' look like 'nothing found'.",
+      "tags": [
+        "error-handling",
+        "fail-open",
+        "observability"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://www.anthropic.com/news/our-framework-for-developing-safe-and-trustworthy-agents"
+      ]
+    },
+    {
+      "id": "v-d4-z3-024",
+      "taskStatementId": "4.1",
+      "scenario": "Brantley's support chatbot streams a 400-token answer assembled from eight retrieved policy documents. Once a week a user receives a fluent answer with no citations at all, and the team's first instinct is that the retrieval step failed. The chatbot does not use the citations feature.",
+      "stem": "Why is 'retrieval failed' the wrong first hypothesis, and what should the team check instead?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The chatbot never asked for citations, so the absence of citations carries no information about whether retrieval worked. Attribution has to be built in rather than inferred: enable `citations` on the `document` content blocks, put each retrieved chunk in its own document so it can be cited, and ask for an explicit 'not covered in the documents' answer when the sources do not support a reply. Then the empty-citation case becomes a signal you can trust."
+        },
+        {
+          "id": "B",
+          "text": "Missing citations do indicate a retrieval failure. Because the model cites only what it actually read, an uncited answer means the chunks never entered the context window."
+        },
+        {
+          "id": "C",
+          "text": "The answer is fine; citations are a display feature and enabling them would increase input tokens without changing accuracy. The fix is to shorten the retrieved chunks so more of them fit."
+        },
+        {
+          "id": "D",
+          "text": "Citations cannot be combined with structured outputs, so enabling them would force the team to drop their JSON schema. That trade-off is why they have not turned it on."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "This is a diagnostic-discipline question: absence of evidence is only informative if you asked for evidence. Without the citations feature there is no citation channel at all, so 'no citations' is a property of the integration rather than of the retrieval step, and treating it as a retrieval signal sends the investigation in the wrong direction. Attribution has to be constructed. Enabling citations on `document` blocks lets a response interleave citation blocks with text and gives you verifiable locations — page ranges for PDFs, character index ranges for plain text, content block index ranges for custom content — and the tip is to put each RAG chunk in its own plain-text document so it can be cited at sentence granularity. Two constraints are worth knowing: only text inside a document's `source` is citable, while `title` and `context` are passed to the model but not citable; and citations cannot be combined with structured outputs, because citations need to interleave blocks with text and that conflicts with strict JSON schema constraints. Both shape how you architect the feature.",
+      "whyWrong": {
+        "B": "Inverts the inference. Without citations enabled there is no citation channel, so an uncited answer says nothing about whether retrieval succeeded.",
+        "C": "Citations do more than display: they give you machine-readable locations back into the sources, which is what makes a grounding claim checkable. And shorter chunks is a separate retrieval decision.",
+        "D": "The incompatibility is real and is worth designing around, but it does not make citations unavailable — it means you choose one or the other for a given request. Not enabling them for that reason is a decision, and it leaves the team without any grounding signal."
+      },
+      "difficulty": 2,
+      "visualId": "structured-output",
+      "mindset": "You cannot debug grounding you never asked for: enable citations deliberately, chunk per document, and treat 'no citations' as meaningful only once the channel exists.",
+      "tags": [
+        "citations",
+        "grounding",
+        "diagnostics"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/citations",
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs"
+      ]
+    },
+    {
+      "id": "v-d4-z3-025",
+      "taskStatementId": "4.1",
+      "scenario": "Brantley's adjudicator over 180,000 claims a night is now the largest line item in the claims platform's cloud bill. The team has three candidate changes and no appetite for a quality regression: routing simple claims to a smaller model, forcing structured output instead of prose-plus-regex, and turning on prompt caching for the shared policy prefix.",
+      "stem": "Which TWO statements about where these levers actually act are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Prompt caching acts on input tokens: cached prefixes are read at a fraction of base input price while writes cost more than base input, so a large stable prefix reused across every request is the clearest win — provided the varying per-request content sits after the breakpoint, and breakpoint placement matters because there is a lookback window a growing conversation can push past."
+        },
+        {
+          "id": "B",
+          "text": "Structured output acts on output tokens and on retry volume. By compiling the schema into a grammar, it removes the prose-and-post-processing path, so the model emits only the fields you consume — but it adds a system prompt describing the format, so input tokens rise slightly, changing `output_config.format` invalidates the prompt cache for that thread, and the first request with a new schema pays extra latency while the grammar compiles, with compiled grammars cached for 24 hours from last use."
+        },
+        {
+          "id": "C",
+          "text": "Structured output makes cached prefixes unnecessary, because the compiled grammar constrains generation independently of how much input is resent."
+        },
+        {
+          "id": "D",
+          "text": "Model routing and caching are interchangeable, because the per-request saving from moving a claim to a smaller tier is roughly the same as the saving from reading the shared prefix from cache."
+        },
+        {
+          "id": "E",
+          "text": "Because prompt caching reads are so much cheaper than base input, caching makes the input side of this workload effectively free, so cost reduction should focus entirely on output length."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Two accurate statements, and together they are the cost map for this workload. Caching acts on input tokens: cache writes cost more than base input, cache hits cost a fraction of it, and breakpoints themselves are free, so the saving scales with how large and how stable the shared prefix is. Placement is the whole game — with a varying suffix, put the breakpoint at the end of the static prefix rather than on the varying block, and remember the lookback window: if a growing conversation pushes the breakpoint 20 or more blocks past the last cache write, the lookback misses it. Structured output acts differently, on output tokens and on retry volume: compiling the schema into a grammar removes the prose-and-regex path so the model emits only the fields you consume. It is not free, though — it adds a system prompt describing the format so input tokens rise slightly, changing `output_config.format` invalidates the prompt cache for that thread, and the first request with a schema pays compilation latency with grammars cached for 24 hours from last use. Those interactions are why 'just turn caching on' is not a complete plan.",
+      "whyWrong": {
+        "C": "Grammar-constrained generation and prefix caching are unrelated mechanisms. One constrains what may be emitted; the other reduces the price of re-reading a shared prefix.",
+        "D": "They act on different token categories with different magnitudes. Comparing them without measuring the workload's input-to-output ratio and prefix stability is guesswork, and routing also carries a quality risk that caching does not.",
+        "E": "Cache reads are cheaper, not free, and the untouched suffix still bills at base input. A workload's cost is decided by its whole prefix and output profile, not by the cached portion alone."
+      },
+      "difficulty": 2,
+      "visualId": "prompt-caching",
+      "mindset": "Caching discounts a stable prefix; structured output removes prose and repair — and each has a cost of its own that belongs in the same model.",
+      "tags": [
+        "cost",
+        "prompt-caching",
+        "structured-output"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs"
+      ]
+    },
+    {
+      "id": "v-d4-z3-026",
+      "taskStatementId": "4.1",
+      "scenario": "Brantley's policy answers are graded automatically by a Python script that asserts the response contains a specific clause reference, then by an LLM judge scoring coherence 1-5. The script-based metric has moved from 96% to 95.8% since last month's prompt change; the LLM judge average moved from 3.9 to 3.86.",
+      "stem": "What is the correct reading of these two movements?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Neither movement is established as a regression. The code-graded metric is deterministic and therefore trustworthy as a signal, but a 0.2-point move needs a paired comparison on the same cases and a look at which cases flipped, because a small deterministic delta can still be a real effect. The LLM-judge movement is inside the noise the team already measured — an 8-point spread on identical code means a 0.04-point change carries no information at all. Report the deterministic metric as directional evidence and either stop tracking the judge average or re-establish its noise floor before quoting it."
+        },
+        {
+          "id": "B",
+          "text": "Both movements are regressions. The code metric proves quality dropped and the judge confirms it, so the prompt change should be reverted."
+        },
+        {
+          "id": "C",
+          "text": "Neither metric matters for this decision. Grade every response with an LLM judge so the metric reflects real answer quality rather than the presence of a clause reference."
+        },
+        {
+          "id": "D",
+          "text": "The LLM judge's movement is the more reliable signal, because a 1-5 scale captures quality that a clause-reference assertion cannot. The deterministic metric is too coarse to judge."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The two metrics do not carry the same evidential weight, and conflating them is the mistake. A code-based grader is deterministic: rerun it on the identical response set and you get the identical number, so a 0.2-point move is a real observation about behaviour — but attributing it to the prompt change still needs a paired comparison over the same cases plus an inspection of which cases flipped, because the same aggregate can come from one bad case replacing one good one. The LLM judge is the opposite case: it is a noisy measurement, and the team has already quantified that noise at 8 points of spread on identical code, so a 0.04-point movement is roughly two hundred times smaller than the instrument's own variance and carries no information. The methodological point is that you compare a signal to the noise floor of the instrument that produced it, and you use the deterministic grader where you can, reserving the judge for what assertions cannot capture.",
+      "whyWrong": {
+        "B": "Treats the judge movement as confirmation when it is smaller than the judge's measured variance, and ignores that a deterministic delta needs case-level attribution before it is called a regression.",
+        "C": "Inverting the strength of the instruments. Deterministic grading is the stronger signal precisely because it is reproducible; an LLM judge is for criteria assertions cannot express, not a replacement for them.",
+        "D": "Has it backwards. A 1-5 scale is more expressive and far less reliable, which is why the docs suggest using a different model as judge and why repeated runs are needed before quoting its average."
+      },
+      "difficulty": 2,
+      "visualId": "eval-loop",
+      "mindset": "Judge a signal against its instrument's noise floor: deterministic graders move reproducibly and deserve case-level attribution, LLM-judge deltas smaller than its spread mean nothing.",
+      "tags": [
+        "evals",
+        "grading",
+        "measurement"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests",
+        "https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents"
+      ]
+    }
+  ]
+}

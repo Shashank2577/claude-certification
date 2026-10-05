@@ -1,0 +1,803 @@
+{
+  "certId": "developer",
+  "domainId": "d5-model-optimization",
+  "questions": [
+    {
+      "id": "v-d5-z6-001",
+      "taskStatementId": "5.3",
+      "scenario": "Corvid Analytics runs four services on the same model family: a nightly revenue summary, an intent classifier over 2 million support tickets, a contract-review assistant that cites clauses, and a three-hour autonomous migration agent. Today all four run on the same mid-tier model at the API default effort. Finance wants the cheaper tier for the bulk routes and the team wants to know what governs the choice.",
+      "stem": "What is the correct basis for routing these four workloads?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Each workload's own eval set, not the tier. The documented rule is to start from the model Anthropic positions as the balanced default for general workloads, then step down to a smaller, cheaper model for a workload only once that workload's own evals pass on it — measured against the accuracy bar the workload needs, not against a fleet average. So the classifier and the summary are the first candidates for a smaller tier, the contract review needs cited-clause grounding on its own evals before it moves, and the migration agent is the one whose long-horizon quality most plausibly justifies the larger tier."
+        },
+        {
+          "id": "B",
+          "text": "Average input and output tokens per call. The bulk routes send the most tokens, so they are where a cheaper tier pays, regardless of whether the answers are as good."
+        },
+        {
+          "id": "C",
+          "text": "Latency percentiles at the API default effort. A workload with a p95 above two seconds cannot use the larger tier, since users abandon slow answers."
+        },
+        {
+          "id": "D",
+          "text": "Whether the workload uses tools. Tool-using routes need the larger tier for reliable tool selection, and non-tool routes can always use the smaller one."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The documented basis is per-workload evidence, because the tiers differ in capability rather than in throughput and each workload has a different bar. The recommended rule is to start from the model Anthropic documents as the balanced default for general workloads and step down to a smaller, cheaper model for a workload only once that workload's own eval set passes on it — with the caveat that step-downs are defensible when the structured, well-validated tasks show equal field-level accuracy, which is exactly Corvid's classifier and summary. Two metrics then become decision inputs rather than the decision itself: p95 time to first token, which is driven by prompt size and model size and is what the 900k-token contract review has to watch if it moves up a tier, and per-task end-to-end cost including the retries that validation failures cause — a 60% per-call saving is not a saving if 12% of outputs fail downstream and get retried. Effort is the within-model lever, tuned per task difficulty, not a substitute for choosing a tier on evidence.",
+      "whyWrong": {
+        "B": "Token volume is a cost input, not a quality gate. A large token count on a task whose answers degrade on a smaller model is a bigger bill for a worse product, and the eval sets exist precisely to answer this question.",
+        "C": "Latency is a constraint to respect rather than a routing rule on its own. p95 above a target justifies lowering effort or shrinking the prompt — both of which act within a model — before it justifies changing tiers, and quality still has to hold.",
+        "D": "Invents a proxy. Tool selection reliability is one thing a larger model tends to help with, and it is measured on evals like everything else — it is not a categorical rule about which tier a workload can occupy."
+      },
+      "difficulty": 2,
+      "visualId": "model-selection",
+      "mindset": "Route models on each workload's own eval against its own accuracy bar — token volume and latency are cost and constraint inputs, not the decision.",
+      "tags": [
+        "model-selection",
+        "routing",
+        "evals"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/about-claude/models/choosing-a-model",
+        "https://platform.claude.com/docs/en/test-and-evaluate/define-success"
+      ]
+    },
+    {
+      "id": "v-d5-z6-002",
+      "taskStatementId": "5.3",
+      "scenario": "Corvid Analytics migrated four services from an earlier Opus generation to the current one. Prompts, tools and traffic are unchanged. After the migration the services became measurably slower and roughly 40% more expensive, with no change in their eval scores. Checking the docs, the code omits any thinking or effort configuration.",
+      "stem": "What explains the regression, and what is the correct response?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The default changed underneath them. Most current models default to `high` effort, spending as many tokens as needed for excellent results, while Claude Opus 5.5 defaults to `medium`. An omitted parameter is not 'no thinking' — it is the new model's default, so a migration can silently move a workload up an effort tier with identical prompts and identical quality, which is exactly the signature here: slower and more expensive, same scores. The response is to set `output_config.effort` explicitly on every service, retune `max_tokens` for the new output profile, and re-run the effort sweep on the evals rather than inheriting a level tuned for an earlier model."
+        },
+        {
+          "id": "B",
+          "text": "The new model is billed at a higher input rate. Since eval scores are unchanged, the cost change must be pricing rather than token volume, and the fix is a pricing negotiation."
+        },
+        {
+          "id": "C",
+          "text": "The new model's tokenizer produces about 30% more tokens for the same text, which accounts for both the cost and the latency."
+        },
+        {
+          "id": "D",
+          "text": "The services are now paying for thinking tokens they never requested, so the fix is to send `thinking: {\"type\": \"disabled\"}` explicitly."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The documentation makes this explicit: most Claude models default to `high` effort, which spends as many tokens as needed for excellent results, while Claude Opus 5.5 defaults to `medium` — and setting effort to the model's default is exactly equivalent to omitting the parameter, so an absent setting is not a neutral state. Migrating between generations can therefore move a workload to a higher effort tier with the same prompt and the same quality, which is what Corvid's numbers describe: cost and latency up, eval scores flat, nothing in the code changed. The migration guidance for earlier models is correspondingly specific — run a fresh effort sweep on your own evals rather than carrying over a setting tuned for an earlier model, remove any context-window beta header, re-tune `max_tokens` for the updated tokenisation including compaction triggers, and re-test client-side token-count estimates. Pinning effort explicitly makes the workload's behaviour a decision rather than a side effect of which model string is configured.",
+      "whyWrong": {
+        "B": "Pricing and token volume are different variables, and the change is consistent with reasoning about volume — an unchanged eval score with higher spend is the signature of more output tokens for the same answers, not a different unit price.",
+        "C": "The tokenizer change is real and the migration guidance does say to re-benchmark under the updated tokenisation, but it does not explain a latency and cost change with unchanged evals on unchanged text as cleanly as an effort-default change does. The tokenizer story also predicts input-token growth, which Corvid did not report.",
+        "D": "Manual thinking budgets are rejected on current models, and disabling thinking is not the lever here — effort is. Setting the parameter explicitly is the fix; the problem is an unset default, not an unwanted explicit setting."
+      },
+      "difficulty": 3,
+      "visualId": "model-selection",
+      "mindset": "An omitted effort parameter is the new model's default, not neutrality — so pin effort explicitly and re-sweep it on your evals after any migration.",
+      "tags": [
+        "effort",
+        "migration",
+        "cost"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/effort",
+        "https://platform.claude.com/docs/en/models/opus-5-5/migration-guide"
+      ]
+    },
+    {
+      "id": "v-d5-z6-003",
+      "taskStatementId": "5.3",
+      "scenario": "Corvid Analytics has 40 services, each with a model identifier in its own config. Two releases ago an engineer flipped all of them to a new version in one commit, with no eval run, and the change caused production incidents: tool-call arguments stopped matching their schemas in three services and a refusal rate on another tripled.",
+      "stem": "What is the recommended approach, and what is the governing framing?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Treat a model upgrade as a gated migration, not a string change. Pin models through one indirection so a retarget is one edit, and gate it on evals: the model-deprecation guidance says to test thoroughly with the new models well before the retirement date, and the migration guidance distinguishes hard breaks — parameters the API rejects with a 400 — from silent behaviour changes, which are the dangerous class because nothing announces them. Three services with schema-mismatched arguments is the signature of the silent class; a refusal-rate jump is the other documented behaviour change, real-time cybersecurity safeguards arrived in a later generation and can reject requests on prohibited or high-risk topics."
+        },
+        {
+          "id": "B",
+          "text": "Upgrade all services at once so that any regression is visible immediately in aggregate metrics rather than hidden in one service's numbers."
+        },
+        {
+          "id": "C",
+          "text": "Never upgrade. Pin every service to the exact model version it launched with, and treat new releases as unusable until they are supported by the provider's own compatibility list."
+        },
+        {
+          "id": "D",
+          "text": "Upgrade incrementally but skip the eval step, since evals measure the application's own prompts rather than the model's behaviour."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The governing framing is that a release changes behaviour as well as parameters, and only one of those announces itself. Hard breaks are the manageable class: current models reject a manual `budget_tokens` thinking budget, reject non-default `temperature`, `top_p` and `top_k`, reject assistant-message prefills, and reject forced `tool_choice` — each with a 400, so a smoke test finds them. The silent class is what bit Corvid: tool-argument behaviour can change shape — later models may produce different JSON string escaping in tool call arguments, which is precisely what breaks a naive raw-string parser — and behavioural changes arrived without an API break, including built-in progress updates in agentic traces, real-time cybersecurity safeguards that can raise refusals, and high-resolution image support that changes token counts. The response is the documented sequence: one indirection so retargeting is a single edit, evals as the gate, hard breaks detected by smoke tests, silent changes caught by behavioural evals, and migration well before any retirement date — customers get at least 60 days' notice of retirements, which is a schedule to plan against rather than a deadline to react to.",
+      "whyWrong": {
+        "B": "Aggregate metrics hide per-service regressions, which is the mechanism that made this incident hard to attribute. Staging releases one at a time with a gate is what makes the cause findable.",
+        "C": "Refusing to upgrade is not a strategy when models are deprecated and eventually retired — requests to retired models fail outright, so an un-upgraded fleet has a forced, unplanned migration with no evals behind it.",
+        "D": "Evals are how model behaviour is measured, which is exactly why skipping them is the failure. An eval that only tests the application's prompts is still the only instrument for detecting a change in how the model follows them."
+      },
+      "difficulty": 2,
+      "visualId": "eval-loop",
+      "mindset": "A model upgrade has two failure classes — 400-level hard breaks and silent behaviour changes — and only evals catch the second, so gate on them behind one indirection.",
+      "tags": [
+        "migration",
+        "evals",
+        "model-selection"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/about-claude/model-deprecations",
+        "https://platform.claude.com/docs/en/models/opus-5-5/migration-guide"
+      ]
+    },
+    {
+      "id": "v-d5-z6-004",
+      "taskStatementId": "5.4",
+      "scenario": "Corvid Analytics runs a 900-request-a-second extraction service. Every request carries an identical 24,000-token system prompt plus tool definitions and 3,000 tokens of per-request content. The team measures the shared prefix with the token counting endpoint before sending, and finds it is 27,000 tokens — comfortably inside the window — so no trimming happens.",
+      "stem": "What is wrong with this reasoning, and what should Corvid change?",
+      "options": [
+        {
+          "id": "A",
+          "text": "A pre-flight token count answers 'does it fit', not 'what does it cost'. At 900 requests a second, a 27,000-token prefix is the entire cost model, and prefix tokens are billed at full input price unless they are cached. The two changes that follow from the measurement are prompt caching on the stable prefix — reads bill far below base input — and shortening the prefix itself, since cached tokens still occupy the window. Neither requires the count to be near the limit; the count is the input to a cost decision, not a threshold that has been cleared."
+        },
+        {
+          "id": "B",
+          "text": "Nothing is wrong. As long as the request fits inside the context window it will succeed, and cost is a finance concern rather than an engineering one."
+        },
+        {
+          "id": "C",
+          "text": "The count is wrong because token counting returns an estimate. Corvid should stop using it and rely on the `usage` object from live responses instead."
+        },
+        {
+          "id": "D",
+          "text": "The per-request content should be moved above the system prompt so the stable prefix sits closer to the start of the cache, which reduces how much of it is written per call."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The error is treating a capacity check as a cost check. Token counting exists to let you proactively manage rate limits and costs, make model-routing decisions and fit prompts to a target length — and it returns an estimate, with the documented caveat that actual input tokens may differ by a small amount and that system-added tokens may be included but are not billed. So the count is a planning input, not a clearance. What it should trigger at 900 requests a second is cost work: prompt caching on the stable prefix, where writes cost more than base input and reads far less, with the breakpoint at the end of the static prefix and the per-request content after it; and prefix reduction, because cached tokens still occupy the context window and a 27,000-token prefix crowds out conversation even when it is cheap. The 1-hour cache duration is the option for a prefix that must survive gaps between bursts. Order matters — moving a varying block earlier cannot help, since caching references the entire prefix up to the marked block.",
+      "whyWrong": {
+        "B": "Conflates two questions. Whether the request fits is necessary and not sufficient; at this volume the prefix dominates the bill whether or not it is comfortably inside the window.",
+        "C": "Gets the caveat backwards. The estimate is exactly what makes pre-flight counting useful for planning; the `usage` object is what you reconcile against afterwards, not what you plan with.",
+        "D": "Inverts the caching order. Caching references tools, then system, then messages up to the marked block, so putting per-request content first would put the varying bytes ahead of the stable prefix and prevent reuse entirely."
+      },
+      "difficulty": 2,
+      "mindset": "A pre-flight token count answers 'does it fit', never 'what does it cost' — at volume the prefix drives the bill whether or not it is under the limit.",
+      "tags": [
+        "token-counting",
+        "cost",
+        "prompt-caching"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/token-counting",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching"
+      ]
+    },
+    {
+      "id": "v-d5-z6-005",
+      "taskStatementId": "5.4",
+      "scenario": "Corvid Analytics wants to cut spend on its extraction service without changing the text the model processes or the answers it gives. Two candidate changes are on the table, and the team has asked whether either is disqualified by its own documentation.",
+      "stem": "Which assessment is correct?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Neither is disqualified. Prompt caching changes billing, not content — the same prefix is sent and cached tokens are read at a fraction of base input price, with the 1-hour duration available at additional cost when the usage pattern has gaps longer than the default five minutes. Message Batches change scheduling, not content — the same requests are processed with a discounted rate in exchange for tolerating the delay, and results are polled for. Both therefore leave the model's input and output untouched, which is why they can be adopted in a quarter where any change that could alter answer quality has to go through re-evaluation first."
+        },
+        {
+          "id": "B",
+          "text": "Prompt caching is disqualified because enabling it injects additional instructions that change how the model responds, so it requires re-evaluation like any prompt change."
+        },
+        {
+          "id": "C",
+          "text": "Message Batches are disqualified because batched requests are processed by a different code path, so their outputs are not comparable with synchronous calls and any quality change would be undetected."
+        },
+        {
+          "id": "D",
+          "text": "Both are disqualified, because both alter which model handles the request and therefore require a full re-evaluation of answer quality."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The useful distinction is which levers change the request and which change the accounting or the schedule. Caching leaves the content identical — the same prefix is sent, the writes bill above base input and the reads far below it, and the cache is refreshed at no additional cost each time the cached content is used, with the default five-minute lifetime measured from the start of the request that writes or reads it and a 1-hour duration available at additional cost. Two operational caveats belong in the plan: the breakpoint has to sit at the end of the static prefix, and changing `output_config.format` invalidates the cache for that thread, so a structured-output change is not free on a cached route. Batching likewise leaves content alone: the same requests go in with a discount in exchange for latency tolerance, polled via `processing_status` until it reaches `ended`. Neither alters the text, so neither needs a quality re-evaluation — which is precisely what makes them usable in a quarter when quality-gated changes are off the table.",
+      "whyWrong": {
+        "B": "Attributes prompt-modifying behaviour to caching. Caching is a billing and latency mechanism on identical content; the documented prompt-level effects in this area belong to structured outputs, which do add a format description to the system prompt.",
+        "C": "Invents a quality difference. Batched requests are the same requests processed with a discount for latency tolerance, and because results are correlated by `custom_id` they are directly comparable to synchronous results.",
+        "D": "Neither changes which model handles the request. That is what model routing does, and it is the change that genuinely does require re-evaluation because quality can move."
+      },
+      "difficulty": 2,
+      "mindset": "Separate levers that change the request from levers that change the accounting — caching and batching leave content identical, so they skip the quality gate.",
+      "tags": [
+        "prompt-caching",
+        "message-batches",
+        "cost"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
+        "https://platform.claude.com/docs/en/build-with-claude/batch-processing"
+      ]
+    },
+    {
+      "id": "v-d5-z6-006",
+      "taskStatementId": "5.1",
+      "scenario": "Corvid Analytics' intent classifier mislabels roughly 2% of tickets. A colleague proposes setting `temperature: 0` to make the model deterministic, and another proposes running the same request twenty times and taking the majority answer as the new baseline.",
+      "stem": "Which TWO statements about these proposals are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Current models reject a non-default `temperature` with a 400 — `temperature`, `top_p` and `top_k` must be omitted or left at their defaults, with behaviour steered by prompting instead. So the first proposal is not available at all on the models Corvid runs, and a plan that depends on setting it is a plan that fails at the first request."
+        },
+        {
+          "id": "B",
+          "text": "Repeated sampling is the available substitute, and it changes what you are measuring. Because there is no sampling dial to set noise to zero, the honest characterisation of the classifier is a distribution: run each case N times and report an error rate with a spread, and treat the 2% as a rate rather than a deterministic fact. That also changes the eval design — a single-run pass/fail assertion will flip on cases the system gets right 98% of the time."
+        },
+        {
+          "id": "C",
+          "text": "Setting `temperature: 0` is the documented way to make output deterministic, and it is rejected only on the newest models, so Corvid can enable it by moving to an earlier generation."
+        },
+        {
+          "id": "D",
+          "text": "Majority voting over twenty runs converts a non-deterministic system into a deterministic one at twenty times the cost, which is the standard technique for removing sampling variance."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Two are accurate, and together they describe the actual constraint. The hard fact is that current models reject a non-default `temperature` — `temperature`, `top_p` and `top_k` must be omitted or left at their defaults, and behaviour is steered with prompting — so there is no dial to turn down, on this generation or a newer one. What is available is repeated measurement: run each case N times and report a rate with a spread, because the quantity you actually have is a distribution rather than a deterministic output. That has consequences beyond the metric. A single-run eval will flip on borderline cases, so eval design has to tolerate that — and the prompt side is where the variance gets attacked instead, which is why the consistency guidance pairs explicit criteria with examples. The two wrong answers both assume a determinism lever exists: one asserts it exists and that older models have it, the other proposes to buy determinism with twenty billed calls per case, which does not remove variance from the underlying distribution so much as sample it more expensively.",
+      "whyWrong": {
+        "C": "Asserts a parameter that is rejected rather than supported. `temperature` is not a determinism control on these models — a non-default value returns a 400, so the proposal fails immediately rather than working on an older generation.",
+        "D": "Majority voting reduces observed error at twenty times the cost; it does not make the underlying system deterministic, and for a route running at volume it is a cost regression rather than a fix. It also cannot help when the model's modal answer is wrong."
+      },
+      "difficulty": 2,
+      "mindset": "There is no sampling dial on current models — so design for a distribution: run N times, report a rate, and attack variance with criteria and examples instead.",
+      "tags": [
+        "sampling",
+        "non-determinism",
+        "evals"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/models/opus-5-5/migration-guide",
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/increase-consistency"
+      ]
+    },
+    {
+      "id": "v-d5-z6-007",
+      "taskStatementId": "5.1",
+      "scenario": "Corvid Analytics' long-horizon migration agent writes a plan, then executes it with 40 tool-using turns. It runs on a current top-tier model with adaptive thinking always on and effort set to `high`, which the platform team standardises across 40 services so any service can be retargeted at a newer model by editing one line.",
+      "stem": "Which TWO statements about that standardisation are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Most current models default to `high` effort and Claude Opus 5.5 defaults to `medium`, and effort is a behavioural signal rather than a strict token budget — at lower levels Claude still thinks on sufficiently difficult problems, just less than it would at higher levels. So a fleet-wide `high` is defensible for a long-horizon agent but is a standing cost on the 39 services with easier work, and effort is the correct within-model lever to turn down per task difficulty rather than a value that should be uniform."
+        },
+        {
+          "id": "B",
+          "text": "Standardising the string creates a specific risk the platform team should name: the same effort value means different things on different models, because the per-model default differs and the guidance is to run a fresh effort sweep on your own evals rather than carrying over a setting tuned for an earlier model. A config that retargets 40 services by editing one line will silently inherit the new model's default — and its default is `medium` on the newest top-tier model — which is a behaviour change disguised as a config edit."
+        },
+        {
+          "id": "C",
+          "text": "Effort affects only thinking tokens, so raising it cannot change tool-call behaviour. Standardising it is therefore safe for tool-using routes."
+        },
+        {
+          "id": "D",
+          "text": "Because effort is a behavioural signal rather than a budget, setting it high cannot increase cost, and the fleet standard is free."
+        },
+        {
+          "id": "E",
+          "text": "At `high` and above the docs recommend a large `max_tokens`, so the fleet standard must also standardise `max_tokens` or the higher-effort routes will truncate."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Two are accurate and they are the two halves of the same problem. First, effort is per-model and per-task: most models default to `high`, Claude Opus 5.5 defaults to `medium`, effort applies to all output tokens — text, tool calls and arguments, and thinking — so it works whether or not thinking is enabled, and lower effort also means fewer and terser tool calls. It is explicitly a behavioural signal rather than a strict token budget, so `high` is a reasonable choice for the long-horizon agent and an unnecessary standing cost on the easy routes; it is the lever to tune by task difficulty, not a value to flatten. Second, standardising the string is itself a risk, because the same value means different things against different defaults, and the migration guidance says to run a fresh effort sweep on your own evals rather than carry over a setting tuned for an earlier model. So the one-line retarget silently changes behaviour, and the recommended companion — setting a large `max_tokens` at `high` and above — is the third thing the platform standard has to cover.",
+      "whyWrong": {
+        "C": "Misreads what effort touches. It applies to all output tokens including tool calls and function arguments, and lower effort yields fewer and terser tool calls — so it definitely reaches tool-using routes.",
+        "D": "Inverts the relationship. Effort is a behavioural signal, not a budget, and that is exactly why it changes how many tokens get produced — a behavioural signal still costs money.",
+        "E": "True and important, but it is a consequence of the effort choice rather than one of the two claims about standardising effort across a fleet, and the two correct claims are the per-task economics and the meaning of the string changing with the model."
+      },
+      "difficulty": 3,
+      "visualId": "model-selection",
+      "mindset": "Effort is per-model and per-task — standardising the string means standardising behaviour that a retarget will silently change.",
+      "tags": [
+        "effort",
+        "configuration",
+        "cost"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/effort",
+        "https://platform.claude.com/docs/en/models/opus-5-5/migration-guide"
+      ]
+    },
+    {
+      "id": "v-d5-z6-008",
+      "taskStatementId": "5.4",
+      "scenario": "Corvid Analytics' extraction service validates every response in code and rejects roughly 3% of records that arrive truncated. Its fix is to raise `max_tokens` and resend, appending the new response to the same conversation. Finance noted the bill rose.",
+      "stem": "What is happening, and what is the correct way to recover from a truncated response?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Two problems. The first is that `max_tokens` is a hard limit on total output, thinking plus response text, so a cap sized for a non-reasoning configuration truncates reasoning-heavy responses — the documented symptom is `stop_reason: \"max_tokens\"`, and the fix is to size `max_tokens` for the effort level in use, with the guidance that at `high` and above a large value is a starting point. The second is the recovery: on truncation, start a fresh request rather than continuing the conversation, because appending the re-sent response to the same thread produces a conversation with two competing answers and can post the record twice."
+        },
+        {
+          "id": "B",
+          "text": "Only the first problem is real. Appending the re-sent response to the same conversation is the documented recovery, because continuing preserves the reasoning the model already did and saves tokens."
+        },
+        {
+          "id": "C",
+          "text": "The cause is the 3% validation failure rate rather than `max_tokens`. Raising `max_tokens` makes responses longer, which increases the chance of a second defect appearing."
+        },
+        {
+          "id": "D",
+          "text": "The correct fix is to switch to fast mode, which raises output throughput so the same response completes inside the existing `max_tokens`."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Truncation is a limit problem, not a throughput problem. `max_tokens` is a hard limit on total output including thinking, so a cap chosen before reasoning was enabled is systematically too small — the symptom is `stop_reason: \"max_tokens\"`, and the documented responses are to size `max_tokens` for the configuration in use (with a large value a starting point at `high` and above) or to reduce effort. Recovery has a documented shape too, and it is not what Corvid is doing: on truncation, re-request rather than continuing the conversation. With structured outputs specifically, the guidance is to retry with a higher `max_tokens` to get the complete object — a fresh request. Appending to the same thread means the model sees its own truncated output and a second complete answer in one conversation, which is how a record ends up with two values for the same field and how a downstream posting happens twice. The reasoning-preservation argument in the distractor is real for some designs and wrong here, because the truncated turn carries no usable partial output.",
+      "whyWrong": {
+        "B": "Preserving reasoning is not the trade-off here, because the truncated turn's output is not usable. Continuing the same conversation with a complete second answer is what creates duplicate fields and duplicate postings.",
+        "C": "Treats a downstream symptom as the cause. Truncation is detected by `stop_reason`, and a larger `max_tokens` does not introduce new defects — it completes responses that were being cut off.",
+        "D": "Fast mode is a throughput and latency feature. It does not change a hard output limit, so a response that exceeds `max_tokens` is still truncated — and enabling it fleet-wide for this reason would be solving the wrong problem."
+      },
+      "difficulty": 2,
+      "mindset": "`max_tokens` bounds thinking plus text, so truncation is fixed by sizing the cap for the effort in use — and recovered by a fresh request, never by continuing the same thread.",
+      "tags": [
+        "max-tokens",
+        "stop-reasons",
+        "cost"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons",
+        "https://platform.claude.com/docs/en/build-with-claude/effort"
+      ]
+    },
+    {
+      "id": "v-d5-z6-009",
+      "taskStatementId": "5.1",
+      "scenario": "Corvid Analytics' FAQ route has a 900-token prompt, a cached prefix and no long documents. Its p95 time to first token is 2.4 seconds against an 800 ms target, and the output rate once generation starts is fine.",
+      "stem": "Which single change is most likely to close the gap, and why?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Move the route to a smaller, faster model tier. The prompt is already small and cached, so the prompt-side levers are spent, and the latency guidance is explicit that time to first token is driven by prompt size and model size — with prompt size no longer the lever, model size is. It also names a fast tier as the option for speed-sensitive applications while maintaining quality, and this route is a lookup rather than a reasoning task."
+        },
+        {
+          "id": "B",
+          "text": "Shorten the answers. Time to first token is the delay before the first token, so the length of the eventual response does not affect it."
+        },
+        {
+          "id": "C",
+          "text": "Add fast mode. The route is already streaming and the delay is before generation begins, which is not the phase that mode targets."
+        },
+        {
+          "id": "D",
+          "text": "Raise `max_tokens`. A larger allowance gives the model more room to finish, which reduces the chance of a truncated response but does not make the first token arrive sooner."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The diagnosis is that Corvid has already spent the prompt-side levers: a 900-token prompt with a cached prefix leaves nothing meaningful to trim, so the remaining documented driver of time to first token is model size. The guidance on reducing latency is explicit that time to first token is a function of prompt size and model size, and it recommends choosing the right model for the requirement — naming a fast tier as the option for speed-sensitive applications that still need quality. That fits this route, which is a lookup rather than a reasoning task, so the smaller tier's quality ceiling is unlikely to bind — and the decision should still be confirmed on the route's own eval set rather than assumed. The order of operations in the guidance is worth carrying: engineer a prompt that works well without model or prompt constraints first, then reduce latency, because optimising early can hide what top performance looks like.",
+      "whyWrong": {
+        "B": "Confuses time to first token with total generation time. The measurement is the delay before the first token, so the eventual response length is a cost and streaming-experience question rather than a TTFT one.",
+        "C": "Fast mode targets output throughput and the interval between tokens. Corvid's problem is the interval before generation starts, which fast mode does not address.",
+        "D": "`max_tokens` is a ceiling, not a schedule. Raising it changes what the model is permitted to produce and its cost, not when the first token appears."
+      },
+      "difficulty": 1,
+      "visualId": "model-selection",
+      "mindset": "With a small cached prompt, the remaining TTFT lever is model size — and confirm it on the route's own eval rather than assuming.",
+      "tags": [
+        "latency",
+        "model-selection",
+        "cost"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-latency",
+        "https://platform.claude.com/docs/en/about-claude/models/choosing-a-model"
+      ]
+    },
+    {
+      "id": "v-d5-z6-010",
+      "taskStatementId": "5.4",
+      "scenario": "Corvid Analytics' summarisation product is priced out of some deals. Its cost is dominated by output: each article input is fixed in size, but summaries average about 1,200 tokens and output tokens bill at roughly five times the input rate.",
+      "stem": "What is the best way to cut cost per summary, and what should the team check before shipping it?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Constrain the output and check what the change costs in usefulness. With output at several times the input rate and the input fixed, length is the only large lever, and structured output is a reasonable way to enforce it — the schema bounds how much the model can emit, so the guidance is to cut summary length rather than merely ask for brevity. Before shipping, re-evaluate: any change that could alter answer quality goes through re-evaluation, and here the fields the schema drops are the judgement calls. Two cost facts belong in the model: output is often over half the total cost so a shorter summary moves the number materially, and each token reflects real compute — so there is a floor beneath which the product stops being worth running."
+        },
+        {
+          "id": "B",
+          "text": "Move to a cheaper model. The input is fixed, so the tier is the only variable that matters once output dominates the bill."
+        },
+        {
+          "id": "C",
+          "text": "Add prompt caching. The article input is fixed in size, so caching the input prefix reduces the dominant cost component."
+        },
+        {
+          "id": "D",
+          "text": "Move the summarisation to the Message Batches API, whose discounted rate applies to the whole request and therefore to the dominant output component."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The arithmetic points at one lever. When the input is fixed in size and output bills at several times the input rate, output tokens dominate — and the cost-model guidance is explicit that for many applications output is often over half the total cost, which is why cutting summary length moves the number materially while input-side work does not. So the change is to constrain what the model emits, and structured output is a defensible mechanism because the compiled grammar bounds generation. But the constraint has to be evaluated, not assumed: any change that could alter answer quality needs re-evaluation first, and a schema that drops narrative fields is exactly the kind of change that trades usefulness for cost invisibly. The same guidance supplies the honest counterweight — each token reflects real compute, so there is a floor below which the product stops being worth running, and the correct end state is a measured trade rather than a floor that has not been located.",
+      "whyWrong": {
+        "B": "Ignores where the cost is. The tier affects both input and output pricing, but with a fixed input and output dominating, the higher-return move is fewer output tokens — and a cheaper model also risks the quality that re-evaluation exists to protect.",
+        "C": "Applies an input-side lever to an output-dominated workload. Caching the article prefix reduces the smaller component; the prefix tokens are also resent regardless, so caching changes their price rather than their count.",
+        "D": "Mislocates the discount. The Batches discount is a pricing arrangement for the same requests processed with delay tolerance — and it is the wrong tool for a product being priced out of real-time deals, since it trades away the latency the product is sold on."
+      },
+      "difficulty": 3,
+      "visualId": "cost-model",
+      "mindset": "When input is fixed and output dominates, the lever is fewer output tokens — and the constraint has to be re-evaluated because a shorter summary is a less useful one.",
+      "tags": [
+        "cost",
+        "structured-output",
+        "optimisation"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/about-claude/pricing",
+        "https://platform.claude.com/docs/en/test-and-evaluate/define-success"
+      ]
+    },
+    {
+      "id": "v-d5-z6-011",
+      "taskStatementId": "5.2",
+      "scenario": "Corvid Analytics' chat product streams with the official SDK and the client team writes its own event handling on top. They have been bitten twice: a token count in their dashboard that kept increasing after a response finished, and a crash on an event type they had not seen before.",
+      "stem": "Which TWO statements about consuming the SDK's stream are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "The token counts in `message_delta` are cumulative, not incremental, so a dashboard that adds them per event double-counts every update. If the SDK's own stream consumer is used — `stream.get_final_message()` in Python, `stream.finalMessage()` in TypeScript — it returns the complete `Message` object, identical to what a non-streaming call returns, which removes the whole class of accumulation bug."
+        },
+        {
+          "id": "B",
+          "text": "Unknown event types must be handled gracefully rather than assumed absent. In accordance with the versioning policy new event types may be added, and a stream may also include any number of `ping` events at points the client did not ask for — so a consumer with an exhaustive switch and no default branch is the shape that produced Corvid's crash."
+        },
+        {
+          "id": "C",
+          "text": "Every SSE line is guaranteed to be a complete JSON object, so a client may parse lines independently and in any order."
+        },
+        {
+          "id": "D",
+          "text": "Tool call arguments arrive as a single complete JSON object in the first `tool_use` block, so no accumulation of partial input is needed."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Both are documented streaming behaviours, and both correspond to a bug the team actually shipped. Cumulative usage: the token counts in `message_delta` are explicitly cumulative, so a client that adds them per event counts the whole series repeatedly — which is exactly the runaway dashboard. The SDK removes the problem by letting you consume the stream for you: `stream.get_final_message()` in Python and `stream.finalMessage()` in TypeScript return the complete `Message`, identical to a non-streaming call, and there is a documented note that you do not need incremental processing to use them. Graceful handling of the unknown: the versioning policy allows new event types to be added, and a stream may contain any number of `ping` events, so a consumer needs a tolerant default path. The third point is worth stating because it is the same idea applied to tool arguments: `tool_use` input arrives as partial JSON string deltas and the final `input` is always an object, so accumulation at the boundary is required rather than optional.",
+      "whyWrong": {
+        "C": "Misreads what streaming gives you. The point of `stream-json` or SSE is that events arrive as the run progresses, so a consumer processes them in order and must tolerate events it did not expect.",
+        "D": "Reverses the documented shape. The deltas corresponding to a `tool_use` block's `input` are partial JSON strings, and the guidance is to accumulate them and parse once at `content_block_stop`."
+      },
+      "difficulty": 2,
+      "visualId": "batch-vs-realtime",
+      "mindset": "`message_delta` usage is cumulative and the event set is open — or let the SDK's stream consumer hand you the finished Message.",
+      "tags": [
+        "streaming",
+        "sdk",
+        "observability"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/streaming",
+        "https://platform.claude.com/docs/en/api/client-sdks"
+      ]
+    },
+    {
+      "id": "v-d5-z6-012",
+      "taskStatementId": "5.2",
+      "scenario": "Corvid Analytics' adjudication service is Go, and today it builds requests by hand against `/v1/messages` with its own retry loop and no retry at all on 429s. The team is moving it to the official SDK and wants to know what will change in behaviour rather than in syntax.",
+      "stem": "Which TWO changes should the team expect from the SDK, beyond the request builder? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Transient failures start being retried without the team writing the loop. The SDKs automatically retry transient failures such as connection errors, rate limits and 5xx server errors with exponential backoff, twice by default, honouring `retry-after` when present, configurable or disableable with `max_retries` — so a hand-written zero-retry client becomes retrying by default, which changes both latency distributions and the load profile during an incident."
+        },
+        {
+          "id": "B",
+          "text": "The error surface becomes typed and the long-request behaviour becomes guarded. A 404 surfaces as a typed SDK error rather than a JSON body to inspect — with Go the exception that makes the shape explicit, since it has one error type for every status, `*anthropic.Error`, so there you branch on `StatusCode`. And the SDKs validate that non-streaming Messages requests are not expected to exceed 10 minutes and set a socket option for TCP keep-alive, which is a behaviour change for a hand-written client that had neither."
+        },
+        {
+          "id": "C",
+          "text": "Nothing changes observably. The SDK is a convenience wrapper, so retries, error types and connection handling remain the application's to own exactly as before."
+        },
+        {
+          "id": "D",
+          "text": "The SDK guarantees the raw HTTP response shape, so the team can drop its own response parsing and read message content straight from the client object without handling errors at all."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Both are documented SDK behaviours with consequences the team should plan for rather than discover. Retries: the SDKs automatically retry transient failures — connection errors, rate limits and 5xx — with exponential backoff, twice by default, honouring `retry-after`, configurable with `max_retries`. Corvid's hand-written client retries nothing on 429s, so adopting the SDK turns a fail-fast client into a retrying one, which is usually an improvement but changes tail latency and adds load exactly when the provider is already struggling — the same reason their current explicit loop has to be reconciled rather than left alongside. Errors and long requests: typed exceptions replace hand-parsed bodies, with Go's `*anthropic.Error` branching on `StatusCode` as the documented shape for that language, and the SDKs both validate the 10-minute non-streaming expectation and set TCP keep-alive. Those two are genuine behaviour changes for a client that had neither, and they are worth stating in the migration note because they alter failure modes rather than just ergonomics.",
+      "whyWrong": {
+        "C": "Materially understates the SDK. Default retries of transient failures, typed errors, TCP keep-alive and the 10-minute non-streaming validation are all behaviours a hand-written client does not have.",
+        "D": "Overstates it. The SDK raises typed errors precisely so applications can handle them, and it does not make error handling unnecessary."
+      },
+      "difficulty": 2,
+      "mindset": "Adopting the SDK changes failure behaviour as well as ergonomics — default retries, typed errors, keep-alive and the long-request guard all arrive with it.",
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://platform.claude.com/docs/en/api/client-sdks",
+        "https://code.claude.com/docs/en/agent-sdk/typescript"
+      ]
+    },
+    {
+      "id": "v-d5-z6-013",
+      "taskStatementId": "5.2",
+      "scenario": "Corvid Analytics wants its clinician-facing assistant to push updates to a connected editor without the browser polling, and separately wants to consume a third-party MCP server that pushes events to the client unprompted. An engineer has proposed building a websocket layer in front of the Claude API.",
+      "stem": "Which TWO statements about transport choice are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "The Messages API's streaming is server-sent events, which is one-directional: the client sends a request and the server streams events back. There is no bidirectional websocket transport in the Messages API, so a websocket layer in front of it has nothing bidirectional to wrap — push to a connected editor is a job for your own server or for a hosted agent surface, not for the API."
+        },
+        {
+          "id": "B",
+          "text": "MCP does have a WebSocket transport, and it exists for exactly the case Corvid's second scenario describes: the docs note WebSocket suits remote servers that push events to Claude unprompted. They also state the reason to prefer HTTP anyway when the server only responds to requests — HTTP supports OAuth and the `claude mcp add --transport` flag, while WebSocket supports neither, and its authentication is header-only."
+        },
+        {
+          "id": "C",
+          "text": "Build the websocket layer anyway, because a proxy that speaks websocket to the client and SSE upstream is the standard way to add server-initiated push to a request/response API."
+        },
+        {
+          "id": "D",
+          "text": "Use the Messages API's streaming and treat each streamed event as a push channel, so the editor can react as tokens arrive without any additional transport."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Both are documented and together they settle the two designs. The Messages API's streaming is SSE — the server pushes events to a client that made one request — which is inherently one-directional. So a websocket layer in front of `/v1/messages` cannot provide bidirectional messaging; the client-to-server direction a websocket would add does not exist in the API. Push to a connected editor is therefore your own server's responsibility, or a property of a hosted surface, and wrapping the API is the wrong place to look for it. MCP is where a bidirectional transport genuinely exists, and for the second scenario it is the documented fit, because the guidance is explicit that WebSocket suits remote MCP servers that push events to Claude unprompted while HTTP suits servers that only respond to requests. The trade-off Corvid should price in is the reason to prefer HTTP anyway: HTTP supports OAuth and the `--transport` flag, whereas WebSocket authentication is header-only and `claude mcp add --transport` does not accept it.",
+      "whyWrong": {
+        "C": "There is nothing bidirectional upstream to wrap. The Messages API's streaming is server-to-client only, so a websocket proxy adds a hop without adding a capability.",
+        "D": "Confuses streaming with push. SSE streams a response to a request that has already been made, so it cannot reach a connected editor that has not asked anything."
+      },
+      "difficulty": 3,
+      "mindset": "SSE is one-directional and the Messages API has no websocket transport — bidirectional push is MCP WebSocket or your own server, not a proxy.",
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-06-18/basic/transports",
+        "https://code.claude.com/docs/en/mcp"
+      ]
+    },
+    {
+      "id": "v-d5-z6-014",
+      "taskStatementId": "5.4",
+      "scenario": "Corvid Analytics turned on structured output to stop losing 2% of extractions to parse failures. The next week `cache_read_input_tokens` collapsed and `cache_creation_input_tokens` roughly doubled, on a route whose text did not change at all. Their cache breakpoint is at the end of the system prompt.",
+      "stem": "What explains the change, and what should Corvid account for in the plan?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Changing `output_config.format` invalidates the prompt cache for that conversation thread — documented as part of the cost of structured outputs. Every request now rewrites the prefix, so the saving on parse failures is being paid for in cache writes. That belongs in the cost model alongside the other structured-output costs: it adds a system prompt describing the expected format, so input tokens rise slightly, and the first request with a new schema pays extra latency while the grammar compiles, with compiled grammars cached for 24 hours from last use and invalidated by a change to the schema structure or to the set of tools in the request."
+        },
+        {
+          "id": "B",
+          "text": "Nothing changed structurally. Structured output makes responses shorter, which lowers total tokens, and cache reads should therefore rise. The team should check whether caching is enabled at all on the route."
+        },
+        {
+          "id": "C",
+          "text": "The cache is invalidated on every request because structured output responses are not cacheable, so Corvid should remove the breakpoint and accept base input pricing."
+        },
+        {
+          "id": "D",
+          "text": "The doubling is the first-request grammar compilation cost, which is paid on every call because compiled grammars are never cached."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The change Corvid made has a documented cache consequence, and it is the kind that belongs in a cost plan rather than in a postmortem. Turning on structured outputs means adding `output_config.format`, and the docs state that changing that parameter invalidates any prompt cache for the conversation thread — so a breakpoint at the end of the system prompt stops paying until the prefix is rewritten. That is consistent with reads collapsing and writes roughly doubling on text that did not change. The rest of the structured-output cost profile belongs in the same table: it injects a system prompt explaining the expected output format, so input tokens rise slightly; the first request using a given schema pays additional latency while the grammar compiles; compiled grammars are cached for 24 hours from last use; and the cache is invalidated by a change to the schema structure or to the set of tools in the request, though changing only `name` or `description` does not invalidate it. So the plan is to expect a one-off cache rewrite per thread per format change, not a permanent doubling.",
+      "whyWrong": {
+        "B": "Attributes a documented invalidation to a billing misunderstanding. Making responses shorter lowers output tokens but cannot explain reads collapsing and writes doubling on an unchanged prefix.",
+        "C": "Inverts what is happening. The prefix is still cacheable; it was invalidated by the format change. Removing the breakpoint would abandon cache reads entirely for a temporary effect.",
+        "D": "Misreads the caching behaviour. Compiled grammars are cached for 24 hours from last use, so compilation latency is a first-request cost per schema rather than a per-call charge."
+      },
+      "difficulty": 3,
+      "visualId": "prompt-caching",
+      "mindset": "`output_config.format` invalidates the prompt cache for that thread — so a format change is a one-off cache rewrite, and the other structured-output costs belong in the same line of the model.",
+      "tags": [
+        "structured-output",
+        "prompt-caching",
+        "cost"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching"
+      ]
+    },
+    {
+      "id": "v-d5-z6-015",
+      "taskStatementId": "5.1",
+      "scenario": "Corvid Analytics' research agent produces long analytical write-ups. It runs on a current top-tier model at `high` effort with adaptive thinking always on, and `max_tokens` is still set to the 8,000 value chosen for an earlier, non-reasoning configuration. Since enabling reasoning, about one response in twelve ends mid-sentence with `stop_reason: \"max_tokens\"`, and editors are trimming the missing text by hand.",
+      "stem": "What is happening, and what should Corvid change?",
+      "options": [
+        {
+          "id": "A",
+          "text": "`max_tokens` is a hard limit on total output — thinking plus response text — so a cap sized before reasoning was enabled truncates responses that reasoning now consumes into. `stop_reason: \"max_tokens\"` is the documented signal, and the guidance is to raise `max_tokens` to match the effort level, with a large value as the starting point at `high` and above. The truncation is also corrupting the evaluation: those one-in-twelve responses are recorded as incomplete write-ups rather than as the budget failure they are, so quality metrics and cost metrics are both wrong until the cap is fixed."
+        },
+        {
+          "id": "B",
+          "text": "The write-ups are too long for the model's output capability. Corvid should shorten the requested length in the prompt instead, since `max_tokens` cannot be raised on this model."
+        },
+        {
+          "id": "C",
+          "text": "This is fast mode's effect, since faster generation produces more tokens in the same window and therefore truncates more often."
+        },
+        {
+          "id": "D",
+          "text": "This is expected and harmless. Truncation at the cap is the model deciding the response is long enough, and editors trimming the tail is the normal workflow."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The cap was sized for a configuration that no longer exists. `max_tokens` is a hard limit on total output, thinking plus response text, so enabling reasoning on a model where thinking is always on means part of that budget is consumed before a single word of the write-up is generated — and `stop_reason: \"max_tokens\"` is the documented signal that the response was cut rather than finished. The response is to raise `max_tokens` to match the effort level in use, with the migration guidance noting that at `xhigh` or `max` a value of at least 64k is a sensible starting point, and to re-tune for the updated tokenisation including compaction triggers when migrating. Two operational consequences follow. Retrying a truncated response by continuing the conversation is the wrong shape — you want a fresh request with adequate headroom. And an eval set containing truncated responses measures your `max_tokens` setting rather than the model's quality, so fixing the cap changes both the cost model and the accuracy numbers.",
+      "whyWrong": {
+        "B": "Attributes a budget failure to a capability limit. `max_tokens` can be raised, and the guidance explicitly recommends doing so — shortening the prompt fights the wrong problem and costs quality you already paid reasoning tokens for.",
+        "C": "Attributes truncation to fast mode, which Corvid is not using and which affects throughput rather than a hard output limit. A `max_tokens` ceiling truncates regardless of generation speed.",
+        "D": "Contradicts `stop_reason`. A response that ends with `stop_reason: \"max_tokens\"` was cut off by the limit, not completed by the model, and hand-trimming twelve percent of outputs is a defect with a named fix."
+      },
+      "difficulty": 2,
+      "mindset": "`max_tokens` bounds thinking plus text — so a cap sized before reasoning truncates write-ups, and it corrupts your eval set as well as your budget.",
+      "tags": [
+        "max-tokens",
+        "effort",
+        "stop-reasons"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons",
+        "https://platform.claude.com/docs/en/build-with-claude/effort"
+      ]
+    },
+    {
+      "id": "v-d5-z6-016",
+      "taskStatementId": "5.1",
+      "scenario": "Corvid Analytics migrated its reasoning-heavy services to the current top-tier Opus model. Their request builder still sends `thinking: {\"type\": \"enabled\", \"budget_tokens\": 4096}` on the hardest calls, and the migration review flagged it.",
+      "stem": "What is the documented position on controlling reasoning depth on current models?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Manual thinking budgets are rejected. On current top-tier models adaptive thinking is always on — send no `thinking` field or send `thinking: {\"type\": \"adaptive\"}`, which is equivalent — and `thinking: {\"type\": \"disabled\"}` and `thinking: {\"type\": \"enabled\", \"budget_tokens\": N}` both return a 400. The control that replaces the budget is the effort parameter: `output_config.effort` is the only request parameter that controls thinking depth, it applies to all output tokens including tool calls and thinking, and it is a behavioural signal rather than a strict token budget — at lower levels Claude still thinks on sufficiently difficult problems, just less."
+        },
+        {
+          "id": "B",
+          "text": "Manual thinking budgets still work but are deprecated in favour of a larger `max_tokens`, because on current models thinking and response text share a single budget rather than having separate controls."
+        },
+        {
+          "id": "C",
+          "text": "Manual thinking budgets work on current models but only on the smallest tier, where adaptive thinking is unavailable."
+        },
+        {
+          "id": "D",
+          "text": "The budget should simply be raised to match the previous behaviour, since a rejected parameter means the value was too small rather than unsupported."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The migration guide is explicit that `thinking: {\"type\": \"enabled\", \"budget_tokens\": N}` returns a 400 on Claude Opus 4.7 and later models, that `thinking: {\"type\": \"disabled\"}` is also rejected, and that the only request parameter controlling thinking depth is `output_config.effort` — all five levels supported, defaulting to `medium` on Claude Opus 5.5. The corollary is that a request which satisfies the current requirements sends an effort level and no thinking field, or `adaptive`. Understanding what effort actually is matters for tuning: it applies to every output token — text, tool calls and function arguments, and thinking — so it works whether or not thinking is active, and lower effort also produces fewer and terser tool calls. And it is a behavioural signal rather than a strict token budget, which is why the recommended migration step is to run a fresh effort sweep on your own evals rather than mapping the old budget onto a new number.",
+      "whyWrong": {
+        "B": "Fuses two different limits. `max_tokens` is the hard ceiling on total output; thinking depth is controlled by effort. There is no requirement to raise `max_tokens` in place of a rejected thinking budget.",
+        "C": "Attributes a tier restriction that is not in the documentation. The constraint is model-generation specific — manual budgets are rejected on the newer generations — not tier specific.",
+        "D": "Misreads a 400. A rejected parameter is an unsupported one; increasing the value does not make an unsupported parameter valid, and the request would fail identically at any budget."
+      },
+      "difficulty": 1,
+      "visualId": "model-selection",
+      "mindset": "On current top-tier models thinking is always adaptive — effort is the only depth control, and a manual `budget_tokens` is a 400.",
+      "tags": [
+        "thinking",
+        "effort",
+        "migration"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/models/opus-5-5/migration-guide",
+        "https://platform.claude.com/docs/en/build-with-claude/effort"
+      ]
+    },
+    {
+      "id": "v-d5-z6-017",
+      "taskStatementId": "5.2",
+      "scenario": "Corvid Analytics' platform team standardises on the official Python SDK. Their existing error handling wraps calls in a `try` block and inspects `str(exc)` for substrings like 'rate limit' and 'overloaded', and their integration lead wants to know what the SDK actually gives them.",
+      "stem": "What should the team know about the SDK's error surface?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The SDK raises typed exceptions rather than returning raw JSON — a 404 surfaces as `anthropic.NotFoundError`, with equivalents in every supported language — and the docs' instruction is to catch the typed classes rather than string-match error messages, handling the most specific classes first. That is not a style preference: error `type` values may expand over time in line with the versioning policy, so substring matching is matching against a string the API does not promise to keep stable. The Go SDK is the exception that makes the general case explicit — it has one error type for every status, `*anthropic.Error`, so there you branch on `StatusCode`."
+        },
+        {
+          "id": "B",
+          "text": "The SDK returns the raw JSON error object, and the typed exceptions are a convenience layer available only if you opt in through a beta namespace."
+        },
+        {
+          "id": "C",
+          "text": "The SDK's retries are disabled by default, so applications must implement backoff themselves to avoid duplicate side effects on transient failures."
+        },
+        {
+          "id": "D",
+          "text": "String matching on error messages is the documented approach, because the error `type` values are not stable across versions while the human-readable messages are."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The SDK surface is typed by design, and the reason is a documented stability property of the API rather than taste. The official SDKs raise typed exceptions for these errors instead of returning raw JSON — 404 becomes `anthropic.NotFoundError` in Python, with the equivalents named per language — and the guidance is to catch the typed classes and handle the most specific first. The API side of the argument is in the error shapes documentation: in accordance with the versioning policy the values within the error objects may expand, and `type` values may grow over time. So a substring match is a dependency on a string the API explicitly does not promise to keep stable, while a typed class is the interface the SDK maintains. Two related facts belong in the same review. Retries are on by default — transient failures such as connection errors, rate limits and 5xx are retried with exponential backoff twice by default, honouring `retry-after`, configurable or disableable with `max_retries` — so the existing substring approach is also unaware of the retries already happening above it. And every response carries a `request-id` header, repeated as `request_id` in error bodies, which is what support needs.",
+      "whyWrong": {
+        "B": "Reverses the SDK's documented default. Typed exceptions are what the official SDKs raise for these status codes; there is no beta namespace required to get them.",
+        "C": "Inverts the default in a way that would reintroduce the documented nesting problem. The SDK retries transient failures twice by default with exponential backoff, so removing them means every application reimplements backoff — and the duplicate-side-effect risk is about idempotency, not about the SDK's retry setting.",
+        "D": "Has the stability claim exactly backwards. The versioning policy says the `type` values may grow, which is why typed classes are the supported handle — and messages are prose, not an API contract."
+      },
+      "difficulty": 1,
+      "mindset": "Catch the SDK's typed exception classes, most specific first — error `type` values may grow, so substring matching depends on a string the API does not promise.",
+      "tags": [
+        "sdk",
+        "errors",
+        "engineering-practices"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://platform.claude.com/docs/en/api/client-sdks"
+      ]
+    },
+    {
+      "id": "v-d5-z6-018",
+      "taskStatementId": "5.3",
+      "scenario": "Corvid Analytics' platform team is standardising model configuration across 40 services. An administrator proposes an `availableModels` allowlist containing `claude-sonnet-4-5`, `claude-haiku-4-5` and `claude-fable-5`, so that newer versions of the same families are permitted without another policy change.",
+      "stem": "Which statement about how that allowlist matches is correct?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Entries match a family, a version prefix or a full model ID, and a version prefix also matches later model IDs that extend it with another segment. So `claude-fable-5` permits both Fable 5 and Fable 5.1, while `claude-fable-5-1` permits Fable 5.1 only. The allowlist then applies everywhere a user can specify a model — the main session model via `/model`, the `--model` flag, `ANTHROPIC_MODEL`, the `model` setting and `ANTHROPIC_DEFAULT_MODEL`; alias resolution, since the family environment variables cannot redirect an allowed alias to a model outside the list; fast mode, which refuses to toggle when it would implicitly switch to an excluded Opus model; and subagent, skill, command and advisor model fields. That breadth is what makes it a policy control rather than a preference."
+        },
+        {
+          "id": "B",
+          "text": "Entries match only exact full model IDs, so `claude-sonnet-4-5` permits that version and nothing later, and each new version requires a policy change."
+        },
+        {
+          "id": "C",
+          "text": "The allowlist constrains only interactive selection through `/model`, since a `--model` flag or an `ANTHROPIC_MODEL` export is an explicit operator decision that policy does not override."
+        },
+        {
+          "id": "D",
+          "text": "A version prefix matches only the version it names; to permit a family you must list every member, because a prefix that extends another segment is treated as a different family."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The matching rules are documented and the prefix behaviour is the part that surprises teams. Entries match a model family such as `sonnet`, a version prefix such as `claude-sonnet-4-5`, or a full model ID; and a version prefix also matches later model IDs that extend it with another segment — so `claude-fable-5` permits Fable 5 and Fable 5.1 while `claude-fable-5-1` permits Fable 5.1 alone. That is exactly what Corvid wants from a prefix entry, and it is why the docs also describe blocking specific models or versions when a team needs the opposite. The breadth is the part that makes this a control: when `availableModels` is set the allowlist applies everywhere a user can specify a model, including the `--model` flag, the `ANTHROPIC_MODEL` environment variable, the `model` setting and the default for new sessions; it constrains alias resolution so the family environment variables cannot redirect an allowed alias outside the list; it makes fast mode refuse a toggle that would implicitly reach an excluded model; and it applies to subagent, teammate, skill and command model fields as well as the advisor model. An allowlist that only covered `/model` would not be a policy.",
+      "whyWrong": {
+        "B": "Describes exact-match behaviour, which is the full-model-ID case. The documented rule is that a version prefix also matches later IDs that extend it with another segment.",
+        "C": "Understates the control's reach. The allowlist explicitly applies to `--model` and `ANTHROPIC_MODEL` alongside `/model`, which is what makes it enforceable rather than advisory.",
+        "D": "Inverts the prefix rule. Extending a prefix with another segment is precisely the case a prefix is documented to match — `claude-fable-5` permitting Fable 5.1 is the given example."
+      },
+      "difficulty": 2,
+      "mindset": "A version prefix also matches later IDs that extend it — and `availableModels` binds every way a model can be named, which is what makes it policy.",
+      "tags": [
+        "model-config",
+        "policy",
+        "pinning"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/model-config",
+        "https://code.claude.com/docs/en/managed-settings"
+      ]
+    }
+  ]
+}

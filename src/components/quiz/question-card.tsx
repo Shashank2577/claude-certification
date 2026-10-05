@@ -7,6 +7,7 @@ import { Check, Compass, Flag, X } from "lucide-react";
 import type { PublicQuestion } from "@/lib/content-types";
 import type { AnswerFeedback } from "@/lib/quiz-types";
 import { Markdown } from "@/components/ui/markdown";
+import { Visual } from "@/components/visuals/visual";
 
 export interface QuestionCardProps {
   question: PublicQuestion;
@@ -222,6 +223,12 @@ export function QuestionCard({
                   {feedback.mindset}
                 </span>
               </p>
+            ) : null}
+            {/* The figure explains why the answer is right, so it only appears once feedback is shown. */}
+            {feedback.visualId ? (
+              <div className="mt-5 min-w-0 overflow-x-auto">
+                <Visual id={feedback.visualId} compact />
+              </div>
             ) : null}
           </motion.div>
         ) : null}

@@ -1,0 +1,1081 @@
+{
+  "certId": "developer",
+  "domainId": "d4-eval-debugging",
+  "questions": [
+    {
+      "id": "v-d4-g2-001",
+      "taskStatementId": "4.1",
+      "scenario": "Ironbridge Logistics runs an unattended invoice-extraction pipeline. When a run fails, the on-call engineer gets a Slack message reading \"API error\" with no indication of which call, which account, or whether retrying could ever help.",
+      "stem": "Which change gives the fastest, most reliable triage?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Catch the SDK's typed exception classes (for example `anthropic.NotFoundError`, `Anthropic.RateLimitError`) rather than string-matching messages, and log the `request_id` from each response — the field that appears in both the `request-id` header and the error body, and that Anthropic support needs."
+        },
+        {
+          "id": "B",
+          "text": "Log the full response body for every call, including successful ones, so nothing is missed."
+        },
+        {
+          "id": "C",
+          "text": "Retry every failure three times with exponential backoff before alerting, so transient problems never reach the on-call engineer."
+        },
+        {
+          "id": "D",
+          "text": "Disable the SDK's built-in retries with `max_retries = 0` so the pipeline controls every attempt and the log is unambiguous."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The API gives you two things designed for exactly this. First, errors are always a JSON object with a top-level `error` containing `type` and `message`, plus a `request_id` — and every response, successful or not, carries the same identifier in the `request-id` header. That id is what support asks for. Second, the official SDKs raise typed exceptions instead of handing back raw JSON (`anthropic.NotFoundError` in Python, `Anthropic.NotFoundError` in TypeScript), with the request id exposed as `_request_id`. Branching on the specific class tells you immediately whether a condition is retryable; string-matching a message does not survive copy edits or wording changes.",
+      "whyWrong": {
+        "B": "Capturing every response body is expensive and, worse, an error's identifying data is already in the `request_id` and the typed exception. It also risks logging invoice PII at volume.",
+        "C": "This is the failure mode the question opened with: a deterministic error retried three times just delays the alert and adds load. Classify before you retry.",
+        "D": "The SDKs already auto-retry connection errors, 429 and 5xx twice by default, honoring `retry-after`. Turning that off removes a correct layer and makes the log noisier, not clearer."
+      },
+      "difficulty": 1,
+      "mindset": "Triage on the typed exception and carry the `request_id` — that pair tells you both what broke and who to ask.",
+      "tags": [
+        "error-identification",
+        "observability",
+        "sdk"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://platform.claude.com/docs/en/api/errors#sdk-error-types"
+      ]
+    },
+    {
+      "id": "v-d4-g2-002",
+      "taskStatementId": "4.1",
+      "scenario": "Ironbridge's pipeline occasionally asks Claude to reconcile a full year of shipment records in one call, with `max_tokens` set high. The docs team keeps telling engineers to \"just add retries\" when these calls fail.",
+      "stem": "Which statement about long-running requests is correct?",
+      "options": [
+        {
+          "id": "A",
+          "text": "For long-running work, use the streaming Messages API or the Message Batches API. The SDKs validate that non-streaming requests are not expected to exceed a 10-minute timeout, and some networks drop idle connections on long non-streaming calls."
+        },
+        {
+          "id": "B",
+          "text": "Long requests fail only because of your own client timeout; raise it to an hour and non-streaming calls become safe."
+        },
+        {
+          "id": "C",
+          "text": "Set a very large `max_tokens` without streaming and the request will be safely buffered server-side."
+        },
+        {
+          "id": "D",
+          "text": "Streaming is only for latency perception and does not change reliability on long requests."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "This is a transport-reliability rule, not a preference. The guidance is explicit: \"Consider using the streaming Messages API or Message Batches API for long-running requests, especially those over 10 minutes,\" and to \"avoid setting a large `max_tokens` value without using\" one of them. Two independent reasons: idle connections can be dropped mid-request by networks, and \"the SDKs validate that their non-streaming Messages API requests are not expected to exceed a 10-minute timeout.\" Message Batches go further — they let you poll for results instead of requiring an uninterrupted connection, and they raise the request-size ceiling to 256 MB against the Messages API's 32 MB.",
+      "whyWrong": {
+        "B": "The SDKs themselves treat non-streaming requests over ten minutes as out of expectation, and idle-connection drops are a network behaviour your client timeout cannot prevent.",
+        "C": "A large `max_tokens` without streaming is exactly the combination the docs warn against — it widens the window during which a connection can go idle and die.",
+        "D": "Streaming changes the reliability model: events keep flowing, so a dropped idle connection is far less likely to lose the whole response."
+      },
+      "difficulty": 1,
+      "mindset": "Long work belongs on a streaming or batch transport; `max_tokens` is not a substitute for one.",
+      "tags": [
+        "streaming",
+        "long-requests",
+        "batch-processing"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://platform.claude.com/docs/en/api/errors#long-requests"
+      ]
+    },
+    {
+      "id": "v-d4-g2-003",
+      "taskStatementId": "4.1",
+      "scenario": "Ironbridge's `lookup_tax_rate` tool declares an `input_schema` of `{region: string, rate: number}` with `required: [\"region\"]` and no `additionalProperties: false`. About 2% of calls arrive with an unexpected key — sometimes a hallucinated `currency`, sometimes an echoed `vendor_id` — and the tool crashes on the unknown field.",
+      "stem": "What is the most direct fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add `\"strict\": true` to the tool definition and set `additionalProperties: false` in the schema. With strict tool use, the `input` on the `tool_use` block is guaranteed to follow your `input_schema` and the tool name is always valid."
+        },
+        {
+          "id": "B",
+          "text": "Add `is_error: true` handling in the tool so an unknown key degrades to a default rate instead of raising."
+        },
+        {
+          "id": "C",
+          "text": "Ask for the extra fields in the tool description, since the schema itself is not the only thing the model reads."
+        },
+        {
+          "id": "D",
+          "text": "Wrap the tool call in a JSON Schema validator so malformed arguments are rejected before the tool runs."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "This is precisely what strict tool use is for. Without it, \"Claude might return incompatible types (`\"2\"` instead of `2`) or omit required fields, breaking your functions and causing runtime errors.\" Setting `strict: true` as a top-level property alongside `name`, `description` and `input_schema` guarantees, via grammar-constrained sampling, that the `input` field strictly follows your schema. Two details matter for this tool: strict mode requires `additionalProperties: false` on object schemas to be meaningful, and the guarantee covers the tool's *input* — what your function returns is still entirely your responsibility.",
+      "whyWrong": {
+        "B": "Error handling is good practice but it papers over the defect. The arguments are still wrong; you have merely made the crash quieter and the rate wrong.",
+        "C": "Telling the model to send extra fields is an invitation to send them. The schema is the contract that strict mode enforces.",
+        "D": "Validating before the tool runs moves the failure earlier but does not stop the model from producing the wrong shape, and you would then have to build the retry conversation yourself."
+      },
+      "difficulty": 1,
+      "visualId": "structured-output",
+      "mindset": "If tool arguments must conform, enforce it in the schema with `strict: true` — don't parse your way out of bad input.",
+      "tags": [
+        "strict-tool-use",
+        "tool-input",
+        "schema-validation"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/strict-tool-use"
+      ]
+    },
+    {
+      "id": "v-d4-g2-004",
+      "taskStatementId": "4.1",
+      "scenario": "After enabling `strict: true` on every Ironbridge tool, the team declares the pipeline \"schema safe\". Two weeks later an incident is traced to `lookup_tax_rate` returning `{\"rate\": \"n/a\"}` — a string where the caller expects a number — and to `post_to_erp` being called with a `document_type` value of `\"Credit memo\"` when the enum lists `credit_memo`.",
+      "stem": "Which TWO statements about the limits of strict tool use are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "`strict: true` guarantees the tool's *input* matches your `input_schema` and that the tool name is valid. It says nothing about what your tool function returns."
+        },
+        {
+          "id": "B",
+          "text": "Structured outputs and strict tool use do not guarantee the capitalization of string `enum` and `const` values; Claude may return a value that differs only in capitalization, typically in the first letter of a word following a space."
+        },
+        {
+          "id": "C",
+          "text": "Because `strict: true` is set, a tool that returns malformed data is impossible by construction."
+        },
+        {
+          "id": "D",
+          "text": "`strict: true` also validates the JSON your tool returns, rejecting the call at the API boundary."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "The guarantee is scoped to what Claude produces, on the way in. Strict tool use means \"the `input` field in the `tool_use` block strictly follows your `input_schema`, and the `name` is always valid\" — your function's return value is entirely outside it, which is why `{\"rate\": \"n/a\"}` gets straight through and has to be validated on your side. There is also a documented gap that surprises people in both structured outputs and strict tool use: \"Structured outputs don't guarantee the capitalization of string `enum` and `const` values.\" `Credit memo` is exactly the shape that produces. Normalize enum values before use, or compare case-insensitively at the boundary.",
+      "whyWrong": {
+        "C": "The guarantee covers the request, not the response from your own code. A tool that returns a string for a numeric field is your bug, not a violation of strict mode.",
+        "D": "There is no API-side validation of tool return values. Your tool's output travels back to the model as content."
+      },
+      "difficulty": 3,
+      "visualId": "structured-output",
+      "mindset": "Strict mode guarantees the arguments Claude sends — not your tool's return value, and not enum capitalization.",
+      "tags": [
+        "strict-tool-use",
+        "structured-output",
+        "schema-validation"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/strict-tool-use",
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs"
+      ]
+    },
+    {
+      "id": "v-d4-g2-005",
+      "taskStatementId": "4.1",
+      "scenario": "Ironbridge's extraction schema marks `vendor_id` as required. When an invoice from a new carrier omits the vendor entirely, Claude has picked a plausible-looking ID — one that happens to exist, because the ERP lookup tool's description lists valid vendor IDs. Nobody notices until the ERP rejects the batch weeks later.",
+      "stem": "Which TWO changes address the root cause? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Make absence a legal value in the schema — make `vendor_id` nullable or add an explicit `unknown` sentinel — so \"not present on this document\" is representable instead of requiring a fabrication."
+        },
+        {
+          "id": "B",
+          "text": "Require each extracted value to be copied verbatim from the document, and validate after the fact that the value actually appears in the source text you sent."
+        },
+        {
+          "id": "C",
+          "text": "Set `temperature: 0` so the model stops inventing vendor IDs."
+        },
+        {
+          "id": "D",
+          "text": "Remove the valid vendor IDs from the ERP tool description so the model cannot see plausible candidates."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "The schema is the root cause: a required field with no legal way to express absence forces the model to produce something. Making it nullable — or adding an explicit `unknown`/`not_on_document` sentinel — gives the model a truthful option, which is the single biggest lever on hallucinated fields. The second change is detection rather than prevention: ask for verbatim copying and then verify mechanically that each value occurs in the source you supplied. Documenting the candidate list elsewhere is fine; what matters is that the model cannot pass off a plausible identifier as one it read. Anthropic's hallucination guidance is consistent: give the model an explicit way to say it doesn't know, and ground answers in the provided material.",
+      "whyWrong": {
+        "C": "A low temperature reduces sampling variance; it does not change the fact that the schema forbids an honest \"unknown\", and the hallucination persists at temperature 0.",
+        "D": "Hiding the ID list removes one tempting source but leaves the required-field trap intact, and it makes the tool less useful for legitimate lookups. The schema fix is the one that addresses the cause."
+      },
+      "difficulty": 2,
+      "visualId": "eval-loop",
+      "mindset": "A required field with no way to say \"unknown\" forces fabrication — make absence representable, then verify values against the source.",
+      "tags": [
+        "hallucination",
+        "structured-output",
+        "output-validation"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-hallucinations",
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs"
+      ]
+    },
+    {
+      "id": "v-d4-g2-006",
+      "taskStatementId": "4.1",
+      "scenario": "After Ironbridge launches a same-day backfill, the pipeline starts returning 429s that come and go unpredictably, including a burst at 09:05 when no batch was scheduled. The traffic pattern is a sharp ramp: 40 carriers' worth of queued invoices released at once after a vendor API outage.",
+      "stem": "What does this pattern most likely indicate, and what is the appropriate response?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Acceleration limits. A sharp increase in usage can surface as 429 rather than 529, so ramp traffic up gradually and keep usage patterns consistent; honor `retry-after` while the pattern settles."
+        },
+        {
+          "id": "B",
+          "text": "The monthly spend cap has been reached. Keep retrying aggressively until the billing period resets."
+        },
+        {
+          "id": "C",
+          "text": "The organization has hit its request rate limit permanently. Reduce the number of pipeline workers permanently."
+        },
+        {
+          "id": "D",
+          "text": "The model is deprecated for this account. Switch to another model alias in the request."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "529 `overloaded_error` means the API is overloaded across all users and typically clears. The docs flag a subtler sibling: \"In rare cases, if your organization has a sharp increase in usage, you might see 429 errors because of acceleration limits on the API. To avoid hitting acceleration limits, ramp up your traffic gradually and maintain consistent usage patterns.\" That is exactly Ironbridge's shape — an instantaneous release of queued work with no schedule. The response is to shape the traffic (drain the backlog with a rate limiter, stagger per carrier) and keep honoring `retry-after` in the meantime, rather than to treat it as a hard capacity ceiling.",
+      "whyWrong": {
+        "B": "A tier spend-cap 429 is distinguishable: it has no `retry-after` and keeps failing until access resumes. Retrying an unrecoverable stop just burns the remaining budget faster.",
+        "C": "There is no permanent rate lockout here. The trigger is the shape of the traffic, not a hard cap that requires permanently fewer workers.",
+        "D": "A deprecated or unavailable model surfaces as a model-not-found style error, not an intermittent 429 correlated with a traffic spike."
+      },
+      "difficulty": 2,
+      "mindset": "429 after a traffic spike is an acceleration limit — fix the shape of the traffic, not the retry count.",
+      "tags": [
+        "rate-limits",
+        "error-identification",
+        "traffic-shaping"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://platform.claude.com/docs/en/api/rate-limits"
+      ]
+    },
+    {
+      "id": "v-d4-g2-007",
+      "taskStatementId": "4.1",
+      "scenario": "Ironbridge's nightly trace shows 529 `overloaded_error` on roughly 30% of calls. Reviewing the same traces, input_tokens per request runs 180k, while the prior release averaged 12k. The change in that release replaced a targeted retrieval step with \"send the whole shipment ledger chunk in every request\".",
+      "stem": "What does the trace indicate, and where is the origin of the problem?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The origin is the integration layer, not the platform. The 15x jump in input_tokens means the cache prefix is invalidated and each request is a large, expensive, non-cacheable payload, which is what pushes the account into overload. Restore the targeted retrieval step and confirm the input figures fall back."
+        },
+        {
+          "id": "B",
+          "text": "The origin is the platform. 529 is documented as transient and clears on its own, so the pipeline should retry with longer backoff and no code change."
+        },
+        {
+          "id": "C",
+          "text": "The origin is the model. Large inputs degrade generation quality, so the fix is to move to a model with a larger context window."
+        },
+        {
+          "id": "D",
+          "text": "The origin is the tool layer. The ledger chunk is returned by `fetch_ledger`, so the tool's pagination is the only thing that needs fixing."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "This is the origin-isolation discipline in action: read what the trace says before choosing a recovery. 529 *is* transient and retryable, so the instinct is to back off harder — but the same trace carries `input_tokens` at 180k against a 12k baseline. A 15x input inflation invalidates the cached prefix on every request (writes instead of reads) and turns each call into a large payload, and that volume is a plausible and self-inflicted path into overload. The recovery is not a longer backoff; it is reverting the retrieval regression and verifying `input_tokens` and `cache_read_input_tokens` return to baseline.",
+      "whyWrong": {
+        "B": "529 being transient is true, but \"it will clear\" is only a good answer when the request is a reasonable size. Here the request itself changed by an order of magnitude in the same release as the errors appeared.",
+        "C": "A larger window does not reduce tokens sent and cannot improve cache reuse. The regression is how much context the integration puts in each request.",
+        "D": "The tool is a plausible culprit, but the trace already localises the change: `input_tokens` measures what was sent. Fixing pagination upstream of the same payload is a narrower version of the same fix."
+      },
+      "difficulty": 2,
+      "mindset": "Trace fields are vital signs — an input-token jump alongside new 529s points at the integration, not the platform.",
+      "tags": [
+        "trace-analysis",
+        "origin-isolation",
+        "integration-layer",
+        "usage-fields"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching"
+      ]
+    },
+    {
+      "id": "v-d4-g2-008",
+      "taskStatementId": "4.1",
+      "scenario": "Ironbridge uses structured outputs with `output_config.format` to guarantee a schema-conformant extraction object. Support starts reporting that occasionally the response parses cleanly but contains no invoice fields at all, and occasionally the object is missing `line_items` entirely on invoices that clearly have them.",
+      "stem": "Which TWO documented situations break the schema guarantee? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "A refusal: the response carries `stop_reason: \"refusal\"`, you get a 200 status and are billed for the tokens, and the output may not match your schema because the refusal message takes precedence over schema constraints."
+        },
+        {
+          "id": "B",
+          "text": "Truncation: with `stop_reason: \"max_tokens\"` the output may be incomplete and simply not match the schema. Retry with a higher `max_tokens`."
+        },
+        {
+          "id": "C",
+          "text": "Enum capitalization: the schema guarantee normalizes `enum` and `const` string values, so a differently-cased value would be a bug."
+        },
+        {
+          "id": "D",
+          "text": "Property ordering: the guarantee preserves schema declaration order, so `line_items` can never be reordered or dropped."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "The guarantee has two documented holes, and both produce an HTTP 200 — which is why they slip past status-code-based success handling. Refusals: \"the response has `stop_reason: \"refusal\"`, you'll receive a 200 status code, you'll be billed for the tokens generated, and the output may not match your schema because the refusal message takes precedence over schema constraints.\" Truncation: with `max_tokens` the output \"may be incomplete and not match your schema\", and the fix is a higher limit. The two non-guarantees in C and D are the opposite of the truth: enum casing is explicitly not normalized, and optional properties may be omitted or reordered — \"if property order in the output is important to your application, mark all properties as required, or account for this reordering in your parsing logic.\"",
+      "whyWrong": {
+        "C": "Capitalization is explicitly *not* guaranteed. A value differing only in capitalization is expected behaviour, not a bug.",
+        "D": "Order is not guaranteed and optional properties may be omitted — which is a plausible explanation for the missing `line_items` and a reason to mark properties required."
+      },
+      "difficulty": 3,
+      "visualId": "structured-output",
+      "mindset": "A 200 with structured outputs can still be a refusal or a truncation — branch on `stop_reason` before trusting the shape.",
+      "tags": [
+        "structured-output",
+        "stop-reasons",
+        "schema-validation"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs",
+        "https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons"
+      ]
+    },
+    {
+      "id": "v-d4-g2-009",
+      "taskStatementId": "4.1",
+      "scenario": "Ironbridge's `post_to_erp` posts an invoice, then the HTTP client sees a dropped connection and the retry re-posts it. The ERP replies with HTTP 409 `conflict_error`: \"invoice_id already posted.\" The pipeline's retry helper treats 409 like any other 5xx and keeps trying.",
+      "stem": "What is the right handling for 409 in this pipeline?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Treat 409 as an idempotent success signal for a retried write — the invoice is already posted — and separately make `post_to_erp` carry a stable idempotency key derived from the invoice id so the duplicate is prevented upstream rather than detected after the fact."
+        },
+        {
+          "id": "B",
+          "text": "Retry 409 with exponential backoff. The ERP is telling you the resource changed concurrently, so a later attempt should succeed."
+        },
+        {
+          "id": "C",
+          "text": "Add 409 to the list of statuses that trigger a full pipeline restart, since partial state is never recoverable."
+        },
+        {
+          "id": "D",
+          "text": "Lower the SDK's `max_retries` to zero so the duplicate post can never recur."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "409 `conflict_error` means the request conflicts with the resource's current state — it was modified concurrently, or a value that must be unique is already in use. Both of those are, by definition, states a retry will not resolve; the docs say to \"resolve the conflict, then retry\". Here the conflict *is* the resolution: the invoice exists, so the write already landed. The durable fix is upstream: pass a stable idempotency key derived from the invoice id so the retried call is recognised as a repeat and skipped, which keeps retries safe no matter how the retry policy is later tuned.",
+      "whyWrong": {
+        "B": "Retrying a uniqueness conflict guarantees the same conflict. The condition will not change because you waited.",
+        "C": "The state is perfectly recoverable — the ERP already holds the invoice. Restarting the pipeline re-does work and re-creates the same duplicate.",
+        "D": "Removing retries protects this one side effect at the cost of every genuinely transient failure, and the duplicate came from a retry the policy should have made safe instead of disabling."
+      },
+      "difficulty": 2,
+      "visualId": "error-recovery",
+      "mindset": "A uniqueness conflict is a signal, not a fault — detect it as success and make the write idempotent so it stops happening.",
+      "tags": [
+        "retry-strategy",
+        "idempotency",
+        "http-status",
+        "tool-errors"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls"
+      ]
+    },
+    {
+      "id": "v-d4-g2-010",
+      "taskStatementId": "4.1",
+      "scenario": "Ironbridge starts accepting scanned invoices up to 40 pages and starts returning HTTP 413 `request_too_large`. The retry helper treats it as a transient server condition.",
+      "stem": "What is the correct response to 413?",
+      "options": [
+        {
+          "id": "A",
+          "text": "413 is a hard size limit, not a transient condition: 32 MB for the Messages API, 256 MB for the Batch API, 500 MB for the Files API. Reduce the payload — split long invoices into page ranges across turns, or move the file to the Files API and reference it — and never retry the same oversized request."
+        },
+        {
+          "id": "B",
+          "text": "Retry 413 with exponential backoff; the request will succeed once the service's load drops."
+        },
+        {
+          "id": "C",
+          "text": "Move the whole batch to the Batch API and resubmit unchanged, since it accepts larger payloads."
+        },
+        {
+          "id": "D",
+          "text": "Compress the base64 payload with gzip before sending; the API decompresses it automatically."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The request size limits are fixed per endpoint: Messages API and Token Counting API 32 MB, Batch API 256 MB, Files API 500 MB, with a 413 when you exceed them — and on the direct API, Cloudflare returns this before the request reaches the API servers. Nothing about load changes the answer, so retrying is pure latency. The engineering response is to shrink what you send: page the document across turns, extract text before sending, or upload once and reference it. Escalating to the Batch API helps only if you are genuinely under 256 MB.",
+      "whyWrong": {
+        "B": "413 is deterministic. The same payload fails identically forever; backoff only delays the same rejection.",
+        "C": "The Batch API raises the ceiling to 256 MB but does not remove it, and it does not suit an interactive extraction path. Shrinking the payload is the fix either way.",
+        "D": "There is no automatic decompression. Compression changes the bytes on the wire, not the size of the request the limit is measured against."
+      },
+      "difficulty": 2,
+      "mindset": "413 is a size ceiling, not a hiccup — reduce what you send instead of retrying it.",
+      "tags": [
+        "error-identification",
+        "http-status",
+        "request-limits"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://platform.claude.com/docs/en/api/errors#request-size-limits"
+      ]
+    },
+    {
+      "id": "v-d4-g2-011",
+      "taskStatementId": "4.1",
+      "scenario": "Ironbridge's client aborts reconciliation calls with its own 60-second timeout. The logs show `ClientTimeoutError` with no `request_id` and no HTTP status, and the on-call engineer concludes \"the API is flaky.\"",
+      "stem": "What is the most accurate diagnosis and response?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The client gave up before the API did. The absence of a `request_id` means no response headers ever arrived, so the API has no failure to report — you are discarding work the model may already have done. For long requests use streaming (or Message Batches), which is exactly what the guidance for 504 `timeout_error` recommends; keep client timeouts generous enough for the longest expected call."
+        },
+        {
+          "id": "B",
+          "text": "This is a 504 `timeout_error` in disguise. Add 504 handling that retries with backoff."
+        },
+        {
+          "id": "C",
+          "text": "Retry aggressively, because a request that was aborted client-side never reached the API and therefore never billed you."
+        },
+        {
+          "id": "D",
+          "text": "Lower `max_tokens` so every call finishes inside 60 seconds, which removes the need for a longer timeout."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The absence of evidence is the evidence. Every API response carries a `request_id`, in the header and in the error body; a client-side timeout produces neither, which means no response came back at all. So this is not the documented 504 `timeout_error` — nothing on the server failed as far as the trace can show. The root cause is a transport choice: a long non-streaming call with a large `max_tokens` is outside what the SDKs expect (\"not expected to exceed a 10-minute timeout\"), and idle connections get dropped. The fix is streaming or Message Batches, plus a realistic client timeout — and being aware that the abandoned request may still have consumed tokens server-side, so treat it as unknown rather than free.",
+      "whyWrong": {
+        "B": "504 is a server-side response with a status code and a `request_id`. Your log has neither, so this is not a 504 and a 404-vs-400-style status branch will never fire.",
+        "C": "A client-side abort does not prove the request was cheap or unreceived. The work may have run and been billed before the connection was dropped.",
+        "D": "Shrinking `max_tokens` is not the documented mitigation and trades away real output budget to paper over a transport problem."
+      },
+      "difficulty": 3,
+      "mindset": "No `request_id` means no server response — diagnose the transport, and stop calling it a flaky API.",
+      "tags": [
+        "timeout",
+        "trace-analysis",
+        "streaming",
+        "origin-isolation"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://platform.claude.com/docs/en/api/errors#long-requests"
+      ]
+    },
+    {
+      "id": "v-d4-g2-012",
+      "taskStatementId": "4.1",
+      "scenario": "Ironbridge cannot reproduce a mis-extraction locally: the invoice is fine, the code path is the same, and the same prompt in a hand-built harness returns correct fields. Production traces are captured verbatim. The engineer's local shell has `export ANTHROPIC_MODEL=claude-opus-5-5`, while the deployed service sets the `model` key in `settings.json` to a different model and exports nothing.",
+      "stem": "What does this tell you about the local reproduction attempt?",
+      "options": [
+        {
+          "id": "A",
+          "text": "It is not the same request. Environment variables are not a level in the settings-precedence stack — whether `ANTHROPIC_MODEL` or a settings key wins is decided per key pair, and `ANTHROPIC_MODEL` exported in the shell applies over the `model` key from any file. So the local run used a different model, and the reproduction is invalid. Replay the captured request verbatim instead."
+        },
+        {
+          "id": "B",
+          "text": "It is a valid reproduction; shell exports only affect interactive shells and are ignored by the agent runtime."
+        },
+        {
+          "id": "C",
+          "text": "The local run is valid, but only if you also clear `ANTHROPIC_DEFAULT_MODEL`, because that variable outranks the `model` key."
+        },
+        {
+          "id": "D",
+          "text": "The local run is valid once you reproduce the deployed working directory, since `ANTHROPIC_MODEL` is scoped to the repository."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Origin isolation depends on the reproduction actually being the same request, and this is the leak that quietly breaks it. In Claude Code, environment variables sit outside the settings-precedence stack: \"When a behavior has both a shell variable and a settings key, which one applies is decided per pair, not by level: `ANTHROPIC_MODEL` exported in your shell applies over the `model` key from any file, while `ANTHROPIC_DEFAULT_MODEL` applies only when no file sets `model`.\" So the local session ran a different model than production. The correct technique is the one that has no such ambiguity — replay the exact captured request (model, parameters, messages) outside the application and see whether it reproduces.",
+      "whyWrong": {
+        "B": "Shell exports are inherited by the process Claude Code spawns. That is the whole problem here.",
+        "C": "It inverts the rule: `ANTHROPIC_DEFAULT_MODEL` is the weaker one, applying only when no file sets `model`.",
+        "D": "The variable is not repository-scoped; it is process-environment-scoped, which is precisely why it silently overrode the file in one place and not the other."
+      },
+      "difficulty": 3,
+      "mindset": "Before blaming the model, prove the reproduction is the same request — environment variables outrank settings keys, silently.",
+      "tags": [
+        "origin-isolation",
+        "replay",
+        "trace-analysis",
+        "model-selection"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/settings",
+        "https://code.claude.com/docs/en/model-config"
+      ]
+    },
+    {
+      "id": "v-d4-g2-013",
+      "taskStatementId": "4.1",
+      "scenario": "Ironbridge just fixed the hallucinated `vendor_id` field. They want a permanent test so the class of defect cannot silently return as vendors, carriers and field names change.",
+      "stem": "Which eval design actually catches this defect class?",
+      "options": [
+        {
+          "id": "A",
+          "text": "A held-out set of real invoices with ground-truth extractions, scored by exact field comparison, plus a mechanical check that every extracted string value occurs verbatim in the document text that was sent. Both halves are needed: the comparison catches a wrong value, the verbatim check catches a value that was never in the source."
+        },
+        {
+          "id": "B",
+          "text": "An LLM judge asked whether the extraction \"looks correct compared to the invoice\", scored on a 1-5 scale with a pass mark of 4."
+        },
+        {
+          "id": "C",
+          "text": "A string-similarity threshold between the model's output and the known-good extraction for the same vendor."
+        },
+        {
+          "id": "D",
+          "text": "A golden test that runs the same single invoice on every deploy and fails on any byte-level difference from the recorded output."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Success criteria come before graders. For a structured extraction task the ground truth is a known field mapping, so the primary grader is deterministic exact-match comparison — fast, free, and reproducible. The hallucination class needs a second, different check: the schema cannot tell you a value was fabricated, so verify provenance mechanically, that each extracted string appears in the source document you actually sent. That combination turns \"did it get the field right\" and \"did it make it up\" into two independently failing signals. LLM judges earn their place on qualities with no ground truth (tone, helpfulness), and a byte-equality golden test will fail on every legitimate non-determinism.",
+      "whyWrong": {
+        "B": "An LLM judge on this task is both expensive and unreliable: it is the same class of model reasoning that produced the defect, and a 1-5 scale with a pass mark hides regressions in the noise.",
+        "C": "String similarity rewards getting most fields right and cannot distinguish a near-miss from a fabrication. It also says nothing about provenance.",
+        "D": "Byte equality against a single recorded output fails on legitimate non-determinism, so the team disables it within a sprint and loses the signal entirely."
+      },
+      "difficulty": 2,
+      "visualId": "eval-loop",
+      "mindset": "Ground-truth comparison catches wrong answers; a provenance check catches invented ones. Both, or the class slips through.",
+      "tags": [
+        "evals",
+        "hallucination",
+        "regression-prevention"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests",
+        "https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents"
+      ]
+    },
+    {
+      "id": "v-d4-g2-014",
+      "taskStatementId": "4.1",
+      "scenario": "Ironbridge's `post_to_erp` tool returns, on a bad argument, the text \"Error: invalid request\". Claude immediately calls the tool again with byte-identical arguments, twice, and the loop ends at `max_turns` with no invoice posted and a vague final message.",
+      "stem": "What is the most effective fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Return a `tool_result` with `is_error: true` whose content names the offending field, what was received, and what the schema expects — for example that `document_type` must be one of `invoice`, `credit_note`, `statement`, and that `\"Credit memo\"` is not a member. Specific, actionable errors let the model correct itself; a generic one leaves re-sending the same call as its only move."
+        },
+        {
+          "id": "B",
+          "text": "Raise the agent's turn limit so it has more attempts at the same call."
+        },
+        {
+          "id": "C",
+          "text": "Add `strict: true` to `post_to_erp` so the argument can never be wrong again."
+        },
+        {
+          "id": "D",
+          "text": "Add the valid `document_type` values into the system prompt so the model never guesses one."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The loop is stuck because the model has no information to act on. A tool error is the only channel through which the tool can tell Claude what went wrong, and a generic \"invalid request\" leaves the model with only one strategy: repeat. The fix is to return the failure as a `tool_result` with `is_error: true` and content specific enough to act on — the field, the received value, and the permitted set — so the next call differs. `strict: true` is already on in this pipeline (the arguments are schema-conformant; the value came from free text in the invoice), which is exactly why more schema enforcement cannot help, and listing enum values in the system prompt adds standing context for a field most requests never touch.",
+      "whyWrong": {
+        "B": "More turns means more identical calls. The failure is information starvation, not budget starvation.",
+        "C": "Strict mode already guarantees the arguments match the schema. The problem is that a schema-valid value can still be semantically wrong for this document.",
+        "D": "This adds permanent context to fix one field's error messages. If the enum is already in the schema, the error message is the better place to repeat it — for the one call that failed."
+      },
+      "difficulty": 3,
+      "mindset": "A tool error is a channel: if the message doesn't say what to change, the only move the model has is to repeat itself.",
+      "tags": [
+        "tool-errors",
+        "is-error",
+        "agent-loop"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls",
+        "https://code.claude.com/docs/en/agent-sdk/agent-loop"
+      ]
+    },
+    {
+      "id": "v-d4-g2-015",
+      "taskStatementId": "4.1",
+      "scenario": "Ironbridge's \"eval suite\" is 200 invoices graded by an LLM against a rubric written in one meeting. Scores drift by 8 points between runs of the identical code, and a prompt change that the team believes is an improvement moves the average by 2 points.",
+      "stem": "Which TWO changes should they make before drawing any conclusions? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Define the success criteria explicitly first — for this task, exact agreement with the ground-truth extraction — and use deterministic graders wherever a ground truth exists, reserving model graders for qualities that have none."
+        },
+        {
+          "id": "B",
+          "text": "Calibrate the model grader against human labels on a sample, and measure its run-to-run variance, so a 2-point change can be distinguished from grader noise."
+        },
+        {
+          "id": "C",
+          "text": "Average three runs per case to shrink the noise, then treat the averaged score as the signal."
+        },
+        {
+          "id": "D",
+          "text": "Only compare prompt variants on cases where the two disagree, since that is where the information is."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Both symptoms — an 8-point swing on identical code and a 2-point \"improvement\" — mean the measurement is noisier than the effect. The first thing to establish is what success *is*: \"define your success criteria\" comes before graders, and for structured extraction the criterion is exact agreement with a known field mapping, which a code-based grader can check for free and identically every time. Model judges then get the residual: qualities with no ground truth, calibrated against human labels and with their variance quantified, so you know the noise floor before you interpret a delta. Anthropic's guidance on LLM-based grading is consistent — a judge must be validated against human judgement before its score means anything.",
+      "whyWrong": {
+        "C": "Averaging reduces variance but does not tell you whether the residual noise is still larger than the effect you are trying to detect, and it triples eval cost while leaving an uncalibrated grader.",
+        "D": "Comparing only on disagreement cases tells you where the two variants differ but gives no absolute quality anchor, so \"better\" remains undefined."
+      },
+      "difficulty": 2,
+      "visualId": "eval-loop",
+      "mindset": "Define success before choosing a grader, then calibrate the grader — otherwise a 2-point delta is noise, not a result.",
+      "tags": [
+        "evals",
+        "llm-judge",
+        "define-success"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/define-success",
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests#tips-for-llm-based-grading"
+      ]
+    },
+    {
+      "id": "v-d4-g2-016",
+      "taskStatementId": "4.1",
+      "scenario": "Ironbridge rotates the API key used by the extraction pipeline. For about forty minutes the pipeline retries steadily, each attempt failing with HTTP 401 `authentication_error`, and the on-call engineer sees a growing retry log rather than an alert.",
+      "stem": "What should the pipeline do, and why?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Treat 401 as a deterministic, non-retryable credential failure: stop retrying, fail the batch fast to a dead-letter path, and alert with the `request_id` so the key rotation can be traced. Retrying cannot restore access — only fixing the key does."
+        },
+        {
+          "id": "B",
+          "text": "Keep retrying with exponential backoff; key propagation across the fleet is sometimes delayed, so the key may start working on its own."
+        },
+        {
+          "id": "C",
+          "text": "Rotate to a different model, since some models are authenticated differently."
+        },
+        {
+          "id": "D",
+          "text": "Fall back to cached extractions for the affected invoices so the pipeline keeps up during the outage."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "401 `authentication_error` means \"there's an issue with your API key (for example, it's malformed, revoked, or expired)\". That is a credential condition, not a load condition: the identical request will fail identically for as long as the key is bad, so retries add latency, burn the retry budget and bury the signal. The correct response is the same shape as any deterministic 4xx — fail fast, route to a dead-letter path, and escalate with the `request_id`. The operational fix belongs in the rotation procedure itself: stage the new key, verify it, then cut over.",
+      "whyWrong": {
+        "B": "There is no documented delayed-propagation behaviour that a retry loop is designed to ride out. The condition persists until the credential changes.",
+        "C": "Authentication is a property of the API key, not of the model. Switching models with a bad key returns the same 401.",
+        "D": "Silently substituting cached or stale extractions for invoices nobody verified is how a credential outage becomes a data-integrity incident."
+      },
+      "difficulty": 1,
+      "mindset": "A 401 is a credential fact, not a transient condition — fail fast and escalate instead of retrying.",
+      "tags": [
+        "error-identification",
+        "http-status",
+        "retry-strategy"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors"
+      ]
+    },
+    {
+      "id": "v-d4-g2-017",
+      "taskStatementId": "4.1",
+      "scenario": "Ironbridge's `post_to_erp` occasionally takes longer than its own 20-second client timeout after the ERP has already written the row. The wrapper catches the timeout and returns `{\"status\": \"request failed\"}` as an ordinary tool result. Claude reads that as a definite failure and re-posts, and Ironbridge now has duplicate invoices.",
+      "stem": "What is the most effective change?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Two things together: make the write idempotent with a stable key derived from the invoice id so a repeat is recognised and skipped, and make the error text state that the outcome is unknown and that the pipeline will reconcile by querying state — so the model does not blindly re-issue a side effect."
+        },
+        {
+          "id": "B",
+          "text": "Raise the wrapper's timeout to 120 seconds so the timeout stops firing."
+        },
+        {
+          "id": "C",
+          "text": "Return an empty successful result instead of an error, since the write probably succeeded."
+        },
+        {
+          "id": "D",
+          "text": "Add `is_error: true` to the tool result so the model knows the call failed."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "This is the ambiguous-outcome case, and it has two halves that are easy to miss. A client-side timeout after the remote write means the pipeline does not know whether the row exists — the tool cannot honestly report failure, and it should not report success either. Idempotency is the structural fix: with a stable key derived from the invoice id, the ERP recognises the repeat and the duplicate cannot happen regardless of how many times the model retries. The error text matters just as much, because the model's decision to re-issue depends on what it was told: saying the outcome is unknown and will be reconciled removes the blind retry that idempotency then absorbs. Idempotency alone leaves the model burning turns; the message alone leaves duplicates possible under a different failure.",
+      "whyWrong": {
+        "B": "A longer timeout reduces frequency and leaves the failure mode fully intact — a slow write will eventually cross any client deadline you pick.",
+        "C": "Reporting a definite success when the outcome is unknown is worse than the timeout: the pipeline now silently loses invoices whenever the ERP genuinely rejected the write.",
+        "D": "`is_error: true` correctly marks that *this call* failed, but it does nothing to stop the model from re-issuing, and it still asserts a certainty the wrapper does not have."
+      },
+      "difficulty": 3,
+      "visualId": "error-recovery",
+      "mindset": "Ambiguous outcomes need idempotency plus honest error text — one prevents duplicates, the other stops the blind retry.",
+      "tags": [
+        "idempotency",
+        "tool-errors",
+        "timeout",
+        "side-effects"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls",
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "v-d4-g2-018",
+      "taskStatementId": "4.1",
+      "scenario": "Ironbridge's extraction loop treats every response as \"done\" and parses the text block. After enabling extended thinking, about 4% of records are stored with the model's internal reasoning text instead of an extraction, and other records are stored as empty strings.",
+      "stem": "What is the correct handling?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Branch on `stop_reason` before consuming content. `tool_use` means there are tool calls to run and return results for; `max_tokens` and `model_context_window_exceeded` mean the output is truncated; `refusal` means you have a 200 with a refusal, not an empty answer. Then read the `content` array by block `type` rather than by index."
+        },
+        {
+          "id": "B",
+          "text": "Disable extended thinking, since thinking blocks always precede the answer and there is no way to skip them."
+        },
+        {
+          "id": "C",
+          "text": "Strip anything that does not parse as JSON and retry the whole request up to five times."
+        },
+        {
+          "id": "D",
+          "text": "Concatenate every text and thinking block in the content array into one string before parsing."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Two distinct bugs share one root cause: reading `content` positionally and ignoring `stop_reason`. A response's `content` array can hold `thinking`, `text` and `tool_use` blocks, so index 0 is not \"the answer\" once thinking is enabled — select by `block.type`. And `stop_reason` is on the message, not on any block, so it is the only place truncation and refusal are visible: `max_tokens` and `model_context_window_exceeded` both mean the output is incomplete, and `refusal` is a 200 whose text is a refusal rather than an empty result. Both are documented as \"successful responses\", which is why HTTP-status-based success handling misses them entirely.",
+      "whyWrong": {
+        "B": "Thinking blocks are a supported part of the response shape. The bug is reading by index instead of by block type.",
+        "C": "Blind retries re-roll the same dice at full cost and never address the positional read that produced the bad record in the first place.",
+        "D": "Merging thinking and answer text makes the parse strictly worse — you are deliberately concatenating content that was never meant to be read together."
+      },
+      "difficulty": 2,
+      "mindset": "Read blocks by `type` and branch on `stop_reason` — HTTP 200 tells you nothing about whether the content is usable.",
+      "tags": [
+        "stop-reasons",
+        "thinking",
+        "structured-output"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons",
+        "https://platform.claude.com/docs/en/build-with-claude/extended-thinking"
+      ]
+    },
+    {
+      "id": "v-d4-g2-019",
+      "taskStatementId": "4.1",
+      "scenario": "Ironbridge cut `max_tokens` for cost reasons. About 3% of invoices now come back truncated, and the pipeline's fix — bumping `max_tokens` and appending the new response to the same conversation — has produced records with two `invoice_total` fields, and once a duplicate ERP posting.",
+      "stem": "What is the correct way to recover from a truncated response?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Resend the original request cleanly with a higher `max_tokens` and a fresh message history, or use the documented continuation approach, so you never accumulate two candidate extractions in one conversation. Reserve the retry path for requests whose side effects are idempotent."
+        },
+        {
+          "id": "B",
+          "text": "Append the retry to the same conversation, which preserves the partial work already done and saves tokens."
+        },
+        {
+          "id": "C",
+          "text": "Retry with a different model, since a shorter output budget means the wrong model was selected."
+        },
+        {
+          "id": "D",
+          "text": "Raise `max_tokens` for every request permanently and stop checking `stop_reason`."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Truncated output is not a partial result you can build on — it is an incomplete generation. With `stop_reason: \"max_tokens\"`, the documented options are to raise the limit or continue the response; what you must not do is treat the truncated turn as a settled step and append a second extraction after it, which is how one record ends up with two `invoice_total` fields and how a side-effecting tool gets invoked twice on the same invoice. So recovery means a clean re-request (or the documented continuation) against an idempotent tool surface, and `stop_reason` stays in the branch on every response — including the successful ones.",
+      "whyWrong": {
+        "B": "Appending is precisely what created the duplicate fields. The truncated assistant turn remains in history as a competing answer.",
+        "C": "Truncation says nothing about model suitability — it says the output budget was smaller than the answer.",
+        "D": "Abandoning the `stop_reason` check removes the only signal that told you truncation happened, which is how this failure became invisible in the first place."
+      },
+      "difficulty": 3,
+      "mindset": "A truncated turn is not partial progress — re-request cleanly rather than appending a second answer to the same conversation.",
+      "tags": [
+        "stop-reasons",
+        "max-tokens",
+        "retry-strategy",
+        "idempotency"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons",
+        "https://platform.claude.com/docs/en/api/errors"
+      ]
+    },
+    {
+      "id": "v-d4-g2-020",
+      "taskStatementId": "4.1",
+      "scenario": "A support analyst notices that every time the pipeline fails, it silently falls back to a regex-based extractor that was written years ago for a simpler document format. The fallback succeeds, so no error is raised, and the resulting records look plausible.",
+      "stem": "What is the most serious problem, and what should replace it?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The fallback destroys the signal. A failure the pipeline could report and recover from explicitly is converted into a plausible-looking wrong answer, so there is no error to alert on, no retry, and no entry in the failure budget. Replace it with an explicit failure record: route the invoice to a dead-letter path with the `request_id` and stop reason attached, and reconcile those separately."
+        },
+        {
+          "id": "B",
+          "text": "The fallback is fine as long as it is tested; the real problem is that it lacks unit coverage."
+        },
+        {
+          "id": "C",
+          "text": "The fallback should be moved into the prompt so the model can choose between the two extraction strategies."
+        },
+        {
+          "id": "D",
+          "text": "The fallback should only be used when the API is unavailable, not when it returns a bad response."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Silent degradation is worse than an outage. With the fallback in place, an integration-layer or model failure no longer surfaces anywhere: nothing raises, nothing retries, nothing pages, and the ERP stores a plausible-but-wrong record that is discovered weeks later by an auditor. It also removes the very evidence you need — the `request_id` and `stop_reason` that would have made the incident diagnosable. The right pattern is the same one that keeps multi-agent pipelines honest: make the failure explicit and isolated (a dead-letter record per invoice, carrying the trace fields), then handle those records as a separate, visible queue rather than pretending they were processed.",
+      "whyWrong": {
+        "B": "Coverage is irrelevant to the harm. The regex extractor can be perfectly tested and still be the wrong tool for these documents; the defect is that it is chosen invisibly.",
+        "C": "Handing the choice to the model makes the degradation probabilistic and harder to attribute, and it spends tokens on a decision that belongs in your error handling.",
+        "D": "Distinguishing API unavailability from bad responses does not address the core issue, which is that a wrong answer is produced with no signal either way."
+      },
+      "difficulty": 2,
+      "mindset": "Never substitute silently for a failure you could report — a plausible wrong answer costs more than a visible outage.",
+      "tags": [
+        "error-handling",
+        "failure-modes",
+        "observability"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/our-framework-for-developing-safe-and-trustworthy-agents",
+        "https://platform.claude.com/docs/en/api/errors"
+      ]
+    },
+    {
+      "id": "v-d4-g2-021",
+      "taskStatementId": "4.1",
+      "scenario": "Ironbridge's PDF-to-text step is a third-party library. A batch of invoices posts with totals that the ERP rejects, and Claude's extraction matches the text it was given exactly — including a \"Total: $1,249.99\" line that is not what the PDF visually shows.",
+      "stem": "What does this evidence tell you about where the defect is?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The origin is upstream of the model, in the PDF-to-text layer. The model faithfully reported the string it received, so prompt changes, schema tightening and model swaps cannot help. Compare the model's output against the exact text sent in the request: agreement isolates the defect in the extraction step, and the fix belongs there."
+        },
+        {
+          "id": "B",
+          "text": "The origin is the model, because it should have noticed the text looked wrong for a scanned invoice and asked for the image instead."
+        },
+        {
+          "id": "C",
+          "text": "The origin is the schema, because a required field should have prevented a wrong total from being emitted."
+        },
+        {
+          "id": "D",
+          "text": "The origin cannot be determined without first reproducing the failure locally, because model output is non-deterministic."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "This is the cleanest origin-isolation case there is: the model's output agrees with its input. When the extracted value matches the text you sent character for character, the model did its job and the defect is in whatever produced that text — here a third-party PDF parser mis-reading a column or a layout. The technique that proves it is comparing the model's output against the exact input in the captured trace: agreement localises the fault upstream of the model, and no amount of prompt engineering or schema work will move it. Non-determinism is irrelevant here because you are not comparing two model runs, you are comparing a model output to its own input.",
+      "whyWrong": {
+        "B": "The model has no way to know a PDF renders differently than its text layer extracted, and asking for images on every document is a large cost and accuracy trade for a problem it cannot detect.",
+        "C": "A schema constrains shape, not truth. A perfectly conformant object containing a wrong number is exactly what happened.",
+        "D": "You already have the decisive evidence in hand — input/output agreement. Local reproduction would add noise without narrowing anything."
+      },
+      "difficulty": 3,
+      "mindset": "If the model's output matches its input exactly, the defect is upstream of the model — stop tuning the prompt.",
+      "tags": [
+        "origin-isolation",
+        "trace-analysis",
+        "hallucination"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests",
+        "https://platform.claude.com/docs/en/build-with-claude/vision"
+      ]
+    },
+    {
+      "id": "v-d4-g2-022",
+      "taskStatementId": "4.1",
+      "scenario": "Ironbridge processes invoices in nightly batches of 200. This run: 197 post to the ERP, two fail validation and one times out. The pipeline currently restarts the entire batch on any failure.",
+      "stem": "What is the correct recovery design for this batch job?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Isolate failures per record: commit the successful 197, route the three failures to a dead-letter queue with their `request_id`, stop reason and trace, and make the re-processing path per-invoice rather than per-batch. A single bad record should never re-drive 199 good side effects."
+        },
+        {
+          "id": "B",
+          "text": "Retry the whole batch twice more before declaring failure, since a per-invoice retry cannot know whether the earlier partial run posted correctly."
+        },
+        {
+          "id": "C",
+          "text": "Abort the batch on the first failure and roll back the 197 successful posts, so the batch is atomic."
+        },
+        {
+          "id": "D",
+          "text": "Switch the whole batch to streaming so partial progress is visible and the three failures can be identified."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "This is partial failure in a multi-step system, and the recovery unit must match the side-effect unit. Each invoice is an independent real-world write, so the batch is not a transaction and must not be treated like one. The correct shape: process and commit successes, quarantine failures with the fields you need to diagnose them later (`request_id`, `stop_reason`, the captured trace), and re-process the dead-letter queue per record. That yields both properties you want — successful work is not repeated, and failures remain visible and retryable — which only per-record idempotency and per-record failure isolation give you together.",
+      "whyWrong": {
+        "B": "A whole-batch retry re-drives 197 real-world ERP writes and risks duplicating them, which is a worse outcome than the three records that actually failed.",
+        "C": "Rolling back successfully posted invoices destroys completed work and is not achievable — the ERP holds them and there is no distributed transaction.",
+        "D": "Streaming improves observability of a single request's progress; it says nothing about cross-record atomicity and does not identify which three records failed without per-record status tracking."
+      },
+      "difficulty": 2,
+      "visualId": "error-recovery",
+      "mindset": "Match the recovery unit to the side-effect unit: per-invoice isolation and idempotency, never whole-batch replay.",
+      "tags": [
+        "error-recovery",
+        "idempotency",
+        "partial-failure",
+        "batch-processing"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents",
+        "https://platform.claude.com/docs/en/build-with-claude/batch-processing"
+      ]
+    },
+    {
+      "id": "v-d4-g2-023",
+      "taskStatementId": "4.1",
+      "scenario": "Ironbridge has to prove, six months later, that a specific invoice was mis-extracted by the model rather than corrupted in transit. Their traces record status codes and error strings, but not the full request context, and last month's retention window has already expired.",
+      "stem": "Which TWO groups of fields must be in every trace entry for a failure to be reproducible verbatim? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "The `request_id` from the response, plus the model, `max_tokens`, the temperature and effort settings, and the complete `messages` array including every `tool_use` id and matching `tool_result`."
+        },
+        {
+          "id": "B",
+          "text": "The response's `stop_reason`, the `usage` block (`input_tokens`, `output_tokens`, `cache_creation_input_tokens`, `cache_read_input_tokens`), and the number of retry attempts made."
+        },
+        {
+          "id": "C",
+          "text": "The wall-clock duration of the call and the host's CPU utilisation at the time of the request."
+        },
+        {
+          "id": "D",
+          "text": "A human-readable summary of what the extraction was supposed to produce, written by a reviewer after the fact."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Reproducibility requires everything that determined the output plus the evidence that describes it. That means the `request_id` (the id support needs), the model and every parameter that shapes generation, the full `messages` array with `tool_use`/`tool_result` pairing intact, the final `stop_reason` (which tells you whether the content was complete, tool-driven, or refused), the `usage` block — because zero `cache_read_input_tokens` with constant writes is a distinctive trace signature of a broken prefix — and the attempt count so you can tell a retry from a first failure. A call that cannot be replayed verbatim is a call you cannot attribute. C is infrastructure telemetry unrelated to the request, and D is a conclusion, not evidence.",
+      "whyWrong": {
+        "C": "CPU utilisation on the host is not part of the request and tells you nothing about what was sent or returned. Useful for capacity questions, irrelevant for reproducing a bad output.",
+        "D": "A reviewer-written summary is an interpretation written after the trace was lost. Diagnosis needs the request that produced the output, not a description of it."
+      },
+      "difficulty": 2,
+      "mindset": "If you cannot replay it verbatim you cannot attribute it — log the request, the parameters, `stop_reason`, usage and attempts.",
+      "tags": [
+        "trace-analysis",
+        "observability",
+        "origin-isolation"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://code.claude.com/docs/en/agent-sdk/observability"
+      ]
+    },
+    {
+      "id": "v-d4-g2-024",
+      "taskStatementId": "4.1",
+      "scenario": "Ironbridge is writing the recovery matrix for its extraction pipeline. Five distinct failures have shown up this quarter, and the team wants each one matched to a recovery strategy rather than to a blanket retry policy.",
+      "stem": "Which TWO pairings of failure to recovery strategy are correct? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "529 `overloaded_error` → retry with exponential backoff and jitter, bounded by both an attempt cap and a total time budget. The condition is transient and platform-wide, so time genuinely changes the outcome."
+        },
+        {
+          "id": "B",
+          "text": "400 `invalid_request_error` where a `tool_use` block is not immediately followed by its matching `tool_result` → fix the message construction. The identical retry fails identically, so this is an integration-layer defect, not a fault to retry."
+        },
+        {
+          "id": "C",
+          "text": "`stop_reason: \"pause_turn\"` → re-issue the request as though the user had typed the assistant's message again, so the server-side tool loop resumes on a new turn."
+        },
+        {
+          "id": "D",
+          "text": "`stop_reason: \"refusal\"` → resend the identical request until a non-refusing response comes back, since a refusal is a temporary safety condition."
+        },
+        {
+          "id": "E",
+          "text": "A tool call whose exception the wrapper swallows → prompt Claude to call the tool again, since the model will otherwise guess at the missing value."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "A recovery matrix has one question per row: will time change the outcome? For 529 the answer is yes — the API is overloaded across users and clears — so bounded backoff with jitter is right, and it is the class the SDKs already auto-retry. For the 400 the answer is no: request validation runs before generation, so every model receives the same rejection. That is a code fix in the integration layer, and note it is specifically about message history, not the tool call itself — every `tool_use` must be immediately followed by its `tool_result`. The other three rows each confuse a distinct mechanism: `pause_turn` is resumed by sending the assistant content back unaltered with the same tools (never by appending it as a new user turn), a refusal is a deliberate decision that the same request will reach again, and a swallowed tool exception must be surfaced as a `tool_result` with `is_error: true` rather than hidden from the model.",
+      "whyWrong": {
+        "C": "`pause_turn` is resumed by echoing the assistant message back as-is with the same tools so the server-side loop continues. Appending it as a user turn changes who said it and does not resume the loop.",
+        "D": "Refusals are not transient. Resending the identical request typically refuses again; the documented response is to read `stop_details` and adjust the request or route to a fallback model.",
+        "E": "Hiding the failure leaves the model reasoning from absence, which is how a timed-out lookup becomes a confident \"no matching records\". Return the failure as a `tool_result` with `is_error: true` and enough context to act on."
+      },
+      "difficulty": 2,
+      "mindset": "Ask \"will time change the outcome?\" — yes means bounded backoff, no means fix the code that built the request.",
+      "tags": [
+        "recovery-strategy",
+        "error-identification",
+        "stop-reasons"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons"
+      ]
+    }
+  ]
+}

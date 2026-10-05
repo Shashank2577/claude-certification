@@ -1,0 +1,931 @@
+{
+  "certId": "professional",
+  "domainId": "d7-dev-productivity",
+  "questions": [
+    {
+      "id": "p-d7-x3-001",
+      "taskStatementId": "7.1",
+      "stem": "A 400-person engineering organisation is rolling Claude Code out to every team. The enablement team maintains review skills, two subagents, a formatting hook and a docs MCP server, and needs all of it present in about 40 repositories. Today a script copies `.claude/` into each repo by hand. Which approach is most defensible?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Package the skills, subagents, hook and MCP server as a plugin in an internal marketplace, and point every team at it. One version, one install path, and updates are a deliberate action rather than a script overwriting files that engineers have since customised."
+        },
+        {
+          "id": "B",
+          "text": "Merge all of the review guidance into a managed CLAUDE.md so it loads in every session automatically, and drop the skills and subagents since they add no capability."
+        },
+        {
+          "id": "C",
+          "text": "Keep the copy script but run it nightly from CI, so every repository receives an updated copy of the `.claude/` directory without anyone acting."
+        },
+        {
+          "id": "D",
+          "text": "Build a custom MCP server that exposes each skill and subagent as a tool, then register that single server everywhere, so there is only one thing to distribute."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The problem is a **distribution and drift** problem, and the artefact should solve both. A plugin gives the four component types - skills, subagents, hooks, MCP servers - one versioned unit with one install path across 40 repositories. That gives you a release you can roll forward and, more importantly, an upgrade that is a deliberate action rather than a background process.\n\nThe nightly script is the option that looks operationally simplest and is the worst of them. It overwrites files engineers have customised, it produces merge conflicts on branches where someone has already edited that directory, and it converts every improvement into an unreviewed change landing across 40 repositories overnight. Nobody can review a nightly diff, and the first person to notice an unwanted change has to work out which of 40 repos now differ.\n\nWorth noting the structural reason the plugin fits here: skills and subagents are **configuration artefacts with their own loading semantics** - frontmatter, descriptions, tool lists, model invocation - and folding them into a managed prompt file or an MCP server changes what they are. Distribution should preserve the thing being distributed.\n\nD is a category error dressed as simplification: MCP exposes tools and data, and wrapping a skill in a tool adds a process boundary to something that is prompt configuration.",
+      "whyWrong": {
+        "B": "Everything loaded in every session is a context cost paid on every task, including the eleven-twelfths of review guidance no session needs. It also converts selective procedures into always-on text and loses the selection mechanism that makes skills work.",
+        "C": "Overwrites local customisations, creates conflicts on active branches, and lands unreviewed changes across 40 repositories nightly. Nobody can review a diff that size on a schedule, and the first unwanted change is discovered by an engineer rather than by the team that made it.",
+        "D": "Category error. An MCP server exposes tools and resources; a skill is prompt configuration with its own loading semantics. Wrapping it as a tool adds a process boundary and changes how it is selected and invoked."
+      },
+      "difficulty": 1,
+      "visualId": "claude-code-config",
+      "mindset": "Distribution should be one versioned unit with a deliberate upgrade - not a background job that overwrites 40 repos.",
+      "tags": [
+        "configuration",
+        "plugins",
+        "enablement",
+        "drift"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/plugins",
+        "https://code.claude.com/docs/en/settings"
+      ]
+    },
+    {
+      "id": "p-d7-x3-002",
+      "taskStatementId": "7.1",
+      "stem": "A security team has reviewed and approved twelve MCP servers for use with Claude Code. Different teams need different subsets, and engineers must be able to add whichever approved server their work requires - but nothing unapproved may ever connect. Which configuration meets the requirement?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Set `allowedMcpServers` to the twelve approved servers in managed settings, and also set `autoApproveMcpServers` false. Engineers can still add an approved server for their own project; anything outside the allowlist is refused regardless of local configuration."
+        },
+        {
+          "id": "B",
+          "text": "Deploy a `managed-mcp.json` containing all twelve approved servers, so every engineer receives every server automatically and no configuration is needed."
+        },
+        {
+          "id": "C",
+          "text": "Set `allowedMcpServers` to the twelve approved servers in managed settings and leave `autoApproveMcpServers` at its default, so engineers can add whichever approved server they need without an approval step."
+        },
+        {
+          "id": "D",
+          "text": "List every server not on the approved list in `deniedMcpServers` in managed settings, adding new servers to that list as they are discovered."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The requirement has two halves that pull in opposite directions: engineers **need** autonomy to add approved servers, and the organisation **must** prevent unapproved ones. A denylist cannot deliver the first half - it enumerates what is bad rather than what is permitted, so every new server is a decision someone has to remember to make, and the default for anything not yet enumerated is permitted.\n\nAn **allowlist** inverts that default. `allowedMcpServers` states what is permitted; everything else is refused no matter what local configuration says. Because it is delivered at the managed level, a developer cannot widen it from a project or user settings file - which is what makes it a control rather than a convention.\n\nThen the second setting carries the usability requirement. With auto-approval on, an engineer adding one of the twelve approved servers is not interrupted by an approval prompt for each one, which is what keeps people from routing around the control entirely by asking a colleague to connect it.\n\nOption B removes the engineer's choice, and has a second problem: a centrally distributed set of twelve servers means every project carries twelve definitions, most of them irrelevant to the work in front of you.\n\nD is worth naming because it feels conservative. It is the weakest of the four - it is a denylist, it is unmaintainable as the server population grows, and its failure mode is the safe-looking one that nobody notices.",
+      "whyWrong": {
+        "B": "Removes the engineer autonomy the requirement explicitly asks for, and distributes twelve server definitions into every project regardless of what that project needs. It also means adding an approved server later is a central change rather than a local one.",
+        "C": "The allowlist is right; the auto-approval setting is what this option gets wrong in practice. Without it, adding an approved server requires an approval step per server, and the predictable result is engineers routing around a control that is tedious rather than necessary.",
+        "D": "A denylist enumerates what is bad rather than what is permitted, so the default for anything unlisted is allowed. It also has to be updated as servers are discovered, and its failure mode - a new server nobody has classified - is invisible."
+      },
+      "difficulty": 3,
+      "visualId": "claude-code-config",
+      "mindset": "Allowlists invert the default to safe; denylists depend on someone classifying every new thing.",
+      "tags": [
+        "mcp",
+        "configuration",
+        "security",
+        "governance"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/mcp",
+        "https://code.claude.com/docs/en/settings"
+      ]
+    },
+    {
+      "id": "p-d7-x3-003",
+      "taskStatementId": "7.2",
+      "stem": "A platform team's CLAUDE.md says 'always run Prettier on any file you change'. Despite this, about one in five pull requests produced with Claude Code fails the formatting check in CI. Two teams proposed changes. Which TWO are well founded? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add a PostToolUse hook matched to Edit|Write in the shared project settings that runs Prettier on the changed file. The rule becomes an action the harness performs rather than something the model must remember, and it runs on every edit."
+        },
+        {
+          "id": "B",
+          "text": "Investigate whether the CI check and the developer's local formatter are configured differently - a mismatch there explains the pattern exactly, and no prompt or hook change fixes it."
+        },
+        {
+          "id": "C",
+          "text": "Move the Prettier rule to the top of CLAUDE.md and mark it IMPORTANT, so the model weights it more heavily against the rest of the project's guidance."
+        },
+        {
+          "id": "D",
+          "text": "Add several before-and-after examples of correctly formatted files to CLAUDE.md, so the model can see what the convention looks like."
+        },
+        {
+          "id": "E",
+          "text": "Create a format-the-code skill with a clear description, so Claude invokes it automatically whenever it edits a file."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Two different diagnoses, and both are worth taking seriously because a five-in-five failure rate has a suspiciously regular shape.\n\n**A** is the structural fix. A PostToolUse hook runs after the model edits a file, which means the formatting happens as part of the edit rather than as a step the model has to remember. That is the general principle for this class of rule: anything that must be true after every edit belongs in a hook, because the model's compliance is probabilistic and a formatting check is deterministic. It also puts the fix in shared project settings, so it reaches everyone rather than depending on each engineer remembering a convention.\n\n**B** is worth checking first, because it explains the pattern more simply. A discrepancy between local and CI formatter configuration - a different version, a different config file, a pre-commit hook that runs where CI does not - produces exactly this: edits look formatted locally and fail in CI. No prompt change and no hook fixes a configuration mismatch, and adding a hook on top of one would mean you fixed nothing and shipped a workaround.\n\nThe rejected options all treat a rule the model has not been following as a wording problem. C raises emphasis, D adds demonstrations, E moves it into a skill - and all three leave enforcement dependent on the model choosing to comply. Emphasis and examples improve adherence; they do not make it a guarantee, and one in five is the kind of rate that a workflow step should be eliminating rather than a prompt should be negotiating.",
+      "whyWrong": {
+        "C": "Emphasis changes adherence, not enforcement. A formatting check is deterministic and cheap - which is exactly the property that makes it a poor candidate for relying on model compliance.",
+        "D": "Examples show the convention; they do not apply it. Demonstrations improve the rate at which the model follows a rule and cannot reach the residual failures.",
+        "E": "A skill is invoked when the model decides the task calls for it. Formatting after every edit is not a task the model evaluates - it is a property every edit must have, which is a hook's job."
+      },
+      "difficulty": 2,
+      "visualId": "hooks-lifecycle",
+      "mindset": "Anything that must hold after every edit belongs in a hook - and check the config mismatch that explains a regular pattern first.",
+      "tags": [
+        "hooks",
+        "workflow",
+        "automation",
+        "diagnostics"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/hooks",
+        "https://code.claude.com/docs/en/settings"
+      ]
+    },
+    {
+      "id": "p-d7-x3-004",
+      "taskStatementId": "7.2",
+      "stem": "A team runs a two-hour Claude Code session that has so far covered a CSS fix, CI configuration questions, and a cache-invalidation bug in the API. The last item is going badly: Claude keeps proposing approaches the team already tried and discarded, and correcting it does not help. Which change is most likely to work?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Run `/clear` and start a fresh session for the cache bug, with a prompt that states what was tried, why each failed, and what the actual constraint is. The relevant context is small and the stale context is actively harmful - much of it is corrections the model is not weighting properly."
+        },
+        {
+          "id": "B",
+          "text": "Keep correcting the model in the same session. Each correction adds information about what has already been ruled out, and the accumulated session history is the most complete record of the investigation."
+        },
+        {
+          "id": "C",
+          "text": "Switch the session to a model with a larger context window, so the whole morning's history and every correction fit comfortably and nothing is lost."
+        },
+        {
+          "id": "D",
+          "text": "Ask the model to summarise the session so far into a written state document, then continue in the same session using that summary as the working context."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The failure is **context that has stopped being useful and become harmful**. Two hours of unrelated work plus several rounds of correction produce a context where the relevant facts are buried, the discarded approaches are still present as text, and the model's attention is spread across material that has nothing to do with the current problem.\n\n`/clear` plus a well-formed fresh prompt is the right move because it fixes the actual cause: what the model needs in order to solve a cache-invalidation bug is a compact statement of the constraint, the approaches already tried, and why each failed. That is a few hundred tokens of high-value context. Replacing a large, noisy context with a small, relevant one is a strict improvement - and this is exactly the pattern the guidance on context management describes, where context accumulates and later work ends up diluted by earlier, unrelated turns.\n\nThe fresh prompt is where the value comes from. The corrections *are* worth carrying forward - but as an explicit list in the prompt, where they are salient, rather than as scattered turns the model may or may not weight.\n\nThe rejected options each keep the problem. B is the diagnosis in miniature: corrections accumulate without becoming constraint. C is the wrong diagnosis - the window is not too small, the context is too noisy.\n\nD deserves a specific note because it is the sophisticated-sounding option. Summarising into a document and continuing in the same session leaves the noisy context in place; the summary is added to it rather than replacing it.",
+      "whyWrong": {
+        "B": "This is the mechanism producing the problem. Corrections accumulate as turns without becoming an explicit statement of the constraint, so the model keeps rediscovering approaches the session already ruled out.",
+        "C": "Misdiagnoses. The window is not too small for the relevant context; it is too full of irrelevant context. A larger window preserves the noise and lets the problem continue.",
+        "D": "Adding a summary to a noisy session leaves the noise in place. The improvement comes from replacing the context, not from documenting it and continuing."
+      },
+      "difficulty": 1,
+      "visualId": "error-recovery",
+      "mindset": "When context stops helping, replace it - carry the constraints forward in a prompt, not as accumulated turns.",
+      "tags": [
+        "context-management",
+        "workflow",
+        "diagnostics",
+        "claude-code"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/memory",
+        "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents"
+      ]
+    },
+    {
+      "id": "p-d7-x3-005",
+      "taskStatementId": "7.3",
+      "stem": "An agent built on the Messages API keeps its own conversation history. To save tokens, it strips all `thinking` blocks from past assistant turns before appending the latest assistant message and the tool results. The team now sees repeated failures where the agent re-plans a step it had already reasoned through. What is the correct fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Pass the latest assistant message back exactly as received, keeping its `thinking` blocks. When thinking is in play you preserve thinking blocks in the conversation you send back, and dropping them removes the reasoning the agent had already done."
+        },
+        {
+          "id": "B",
+          "text": "Turn thinking off on every request that carries a `tool_result`, and turn it back on for the final answer, so no thinking tokens are ever spent on tool-result turns."
+        },
+        {
+          "id": "C",
+          "text": "Add automatic retries with exponential backoff around the request wrapper, since the re-planning is a transient 400 error caused by dropping blocks."
+        },
+        {
+          "id": "D",
+          "text": "Add a system-prompt instruction telling the agent to remember the reasoning from previous turns and not repeat work it has already done."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The mechanism is straightforward once stated: **thinking blocks are part of the conversation state, and removing them removes the reasoning**. An agent that has already worked out that an approach will not work - in thinking, not in visible text - is being asked to re-derive that conclusion when the block is stripped. So the observed symptom is a direct consequence of the token-saving optimisation.\n\nThe fix is to pass the assistant message back as received, preserving its thinking blocks. That does mean paying for them as input on subsequent turns, and it is worth being honest that this is a real cost - but the alternative is paying for the same reasoning repeatedly, plus the tool calls and latency of re-planning, which is usually the more expensive side of the trade.\n\nWorth noting the broader design point: any history-manipulation scheme needs to be checked against which block types are load-bearing. `thinking` blocks are load-bearing for exactly this reason, and the docs are explicit about preserving them when thinking is in play.\n\nThe rejected options each try to solve a reasoning problem with something that is not one. B and its variant discard reasoning in one direction or the other and cannot restore what was never sent. C treats a deliberate, repeatable state-management decision as a transport error - retrying the same stripped request produces the same re-planning. D asks the model to remember something it was never given, which is the instruction-as-control pattern in a debugging context.",
+      "whyWrong": {
+        "B": "Turning thinking off on tool-result turns does not restore the reasoning that was stripped from history. It removes more of it, and the agent re-plans because it has no record of having already planned.",
+        "C": "Stripping the most recent turn's thinking while keeping older ones still removes the reasoning immediately before the current tool result - which is the reasoning most likely to explain the step being taken.",
+        "D": "An instruction cannot restore context that was never sent. The agent cannot remember reasoning it did not receive, and asking it to is the instruction-as-control pattern appearing in a debugging context."
+      },
+      "difficulty": 3,
+      "visualId": "error-recovery",
+      "mindset": "Check every history-trimming scheme against which block types are load-bearing - thinking blocks are.",
+      "tags": [
+        "debugging",
+        "thinking",
+        "context-management",
+        "api-mechanics"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/extended-thinking",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls"
+      ]
+    },
+    {
+      "id": "p-d7-x3-006",
+      "taskStatementId": "7.3",
+      "stem": "A payments team keeps its card-data handling rules in `services/payments/CLAUDE.md`. Engineers launch Claude Code from the repository root. When they ask for changes in that service, the model does not follow the rules, and the team suspects the file is not being read. What is the most accurate explanation?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Memory is loaded for the directory a session starts in and its parents, not for arbitrary subdirectories. The fix is to make the rules load for the root session - a path-scoped rule in `.claude/rules/` with a `paths` frontmatter filter, or an `@` import from the root CLAUDE.md."
+        },
+        {
+          "id": "B",
+          "text": "The file is being read but is outranked by the root CLAUDE.md, because rules in the working directory always take precedence over rules in subdirectories, regardless of relevance."
+        },
+        {
+          "id": "C",
+          "text": "Only CLAUDE.md at the repository root is loaded. Files in subdirectories are ignored entirely and must be consolidated into the root file or imported with `@`."
+        },
+        {
+          "id": "D",
+          "text": "Each engineer needs to launch Claude Code from `services/payments` for the local rules to load, and the team should standardise on that working directory for payments work."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The mechanism is that memory files are loaded based on the **directory a session starts in**, walking upward from there - not by scanning the repository. A session launched at the repository root does not descend into `services/payments` to find a CLAUDE.md there. That is why the file is neither being read nor being outranked: it is not in scope.\n\nA gives the two correct remedies, and choosing between them is a design decision rather than a correctness one. A **path-scoped rule** in `.claude/rules/` with a `paths` frontmatter filter loads the guidance only when work touches matching files, which is the conditional-loading mechanism built for exactly this case. An **`@` import** in the root CLAUDE.md always loads the content, which is simpler and right when the rules are short and always relevant.\n\nThe distinction between them is worth keeping straight because it is the whole point of the mechanism: an import always costs context on every task in the repository, while a scoped rule costs context only when the matching files are involved.\n\nB invents a precedence rule - and gets the principle backwards, since the relevance filter exists precisely so that area-specific guidance loads for work in that area. C is half true and misleading: subdirectory memory files are supported, they just have to be reachable from the launch directory. D standardises a workaround that makes every payments task carry the whole repository's memory and breaks tooling that assumes the repo root.",
+      "whyWrong": {
+        "B": "There is no rule that makes working-directory memory outrank subdirectory memory. The mechanism is about what is loaded from the launch directory upward, and relevance filtering exists so area-specific guidance applies to work in that area.",
+        "C": "Subdirectory CLAUDE.md files are supported; they are loaded when the session starts in that directory or below. Saying they are ignored entirely misdescribes the mechanism and rules out the scoped-rule fix.",
+        "D": "A workable workaround with real costs: every payments task then loads memory from a narrower scope, tooling and paths that assume the repository root break, and the underlying loading question stays unresolved for everyone else."
+      },
+      "difficulty": 2,
+      "visualId": "claude-code-config",
+      "mindset": "Memory loads from the launch directory upward - make area rules reachable from where sessions actually start.",
+      "tags": [
+        "claude-code",
+        "configuration",
+        "memory",
+        "debugging"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/memory",
+        "https://code.claude.com/docs/en/settings"
+      ]
+    },
+    {
+      "id": "p-d7-x3-007",
+      "taskStatementId": "7.1",
+      "stem": "For cost and data-handling reasons, an administrator has set `model` in managed settings to one of two approved model families. A member of staff is negotiating an exception so they can use a third, more capable model for an evaluation. Which resolution is technically correct?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Set `availableModels` to the two approved families in managed settings and turn on `enforceAvailableModels`. That constrains what can be selected in the session while leaving the configured model as the default."
+        },
+        {
+          "id": "B",
+          "text": "Commit a `model` key set to the approved model into every repository's `.claude/settings.json`, since project settings override managed defaults and repository configuration is auditable."
+        },
+        {
+          "id": "C",
+          "text": "Add a rule to the managed CLAUDE.md telling Claude to refuse to continue whenever a session is running on an unapproved model."
+        },
+        {
+          "id": "D",
+          "text": "Write a PreToolUse hook that inspects the active model before every tool call and blocks the call when the model is unapproved."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The requirement is a **constraint on selection**, and the mechanism built for it is `availableModels` with enforcement enabled. Naming the permitted set makes unapproved models unselectable in the session, while leaving the configured `model` key as the default rather than removing the choice entirely.\n\nThat framing matters more than it looks. Removing the model choice would break the legitimate use of the *other* approved family - a developer switching between two sanctioned options is doing exactly what the policy permits. Enforcement and defaults are different settings doing different jobs, and conflating them produces over-restriction.\n\nThe rejected options each fail the specificity test in an instructive way. B inverts the precedence: managed settings sit above project settings, so a committed project value does not override them - and it also spreads the policy across 40 repositories where it can be edited. C is the instruction-as-control pattern; a CLAUDE.md rule is followed at the model's discretion, so it is not a constraint on what can be selected.\n\nD deserves a note because it is the most sophisticated-sounding and the most wasteful. A per-tool-call hook would work as a detection mechanism, but it adds a hook invocation to every single tool call - a latency and cost tax on all work - to enforce a decision made once per session. It is also a strange shape: a session-level policy enforced per tool call.",
+      "whyWrong": {
+        "B": "Managed settings sit above project settings in precedence, so a committed project value does not override them. It also distributes the policy across every repository where an engineer can change it, and omits the mechanism that constrains selection at all.",
+        "C": "A managed CLAUDE.md rule is an instruction the model follows at its discretion. It cannot constrain which models are selectable, and it does not survive as a control anyone can test.",
+        "D": "Works as detection, at a real cost: a hook invocation on every tool call to enforce a decision made once per session. It is also the wrong shape - a session-level policy enforced at tool-call frequency."
+      },
+      "difficulty": 2,
+      "visualId": "claude-code-config",
+      "mindset": "Constrain selection with availableModels and enforcement; managed settings cannot be overridden by project files.",
+      "tags": [
+        "configuration",
+        "governance",
+        "model-selection",
+        "settings-precedence"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/settings",
+        "https://code.claude.com/docs/en/model-config"
+      ]
+    },
+    {
+      "id": "p-d7-x3-008",
+      "taskStatementId": "7.2",
+      "stem": "Developers start long unattended Claude Code sessions to fix flaky tests. Claude frequently reports 'done' while the suite is still failing, and someone notices hours later. Which TWO design elements address this? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "A Stop hook that runs the test suite and, while it is failing, blocks the stop and feeds the failures back to Claude - so the stopping condition depends on the state of the tests rather than on the model's assessment of it."
+        },
+        {
+          "id": "B",
+          "text": "A bounded turn limit or timeout on unattended sessions, so a session that cannot converge stops rather than running indefinitely while everyone believes it is making progress."
+        },
+        {
+          "id": "C",
+          "text": "A CLAUDE.md rule requiring Claude to run the full test suite and confirm it passes before reporting completion, so the requirement is in context at every turn."
+        },
+        {
+          "id": "D",
+          "text": "A PostToolUse hook that runs the full suite after every edit and exits with code 2 when it fails, so no failing state is ever left behind."
+        },
+        {
+          "id": "E",
+          "text": "Ending every prompt by asking Claude to review its own work and confirm the tests pass before it reports done."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "The failure is that the **stopping condition is a claim rather than a check**. Claude reports done; nobody verifies; hours pass.\n\n**A** makes the condition depend on the state of the tests rather than on the model's assessment of it, and a Stop hook is the mechanism built for that. What makes it work is the feedback loop: blocking the stop and feeding the failures back gives Claude the information it was missing, so it continues rather than declaring victory. This is the same pattern as any failing-test gate in an agentic loop - the model needs to observe the result of its own work, and the stop is the one point in the lifecycle where that observation changes the outcome.\n\n**B** addresses the other half of 'unattended'. An agentic loop that cannot converge will keep iterating, and a Stop hook that always blocks turns that into an unbounded session. Bounding turns or wall-clock time makes the failure mode explicit and finite, which is what makes an unattended run safe to launch at all.\n\nThe rejected options are three versions of the same mistake - relying on the model to self-assess. C puts the requirement in context, where it competes with everything else and is subject to the same drift the session is already experiencing. D is the wrong hook event and an expensive one: running the full suite after every edit is costly on precisely the flaky-test workload where it matters, and blocking on a PostToolUse failure interrupts work at a point where the model cannot usefully respond. E asks for the exact judgement that has been failing.",
+      "whyWrong": {
+        "C": "A CLAUDE.md rule competes with the rest of the session's context and is subject to the same drift the team is already seeing. It asks for compliance rather than providing verification.",
+        "D": "The wrong hook event for a stopping condition, and expensive: running the full suite after every edit is costly on precisely the flaky-test workload where it is most needed. Blocking mid-turn also gives the model no useful point at which to respond.",
+        "E": "Asks for the exact judgement that has been failing. Self-assessment is the unreliable part of this loop, so adding another request for it changes nothing."
+      },
+      "difficulty": 2,
+      "visualId": "hooks-lifecycle",
+      "mindset": "Make stopping conditions depend on system state, checked by a hook - and bound the loop so a non-converging run fails visibly.",
+      "tags": [
+        "hooks",
+        "automation",
+        "workflow",
+        "verification"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/hooks",
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests"
+      ]
+    },
+    {
+      "id": "p-d7-x3-009",
+      "taskStatementId": "7.2",
+      "stem": "An organisation must migrate roughly 2,000 Python modules to a new internal logging API. Each module can be converted independently, and the existing unit tests confirm each conversion. The work is repetitive, well-specified and latency-tolerant. Which approach is most defensible?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Have Claude produce the file list and script one `claude -p` invocation per file, with a narrowly scoped `--allowedTools` per call and the test suite as the gate. Independent units, a machine-checkable correctness signal, and per-call blast-radius control are exactly the conditions headless execution is built for."
+        },
+        {
+          "id": "B",
+          "text": "Open one interactive session, approve a detailed migration plan, and let Claude work through all 2,000 files continuously, reviewing at intervals."
+        },
+        {
+          "id": "C",
+          "text": "Script one `claude -p` call per file in `bypassPermissions` mode so nothing ever prompts, then apply the result without per-call tool restrictions."
+        },
+        {
+          "id": "D",
+          "text": "Send every module's source through the Message Batches API for the discount, then apply the returned edits programmatically without running the tests."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The scenario has been constructed so that the right approach is obvious once you check four things: **units are independent**, **correctness is machine-checkable**, **the work is well-specified**, and **latency does not matter**. That combination is the documented case for scripted headless execution, and A is the only option that respects all four.\n\nEach element earns its place. Splitting into one invocation per file means a failure is isolated to a module rather than poisoning a two-hour session. Using the test suite as the gate means each result is verified by something other than the model that wrote it - which is what makes 2,000 automated edits defensible rather than reckless. Scoping `--allowedTools` per call keeps each invocation's blast radius to reading and writing one file. And `--allowedTools` also means unattended runs cannot stall on a permission prompt waiting for a human who is not there.\n\nThe rejected options each break one of the four conditions. B is one continuous session across 2,000 files, where an early mistake propagates and context degrades - and it requires a human to be present, which contradicts 'unattended'. C removes per-call restrictions *and* permission prompts, so an error in one invocation has nothing to stop it. D is the interesting one: batches are genuinely cheaper, and this workload is latency-tolerant, so it is a real optimisation - but discarding the test gate throws away the only thing that makes 2,000 machine-applied edits safe, and batched file edits are not a supported shape for this workflow. The right sequencing is headless per-file with verification first, then consider batching if the cost is material.",
+      "whyWrong": {
+        "B": "One continuous session across 2,000 files is how errors compound and context degrades, and it requires a human present to approve - which contradicts the unattended premise entirely.",
+        "C": "Removing both tool restrictions and permission prompts means a single bad invocation has nothing bounding it. The per-call scoping is what makes unattended execution safe, so this trades the safety property for convenience.",
+        "D": "Cost is real and this workload is latency-tolerant, so batching is tempting. But discarding the test gate removes the only verification that makes 2,000 machine-applied edits defensible - and the saving is not worth an unverified bulk edit."
+      },
+      "difficulty": 3,
+      "visualId": "eval-loop",
+      "mindset": "Headless per-unit execution is right when units are independent, correctness is machine-checkable, and nobody is watching.",
+      "tags": [
+        "automation",
+        "headless",
+        "workflow",
+        "migration"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/headless",
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests"
+      ]
+    },
+    {
+      "id": "p-d7-x3-010",
+      "taskStatementId": "7.3",
+      "stem": "An internal agent keeps its own conversation history and drops older tool results to stay inside the context window. Recently it has begun making calls with arguments that violate the tool schema - wrong types, values outside documented ranges. Where should the team look first?",
+      "options": [
+        {
+          "id": "A",
+          "text": "At the trimming logic itself. If a `tool_result` block is removed while the assistant's `tool_use` for it remains, the conversation no longer pairs up, and a request that does not pair correctly can return malformed or unexpected tool input. Verify that every retained `tool_use` still has its corresponding `tool_result`."
+        },
+        {
+          "id": "B",
+          "text": "At the tool schema definitions. Strict mode with a JSON schema is the documented guarantee against malformed arguments, so tightening the schema's descriptions and adding more `enum` values should resolve it."
+        },
+        {
+          "id": "C",
+          "text": "At the model's temperature. Malformed tool arguments are a sampling problem, and lowering temperature makes generated arguments conform to the schema more reliably."
+        },
+        {
+          "id": "D",
+          "text": "At the system prompt. Adding an explicit instruction that every tool call must include all required parameters with valid types will resolve the mismatch."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The question tells you when the problem started - **recently**, alongside a context-management change - and that is the strongest signal available. When a defect appears alongside a change to how conversation state is assembled, look at that change first.\n\nAnd there is a specific structural requirement being violated. Conversation turns must pair up: an assistant `tool_use` block and its corresponding `tool_result` block travel together. If trimming drops a `tool_result` while leaving the `tool_use` that referenced it, the history the agent sends is malformed - and a malformed history is a far better explanation for inconsistent tool arguments than anything about the model's behaviour.\n\nThe other three options are the standard list of things people reach for when they want the model to behave differently, and none of them addresses the actual cause. B is worth singling out: strict schema enforcement is a real guarantee, and it guarantees the *shape* of what the model produces - it cannot repair a conversation that arrives in the wrong order or with missing blocks.\n\nC misattributes a structural state problem to sampling. D is instruction-as-control in a debugging context.\n\nThe transferable lesson: when maintaining conversation history yourself, the trimming logic is a correctness-critical component, not a token optimisation.",
+      "whyWrong": {
+        "B": "Strict schema enforcement guarantees the shape of what the model emits; it cannot repair conversation history that arrives unpaired. The schema was already strict and the defect appeared with a change to how history is assembled.",
+        "C": "Attributes a structural conversation-state problem to sampling. Temperature does not determine whether tool_use and tool_result blocks are paired in the history you send.",
+        "D": "The instruction-as-control pattern in a debugging context. A reminder cannot fix malformed conversation state, and it adds prompt tokens to a workload that is already context-constrained."
+      },
+      "difficulty": 3,
+      "visualId": "error-recovery",
+      "mindset": "When a defect appears alongside a context-management change, check that history still pairs tool_use with tool_result.",
+      "tags": [
+        "debugging",
+        "context-management",
+        "tool-use",
+        "api-mechanics"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls",
+        "https://platform.claude.com/docs/en/build-with-claude/context-editing"
+      ]
+    },
+    {
+      "id": "p-d7-x3-011",
+      "taskStatementId": "7.1",
+      "stem": "A regulated fintech lets Claude Code run shell commands, but outbound HTTP must reach only two internal API hosts. An engineer proposes the allow rule `Bash(curl https://api.internal.example/*)` plus a CLAUDE.md instruction to avoid other hosts. Which TWO statements about this proposal are correct? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "The allow rule is not a boundary. It pre-approves one pattern; it does not restrict anything else, so every other command still prompts. Only deny rules restrict what can be called."
+        },
+        {
+          "id": "B",
+          "text": "The correct shape is to deny the network tools in Bash - curl, wget and similar - and allow `WebFetch` scoped to the approved domains, so the workflow has a sanctioned path and the boundary is enforced by the permission system."
+        },
+        {
+          "id": "C",
+          "text": "The combination is sound: the allow rule permits approved usage and the CLAUDE.md instruction covers the rest, so the policy is expressed in both the permission system and the model's understanding."
+        },
+        {
+          "id": "D",
+          "text": "The combination is sound and better still with a PostToolUse hook logging the destination host of every Bash network call to a dashboard the security team reviews."
+        },
+        {
+          "id": "E",
+          "text": "The allow rule is too narrow. Replace it with a broader `Bash(curl *)` pattern and add a second model instance that checks each URL against the approved list."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "The distinction that decides this is **allow versus deny**. An allow rule says 'this specific pattern is pre-approved'; it does not say 'nothing else is'. Every other command - `wget`, `nc`, a Python one-liner opening a socket, `git` against a remote - remains available and simply prompts. So the requirement that outbound HTTP reach only two hosts is **not met** by an allow pattern, and a prompt is not a boundary.\n\n**A** names that gap precisely. **B** is the mechanism that actually restricts: deny the network tools in Bash, and allow `WebFetch` scoped to the approved domains so the workflow keeps a sanctioned path. This is the same principle as the general one in this domain - the model is not the authority on what is permitted.\n\nThe rejected options are real practices doing the wrong job. C adds a model-side layer to a control that was never enforcing anything: an allow pattern plus an instruction documents the policy in two places and enforces it in neither. D adds detection where prevention is required - a log records the outbound request after it has already reached the network, which is the definition of insufficient for a boundary. E moves in both wrong directions at once: a broader allow rule approves more, and a second model instance is another probabilistic check standing where a deterministic one belongs.",
+      "whyWrong": {
+        "C": "Two things that do not restrict. An allow rule pre-approves one pattern rather than blocking the rest, and a CLAUDE.md instruction is a request the model may follow - documented in two places, enforced in neither.",
+        "D": "A detective control where a preventive one is required. The log records outbound requests after they have been made, which helps investigation and does not prevent the exfiltration the requirement exists to stop.",
+        "E": "Broadens the permission surface and replaces a deterministic rule with another model-based check. Every element moves in the wrong direction at once."
+      },
+      "difficulty": 2,
+      "visualId": "security-guardrails",
+      "mindset": "Allow rules pre-approve; only deny rules restrict - and a CLAUDE.md line is not a boundary.",
+      "tags": [
+        "security",
+        "permissions",
+        "configuration",
+        "least-privilege"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/permissions",
+        "https://code.claude.com/docs/en/settings"
+      ]
+    },
+    {
+      "id": "p-d7-x3-012",
+      "taskStatementId": "7.2",
+      "stem": "A team keeps a `publish-package` skill in `.claude/skills/` that builds a library and pushes it to the company's internal registry. Twice in one week Claude invoked the skill on its own during unrelated work, and both times a version was published. The team wants to stop autonomous invocation without removing the skill. Which change does that?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add `disable-model-invocation: true` to the skill's frontmatter. The skill remains available as an explicit slash command, so the team can still invoke it deliberately, but Claude no longer selects it on its own."
+        },
+        {
+          "id": "B",
+          "text": "Set `user-invocable: false` in the skill's frontmatter, so the skill disappears from the command list and cannot be triggered at all."
+        },
+        {
+          "id": "C",
+          "text": "Move the publish steps out of the skill and into the project CLAUDE.md under a heading that instructs Claude to ask for confirmation before publishing."
+        },
+        {
+          "id": "D",
+          "text": "Remove `allowed-tools` from the skill's frontmatter, so the registry push requires an explicit permission prompt each time."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The two requirements are in tension and the frontmatter has a setting for each. The team needs the skill to **not be selected by the model** and to **remain available when a person asks for it** - and `disable-model-invocation: true` is exactly that control. The skill becomes something you invoke, not something Claude selects.\n\nThat is the right shape because the problem is **selection**, not capability. Claude invoked the skill because its description made it look applicable to the surrounding work; the fix is to remove the model-driven path to it while keeping the human-driven one intact.\n\nWorth noting the principle underneath: for an irreversible or externally visible action like publishing a version, autonomous selection is the wrong default regardless of whether this particular skill misfires. The general guidance is to gate such skills behind explicit invocation.\n\nThe rejected options each break something else. B removes the human path too, which is not what the team asked for - they still want to publish deliberately. C relocates the steps into always-loaded memory, which means they are in context on every task and the publication logic is now a set of instructions rather than a contained procedure; it also does not stop autonomous action, it just moves it. D is subtler and worth naming: removing the tool restriction means the push prompts for permission, which addresses the *approval* rather than the *selection* - and in an unattended or auto-approved context it may not prompt at all.",
+      "whyWrong": {
+        "B": "Removes the human path as well. The team explicitly wants to keep publishing deliberately - this makes the skill unavailable rather than preventing autonomous use.",
+        "C": "Moves the steps into always-loaded memory, where they cost context on every task and become a set of instructions rather than a contained procedure. It also does not stop autonomous action; it relocates it.",
+        "D": "Addresses approval rather than selection. A permission prompt is not what the team is asking about - and where permissions are auto-approved or the run is unattended, it may not prompt at all."
+      },
+      "difficulty": 1,
+      "visualId": "claude-code-config",
+      "mindset": "For irreversible actions, gate the skill behind explicit invocation - the problem is selection, not capability.",
+      "tags": [
+        "skills",
+        "configuration",
+        "governance",
+        "risk"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/skills",
+        "https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview"
+      ]
+    },
+    {
+      "id": "p-d7-x3-013",
+      "taskStatementId": "7.3",
+      "stem": "A nightly CI step runs `claude -p` to triage failing tests and writes findings to a dashboard. The dashboard parses Claude's prose with a regular expression for severity, file path and suggested owner, and it broke after a prompt change altered the phrasing. Which change is most defensible?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Run with `--output-format json` and a `--json-schema` describing the three fields, then read the structured result. A machine consumer should depend on a schema rather than on the shape of prose that any prompt change can alter."
+        },
+        {
+          "id": "B",
+          "text": "Add 'respond only with JSON' to the prompt along with three example responses, and keep the existing parser. That keeps the pipeline simple and gives the model a clear format to follow."
+        },
+        {
+          "id": "C",
+          "text": "Switch to `--output-format stream-json`, join the text deltas, and run the existing regular expression against the assembled response."
+        },
+        {
+          "id": "D",
+          "text": "Add a second `claude -p` call that converts the first call's prose into JSON before the dashboard reads it."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The root cause is that a **machine consumer depends on unstructured output**. Prose is not a contract: it changes when the prompt changes, it changes when the model changes, and it changes when the task is slightly different. A regular expression over it will break again, and the failure will look like a flaky pipeline rather than an architecture problem.\n\n`--output-format json` with a `--json-schema` makes the interface explicit and enforced, which moves the guarantee from the model's cooperation to the harness. That is the whole point: the dashboard's correctness should not depend on how the model chose to phrase something.\n\nThe rejected options each preserve the dependency on prose while adding something. B asks for a format rather than constraining one - it improves the odds and leaves the same fragility. C changes the transport from a single response to a stream of deltas, then reassembles prose and regexes it, so the fragility survives intact along with more parsing code.\n\nD is the sophisticated-sounding one and worth naming carefully: a second call that reformats prose into JSON makes the pipeline's correctness depend on *two* model invocations instead of one. It adds cost and latency, and it introduces a new failure mode - the converter misreading or inventing a field - while leaving the original prose dependency in place.",
+      "whyWrong": {
+        "B": "Requests a format instead of constraining one. It improves the odds on this run while leaving the pipeline dependent on prose that the next prompt or model change will alter again.",
+        "C": "Changes the transport and keeps the fragility. Reassembling prose from deltas and regexing it preserves the exact dependency that broke, and adds parsing code to maintain.",
+        "D": "Makes correctness depend on two model invocations rather than one. It adds cost, latency and a new failure mode - the converter inventing or misreading a field - while leaving the prose dependency in place."
+      },
+      "difficulty": 2,
+      "visualId": "structured-output",
+      "mindset": "A machine consumer needs a schema, not a regular expression over prose.",
+      "tags": [
+        "structured-outputs",
+        "automation",
+        "ci",
+        "workflow"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/headless",
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs"
+      ]
+    },
+    {
+      "id": "p-d7-x3-014",
+      "taskStatementId": "7.2",
+      "stem": "Payments developers ask Claude Code for a security review of their changes several times a week. Two problems recur: the review reads dozens of files and fills the main session's context, and developers ignore findings because they are not separated by severity. Which TWO design elements address this? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "A project subagent in `.claude/agents/` with a review-focused system prompt and a read-only tool list. Isolation is the one thing a skill running in the main conversation cannot provide, so this is what keeps dozens of files out of the main session."
+        },
+        {
+          "id": "B",
+          "text": "An explicit severity taxonomy required in the subagent's output. Findings developers ignore are usually findings with no triage structure; requiring a severity field makes the output sortable and therefore actionable."
+        },
+        {
+          "id": "C",
+          "text": "A section in the project CLAUDE.md explaining how to run a security review, including a checklist, and asking Claude to keep findings brief."
+        },
+        {
+          "id": "D",
+          "text": "A project skill holding the review checklist that runs in the main conversation, with a line in its description so Claude invokes it when asked."
+        },
+        {
+          "id": "E",
+          "text": "A team convention of running every review in plan mode in the main session, so no file modifications happen while the review is in progress."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "The two symptoms need two different mechanisms, and the design has to supply both.\n\n**A** handles context, and it is what subagents are for. A review subagent reads dozens of files in its own context and returns a summary, so the main session keeps its capacity for the work that follows. There is a second benefit developers will feel: a review that no longer crowds the session can be run repeatedly without degrading what comes next.\n\n**B** handles signal, and it is an output-contract change rather than a hope that the model prioritises well. Findings that get ignored are usually forty observations of equal apparent weight. Requiring a severity taxonomy makes the output sortable, which is what makes it actionable.\n\nNote the choice of subagent rather than skill: isolation is the point, and it is precisely what a skill running in the main conversation cannot give you.\n\nThe rejected options each solve at most one half, and one solves neither. C is a paragraph in always-loaded memory - not a repeatable procedure, and no output format, so findings arrive unstructured. D is a skill, which runs in the main conversation and therefore inherits the context problem in full. E keeps everything in the main session, the opposite of what is needed, and plan mode is about not editing files, which was never the complaint.",
+      "whyWrong": {
+        "C": "A paragraph in always-loaded memory is not a repeatable procedure and defines no output format, so findings arrive unstructured - the second problem untouched and the first only marginally improved.",
+        "D": "A skill runs in the main conversation, so it inherits the context problem in full. It also adds no severity contract, leaving developers with the same undifferentiated findings they were ignoring.",
+        "E": "Keeps everything in the main session, which is the opposite of what the context problem needs. Plan mode is about preventing edits, which was never the reported problem."
+      },
+      "difficulty": 2,
+      "visualId": "claude-code-config",
+      "mindset": "Isolate the work with a subagent and define the output contract - a skill in the main session does neither.",
+      "tags": [
+        "subagents",
+        "workflow",
+        "code-review",
+        "context-management"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/sub-agents",
+        "https://code.claude.com/docs/en/skills"
+      ]
+    },
+    {
+      "id": "p-d7-x3-015",
+      "taskStatementId": "7.3",
+      "stem": "During a production outage an SRE wants to use Claude Code to work through logs, metrics and cluster state to find the root cause. They propose running the session in `bypassPermissions` so nothing blocks, and relying on an incident CLAUDE.md section that forbids mutating commands. The security team's response?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Bypass permission prompts for speed but hold the boundary structurally: connect observability and log platforms through MCP so the agent can query rather than paste, and give the session read-only production credentials so nothing it discovers can be changed. Speed comes from not pasting megabytes of logs, not from removing the boundary."
+        },
+        {
+          "id": "B",
+          "text": "Accept the plan. During an incident, speed of diagnosis is worth more than the risk of an autonomous command, and the CLAUDE.md rule provides sufficient guidance."
+        },
+        {
+          "id": "C",
+          "text": "Start the session in plan mode for the whole investigation, since plan mode guarantees the agent cannot run any command regardless of how it is prompted."
+        },
+        {
+          "id": "D",
+          "text": "Keep the session in default permission mode and add a PreToolUse hook that denies every command containing a write keyword, so the incident rule is enforced by the harness rather than by the prompt."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The proposal conflates two different things that both feel like 'friction': **permission prompts** and **capability**. Under pressure it is entirely reasonable to want fewer prompts. It is not reasonable to remove the boundary between a diagnostic session and production state - and those are separable.\n\nA separates them cleanly, and the reasoning is worth following in order. **MCP connections to observability and log platforms** remove the actual pain: the reason people paste log fragments is that getting logs into the conversation is hard, and an integration that lets the agent query them is both faster *and* more accurate. **Read-only production credentials** then mean the agent can investigate fully and still not change anything. Speed improves while the boundary holds.\n\nThere is a second reason to prefer read-only that is easy to miss: during an incident, the human operator is the one holding the mental model of the system. An agent that can mutate while someone is mid-remediation introduces a second writer into an incident, and that is how a diagnosis becomes a second incident.\n\nThe rejected options split into the too-permissive and the incoherent. B grants autonomy on the strength of a CLAUDE.md rule - the model-as-control pattern under exactly the conditions where it should least be trusted. C claims a guarantee it does not have: plan mode restricts editing, not command execution, and it is built for design exploration rather than diagnosis.\n\nD is the most defensible of the three rejected ones and still wrong for the incident case: it leaves the session at default permission mode, so every diagnostic read the agent wants to run prompts a human - which reintroduces the exact friction the SRE was trying to remove, during the worst possible time.",
+      "whyWrong": {
+        "B": "Grants production-mutating capability on the strength of a prompt rule, which is a request rather than a control - and an incident is precisely when an injected instruction in a log or an error page is most likely to be read and followed.",
+        "C": "Claims a guarantee it does not provide. Plan mode restricts file modification rather than command execution, so it is neither a capability boundary nor the right tool for diagnosis. It would not stop a mutating shell command.",
+        "D": "Defensible in general and wrong here. Leaving the session in default mode means every diagnostic command the agent wants to run prompts a human, which reinstates the exact friction the SRE was trying to remove - during an incident, when prompts are the thing costing minutes."
+      },
+      "difficulty": 3,
+      "visualId": "security-guardrails",
+      "mindset": "During an incident, remove the prompts - not the boundary. Integrate for speed and give the session read-only credentials.",
+      "tags": [
+        "incident-response",
+        "security",
+        "permissions",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/permissions",
+        "https://code.claude.com/docs/en/mcp"
+      ]
+    },
+    {
+      "id": "p-d7-x3-016",
+      "taskStatementId": "7.3",
+      "stem": "A back-office service gets occasional HTTP 500 `api_error` responses from the Claude API. Most clear on their own, but over two days a small set of requests has failed every time. Which TWO actions are appropriate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Retry 500 responses with capped exponential backoff and jitter, using the SDK's built-in retries. Most clear spontaneously, and the retryable class is exactly what the SDK retries by default."
+        },
+        {
+          "id": "B",
+          "text": "Log the `request-id` header - also returned as `request_id` in error bodies - and include it in any support escalation. It is what lets the provider locate a specific failing request."
+        },
+        {
+          "id": "C",
+          "text": "Switch the service to the most capable model, since larger models produce fewer internal server errors."
+        },
+        {
+          "id": "D",
+          "text": "Ask the model to check its own output and resend the request whenever the response looks incomplete, which addresses the failures at the source."
+        },
+        {
+          "id": "E",
+          "text": "Treat all 4xx and 5xx responses the same way and retry them in a tight loop until they succeed."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Two responses, one for the bulk of the problem and one for the tail.\n\n**A** addresses the transient majority. The docs are explicit about the retryable class - connection errors, 429 and 5xx - with capped exponential backoff honouring `retry-after`, which is why the SDKs retry by default and why this needs no custom code. Since most 500s clear on their own, retrying is simply the correct response to them.\n\n**B** addresses the small set that does not. A persistent failure against identical inputs is a different problem from a transient one, and the request id is what makes it tractable: it is returned on the response and in error bodies, and it is how the provider locates a specific request. Without it you are describing a symptom; with it you are describing an incident. The fact that this question separates 'most' from 'a small set' is the hint - the two populations need different tools.\n\nThe rejected options each confuse cause with correlation. C assumes capability correlates with server-side reliability, which is not a documented relationship and not a lever you control. D asks the model to diagnose an infrastructure failure it cannot see, and resends a request that has already failed at the transport layer. E is the one that would cause an outage: 4xx responses are client errors - malformed requests, bad credentials - and retrying them identically reproduces them exactly, while hammering the service for the 5xx makes recovery slower.",
+      "whyWrong": {
+        "C": "There is no documented relationship between model capability and internal server errors, and model choice is not a lever you hold over provider-side reliability. It also changes behaviour across the whole service while diagnosing something narrow.",
+        "D": "Asks the model to detect an infrastructure failure that is invisible to it - the request failed before there was any output to inspect. It also resends a request that has already proven unreliable.",
+        "E": "The option that turns a partial outage into a full one. 4xx responses are client errors and retrying them identically reproduces them, while a tight loop against 5xx and 429 slows recovery and risks escalation."
+      },
+      "difficulty": 2,
+      "visualId": "error-recovery",
+      "mindset": "Transient 5xx is a retry with backoff; a persistent failure needs a request-id and an escalation.",
+      "tags": [
+        "error-handling",
+        "retries",
+        "observability",
+        "debugging"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://platform.claude.com/docs/en/api/messages"
+      ]
+    },
+    {
+      "id": "p-d7-x3-017",
+      "taskStatementId": "7.1",
+      "stem": "A company routes all outbound traffic through a TLS-inspecting proxy that re-signs traffic with a private root CA that is not in the trust store on developer laptops. Claude Code cannot connect on about half the estate. Which change is correct?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Set `HTTPS_PROXY` and `NODE_EXTRA_CA_CERTS`, pointing at the corporate root CA, in the environment configuration that reaches every workstation - typically managed settings or the platform team's machine configuration. This teaches the runtime to trust the corporate CA without weakening verification."
+        },
+        {
+          "id": "B",
+          "text": "Set `NODE_TLS_REJECT_UNAUTHORIZED=0` in managed settings, so Claude Code accepts the proxy's re-signed certificates and connection works everywhere immediately."
+        },
+        {
+          "id": "C",
+          "text": "Add the proxy address and CA details to the managed CLAUDE.md, so Claude Code picks them up from its instruction context."
+        },
+        {
+          "id": "D",
+          "text": "Move developers to a SOCKS5 endpoint on the same corporate proxy, since SOCKS proxies do not re-sign TLS and therefore avoid the problem."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "This is a **trust configuration** problem, and the fix has to extend trust without removing verification. Setting `HTTPS_PROXY` routes the connection through the corporate proxy; `NODE_EXTRA_CA_CERTS` adds the private root CA to the set the runtime trusts. Both together make the re-signed chain validate correctly, and certificate verification stays on.\n\nThe delivery mechanism matters as much as the variables. Putting them in managed settings or machine configuration means every workstation gets them without anyone remembering, which is the only version of this that survives onboarding. A per-laptop instruction leaves a fraction of the estate broken permanently - and the fraction that is broken is the fraction that quietly routes around it.\n\nThe rejected options each avoid the problem by removing the check that makes it a problem. B disables TLS verification globally for the process, which means any certificate from any issuer is accepted - and in an estate with a TLS-inspecting proxy, the people most able to exploit that are already inside the network. C is a category error: CLAUDE.md is model instruction context and has no effect on runtime TLS trust. D is factually wrong on its mechanism - a SOCKS endpoint at the same proxy still carries traffic the proxy re-signs if inspection is configured, and TLS interception is a property of the middlebox, not of the transport the client chooses.",
+      "whyWrong": {
+        "B": "Disables certificate verification for the whole process. On an estate that already has a TLS-inspecting middlebox, accepting any certificate from any issuer removes the last check and invites the obvious attack from inside the network.",
+        "C": "Category error. CLAUDE.md is model instruction context; it has no effect on how the Node runtime validates certificate chains, so nothing would change for anyone.",
+        "D": "The mechanism is wrong. TLS interception is a property of the middlebox, not of the client's transport choice, so a SOCKS endpoint on the same proxy does not avoid re-signing."
+      },
+      "difficulty": 2,
+      "visualId": "deployment-topology",
+      "mindset": "Extend trust with the corporate CA centrally - never disable verification to make it work.",
+      "tags": [
+        "configuration",
+        "security",
+        "enterprise",
+        "tls"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/settings",
+        "https://code.claude.com/docs/en/corporate-proxy"
+      ]
+    },
+    {
+      "id": "p-d7-x3-018",
+      "taskStatementId": "7.2",
+      "stem": "A team uses Claude Code to extend a date-parsing library. Claude's changes look clean and pass code review, but users keep reporting edge-case bugs around time zones and leap years. Developers conclude the model 'isn't careful enough' and propose prompting for more care. Which diagnosis is better?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The gap is missing verification, not missing care. Date logic has edge cases nobody enumerates in a prompt, so give the model the test suite: have it write tests for the expected behaviour first, confirm they fail, then implement - and never let it update a failing test to make it pass."
+        },
+        {
+          "id": "B",
+          "text": "The gap is prompting. End every request with 'think very carefully and double-check your work before answering', which reliably improves edge-case handling in code generation."
+        },
+        {
+          "id": "C",
+          "text": "The gap is model capability. Switch the team's default to the most capable model available, since harder reasoning problems respond to more capability."
+        },
+        {
+          "id": "D",
+          "text": "The gap is input detail. Add concrete input and output examples and named edge cases to every request, so the model has the cases in front of it."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The symptom is that changes **look** right and fail on cases nobody wrote down. That is the signature of a missing verification loop rather than insufficient care: the model is reasoning as well as it can and has no way to find out it was wrong.\n\nDate parsing is the canonical case. Time zones, DST boundaries, leap years and locale formats are a long tail that no prompt can enumerate, and no amount of 'be careful' produces a test suite. What does work is giving the model the ability to observe the result of its own work: write the test first, confirm it fails, then implement. That converts an open-loop generation task into a closed loop, and it is why the same team sees sharp improvements once the agent can run tests.\n\nThe clause about never letting the model update a failing test is what makes this a control rather than a convenience. If the agent can rewrite the test, the loop closes on the wrong target - which is the standard failure mode in agentic coding and the reason test-modification needs to be an explicit boundary rather than an assumption.\n\nThe rejected options each increase care, capability or detail without adding an observation. B and D ask for the same diligence the model already applied. C changes the engine rather than the loop, and pays more per token for an improvement you would get for free from the test suite.",
+      "whyWrong": {
+        "B": "Asks for more of the diligence already being applied. Nothing in the request gives the model a way to discover it was wrong, so the edge cases it did not think of remain undiscovered.",
+        "C": "Changes the engine rather than closing the loop, at a materially higher per-token cost. Capability helps on hard reasoning; it does not produce the test suite that identifies these failures.",
+        "D": "Prompt-level detail cannot enumerate a long tail. Some named cases will be covered, which makes the gap smaller and more convincing that it is closed - a worse outcome than not addressing it."
+      },
+      "difficulty": 1,
+      "visualId": "eval-loop",
+      "mindset": "When changes look right and fail on unenumerated cases, the gap is verification, not care or capability.",
+      "tags": [
+        "testing",
+        "verification",
+        "code-generation",
+        "quality"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/best-practices",
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests"
+      ]
+    },
+    {
+      "id": "p-d7-x3-019",
+      "taskStatementId": "7.1",
+      "stem": "A company's secrets vault issues Anthropic API credentials that expire after 60 minutes. A command-line tool prints a fresh one on demand. Today, engineers paste a credential into `ANTHROPIC_API_KEY` in their shell profile, and the profile is checked into a dotfiles repository. Which change is correct?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Configure `apiKeyHelper` with a script that calls the vault tool. Claude Code runs it to obtain the credential, so short-lived credentials never live in a file, a profile or a repository - and there is nothing left behind to rotate."
+        },
+        {
+          "id": "B",
+          "text": "Ask the vault team for a long-lived static credential so engineers can set it once and stop pasting, and commit it to the `env` block of the shared configuration file."
+        },
+        {
+          "id": "C",
+          "text": "Schedule a job that rewrites every engineer's shell profile with a fresh credential every 50 minutes, so the value is always close to valid."
+        },
+        {
+          "id": "D",
+          "text": "Add a SessionStart hook that calls the vault tool and exports the fresh credential into the session environment, so each session starts with a valid key."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The finding is not that engineers paste credentials - it is that the credential **persists somewhere** - a profile, a repository, a dotfiles checkout. Once it is in a file, it is in version control, in backups, and on every machine that clones it, and it stays there after it expires because the file does not.\n\n`apiKeyHelper` addresses the persistence rather than the pasting. Claude Code runs the configured script to obtain a credential, so the short-lived value is fetched at the moment it is needed and never written anywhere. There is no stored secret to rotate, no dotfiles repository to scrub, and no long-lived credential in the first place. That is the whole argument for it.\n\nThe rejected options each look like solutions and are not. B asks the vault for exactly what the vault was designed to avoid, and commits it to a repository - trading a 60-minute exposure for a permanent one. C is automation of the wrong practice: it does not remove the credential from a file, it just makes the file's contents stale less often.\n\nD deserves a specific note, because it uses real machinery for the wrong purpose. A SessionStart hook runs once per session, which means an hour-long session would spend most of its life holding an expired credential - and the hook exports a value into an environment, which is a place credentials persist for the life of the process. The mechanism belongs to `apiKeyHelper` precisely because the helper is consulted at the moment of use.",
+      "whyWrong": {
+        "B": "Inverts the vault's purpose and then commits the result. A static credential in a repository has permanent exposure - in version control, in backups, on every clone - where a 60-minute credential had bounded exposure.",
+        "C": "Automates the practice that causes the problem. The credential is still written to a profile and a repository; the job only changes how stale that file is, not that a secret lives in version control.",
+        "D": "Wrong lifetime and wrong location. A SessionStart hook runs once, so an hour-long session spends most of its life holding an expired credential, and exporting into a session environment is a place a credential persists for the life of the process rather than a place it is fetched on demand."
+      },
+      "difficulty": 2,
+      "visualId": "security-guardrails",
+      "mindset": "Fix the persistence, not the pasting - fetch short-lived credentials at the moment of use via apiKeyHelper.",
+      "tags": [
+        "secrets-management",
+        "configuration",
+        "credential-hygiene",
+        "enterprise"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/settings",
+        "https://platform.claude.com/docs/en/manage-claude/api-and-data-retention"
+      ]
+    },
+    {
+      "id": "p-d7-x3-020",
+      "taskStatementId": "7.3",
+      "stem": "One engineer reports that Claude Code behaves strangely in a shared repository: some shell commands are refused with no visible reason, and files are reformatted after every edit. Five teammates, on the same repository and same branch, see none of it. Which diagnostic is most appropriate?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Run `claude --safe-mode`. If the behaviour disappears, the cause is in that engineer's customizations - settings, hooks, MCP servers or plugins - and they can be re-enabled one at a time to find it. This isolates the configuration layer before any other investigation."
+        },
+        {
+          "id": "B",
+          "text": "Reinstall Claude Code. A corrupted or outdated installation is the most common cause of settings and hooks behaving inconsistently between machines."
+        },
+        {
+          "id": "C",
+          "text": "Ask Claude in the affected session to review its own configuration and explain which settings are causing the refusals and the reformatting."
+        },
+        {
+          "id": "D",
+          "text": "Replace the engineer's entire `~/.claude` directory with a copy from a teammate whose setup is known to work, so the configuration is known-good."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The evidence points somewhere specific: **five teammates, same repository, same branch, no symptoms**. That rules out the repository, the branch and the model configuration, and leaves the one layer that differs between machines - the engineer's local customizations.\n\n`--safe-mode` is the isolating step because it disables those customizations for one run. If the behaviour vanishes, the cause is confirmed as local configuration and the investigation becomes a bisect: re-enable settings, then hooks, then MCP servers, then plugins, one at a time. That gives a specific answer rather than a plausible one. The symptoms also fit well - refused commands with no visible reason is a permission or hook rule the engineer cannot see, and automatic reformatting is a PostToolUse hook - so the bisect has a short list to get through.\n\nThe rejected options each skip the isolation step or overshoot it. B reinstalls before establishing that the installation is the problem, and on the evidence given it is not: the same binary works for five people. C is interesting and worth pausing on - asking Claude to explain its own configuration has a real chance of identifying the rule, and it is cheap. But it is not isolation: it inspects rather than tests, and if the answer is wrong you have learned nothing about which layer is responsible.\n\nD is the one to be careful with, because it feels decisive. It destroys the engineer's customizations along with the problem - including any hooks, skills or MCP servers that were working, and any local permissions they had configured deliberately. The bisect finds the culprit and keeps the rest.",
+      "whyWrong": {
+        "B": "Reinstalls before establishing that the installation is at fault. Five teammates on the same binary and repository see none of it, so the evidence points at local configuration rather than the installation.",
+        "C": "Inspects rather than isolates. It may well identify the rule, and it is cheap - but if the explanation is wrong you have learned nothing about which layer is responsible, and there is no way to know the customizations are cleared.",
+        "D": "Destroys the customizations along with the problem, including hooks, skills, MCP servers and deliberate local permissions that were working. The bisect identifies the culprit and keeps the rest."
+      },
+      "difficulty": 3,
+      "visualId": "claude-code-config",
+      "mindset": "When one engineer differs and five do not, the variable is local configuration - isolate it before changing anything.",
+      "tags": [
+        "debugging",
+        "configuration",
+        "troubleshooting",
+        "claude-code"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/debug-your-config",
+        "https://code.claude.com/docs/en/settings"
+      ]
+    }
+  ]
+}

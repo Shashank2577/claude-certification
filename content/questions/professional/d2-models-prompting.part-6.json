@@ -1,0 +1,935 @@
+{
+  "certId": "professional",
+  "domainId": "d2-models-prompting",
+  "questions": [
+    {
+      "id": "p-d2-x4-001",
+      "taskStatementId": "2.1",
+      "stem": "A bank's internal assistant answers policy questions to 4,000 employees at roughly 900 requests a minute at peak. The questions are mostly definitional and the current implementation runs on the most capable tier at the API default effort. Finance wants a double-digit cost reduction. Which TWO observations are correct? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Effort is the first thing to test. It applies to every output token - text, tool calls, and thinking when active - and most current models default to `high`, which is very likely doing more work than definitional questions need."
+        },
+        {
+          "id": "B",
+          "text": "Keep the model fixed while sweeping effort. Changing model and effort together makes any quality movement untraceable, so the eval comparison stops being interpretable."
+        },
+        {
+          "id": "C",
+          "text": "Only a model change can produce a double-digit reduction; effort merely changes verbosity, and this workload's verbosity is already fixed by the output format."
+        },
+        {
+          "id": "D",
+          "text": "Drop everything to the smallest tier. Definitional questions are exactly what it is documented for, so no eval gate is needed before switching."
+        },
+        {
+          "id": "E",
+          "text": "Neither lever matters much next to per-request overhead: at 900 requests a minute, connection setup dominates the cost, which caching and effort cannot touch."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "**A** is the primary lever. Effort is documented as the main control for trading intelligence, latency and cost on a single model, it applies to every output token including thinking, and most current models default to `high`. On a high-volume definitional workload that default is very likely doing more work than the task requires, and testing it costs an afternoon.\n\n**B** is the methodological half, and it is what makes the sweep worth running. Holding the model constant keeps the eval comparison interpretable - if quality dips when you change tier and effort together, you cannot attribute it.\n\nTwo caveats to hold. Effort is a behavioural signal, not a budget: Claude still thinks on genuinely hard problems at lower levels, just less. And because the effort value is rendered into the prompt, changing top-level effort between requests invalidates message-level cache blocks - so the chosen level is a deliberate release, not a live dial.\n\nThe other options misidentify the mechanism. D skips the eval gate the tier change would actually require, and E misplaces the cost entirely: token pricing dominates, and caching *reduces* processing time and price rather than being blind to it.",
+      "whyWrong": {
+        "C": "Effort is not a verbosity control. It governs how much work Claude puts into the whole response, which is exactly why it moves cost when the output format is already fixed.",
+        "D": "It fits the documented profile of the smallest tier, which is why the idea is tempting - but a tier change still needs to be gated on this workload's own eval set, and effort alone may deliver most of the saving.",
+        "E": "Connection setup is not where the cost sits. Token pricing dominates, and cached prefixes cut both processing time and price, so caching and effort are precisely the levers that apply here."
+      },
+      "difficulty": 2,
+      "visualId": "cost-model",
+      "mindset": "Sequence the levers - effort first on the current model, and change one thing at a time.",
+      "tags": [
+        "model-selection",
+        "effort",
+        "cost-performance",
+        "high-volume"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/effort",
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests"
+      ]
+    },
+    {
+      "id": "p-d2-x4-002",
+      "taskStatementId": "2.1",
+      "stem": "An architect is asked to justify the model tier for three production workloads: bulk tagging, customer-facing chat, and contract risk analysis. She proposes running each workload's own eval set across the candidate tiers and comparing quality, latency and cost per completed task. A CFO pushes back: 'the vendor publishes a comparison table - why can't we just use that?' What is the strongest response?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The vendor table ranks models on their own workloads, which is useful context. Tier choice for *our* workloads turns on our prompts, our documents, our edge cases and our accuracy bar, so only our eval set can tell us where the quality-per-dollar curve bends for us."
+        },
+        {
+          "id": "B",
+          "text": "Agree partially: use the vendor table to shortlist two tiers, then confirm with a small spot-check of about 20 examples each rather than a full eval set, since spot-checks are much faster to run."
+        },
+        {
+          "id": "C",
+          "text": "Disagree with the eval-set approach entirely. Anthropic's own recommended tier for each class of task is authoritative and saves the team weeks of measurement work."
+        },
+        {
+          "id": "D",
+          "text": "Agree, and additionally weight the decision by published benchmark positions, since those rankings aggregate far more data than any internal team could generate."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The honest framing: the vendor table is **documented guidance for classes of work** and a perfectly reasonable starting point. What it cannot be is a measurement of your system. Where a tier's quality-per-dollar curve bends depends entirely on your prompt, your document types, your accuracy bar and your retry rate.\n\nThat is why the architect's proposal is built the way it is - *cost per completed task* rather than cost per call. A cheaper tier that fails 12% of validation and gets retried on an expensive tier is not cheaper; it is a hidden tax that only a per-task metric exposes. This is the single most common way model-selection decisions go wrong in practice.\n\nOption B's spot-check is the tempting compromise, and it is the wrong one: twenty examples cannot detect the difference between 91% and 96% pass rates, which is precisely the range you are deciding about.",
+      "whyWrong": {
+        "B": "A 20-example spot-check cannot resolve the differences that matter. If two tiers are 91% versus 96% on your eval set, twenty examples will not distinguish them reliably, and you would be deciding on noise.",
+        "C": "Anthropic's model documentation does recommend tiers for classes of task, and that is a sound starting point. It is not authoritative for your workload, and the guide itself is subject to change without notice.",
+        "D": "Published rankings measure general capability on other people's tasks. Adding them as a weight reintroduces exactly the dependency on external signals the eval set was designed to avoid."
+      },
+      "difficulty": 1,
+      "visualId": "model-selection",
+      "mindset": "Vendor guidance narrows the shortlist; only your own eval set, scored per completed task, decides.",
+      "tags": [
+        "model-selection",
+        "evals",
+        "cost-performance",
+        "stakeholder-alignment"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/about-claude/models/choosing-a-model",
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests"
+      ]
+    },
+    {
+      "id": "p-d2-x4-003",
+      "taskStatementId": "2.1",
+      "stem": "A legal-tech firm's contract review must cross-reference every definition in a bundle of roughly 700,000 tokens - a main agreement plus 41 schedules and side letters - to find places where a defined term is overridden elsewhere. The smallest tier has a 200K context window; the current mid and top tiers offer million-token windows. The architect notes that a single request must hold the whole bundle. What is the correct conclusion?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Window capacity is a hard constraint here, not a preference: the smallest tier cannot hold the bundle in one request at all. Run the cross-reference step on a tier whose window holds the bundle with headroom, and confirm on the firm's own eval set that it holds up at that length."
+        },
+        {
+          "id": "B",
+          "text": "Window size and capability are independent, so pick the smallest tier that fits and rely on the company's own evals to reveal whether quality holds at that length."
+        },
+        {
+          "id": "C",
+          "text": "Split the bundle into 42 equal chunks, send them to the smallest tier in parallel, and have the model join the answers in a follow-up call - which also cuts cost sharply."
+        },
+        {
+          "id": "D",
+          "text": "Summarise each schedule with the smallest tier, send the summaries plus the main agreement to a capable tier, and let it detect the conflicts from the summaries."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Some constraints eliminate options before quality is even discussed. A cross-reference task defined as 'find where term X is overridden anywhere in this bundle' **requires the whole bundle in context**: a chunked or summarised approach cannot see a definition and its override simultaneously, so conflicts are structurally invisible to it. Options C and D look cost-efficient and are quietly solving a different problem - and D in particular asks the capable tier to reason over summaries that have already discarded the exact language the task is about.\n\nSo the real question is which tier that holds the bundle performs this task well. That is answerable, and it is answered the only way that counts: run the firm's real bundles through the candidate tiers and compare. Long-context work is exactly where benchmark averages are least informative and task-specific evals are most informative.\n\nNote the interaction with cost, which is B's blind spot: batching the work through the Message Batches API can halve the price independently of tier, because nothing here needs an immediate answer.",
+      "whyWrong": {
+        "B": "This confuses two different things. Whether a tier *can* hold the bundle is a hard capacity fact, not a quality variable that evals will reveal; a request that exceeds the window simply fails.",
+        "C": "Cross-referencing is definitionally a whole-bundle operation. If a definition and its override land in different chunks, no amount of clever joining reconstructs the relationship that was lost at split time.",
+        "D": "Summarising before cross-referencing discards the exact definitional language the task turns on, and the capable tier has no way to detect what was lost. It optimises the wrong term."
+      },
+      "difficulty": 3,
+      "visualId": "model-selection",
+      "mindset": "Check hard capacity constraints before quality: if the task needs the whole artefact, chunking cannot help.",
+      "tags": [
+        "model-selection",
+        "context-window",
+        "long-context",
+        "evals"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/context-windows",
+        "https://platform.claude.com/docs/en/about-claude/models/choosing-a-model"
+      ]
+    },
+    {
+      "id": "p-d2-x4-004",
+      "taskStatementId": "2.2",
+      "stem": "A property insurer's claims assistant has grown a 9,000-token system prompt. Over four quarters, four different authors appended their own rules - required phrasing, tone limits, escalation triggers, a glossary - each added at the end of the previous block. Claim handlers report the assistant sometimes omits rules and sometimes applies two rules that contradict each other. The CTO asks which part of the prompt is broken. What is the most accurate diagnosis?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The prompt is a flat accumulation of independently-authored rules with no organising principle, so nothing tells the model which rule governs a conflict. Rebuild it around an explicit structure: role and purpose, decision criteria per task, explicit precedence or conflict rules, then output contract and examples last."
+        },
+        {
+          "id": "B",
+          "text": "The prompt is too long, and roughly 9,000 tokens is past the point where current models attend reliably to mid-prompt instructions."
+        },
+        {
+          "id": "C",
+          "text": "The prompt needs its rules restated in stronger language - uppercase headings, IMPORTANT markers, and a priority-ordered list - so the model applies the most important rule when two conflict."
+        },
+        {
+          "id": "D",
+          "text": "The four authors should reconcile their rules offline; once there are no contradictions left, the prompt will behave correctly without restructuring."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The symptom - omissions *and* contradictions - points at structure, not length or wording. A flat append-only prompt has no organising principle: each author optimised for their own concern and appended it, and nothing in the text tells the model what to do when the escalation trigger and the required-phrasing rule pull in different directions. Length is a symptom here, not the cause.\n\nThe rebuild is the standard move: give the prompt a **shape**. Role and purpose first, then explicit decision criteria organised by task, then the rules for how to resolve conflicts among them, then the output contract, then examples. Two properties follow from that structure that an unstructured prompt cannot offer - you can now point to *which* section governs a case, and you can change one without renegotiating the whole file.\n\nThis is also the fix that makes the prompt maintainable. The reason it degraded is that nobody could see what was already there, so they appended rather than edited.",
+      "whyWrong": {
+        "B": "9,000 tokens is not past a reliability cliff for current models in the way this option implies. And the failures include contradictions, which length cannot cause - a too-long prompt produces omission, not conflicting application.",
+        "C": "Emphasis is not precedence. Stronger wording makes the model more likely to follow *all* the rules, including mutually incompatible ones, which is the symptom being reported.",
+        "D": "Manual reconciliation produces a clean prompt today and the same accumulation problem next quarter, because nothing about the process prevents append-only growth. Structure is what makes maintenance tractable."
+      },
+      "difficulty": 2,
+      "visualId": "prompt-anatomy",
+      "mindset": "An unstructured prompt has no conflict-resolution story - organise by role, criteria, precedence, output, examples.",
+      "tags": [
+        "system-prompt",
+        "prompt-engineering",
+        "instruction-clarity",
+        "maintainability"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices",
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/increase-consistency"
+      ]
+    },
+    {
+      "id": "p-d2-x4-005",
+      "taskStatementId": "2.2",
+      "stem": "A claims-triage system routes incoming claims into four queues. Its prompt says: 'Route appropriately, paying close attention to the policy.' Overall routing accuracy is 84% against a 92% target, and error analysis shows most misses are claims that arguably belong in two queues at once. A prompt engineer proposes a set of changes. Which TWO are the strongest? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Replace the vague instruction with explicit decision criteria for what belongs in each queue. The current instruction is unverifiable - no one can say what 'appropriately' requires - so reviewers cannot distinguish a correct routing from a wrong one, and the 92% target is measured against an undefined thing."
+        },
+        {
+          "id": "B",
+          "text": "Add tagged examples drawn from the actual boundary cases - casually worded claims that are genuinely urgent, alarming-sounding ones that are routine. Error analysis says the misses cluster there, so the examples should too."
+        },
+        {
+          "id": "C",
+          "text": "Switch to the most capable tier, since vague instructions are only fully resolved by stronger models and no amount of prompt work closes an 8-point gap."
+        },
+        {
+          "id": "D",
+          "text": "Rewrite the instruction with stronger emphasis - uppercase, IMPORTANT markers, and a priority order - so the model applies the most important criterion when two apply."
+        },
+        {
+          "id": "E",
+          "text": "Add a line asking the model to explain its routing decision in one sentence, so reviewers can spot the reasoning errors causing the misses."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "**A** fixes the measurement problem, which comes first. 'Route appropriately' cannot be reviewed: a handler looking at a routing decision has no basis to call it right or wrong, so the eval set gets built from intuition and the 92% target is measured against an undefined thing. Explicit criteria make the task decidable - and decidability is what makes the target achievable, because now failures can be counted and categorised.\n\n**B** then aims the examples at the measured failure. Because error analysis shows the misses concentrate on genuinely ambiguous claims, examples from *that* boundary teach the distinction currently being missed. This is why targeted examples beat volume: concentrate the examples where the errors are.\n\nThe rest fail on mechanism. Stronger emphasis cannot fix an unspecified criterion (D), and capability is not a substitute for a specification (C). E is a genuinely good idea in most systems - reasoning traces make errors inspectable - but here it produces explanations of decisions that were made against criteria nobody has written down.",
+      "whyWrong": {
+        "C": "Treats a specification gap as a capability gap. A more capable model produces a more confident answer to a question that has not been defined, and the failures stay uncountable.",
+        "D": "Emphasis is not precision. 'Pay close attention to the policy' shouted louder is still not a criterion, so the boundary cases remain undefined and the same claims stay ambiguous.",
+        "E": "Explanations help you diagnose decisions made against defined criteria. Here the criteria are undefined, so the traces will rationalise rather than reveal - and they add output tokens on every request."
+      },
+      "difficulty": 2,
+      "visualId": "prompt-anatomy",
+      "mindset": "Make the task decidable first, then aim examples at the measured error - emphasis is not precision.",
+      "tags": [
+        "prompt-engineering",
+        "instruction-clarity",
+        "few-shot",
+        "classification"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices",
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/increase-consistency"
+      ]
+    },
+    {
+      "id": "p-d2-x4-006",
+      "taskStatementId": "2.2",
+      "stem": "A bank's assistant handles three request classes - balance questions, dispute initiation, and a compliance question about international transfers. The prompt says 'be careful' and 'be conservative'. Reviewers find it leaks scope: it happily gives detailed legal opinions on employment matters when nobody asked about accounts. The architect's team proposes an explicit in-scope list, an explicit out-of-scope list with the correct referral for each, and a specified refusal sentence. What is the principle behind that structure?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Vague qualities like 'be careful' have no decidable boundary, so they cannot guide behaviour or be reviewed. Scope has to be expressed as membership - what is in, what is out - and paired with a specified response for the out-of-scope case, so the model has an action to take rather than a judgement to improvise."
+        },
+        {
+          "id": "B",
+          "text": "Refusals work better when the refusal text comes first in the prompt, so the model encounters the boundary before it starts reasoning about the user's question."
+        },
+        {
+          "id": "C",
+          "text": "Three request classes is too many for one prompt. Split the assistant into three separate prompts so each can be optimised independently."
+        },
+        {
+          "id": "D",
+          "text": "The real problem is the model's over-compliance tendency, which only a stronger model tier reliably corrects."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "'Be careful' and 'be conservative' are **unfalsifiable qualities**: there is no observation that distinguishes following them from not following them, so they cannot guide the model and - more damagingly - cannot be reviewed. A handler who sees a detailed legal opinion cannot say the assistant violated its instructions, because the instruction never said anything checkable.\n\nScope needs to be stated as membership: what this assistant handles, what it does not, and for each out-of-scope category, where the question should go. The specified refusal sentence matters as much as the list, because an out-of-scope question still requires an *action* - acknowledging the request, giving the correct referral, not leaving the model to improvise a deflection.\n\nThis structure also fixes the review problem. With explicit categories, misses become countable and a regression suite can be written against them. That is the difference between a policy you can enforce and a sentiment you can hope for.",
+      "whyWrong": {
+        "B": "Placement helps marginally, but the structural point is that an unspecified boundary is unspecified wherever it sits. Ordering does not convert an unfalsifiable instruction into a decidable one.",
+        "C": "Splitting by request class is a legitimate architecture for genuinely different tasks, but scope creep is an instruction-clarity problem. Three classes in one prompt is entirely manageable with an explicit in/out structure.",
+        "D": "This treats a specification gap as a capability gap. The extra capability goes into producing an answer you did not ask for, which is not what is needed."
+      },
+      "difficulty": 2,
+      "visualId": "prompt-anatomy",
+      "mindset": "Scope must be membership, not a quality - in, out, and a specified response for out.",
+      "tags": [
+        "system-prompt",
+        "scope-control",
+        "guardrails",
+        "refusal-handling"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices",
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/mitigate-jailbreaks"
+      ]
+    },
+    {
+      "id": "p-d2-x4-007",
+      "taskStatementId": "2.2",
+      "stem": "A product team builds a marketing-assistant system prompt containing their internal discount ceilings, tier rules and margin floors, plus an instruction never to reveal them. A customer asks, using layered polite phrasing, for the discount ceiling. The assistant replies with the exact numbers. Two fixes are proposed: (a) remove the confidential numbers from the prompt and enforce limits in the backend of the discount tool, (b) screen every outgoing response for numeric patterns matching internal ranges. Which assessment is correct?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Only (a) is a real fix. Anything secret placed in the prompt is available to be extracted, because the model is instructed to be helpful with what it holds. (b) is a reasonable detection layer, but it cannot cover every phrasing and every number, and a leak that reaches the customer cannot be recalled."
+        },
+        {
+          "id": "B",
+          "text": "Both together are the correct answer: removing the numbers stops the leak and screening catches the cases where the model infers them from other context."
+        },
+        {
+          "id": "C",
+          "text": "Only (b) is needed. The numbers must stay in the prompt because the model needs them to reason about discounts, and screening is a sufficient control."
+        },
+        {
+          "id": "D",
+          "text": "Neither works reliably. Any model asked about a range it holds may disclose it, so the only safe design is to stop answering discount questions entirely."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "This is the **remove, don't restrain** principle. The confidentiality instruction is a request to the model about content it can see, and its job is to be helpful with what it holds. So the durable fix is to make the secret unnecessary: if the ceiling lives in the discount tool's backend and the model can only *request* a discount, then there is nothing to extract. Enforcement moves to a place where it is deterministic.\n\nThe architectural bonus is that the backend can now express rules the prompt never could - per-customer overrides, regional pricing, margin floors computed against live data - which is where those numbers actually change.\n\nWhy (b) alone fails is the reason to be precise: it is a pattern match on outgoing text, so it misses paraphrases, approximations ('roughly twenty percent'), and any number the model inferred rather than quoted. And screening is detection, not prevention - the disclosure has already happened when it fires. Detection is worth adding; it is not a substitute.",
+      "whyWrong": {
+        "B": "Overclaims. Both together is defensible as practice, but only (a) is the fix that makes the disclosure impossible rather than merely less likely - and the question asks which assessment of the two is correct.",
+        "C": "Screening is a filter over text the model produced, so if the model is being helpful with a number it holds, the filter's job is to guess every way it might phrase it. That is not a control, it is a bet.",
+        "D": "Overcorrects into refusing legitimate business function. Move the rules into code and the assistant can still discuss and apply discounts - it simply cannot disclose the thresholds."
+      },
+      "difficulty": 3,
+      "mindset": "Never put a secret in the prompt - remove it and enforce the rule in code; screening is detection.",
+      "tags": [
+        "data-leakage",
+        "system-prompt",
+        "least-privilege",
+        "output-filtering"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/mitigate-jailbreaks",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools"
+      ]
+    },
+    {
+      "id": "p-d2-x4-008",
+      "taskStatementId": "2.2",
+      "stem": "A consulting firm keeps one shared 'confidentiality and escalation' paragraph that nine client-facing applications embed in their prompts. Two teams have edited their own copies, and one team's edit loosened the escalation trigger in ways the other eight never see. Nobody downstream can tell which applications are affected. The platform lead wants to keep the benefit of one shared fragment while preventing this. What is the best change to the reuse process?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Version the fragment as code, require review and an eval run for every consuming application before release, and keep app-specific wording in each application's own section so the shared core stays genuinely shared."
+        },
+        {
+          "id": "B",
+          "text": "Send a notification to all nine teams whenever the shared fragment changes, so any downstream effect is at least visible to the teams that own the applications."
+        },
+        {
+          "id": "C",
+          "text": "Ask Claude to re-check every answer against the confidentiality rules before replying, so the loosened escalation trigger is caught at runtime."
+        },
+        {
+          "id": "D",
+          "text": "Give each of the nine teams write access to the shared fragment, with a two-person review requirement, so improvements reach every application at once."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The failure is not that the fragment changed - shared content is the point. The failure is that **there was no mechanism connecting a change to its consequences**. A shared text asset with nine consumers and no versioning, no eval gate and no per-application ownership degrades in exactly this way: someone improves their case, and eight other applications inherit a semantic change nobody reviewed.\n\nThe fix has three parts and each one closes a specific hole. Versioning means you can say what changed and roll it back. An eval run per consuming application turns 'this might affect you' into 'we checked, and here is the number'. Keeping app-specific wording in the application's own section is what stops the shared core from being edited into a compromise that suits one consumer.\n\nThis is the same reasoning as the ADR practice: shared decisions need an owner, a record and a verification step, or they become shared folklore.",
+      "whyWrong": {
+        "B": "Notification makes change visible to teams who already have no way to assess impact. Each team still has to guess whether their application's behaviour changed, and nobody is measuring it.",
+        "C": "Asking the model to re-check its own answer against the very rules it just misapplied is a self-policing model. It is not a release gate, and it does not tell you which of the nine applications drifted.",
+        "D": "Broad write access plus review makes the shared fragment change more often, which increases the drift rate. Review of the text is not review of the nine downstream behavioural consequences."
+      },
+      "difficulty": 2,
+      "mindset": "Shared prompt content needs versioning, per-consumer eval gates and a boundary for local wording.",
+      "tags": [
+        "prompt-engineering",
+        "prompt-versioning",
+        "shared-components",
+        "governance"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices",
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests"
+      ]
+    },
+    {
+      "id": "p-d2-x4-009",
+      "taskStatementId": "2.3",
+      "stem": "An insurer extracts six fields from first-notice-of-loss emails. The fields are well defined and the team has 300 labelled emails. A new architect proposes pasting 30 examples in from day one. Two arguments are offered against it. Which TWO are sound? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Thirty examples are billed on every request for unknown volume, and most of them answer questions the model probably did not have. Start zero-shot with explicit field definitions, run the labelled set, and add examples only for the cases evals show it getting wrong."
+        },
+        {
+          "id": "B",
+          "text": "Adding examples all at once destroys attribution: if the score moves, you cannot tell which example did it. Targeted additions let you tie each one to a specific failure."
+        },
+        {
+          "id": "C",
+          "text": "Thirty examples of this size will exceed the model's context window once a long email body is included, so the request will be rejected."
+        },
+        {
+          "id": "D",
+          "text": "Few-shot prompting is capped at a handful of examples on current models, and larger sets are silently truncated to the first few."
+        },
+        {
+          "id": "E",
+          "text": "Examples in the prompt bias the model toward the examples' own wording, which corrupts the extracted field values and is a reason to avoid them."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "**A** is the cost and targeting argument: examples are billed on every request at unknown volume, and the valuable ones are those covering *observed* failure modes - so measure first, then add.\n\n**B** is the more interesting one. Adding examples one at a time, each tied to a known error, gives you attribution - you know which example bought which improvement. A batch of thirty gives you a moved number and no explanation of it, so the next round of prompt work starts from nothing.\n\nThat ordering also protects against a common failure: examples that codify a *wrong* label. With per-error attribution you find that in one round; with a bulk change you discover it later, in production, because the score looked fine.\n\nThe distractors name real-sounding limits that do not exist - there is no example cap that silently truncates, and 30 short extractions is nowhere near any context window.",
+      "whyWrong": {
+        "C": "Thirty short extractions is a few thousand tokens, far from any current model's window. Requests are rejected for exceeding the window, not silently trimmed, so this failure would be loud rather than invisible.",
+        "D": "No such cap exists. Example sets are bounded only by the context window, and truncation would surface as an error rather than quietly discarding examples.",
+        "E": "Half-right for the wrong reason. Examples do influence output style and format - largely why they help - but they do not corrupt extracted values, and that is not a reason to avoid them."
+      },
+      "difficulty": 1,
+      "visualId": "eval-loop",
+      "mindset": "Few-shot is targeted and attributed: measure the errors, add one example per error, re-measure.",
+      "tags": [
+        "few-shot",
+        "zero-shot",
+        "evals",
+        "cost-performance"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices",
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests"
+      ]
+    },
+    {
+      "id": "p-d2-x4-010",
+      "taskStatementId": "2.3",
+      "stem": "A pricing service must output a single number - the quote - from inputs that require a multi-step calculation: weight tier lookup, surcharges, contractual discounts, then tax. It runs in a configuration where the model's thinking is turned off for latency reasons. The team wants the working to be verifiable by auditors without appearing in the customer-visible answer. What is the right design?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Keep an explicit instruction to work through the calculation, ask for only the final amount inside `<answer>` tags, and have the parser extract that value while the reasoning stays in the text. The visible output contract and the audit trail are separate concerns."
+        },
+        {
+          "id": "B",
+          "text": "Turn thinking back on with a small budget, so the model reasons internally and returns only the number, keeping the working invisible to auditors by design."
+        },
+        {
+          "id": "C",
+          "text": "Post-process the response with a regular expression that takes the last number appearing anywhere in the text, since the model always concludes with the figure."
+        },
+        {
+          "id": "D",
+          "text": "Split the calculation into one API call per step, so each step is separately auditable and the parser never has to find a number in prose."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Two requirements are in tension here - a **machine-parseable output** and an **auditable working** - and they can be satisfied separately rather than by choosing between them.\n\nKeeping thinking off is a legitimate latency decision; what changes is that the reasoning has to happen in the visible text, so the prompt should ask for it explicitly rather than hoping for it. Then make the output contract explicit: instruct the model to put only the final figure inside `<answer>` tags, and have the parser read that and nothing else. Auditors get the full working; the customer-facing integration gets an unambiguous value.\n\nOption B mistakes the audit requirement for a secrecy requirement. Internal thinking is not a compliance record - it is not persisted, not versioned, and not reviewable, and an auditor cannot rely on it as evidence of how a figure was derived. Option C is a parsing bug waiting to happen: a surcharge mentioned late, a year in a date, or a discount rate can easily be the last number in the text. Option D is a large redesign for a problem that a tagged output contract solves in one line.",
+      "whyWrong": {
+        "B": "Treats auditability as secrecy. Internal reasoning is not an auditable record - it is transient, unstored and unreviewable, so it satisfies neither auditors nor regulators.",
+        "C": "Last-number-wins is fragile in exactly this domain. Surcharges, discount rates and years all appear as numbers, and a parser that grabs the wrong one produces a wrong quote with total confidence.",
+        "D": "One call per calculation step multiplies latency and cost by the step count and adds failure modes at every boundary, to solve a problem an explicit output tag solves directly."
+      },
+      "difficulty": 2,
+      "mindset": "Separate the machine-readable output from the auditable working - and never let a regex find your number.",
+      "tags": [
+        "structured-outputs",
+        "chain-of-thought",
+        "parsing",
+        "auditability"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices"
+      ]
+    },
+    {
+      "id": "p-d2-x4-011",
+      "taskStatementId": "2.3",
+      "stem": "A coding agent for a payments team writes data-transformation functions. Each task ships with a test suite, but the agent can only read and write files - it cannot execute anything. About a fifth of submitted functions fail tests, and the developers' fix has been to add a few sample implementations of well-written transformations as few-shot examples. What is the change most likely to close the gap?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Give the agent a tool that runs the test suite, and instruct it to run its own function against the tests and fix failures before declaring the task done. Style examples show what good code looks like; they cannot show whether this function is correct."
+        },
+        {
+          "id": "B",
+          "text": "Add several more example transformations, since the current examples are too few to establish the team's conventions."
+        },
+        {
+          "id": "C",
+          "text": "Add an instruction asking the agent to be extremely careful about edge cases and to mentally verify each function before finishing."
+        },
+        {
+          "id": "D",
+          "text": "Move the work to the most capable tier, since transformation bugs are a reasoning problem that more capability will resolve."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The decisive detail is in the scenario: **the agent cannot execute anything**. It is asked to produce correct code with no feedback channel from the tests that define correctness. Every one of the current remedies works on the wrong axis - examples convey style and conventions, instructions convey diligence, capability conveys reasoning power - and none of them supplies the missing signal.\n\nThat signal is a verification loop. Give the agent a test-running tool, tell it to run the suite and iterate on failures. This converts an open-loop generation task into a closed loop, and it is the reason agentic coding tools improve so sharply once they can run tests: failures become observations rather than guesses.\n\nWorth noting for the roadmap: this is also the change that makes the eval suite cheap later. Once the agent can run tests, 'five of my functions were wrong' becomes a measurable rate, and the team can target the remaining failures with the same method used in the previous question - add examples for the observed error modes.",
+      "whyWrong": {
+        "B": "More examples of well-written transformations teach conventions and idioms. They cannot tell the agent whether *this* function returns the right value for the edge cases in this suite.",
+        "C": "'Be careful and mentally verify' is an instruction with no feedback loop behind it. The agent has no way to observe the result of its own verification, so the instruction cannot change the outcome.",
+        "D": "Capability helps on hard reasoning, but a transformation that fails on a specific edge case is usually not a reasoning-limit problem. It is an absence-of-verification problem, and no tier fixes that."
+      },
+      "difficulty": 1,
+      "visualId": "eval-loop",
+      "mindset": "When quality is limited by missing feedback, add the feedback channel - not more examples or more effort.",
+      "tags": [
+        "chain-of-thought",
+        "tool-use",
+        "verification",
+        "agentic"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls",
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests"
+      ]
+    },
+    {
+      "id": "p-d2-x4-012",
+      "taskStatementId": "2.4",
+      "stem": "A due-diligence platform sends Claude three supplier contracts of roughly 25,000 tokens each plus a question. The prompt currently opens with the question and instructions, then pastes the three contracts. Analysts report answers are often correct but sometimes paraphrase the clause that matters, missing an exception buried in the second contract. Which change best addresses this?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Ask Claude to first extract the word-for-word passages relevant to the question into quote tags, then answer using only those passages and cite which contract each came from. Quoting-then-answering separates retrieval from reasoning and makes the evidence inspectable."
+        },
+        {
+          "id": "B",
+          "text": "Move the question above the documents, so Claude knows what to look for before it reads 75,000 tokens of contract text."
+        },
+        {
+          "id": "C",
+          "text": "Enable the Citations feature on the document blocks, so quoted passages are returned as verifiable references automatically."
+        },
+        {
+          "id": "D",
+          "text": "Increase the effort level to maximum, so Claude reads all three contracts more carefully and is less likely to overlook an exception."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The reported failure is **paraphrase replacing evidence** in a task where a single exception changes the answer. The structural fix is to split the job: retrieve the relevant passages verbatim first, then reason over that short, quoted set. Once the passages are extracted, the reasoning input is small enough that the exception cannot be lost inside a paraphrase, and an analyst can check the quoted text against the contract in seconds.\n\nTwo properties follow. Precision on long documents tends to degrade as the amount of surrounding text grows, so shrinking the reasoning input helps independently of the instruction. And the quotes become the audit artefact - which for due diligence is the actual deliverable, not a nice-to-have.\n\nOption C is the tempting shortcut and it does something genuinely useful, but it is a retrieval-side feature: it returns references for content that was supplied as document blocks. It does not substitute for asking the model to quote before it answers, and it will not help if the documents arrive as plain text.",
+      "whyWrong": {
+        "B": "Instruction placement has modest effect and does not address paraphrase. Knowing what to look for does not stop the model from summarising a clause instead of reproducing it.",
+        "C": "Citations are a real feature and worth using where documents are supplied as document blocks. They do not, however, force the model to extract and quote before reasoning, which is the failure mode here.",
+        "D": "Higher effort increases how thoroughly the model works through what it has. It does not change the fundamental risk that a long input gets summarised rather than quoted, and it costs substantially more on every request."
+      },
+      "difficulty": 2,
+      "visualId": "context-window",
+      "mindset": "On long documents, extract-and-quote before you reason - it shrinks the input and makes the evidence checkable.",
+      "tags": [
+        "context-window",
+        "citations",
+        "long-context",
+        "accuracy"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/citations",
+        "https://platform.claude.com/docs/en/build-with-claude/context-windows"
+      ]
+    },
+    {
+      "id": "p-d2-x4-013",
+      "taskStatementId": "2.4",
+      "stem": "A support agent's tool layer returns about 6,000 tokens of JSON per order lookup - 40 fields including warehouse telemetry and raw audit logs - while the agent uses five fields. A proposal to enable prompt caching on the conversation is under review, on the theory that it addresses the context bloat. Which TWO statements are correct? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Caching makes those payloads cheaper to re-process; it does not make them smaller to reason over. It is a price-and-time lever, not a window lever."
+        },
+        {
+          "id": "B",
+          "text": "Return only the fields the agent uses, in a concise shape, with an explicit tool to fetch detail on demand. That fixes the reasoning burden as well as the bill, and caching is then worth enabling on the much smaller prefix that remains."
+        },
+        {
+          "id": "C",
+          "text": "Caching is sufficient on its own: repeated payloads read at a fraction of base input price, so the bloat concern is resolved and no tool change is required."
+        },
+        {
+          "id": "D",
+          "text": "The right fix is a model with a larger context window, so all 40 fields fit comfortably in every turn of a typical session."
+        },
+        {
+          "id": "E",
+          "text": "Add a system-prompt instruction telling the agent to disregard the telemetry and audit-log fields it does not need."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "**A** is the distinction the whole question turns on. Caching discounts the cost of re-processing a prefix and reduces processing time. It does **not** change how many tokens occupy the window, so the distraction, drift and truncation risk stay exactly as they were.\n\n**B** is the lever that does change it. This payload is 6,000 tokens to deliver five fields - roughly 1,200x amplification on the busiest workflow's most frequent tool. Shaping it to five concise fields with an on-demand detail call fixes quality and cost together, and preserves the capability for the rare case that needs more. Note the ordering: shape the payload first, then cache the much smaller prefix that is left.\n\nC inverts the mechanism. D removes the hard failure while leaving the amplification in place - paying to accommodate a badly shaped tool. E is the model-as-control pattern: the fields still consume the window, and the instruction only asks the model to discount them, inconsistently.",
+      "whyWrong": {
+        "C": "The core misconception: cached tokens still occupy the context window. Caching lowers price and processing time and leaves the distraction and drift risk untouched.",
+        "D": "A larger window removes the hard failure and removes the pressure to fix the 1,200x amplification that caused it - paying to accommodate a badly shaped tool.",
+        "E": "An instruction is a request. The fields still consume the window, and the model will discount them inconsistently, which is the opposite of a control."
+      },
+      "difficulty": 2,
+      "visualId": "context-window",
+      "mindset": "Caching cuts the price of context; only shaping the payload cuts the burden of it.",
+      "tags": [
+        "context-window",
+        "tool-design",
+        "prompt-caching",
+        "context-engineering"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/context-windows",
+        "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents"
+      ]
+    },
+    {
+      "id": "p-d2-x4-014",
+      "taskStatementId": "2.4",
+      "stem": "A long-running migration agent uses context editing with the `clear_tool_uses_20250919` strategy, so old tool results are cleared once a session passes the trigger. The team notices that cost per session has not fallen as much as expected and that the cache keeps getting rewritten. What is the most likely cause and the fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "`clear_at_least` is set too low, so each clearing frees too few tokens to justify the work. Clearing rewrites the cached prefix, so clearing in small increments is worse than clearing rarely but substantially - raise it enough that each clear justifies the new cache write, and pair it with caching."
+        },
+        {
+          "id": "B",
+          "text": "Tool-result clearing and prompt caching cannot be enabled together, so one of the two must be disabled. Disabling caching makes the token accounting comparable to before."
+        },
+        {
+          "id": "C",
+          "text": "Lower the `trigger` so clearing starts earlier in each session, removing old output in smaller, more frequent steps."
+        },
+        {
+          "id": "D",
+          "text": "Move the clearing into application code that deletes tool results older than five turns and re-sends the trimmed history, so you control exactly what is dropped."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Context editing and prompt caching interact, and the interaction is the whole answer. Clearing tool results **changes the cached prefix**, so each clear forces a fresh cache write. If the team set `clear_at_least` conservatively, they are paying a full write premium every few turns in exchange for a token saving too small to matter - which is exactly the observed symptom: context shrinks, cost per session does not.\n\nThe tuning direction follows from the arithmetic. Clearing has a fixed cost (a cache rewrite) and a variable benefit (tokens freed), so it pays off when the benefit per clear is large relative to that cost. Raise `clear_at_least` so each event is worth its price.\n\nWorth pairing with the right expectation: both features are designed to work together, and the docs' guidance on context editing explicitly discusses the interaction. Option B's conclusion is backwards - the tools complement, and the tuning parameter exists precisely to manage the trade.",
+      "whyWrong": {
+        "B": "They are designed to be used together, and the interaction is a tuning problem, not an incompatibility. Disabling caching would remove the read discount on a very large prefix - a large cost increase to avoid a tuning error.",
+        "C": "Lowering the trigger makes clearing *more* frequent, which multiplies the cache-rewrite cost for even less benefit per event. The symptom in the scenario points in the opposite direction.",
+        "D": "Client-side trimming works, but it discards the server-side machinery that is tuned for this. Option A fixes the actual misconfiguration with a one-line parameter change."
+      },
+      "difficulty": 3,
+      "visualId": "prompt-caching",
+      "mindset": "Clearing rewrites the cache - clear rarely and substantially, not often and slightly.",
+      "tags": [
+        "context-editing",
+        "prompt-caching",
+        "token-budgeting",
+        "cost-performance"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/context-editing",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching"
+      ]
+    },
+    {
+      "id": "p-d2-x4-015",
+      "taskStatementId": "2.5",
+      "stem": "A company runs six in-product assistants (billing, analytics, admin and others) that share an identical 30-tool set. Each prompt is assembled from four modules: a 10,000-token core policy, a 3,000-token product module, a 500-token account context, and the conversation. The vendor wants the highest cache reuse across all six assistants and across returning customers, without changing any module's content. What is the right module order and breakpoint placement?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Order modules from most to least stable - core, product, account context, conversation - with a breakpoint after the account context. Six assistants with different product modules still share the core prefix; returning customers still share core, product and account context."
+        },
+        {
+          "id": "B",
+          "text": "Put the account context first, since it is the most specific to the customer, followed by core and product modules. Specificity first is the standard caching convention."
+        },
+        {
+          "id": "C",
+          "text": "Merge core and product into six fully self-contained prompts, one per assistant, and give each its own single breakpoint at the end."
+        },
+        {
+          "id": "D",
+          "text": "Keep the current order and add breakpoints after the product module and after the account context, so that every module becomes independently cached."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The cache is an **exact prefix match in the order tools, then system, then messages**, so the question is simply: what is the longest run of identical bytes at the front? Ordering by stability, most stable first, maximises it.\n\nWith core first, the 10,000-token policy is shared by all six assistants - that is a 10,000-token shared prefix across the entire product, and it is the largest single block. Putting product next extends the shared run to 13,000 tokens for returning customers of the same assistant. The breakpoint goes after account context: everything up to it is stable per customer, everything after is conversation.\n\nOption D sounds more thorough and is worse. A breakpoint caches everything before it, so a marker after the product module does not cache the product module *separately* - it caches a prefix that a marker after account context also covers, and you pay an extra write premium for the privilege. Breakpoints are checkpoints on a single ordered prefix, not independent slots.",
+      "whyWrong": {
+        "B": "Inverts the principle. The cache matches from the front, so the most stable content must come first; putting 500 tokens of per-customer data ahead of 10,000 tokens of shared policy means almost nothing is shared.",
+        "C": "Self-contained prompts guarantee that each assistant's core differs from the others' - either by product-specific edits or by nothing at all - and you lose the 10,000-token shared prefix across the whole product entirely.",
+        "D": "A breakpoint caches the whole prefix before it, not an isolated section. The extra marker adds a write premium without adding a reusable entry, and on the API there is a cap of four breakpoints per request."
+      },
+      "difficulty": 3,
+      "visualId": "prompt-caching",
+      "mindset": "Order modules most-stable-first and checkpoint the last stable one - markers are checkpoints, not slots.",
+      "tags": [
+        "prompt-caching",
+        "modular-prompts",
+        "prompt-structure",
+        "cost-performance"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices"
+      ]
+    },
+    {
+      "id": "p-d2-x4-016",
+      "taskStatementId": "2.5",
+      "stem": "An operations agent's system prompt has grown to 70,000 tokens: fourteen detailed procedures, of which a typical session touches two or three. Tokens are billed on every turn and the prompt is crowding out the conversation. The environment supports Agent Skills. Which TWO changes are well founded? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Package each procedure as a Skill whose description states what it covers and when to use it, so only the relevant procedures' bodies load. This is progressive disclosure: descriptions always present, bodies on demand."
+        },
+        {
+          "id": "B",
+          "text": "Also enable prompt caching on what remains. It is complementary rather than an alternative - it discounts the price of the residual prefix, though it does not reduce what occupies the window."
+        },
+        {
+          "id": "C",
+          "text": "Split the work across fourteen specialist agents with a router in front, so each request loads exactly one procedure into a fresh context."
+        },
+        {
+          "id": "D",
+          "text": "Compress all fourteen procedures into a single condensed checklist of about 8,000 tokens and keep it permanently in the system prompt, since brevity solves the crowding problem."
+        },
+        {
+          "id": "E",
+          "text": "Rely on a one-hour cache TTL for the 70,000-token prompt so the procedures become cheap reads, and skip restructuring entirely."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "**A** is the structural fix and the reason skills exist. The frontmatter description is always loaded and says what the skill covers and when to use it, so selection happens on a few hundred tokens of metadata and only the selected procedure's body enters the window. That cuts tokens billed, tokens competing for attention, and time to first token at once - and it gives each procedure an owner.\n\n**B** is the right companion rather than the wrong alternative. Once packaging has shrunk the always-loaded prefix, caching discounts what is left. Worth being precise about why it is not *instead* of A: cached tokens still occupy the window, so caching makes a badly shaped prompt cheaper without making it better.\n\nC is a large architectural commitment - fourteen agents, a router, per-agent overhead and failure modes - to solve a context problem. D reduces volume but keeps loading all fourteen procedures every turn, including the twelve the session will never touch, and one dense checklist is harder to follow and to update safely.",
+      "whyWrong": {
+        "C": "Enormous overhead for a selection problem: fourteen contexts to maintain, a router that can misroute, and failure modes at every boundary. Skills give selective loading without that architecture.",
+        "D": "Reduces tokens but not selectivity. Everything still loads on every turn, and compressing fourteen procedures into one dense list makes them harder to follow and risky to edit - while the maintenance problem that produced the 70,000 tokens is untouched.",
+        "E": "Uses caching as a substitute for structure. Cached tokens still occupy the context window, so the competition for attention and the read cost of thirteen unused procedures both remain; a longer TTL makes the reads cheaper without removing them."
+      },
+      "difficulty": 2,
+      "visualId": "prompt-caching",
+      "mindset": "Package for selectivity, then cache what is left - caching is not a substitute for structure.",
+      "tags": [
+        "agent-skills",
+        "modular-prompts",
+        "context-window",
+        "cost-performance"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview",
+        "https://code.claude.com/docs/en/skills"
+      ]
+    },
+    {
+      "id": "p-d2-x4-017",
+      "taskStatementId": "2.5",
+      "stem": "A platform team ships six in-product assistants that all need a quarterly-report-validation procedure, built as a Skill through the Claude API and working there. Marketing wants the same validation in the consumer chat product. Three claims about reuse are proposed. Which TWO are correct? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Install the skill separately on each surface from the one versioned repository, keeping the frontmatter as the selection contract, and re-test it on the new surface rather than assuming it transfers."
+        },
+        {
+          "id": "B",
+          "text": "Track the skill as versioned source and install it deliberately per surface, so a change to the procedure is a change each consumer picks up knowingly - and pin it, since an unreviewed upstream update should not change production behaviour on its own."
+        },
+        {
+          "id": "C",
+          "text": "Upload the skill once through the Claude API and wait for propagation; centrally hosted skills become available to every Claude surface automatically."
+        },
+        {
+          "id": "D",
+          "text": "Paste the full SKILL.md into each user's custom instructions and each project's CLAUDE.md, so the guidance is present regardless of surface."
+        },
+        {
+          "id": "E",
+          "text": "Rebuild the procedure as an MCP server, since MCP is the only mechanism for sharing a reusable procedure across products."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": [
+        "**A** gets the deployment model right: skills are installed per surface. The shared artefact is the version-controlled source, and each surface gets an explicit installation of it. Re-test per surface too, because available tools, context and user populations differ - 'it worked on the API' is not evidence it works in a consumer product.\n\n**B** is the governance half, and it is the one that gets skipped. Versioning plus deliberate installation means a change to the procedure is a reviewed diff on every consumer, and pinning means an upstream update cannot silently change production behaviour. That converts trust-in-a-third-party-artefact into an ordinary code-review process.\n\nOption C describes a propagation mechanism that does not exist - uploading to one API integration does not install it in another product. And the frontmatter deserves emphasis from A: a skill that never triggers is worse than no skill, because it looks like coverage."
+      ],
+      "whyWrong": {
+        "C": "There is no central propagation. Uploading a skill through the API installs it for that integration; another product needs its own installation, which is exactly why B's governance matters.",
+        "D": "Pasting the body into custom instructions loads all of it on every turn - the bloat packaging avoids - and destroys the selection mechanism, so the procedure fires whether or not it is relevant.",
+        "E": "Category error. MCP servers expose tools and resources; a procedure the model should follow is prompt content, and routing it through MCP adds a process boundary for no benefit."
+      },
+      "difficulty": 2,
+      "visualId": "claude-code-config",
+      "mindset": "Version the shared artefact, install per surface deliberately, and pin - nothing propagates centrally.",
+      "tags": [
+        "agent-skills",
+        "modular-prompts",
+        "reuse",
+        "governance"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview",
+        "https://code.claude.com/docs/en/skills"
+      ]
+    },
+    {
+      "id": "p-d2-x4-018",
+      "taskStatementId": "2.5",
+      "stem": "A construction firm wants 200 analysts to use a community-maintained Skill for generating financial-model spreadsheets. It bundles a script, two reference files and a template. Analysts would run it against confidential client data. A manager proposes approving it after reading SKILL.md and confirming the description matches what analysts need. What is the strongest objection?",
+      "options": [
+        {
+          "id": "A",
+          "text": "SKILL.md is only the entry point. The audit has to cover every bundled file - the script's network calls and subprocess use, the references' external URLs, and what the template does with data - because that is where the behaviour and the exfiltration risk actually live. Then publish the reviewed version from a company-controlled repository."
+        },
+        {
+          "id": "B",
+          "text": "Reading SKILL.md is the correct review because it is the file Claude reads to decide how to use the skill, so behaviour beyond it is out of scope."
+        },
+        {
+          "id": "C",
+          "text": "The objection is that community skills are unlicensed for commercial use, so the firm must obtain permission from the author regardless of the technical risk."
+        },
+        {
+          "id": "D",
+          "text": "The objection is that skills run in a sandbox, so any malicious script is contained by the execution environment and the real question is only licensing."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The review has to cover what the skill *does*, not what it says it does. SKILL.md is instructions and a description; the bundled script is where behaviour lives. A skill that reads SKILL.md perfectly can ship a script that opens outbound connections, reads files outside the workspace, or posts data to an external endpoint - and none of that is visible from the entry point.\n\nThe consequence is sharper here because of what the analysts will feed it: confidential client data. So the audit questions are concrete - what does the script invoke, what does it reach on the network, what files does it read, and what happens to the data it handles.\n\nThen publish the reviewed version from a repository the firm controls, so future updates are a controlled diff rather than an unreviewed upstream change. That converts an open-ended trust problem into a normal code-review process.\n\nOption D's premise is exactly the thing worth challenging: assume containment you have not verified, and do not let an environment guarantee substitute for a review you can perform.",
+      "whyWrong": {
+        "B": "SKILL.md describes intent. It does not constrain what a bundled script does, so a review that stops at the entry point has not reviewed the code that runs.",
+        "C": "Licensing may well be a real question for commercial use, and it is worth checking. It is not the strongest objection, because the question here is about technical risk in the artefact's behaviour.",
+        "D": "Sandboxing limits blast radius; it is not a substitute for review. Assuming containment the firm has not tested is precisely how an unreviewed third-party script reaches client data."
+      },
+      "difficulty": 3,
+      "visualId": "claude-code-config",
+      "mindset": "Audit what a third-party prompt artefact does, not what it says - then republish from a repo you control.",
+      "tags": [
+        "agent-skills",
+        "supply-chain",
+        "review",
+        "reuse"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview",
+        "https://www.anthropic.com/news/our-framework-for-developing-safe-and-trustworthy-agents"
+      ]
+    },
+    {
+      "id": "p-d2-x4-019",
+      "taskStatementId": "2.4",
+      "stem": "A platform team's project CLAUDE.md has reached about 1,800 lines: build commands and coding standards that apply to every task, plus a 600-line release runbook, an incident-response playbook and a database migration procedure. Developers report the agent seems slower and less focused on the standards it used to follow. What is the best change?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Keep the short, universally-applicable material (build commands, coding standards) in CLAUDE.md and move the long procedures into skills with clear descriptions. The always-relevant guidance stays always loaded; the rest loads only when it applies."
+        },
+        {
+          "id": "B",
+          "text": "Split the file into several markdown files and pull each one into CLAUDE.md with `@` imports, so it is easier to navigate while keeping everything loaded."
+        },
+        {
+          "id": "C",
+          "text": "Move everything, including build commands and coding standards, into separate skills so that nothing is loaded unless specifically relevant."
+        },
+        {
+          "id": "D",
+          "text": "Keep the single file and add a prominent section at the top instructing Claude to prioritise the coding standards over the runbooks."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The diagnosis is a **relevance** problem, not a size problem. Three of the four blocks are procedures a given task almost never needs, and they compete for attention with the standards the agent is supposed to follow on every task. Splitting a 1,800-line file into 1,800 lines' worth of imports (B) improves navigability for humans and changes nothing about what is loaded.\n\nThe right test when splitting is: *does this apply to every task or to some tasks?* Build commands and coding standards pass - they are needed on essentially every task, so they belong in the always-loaded file. The runbook, the incident playbook and the migration procedure fail - they are needed occasionally, which is exactly what skills are for. Each becomes a skill whose description says when to use it.\n\nThat structure also fixes the maintenance problem that produced the 1,800 lines: a release runbook now has an owner and a version instead of being a section nobody dares touch.",
+      "whyWrong": {
+        "B": "`@` imports pull the referenced content *into* the loaded context. The file becomes easier for humans to read and identical in what the model actually sees - so the competition for attention is unchanged.",
+        "C": "Overcorrects. Build commands and coding standards are needed on nearly every task; moving them behind a selection step means the agent can start work without them, which is a reliability regression.",
+        "D": "A priority instruction adds another directive on top of the pile and does not reduce what is loaded. It cannot make the agent attend less to the runbooks while still reading them."
+      },
+      "difficulty": 1,
+      "visualId": "claude-code-config",
+      "mindset": "Split by applicability, not by size - always-needed guidance in CLAUDE.md, occasional procedures in skills.",
+      "tags": [
+        "modular-prompts",
+        "context-window",
+        "agent-skills",
+        "configuration"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/memory",
+        "https://code.claude.com/docs/en/skills"
+      ]
+    },
+    {
+      "id": "p-d2-x4-020",
+      "taskStatementId": "2.5",
+      "stem": "A law firm built a retrieval-augmented assistant over its precedent database. The same 8,000-token methodology preamble appears in every request, followed by retrieved case chunks that vary per query. They used a top-level `cache_control` field for simplicity. Reads are near zero and cost is high. Diagnose it.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Automatic caching places the breakpoint on the last cacheable block, which here is a retrieved chunk that changes every query - so every request writes and never reads. Put an explicit `cache_control` breakpoint at the end of the stable 8,000-token preamble and leave the retrieved chunks after it uncached."
+        },
+        {
+          "id": "B",
+          "text": "The 8,000-token preamble is below the model's minimum cacheable length, so caching is skipped silently and the only option is to grow the preamble or accept uncached pricing."
+        },
+        {
+          "id": "C",
+          "text": "Retrieved chunks must never precede cached content. Reorder the request so the dynamic chunks come first and the preamble last, then the automatic breakpoint lands correctly."
+        },
+        {
+          "id": "D",
+          "text": "The cache needs a second explicit breakpoint to confirm the first, as with any multi-block prefix."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "This is the single most common caching mistake with retrieval, and the mechanism is specific. Automatic caching puts the breakpoint on the **last cacheable block**, which is optimal for a growing conversation and exactly wrong for a stable-prefix-plus-varying-retrieval shape. The prefix hash then includes a different chunk on every query, so each request writes an entry no later request can read.\n\nThe fix is the explicit pattern: one `cache_control` marker at the end of the stable preamble, with everything variable after it. Writes only happen at breakpoints and reads only find entries earlier requests wrote, so a marker on the varying chunk is worthless no matter how many you add.\n\nWorth pairing with two facts from the same docs. The 8,000-token preamble is comfortably above every current model's minimum cacheable length (512 to 4,096 tokens depending on model and platform), so length is not the issue - and reordering the request as in C would be actively harmful, because the dynamic chunks in front would then sit outside any cached prefix.",
+      "whyWrong": {
+        "B": "8,000 tokens is well above every documented minimum cacheable length. The tell-tale for the length problem is both usage counters reading zero; here reads are near zero while writes continue, which is the signature of a mutating prefix, not an undersized one.",
+        "C": "Putting dynamic content first is backwards for prefix caching. The cache matches from the front, so variable chunks at the front would be uncacheable *and* would prevent the stable preamble from ever being reused.",
+        "D": "One breakpoint is enough. Extra markers do not add independent reusable entries, and on the API there is a cap of four breakpoints per request, so scattering them costs write premiums without buying coverage."
+      },
+      "difficulty": 3,
+      "visualId": "prompt-caching",
+      "mindset": "Automatic caching assumes a growing conversation; a varying retrieval suffix needs an explicit breakpoint on the stable prefix.",
+      "tags": [
+        "prompt-caching",
+        "rag",
+        "cache-breakpoint",
+        "modular-prompts"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
+        "https://platform.claude.com/docs/en/build-with-claude/rag"
+      ]
+    }
+  ]
+}

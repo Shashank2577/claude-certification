@@ -1,0 +1,976 @@
+{
+  "certId": "professional",
+  "domainId": "d5-governance",
+  "questions": [
+    {
+      "id": "p-d5-x4-001",
+      "taskStatementId": "5.1",
+      "stem": "A claims-preprocessing agent classifies incoming submissions and drafts a summary for a human adjuster. A red team has demonstrated that a crafted document causes the agent to invent a claim amount in the summary. Compliance asks what would have prevented this. Which TWO controls hold even when the model is fully manipulated? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Structured output with a strict schema, plus code-side validation that the summary's amount field either matches a value extracted by deterministic parsing of the document or is null. Inventing a plausible number produces a schema violation, not a fluent summary."
+        },
+        {
+          "id": "B",
+          "text": "An output-side check in your own pipeline that verifies every numeric field in the generated summary against values found in the source document before the summary is shown to an adjuster."
+        },
+        {
+          "id": "C",
+          "text": "A system-prompt section instructing the agent never to state an amount it has not read directly from the document."
+        },
+        {
+          "id": "D",
+          "text": "Routing the workload to the most capable tier, since hallucination rates fall as capability rises."
+        },
+        {
+          "id": "E",
+          "text": "Adding several few-shot examples in which the agent correctly declines to state an amount it cannot find."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Both answers enforce something **outside the model**, which is the only kind of control that survives a successful manipulation.\n\nA works because it removes the model's discretion over the critical field. If the schema requires `amount_found` to be a number or null, and your code independently extracts amounts from the source document, then a fabricated figure has nowhere to land - it either contradicts your extraction or the field must be null. Same for B: a check that compares generated numbers against source numbers catches the failure regardless of how confident the model sounded.\n\nThe other three are all variations on asking the model to behave. A prohibition, an example, and a capable model all reduce the baseline rate of this failure. None of them prevents it, which is why none of them can be the answer to 'what would have prevented this' when you have already established that manipulation succeeds.\n\nThe general pattern: for any field where a wrong value causes material harm, decide *where the value comes from* in code rather than asking the model to source it faithfully.",
+      "whyWrong": {
+        "C": "A prohibition is an instruction the model chooses to follow. Under successful manipulation it is exactly the kind of instruction that gets overridden.",
+        "D": "Capability lowers hallucination rates; it does not create an enforcement boundary. Relying on it means your control strength degrades with every model change.",
+        "E": "Examples teach behaviour, and they do help - but a demonstrated manipulation overrides demonstrated behaviour just as readily."
+      },
+      "difficulty": 2,
+      "visualId": "security-guardrails",
+      "mindset": "For fields where a wrong value causes harm, decide the value in code - never ask the model to source it faithfully.",
+      "tags": [
+        "guardrails",
+        "hallucination",
+        "structured-outputs",
+        "defense-in-depth"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs",
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-hallucinations"
+      ]
+    },
+    {
+      "id": "p-d5-x4-002",
+      "taskStatementId": "5.1",
+      "stem": "A hospital has rolled out a clinical-notes summarisation assistant to 40 nurses. Summaries are informational only and never reach a patient directly. A governance review asks the team to document the guardrail layers for this deployment. Which ONE belong in that description? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "A confidentiality check in the pipeline that confirms no identifiers from the note appear in the summary text, run before the summary is displayed."
+        },
+        {
+          "id": "B",
+          "text": "A system-prompt instruction reminding the assistant that summaries are for internal use only and must not include patient identifiers."
+        },
+        {
+          "id": "C",
+          "text": "A stronger instruction that repeats the confidentiality requirement at the start and end of the system prompt."
+        },
+        {
+          "id": "D",
+          "text": "A model-tier restriction limiting the deployment to the two most capable models, since weaker models handle confidential clinical text less carefully."
+        },
+        {
+          "id": "E",
+          "text": "A training session telling nurses always to double-check every summary against the note before acting."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The question is about documenting **layers**, and the one that qualifies as a guardrail layer is the one that lives outside the model.\n\nA deterministic confidentiality check in the pipeline - does this summary contain anything resembling an identifier from the note - is testable, automatable, and independent of how the model responded. That is exactly what an auditor can verify, and it is the shape a guardrail layer should have.\n\nIt is worth being precise that this deployment's control is verification rather than blocking, because summaries are informational and never reach a patient. That means a human step is part of the design too: documenting that nurses verify against the note, and making that expectation visible in the interface rather than buried in a policy, is what keeps it real.\n\nThe rejected options are the classic non-controls: an instruction at two volumes, a capability restriction, and a training message. Each may help; none can be tested, alerted on, or evidenced.",
+      "whyWrong": {
+        "B": "An instruction is a request, and this is a confidentiality finding about what reaches the screen. Nothing in the pipeline checks whether an identifier appeared.",
+        "C": "Repetition improves adherence; it does not create a control that survives a determined bypass. Both B and C are the same non-control at two volumes.",
+        "D": "A tier restriction is a capability policy, not a guardrail layer. It cannot detect disclosure and does not tell a reviewer what happens when a summary does leak an identifier.",
+        "E": "Training is a legitimate organisational control, but the scenario already documents a gap between policy and behaviour - and the gap is that disclosure is neither checked for nor surfaced."
+      },
+      "difficulty": 1,
+      "visualId": "escalation-hitl",
+      "mindset": "A guardrail layer is deterministic code or a documented human step - a repeated instruction is neither.",
+      "tags": [
+        "guardrails",
+        "healthcare",
+        "human-in-the-loop",
+        "pii"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-hallucinations",
+        "https://platform.claude.com/docs/en/manage-claude/api-and-data-retention"
+      ]
+    },
+    {
+      "id": "p-d5-x4-003",
+      "taskStatementId": "5.2",
+      "stem": "A procurement agent completes a ten-step purchase-order workflow: look up the vendor, check the contract, verify pricing tiers, request approval, and so on. Each step was individually evaluated at 98% accuracy during development. In production, end-to-end completion is 71%. Which explanation best accounts for the gap?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Step-level accuracy compounds multiplicatively across a sequence. Ten steps at 98% each yields roughly 0.98^10, or about 83% - and production conditions are worse than the test conditions, so an end-to-end rate in the low 70s is expected. Evaluate the whole chain, not its parts."
+        },
+        {
+          "id": "B",
+          "text": "The step evaluations used representative data, so the gap must be an infrastructure problem - most likely elevated latency on the vendor lookup endpoint."
+        },
+        {
+          "id": "C",
+          "text": "A ten-step workflow is too long for reliable agentic execution. The fix is to reduce it to three or four steps regardless of what the business process requires."
+        },
+        {
+          "id": "D",
+          "text": "The agent needs more capacity on the hardest steps. Adding checkpoints that re-verify each step's output before proceeding will recover the missing 27 points."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "This is the **compounding-error** property of multi-step systems, and it is arithmetic rather than mystery. If each of ten steps succeeds 98% of the time and errors are independent, the chain completes about 0.98^10 ≈ 83% of the time. Push real-world conditions - ambiguous vendor records, missing contract clauses, approvals that arrive late - and the low 70s follows naturally.\n\nThe governance implication is the important part: **per-step accuracy is not a safety argument**. A workflow whose steps each look excellent can still fail nearly a third of the time end to end, and if a failure at step 7 is not detected, steps 8 to 10 act on a wrong state. So the control has to be evaluated at the level the business cares about - completed correct orders - and paired with deterministic checkpoints at the high-impact transitions, where the next step's input is verified rather than assumed.\n\nNote also that this is not an argument for fewer steps. The answer is to know your real end-to-end rate, place checkpoints where errors are expensive, and make failures visible rather than silent.",
+      "whyWrong": {
+        "B": "The step evals are explicitly described as representative, and latency would surface as a different symptom - timeouts and retries, not confident wrong answers. The arithmetic gap is explained without any infrastructure fault.",
+        "C": "Workflow length is set by the business process, not by model reliability. Shortening a ten-step purchase order to four steps changes what the system does, which is the wrong lever for an accuracy gap.",
+        "D": "Re-verifying every step mostly adds cost and latency for a small accuracy gain - and it does not address the underlying compounding. Checkpoints belong at the transitions where an error is expensive or invisible, not everywhere."
+      },
+      "difficulty": 3,
+      "visualId": "escalation-hitl",
+      "mindset": "Per-step accuracy compounds - evaluate and control the whole chain, and checkpoint where errors hide.",
+      "tags": [
+        "failure-modes",
+        "agentic",
+        "evaluation",
+        "checkpoints"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents",
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests"
+      ]
+    },
+    {
+      "id": "p-d5-x4-004",
+      "taskStatementId": "5.2",
+      "stem": "A financial-services assistant retrieves policy documents and answers questions about them. Testing shows it invents plausible clause references when retrieval returns nothing relevant. A team proposes three mitigations. Which TWO are well founded? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Instruct the assistant to answer only from the retrieved sections, quote the passage it relies on, and say it does not know when the sections do not cover the question."
+        },
+        {
+          "id": "B",
+          "text": "Route low-retrieval-score queries to a no-answer path in application code, so the model is not asked to produce an answer when the evidence is not there."
+        },
+        {
+          "id": "C",
+          "text": "Increase the number of chunks retrieved per query so there is more material to ground the answer in."
+        },
+        {
+          "id": "D",
+          "text": "Move the workload to the most capable tier, on the basis that stronger models are more accurate at grounding answers in provided context."
+        },
+        {
+          "id": "E",
+          "text": "Raise the sampling temperature so the model explores more of the retrieved context before answering."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "The failure is **ungrounded generation**: when retrieval returns nothing, the model fills the gap with fluent text, because producing an answer is its default behaviour. Both accepted mitigations attack that directly.\n\nA changes the contract - answer only from the sections, quote the evidence, and explicitly say when the sections do not cover it. That last clause is what makes it work: an allowed 'I don't know' gives the model a legitimate exit, so it is not cornered into inventing. And the quotes make the claim checkable by a reviewer, which converts an unverifiable answer into an auditable one.\n\nB removes the condition entirely. If your retrieval pipeline can tell that nothing relevant came back, the honest response is a no-answer path in your own code - the model should not be consulted about a question you already know you cannot answer.\n\nThe three rejected options each fail in a specific, instructive way. C makes it worse by adding noise. D treats grounding as a capability problem when it is an instruction and data problem. E is almost exactly backwards.",
+      "whyWrong": {
+        "C": "Retrieving more chunks when the first set contained nothing relevant adds irrelevant text. More context with no signal increases the chance of a confident answer grounded in the wrong passage.",
+        "D": "Capability helps, but the model is being asked to do something the application should decide. If retrieval returned nothing, no model's grounding ability will produce a grounded answer from nothing.",
+        "E": "Temperature shapes sampling diversity. Raising it makes output less consistent, not better grounded - and it adds variance to an already unreliable path."
+      },
+      "difficulty": 2,
+      "visualId": "escalation-hitl",
+      "mindset": "Give the model a legitimate 'not in the sources' exit, and never ask it about questions your retrieval already failed.",
+      "tags": [
+        "hallucination",
+        "rag",
+        "grounding",
+        "failure-modes"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-hallucinations",
+        "https://www.anthropic.com/news/contextual-retrieval"
+      ]
+    },
+    {
+      "id": "p-d5-x4-005",
+      "taskStatementId": "5.3",
+      "stem": "An accounts-payable pipeline routes Claude-extracted invoice data to a human review queue before payment. Reviewers approve 99.6% of queued items in about four seconds each. A governance review asks whether the human step is functioning as a control. What is the most accurate assessment?",
+      "options": [
+        {
+          "id": "A",
+          "text": "A 99.6% approval rate with four-second reviews indicates a rubber stamp: the reviewer is confirming rather than checking. The control's value comes from catching errors, so measure it - send a known-error rate of seeded invoices and see how many get through."
+        },
+        {
+          "id": "B",
+          "text": "A high approval rate is expected and healthy, because the pipeline only escalates uncertain cases to humans. The queue is working exactly as designed."
+        },
+        {
+          "id": "C",
+          "text": "Four seconds per item is too fast for meaningful review, so the remedy is to slow reviewers down with a mandatory minimum dwell time on each item."
+        },
+        {
+          "id": "D",
+          "text": "The correct response is to remove the human review step, since a 99.6% approval rate proves the extraction is already reliable enough."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Human review is a control only if it can catch something. A 99.6% approval rate combined with four seconds per item is the classic signature of a **rubber stamp** - and the governance question is not 'are reviewers approving things correctly' but 'would this reviewer catch an error if one were in front of them'.\n\nThe right diagnostic is a **seeded-error rate**: deliberately introduce invoices with known defects at a known rate, and measure how many the review queue rejects. That converts an argument about approval rates into a measured control effectiveness number, which is what an auditor or a risk committee can actually use. If the seeded catch rate is high, the low approval rate is explained by good upstream routing. If it is low, the queue is decorative.\n\nWorth noting the structural conclusion that follows either way: if review genuinely catches little, the honest response is to change the design - send reviewers only what needs a human, show them the source evidence beside the extracted fields, and sample the auto-approved population - not to keep a step whose cost is real and whose value is unmeasured.\n\nOption C's dwell-time idea is worth rejecting for a specific reason: slowing a reviewer who is not checking produces a slower rubber stamp, not a better one.",
+      "whyWrong": {
+        "B": "That is the assumption the review should test rather than assume. If only uncertain cases were escalated you would expect a visible minority of rejections; 99.6% approval is consistent with either excellent routing or no checking at all, and only a seeded-error test distinguishes them.",
+        "C": "A minimum dwell time makes a non-checking reviewer slower, not more accurate. It converts a fast rubber stamp into a slow one and adds queue latency as a cost.",
+        "D": "The approval rate is not evidence of extraction reliability - it is evidence about reviewer behaviour, which is exactly what is unmeasured. Removing the step on that basis removes the only place an error could be caught."
+      },
+      "difficulty": 3,
+      "visualId": "escalation-hitl",
+      "mindset": "A human step is a control only if it can fail - measure it with seeded errors, not approval rates.",
+      "tags": [
+        "human-in-the-loop",
+        "calibration",
+        "metrics",
+        "automation-bias"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests",
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-hallucinations"
+      ]
+    },
+    {
+      "id": "p-d5-x4-006",
+      "taskStatementId": "5.3",
+      "stem": "A fintech's payments agent can issue refunds up to $200 automatically and $5,000 with human approval. Over the last quarter the approval rate for the escalated tier is 97%, and median time waiting for approval is 90 seconds. On-call engineers have started approving without reading. Which TWO changes best restore the control's value? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Tier the workflow by reversibility and blast radius rather than amount alone: small, easily reversed actions run automatically; large or hard-to-reverse ones require approval. An amount threshold alone sends routine $200 refunds to a human for no risk reason."
+        },
+        {
+          "id": "B",
+          "text": "Make the approval request cheap to actually evaluate: show the approver the customer, the order, prior refunds on that account, and the agent's stated reason, with a targeted default. An approver who has to reconstruct context will approve."
+        },
+        {
+          "id": "C",
+          "text": "Lower the automatic-refund ceiling to $20 so that fewer refunds need human approval at all."
+        },
+        {
+          "id": "D",
+          "text": "Require a typed confirmation phrase before approval, so each decision takes deliberate effort."
+        },
+        {
+          "id": "E",
+          "text": "Have the agent rate its own confidence in the refund and auto-approve anything above 0.9 without human review."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Both accepted changes address **why** the approval became worthless rather than adding friction to it.\n\nA fixes a mis-specified threshold. Tiering by reversibility and blast radius means routine low-risk refunds never consume human attention, so the approval queue holds only the decisions that genuinely warrant one. That directly addresses the 97% approval rate: much of what reaches a human does not need to.\n\nB fixes the *decision environment*. An approver facing a request ID and a dollar amount reconstructs context from another system, or skips it. Putting the customer, the order, prior refunds on that account and the agent's reason in front of them makes the review a judgement rather than a retrieval task - which is the difference between a control and a click.\n\nTogether they also fix the latency complaint honestly: the 90-second wait falls because the queue contains decisions worth waiting on.\n\nThe rejected options share a pattern - they try to force deliberation through friction or volume reduction, or hand the decision to the party whose judgement is already in question.",
+      "whyWrong": {
+        "C": "Lowering the ceiling does not improve the approval control; it removes volume from the human queue while leaving the genuine high-risk decisions exactly as hard to evaluate as before. It also pushes legitimate small refunds into a slower path for no risk reduction.",
+        "D": "Deliberate friction is the wrong instrument. A typed phrase slows a reviewer who is not checking without making them check - a slower rubber stamp - and adds latency to every escalation.",
+        "E": "Self-rated confidence removes the human from the loop on exactly the decisions where a 97% approval rate has shown human judgement adding nothing measurable. It also creates an unmeasurable criterion nobody can audit."
+      },
+      "difficulty": 2,
+      "visualId": "escalation-hitl",
+      "mindset": "Fix the queue's contents and the approver's context - friction does not create judgement.",
+      "tags": [
+        "human-in-the-loop",
+        "least-privilege",
+        "approval-workflow",
+        "automation-bias"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools",
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "p-d5-x4-007",
+      "taskStatementId": "5.4",
+      "stem": "An EU retailer runs a support agent with the client-side memory tool, so customer preferences persist across sessions. Conversation embeddings sit in a vector database. Support transcripts go to a third-party observability vendor on a 30-day retention. A customer exercises their right to erasure. Which TWO actions are required? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Find and delete across every store the system actually writes to - memory files, vector-index entries and embeddings, observability copies and backups - and record the erasure. Delete only the primary record and treat derived stores as out of scope."
+        },
+        {
+          "id": "B",
+          "text": "Establish the lawful basis and role for each processing purpose with the DPO, and where a processor is involved, have a processing agreement in place covering purpose, retention and deletion before the data is ever sent."
+        },
+        {
+          "id": "C",
+          "text": "Ask Anthropic to delete the customer's data, since the memory tool stores its files on the provider's infrastructure."
+        },
+        {
+          "id": "D",
+          "text": "Encrypt the memory files and the observability exports at rest, which satisfies the erasure obligation because the data is no longer readable without the key."
+        },
+        {
+          "id": "E",
+          "text": "Add a system-prompt instruction telling the agent to forget this customer and never reference their preferences again."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Two obligations are in play and the scenario tests whether both are understood.\n\n**A** is the erasure obligation, and its trap is the phrase 'every store the system writes to'. A system like this fans out: memory files, a vector index, embeddings, third-party observability copies, and backups. Deleting the primary record while leaving derived stores intact does not satisfy erasure - and the derived stores are exactly where a forgotten copy survives. The other half of A is the substantive point: this is what the instruction-only options get wrong.\n\n**B** is the lawful-basis obligation, and it is upstream of everything. Each processing purpose - memory for preferences, embeddings for retrieval, observability for debugging - needs its own basis, and each third-party processor needs an agreement covering retention and deletion. Note the ordering: the agreement belongs in place *before* data is sent, not assembled after a complaint.\n\nThe three rejected options share a failure: they treat a data-subject right as something a prompt can implement. A model instruction changes future behaviour; it does not delete a stored embedding.",
+      "whyWrong": {
+        "C": "The memory tool's storage arrangements are one store among several, and asking the provider does not reach the retailer's own vector database, its observability vendor or its backups. Erasure has to be executed where the data is.",
+        "D": "Encryption is a strong security control and it has no bearing on erasure. The obligation is to delete, not to make unreadable - and an encrypted copy is still personal data in the eyes of a regulator.",
+        "E": "This is the model-as-control anti-pattern in a privacy context. An instruction affects what the agent says next; it cannot reach an embedding already written to a vector index."
+      },
+      "difficulty": 3,
+      "visualId": "identity-and-pii",
+      "mindset": "Erasure means every store you wrote to - and a prompt cannot delete an embedding.",
+      "tags": [
+        "gdpr",
+        "data-deletion",
+        "pii",
+        "third-party-processors"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/manage-claude/api-and-data-retention",
+        "https://www.anthropic.com/legal/aup"
+      ]
+    },
+    {
+      "id": "p-d5-x4-008",
+      "taskStatementId": "5.4",
+      "stem": "A US federal agency wants to pilot Claude for summarising Controlled Unclassified Information. Its authorizing official requires the deployment to stay inside the agency's existing FedRAMP High authorization boundary. The agency also wants retrieval and debugging, so a team proposes adding a commercial vector database and a SaaS observability tool. What is the correct assessment?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Both services sit outside the existing authorization boundary unless they are themselves FedRAMP-authorized at the appropriate level and covered by the assessment. A vendor's own FedRAMP status does not transfer to a third-party SaaS product it merely uses, so each added service must be evaluated on its own authorization."
+        },
+        {
+          "id": "B",
+          "text": "Both services are fine provided data is encrypted in transit and at rest, because encryption is what keeps processing inside the authorization boundary."
+        },
+        {
+          "id": "C",
+          "text": "Only the vector database needs replacing, since it stores case text at rest, while the observability tool remains inside the boundary as long as it holds no CUI."
+        },
+        {
+          "id": "D",
+          "text": "Both services are acceptable because they are vendor-managed SaaS, so the vendor's security posture substitutes for the agency's authorization scope."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The controlling idea is that an **authorization boundary is a set of assessed components, not a data-handling posture**. Once a commercial vector database and a SaaS observability tool process CUI, they are inside the system's trust boundary and must be authorized in their own right at the level the data requires.\n\nThis is where the vendor-mix-up does real damage. It is common to hear 'we use a FedRAMP-authorized cloud provider, so we are covered'. Authorization attaches to a specific service within a specific assessed boundary - it does not extend to every service that cloud provider's customers happen to buy. Each addition needs its own authorization evidence, and it needs to be named in the agency's assessment.\n\nOption B confuses the mechanism entirely: encryption protects data at rest and in transit, which is necessary and not sufficient. It says nothing about whether a service is inside the authorized boundary.\n\nWorth noting for the pilot's shape: keeping the architecture within already-authorized components may be cheaper and faster than extending the boundary, and it is a decision the authorizing official makes explicitly rather than by default.",
+      "whyWrong": {
+        "B": "Encryption in transit and at rest is necessary and insufficient. It protects the data but leaves an unauthorized service inside the trust boundary, which is the specific thing the authorizing official ruled out.",
+        "C": "Storage location is not the test. The observability tool processes requests, logs and often prompt content, so it handles CUI regardless of what it persists - and 'holds no CUI' is a claim that has to be established, not assumed.",
+        "D": "Being vendor-managed SaaS is the reason authorization matters rather than a reason it does not. A managed service still needs its own authorization to be relied on inside someone else's boundary."
+      },
+      "difficulty": 3,
+      "visualId": "security-guardrails",
+      "mindset": "An authorization boundary covers assessed components - a vendor's authorization does not extend to services its customers buy.",
+      "tags": [
+        "fedramp",
+        "compliance",
+        "data-residency",
+        "third-party-processors"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/manage-claude/data-residency",
+        "https://platform.claude.com/docs/en/manage-claude/api-and-data-retention"
+      ]
+    },
+    {
+      "id": "p-d5-x4-009",
+      "taskStatementId": "5.4",
+      "stem": "A bank must show an auditor, for every automated decision, which model version, prompt version and data snapshot produced it - and regulators may ask seven years later. A team proposes storing the model's output along with the exact request and parameters, and relying on re-running the model later to prove reproducibility. What is the correct assessment?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Re-running is not reproducibility: generation is not guaranteed to reproduce, and models are retired. Persist the actual decision record - inputs, output, prompt version, model ID and parameters - as the primary evidence, and treat re-running as supplementary."
+        },
+        {
+          "id": "B",
+          "text": "The proposal is sound provided the exact model ID and all request parameters are stored alongside the output, since that combination makes any future re-run identical."
+        },
+        {
+          "id": "C",
+          "text": "Re-running is acceptable if the model version is still available, which removes the need to store the prompt or the inputs."
+        },
+        {
+          "id": "D",
+          "text": "Neither approach is sufficient. The only defensible evidence is a human sign-off on each decision, so automated decisions cannot be audited at all."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The question is about **what counts as evidence**, and the distinction is between a record and a reproduction. Generation is not guaranteed to reproduce - the same request can yield different output - and model retirement removes the option entirely, which is why the seven-year horizon makes re-running unworkable as a primary strategy.\n\nSo the durable artefact is the **decision record**: the actual inputs, the actual output, the prompt version, the model ID and the parameters, stored at the moment of the decision. That is what an auditor can inspect years later. Re-running then becomes a supplementary check - useful for showing current behaviour, never a substitute for what happened.\n\nThis also has a design consequence people miss: you cannot add this logging retroactively. Whatever your architecture records about a request has to be decided before the first regulated decision is made, which is why 'we can reconstruct it from logs' is not an answer when the logs were never designed for it.\n\nNote what D gets wrong by overcorrecting: recorded provenance plus a human owner is the standard model, and it is what makes automated decisions auditable rather than ungovernable.",
+      "whyWrong": {
+        "B": "Storing the model ID and parameters makes a future re-run *approximately* comparable - it does not make it identical. Non-deterministic generation means the re-run is evidence about today's behaviour, not about what was decided then.",
+        "C": "Model availability is exactly what cannot be relied on over seven years - retirement is a documented, scheduled event. And dropping the inputs leaves the record unable to show what the decision was based on.",
+        "D": "Overcorrects into saying automated decisions cannot be audited. Persisted provenance plus a named human owner is precisely what makes them auditable; human sign-off on every decision is neither required nor feasible at volume."
+      },
+      "difficulty": 3,
+      "visualId": "security-guardrails",
+      "mindset": "A record is evidence, a reproduction is not - and you cannot retrofit provenance logging.",
+      "tags": [
+        "auditability",
+        "compliance",
+        "provenance",
+        "human-in-the-loop"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/manage-claude/api-and-data-retention",
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests"
+      ]
+    },
+    {
+      "id": "p-d5-x4-010",
+      "taskStatementId": "5.5",
+      "stem": "A lender uses Claude to summarise loan applications and recommend proceed-or-review to underwriters, who make the final call. A review finds that applications from one postcode cluster are referred to review 31% of the time versus 18% overall - a pattern that correlates with an ethnicity the model can partly infer from the name. Which TWO changes are well founded? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Build a paired evaluation set of otherwise-identical applications differing only in name, postcode or similar markers, and compare review rates per pair. This measures whether the disparity is caused by the marker rather than by the underlying risk."
+        },
+        {
+          "id": "B",
+          "text": "Remove the attributes and the obvious proxies the decision does not need from the model's input, and evaluate the system with the protected attributes held separately so the disparity can still be measured. Minimisation of input and visibility of outcome are compatible."
+        },
+        {
+          "id": "C",
+          "text": "Add a system-prompt instruction telling the model to disregard protected characteristics and treat all applicants identically."
+        },
+        {
+          "id": "D",
+          "text": "Upgrade to the most capable model available, since larger models are trained with more safety work and therefore discriminate less."
+        },
+        {
+          "id": "E",
+          "text": "Report the overall 18% referral rate to compliance as evidence that the system is calibrated, since the aggregate meets target."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "The reported disparity is real and the aggregate is beside the point, so both accepted changes attack the measurement and the cause.\n\n**A** is paired testing, and it is the right instrument because it isolates the variable. Two applications identical except for a name or postcode, with materially different referral rates, is direct evidence of marker-driven behaviour. It also produces a number you can track over time, which is what makes it useful to a regulator rather than merely persuasive internally.\n\n**B** resolves the apparent tension in the question. Removing protected attributes from the *input* is data minimisation and is genuinely protective - and holding them in a separate access-controlled store so the disparity can still be *measured* is what stops minimisation from becoming blindness. You cannot fix a fairness problem you refuse to look at. This pairing is the standard answer to 'we removed the attributes, so how would we know?'\n\nThe rejected options share a pattern: they substitute compliance-sounding measures - an instruction, a bigger model, an aggregate number - for measurement of the actual harm.",
+      "whyWrong": {
+        "C": "An instruction is a request about behaviour the model is already performing. It provides no measurement, survives no model change, and cannot be shown to a regulator as evidence.",
+        "D": "Capability is not a fairness control. Larger models may be more reliable overall while still producing the same disparity on a marker - and the claim that bigger means less discriminatory is not something you can evidence to a regulator.",
+        "E": "This is the aggregate-hides-the-subgroup failure. An overall 18% against an 18% target says nothing about the cluster at 31%, which is precisely the harm a fairness review exists to find."
+      },
+      "difficulty": 2,
+      "visualId": "bias-and-fairness",
+      "mindset": "Minimise protected attributes from input, keep them aside for measurement - you cannot fix what you refuse to measure.",
+      "tags": [
+        "bias",
+        "fairness",
+        "evaluation",
+        "financial-services"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests",
+        "https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents"
+      ]
+    },
+    {
+      "id": "p-d5-x4-011",
+      "taskStatementId": "5.5",
+      "stem": "A utility's public chat assistant is widely mistaken for a human agent; surveys show many customers believed they were talking to a person. Legal says the terms of service already mention that some conversations may be automated. Which ONE responses address the transparency concern? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Disclose at the start of the conversation that the customer is talking with an AI assistant, in the interface itself, and give them a route to a human agent. Disclosure in the place where the interaction happens is what makes it meaningful."
+        },
+        {
+          "id": "B",
+          "text": "Tune the assistant's tone to be formal and impersonal enough that customers are less likely to mistake it for a person."
+        },
+        {
+          "id": "C",
+          "text": "Add a clause to the terms of service explaining that some conversations may be handled by an automated assistant."
+        },
+        {
+          "id": "D",
+          "text": "Rename the assistant with a human name and add an avatar, so customers feel more comfortable during the conversation."
+        },
+        {
+          "id": "E",
+          "text": "Publish a statement in the app's release notes disclosing that the assistant is automated, and reference it once at first launch."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The survey result tells you the disclosure **is not reaching people where it matters**. The scenario already states a terms-of-service clause exists and customers are still misled, which rules out the 'add a clause' answer outright.\n\nSo the control has to live in the interface, at the start of the interaction, and disclosure alone is not the whole requirement - it should be paired with a route to a human agent. Without that route, disclosure tells a customer something they cannot act on, which is why teams that disclose without an escape hatch get escalation volume rather than trust.\n\nThis is also the half of transparency most systems miss. Transparency is not only 'this is a bot' but also 'here is how this decision was reached, and here is how to get it reviewed'. For consequential outcomes - a disconnection notice, a disputed bill - contestability is what turns disclosure into something people can actually accept rather than merely be notified of.\n\nThe rejected options all try to solve a transparency problem by concealing the system's nature.",
+      "whyWrong": {
+        "B": "This optimises for the concealment problem rather than the transparency one. Making the assistant sound less human closes the gap between what customers believe and what is true.",
+        "C": "Already in place and not working, which is why customers are misled. Disclosure in terms of service is disclosure to a reader who, by the survey result, is not reading.",
+        "D": "Giving a bot a human name and face actively misleads. Whatever the intent, the effect is to make customers more likely to believe they are talking to a person.",
+        "E": "Disclosure once at launch is real, but it is not what this scenario found failing: people who are deep in a long conversation are not consulting release notes. The control has to be present where the interaction happens."
+      },
+      "difficulty": 1,
+      "visualId": "escalation-hitl",
+      "mindset": "Transparency has two halves: say what this is where it happens, and make consequential decisions contestable.",
+      "tags": [
+        "transparency",
+        "disclosure",
+        "ethics",
+        "consumer-protection"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/legal/aup",
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/mitigate-jailbreaks"
+      ]
+    },
+    {
+      "id": "p-d5-x4-012",
+      "taskStatementId": "5.5",
+      "stem": "A multilingual support assistant serves English, Spanish and Portuguese. Overall satisfaction and resolution rates meet target, but the monthly breakdown shows Spanish speakers receive materially shorter answers and higher escalation rates. The team has two proposals. Which ONE are well founded? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Break evaluation results down by language and build a Spanish test set from real conversations, so the gap is measured with the language's own data rather than inferred from the aggregate."
+        },
+        {
+          "id": "B",
+          "text": "Translate the assistant's English responses into Spanish and Portuguese at the output layer, so the same answer reaches every language."
+        },
+        {
+          "id": "C",
+          "text": "Add a system-prompt instruction that the assistant must give every language equally detailed and specific answers."
+        },
+        {
+          "id": "D",
+          "text": "Enlarge the overall evaluation set with more randomly sampled conversations, so the aggregate estimate tightens and the gap becomes visible in it."
+        },
+        {
+          "id": "E",
+          "text": "Move Spanish and Portuguese traffic to a larger, more capable model, so those languages get stronger reasoning."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The finding that matters is that **the aggregate met target while one language is served badly**. So the first requirement is measurement you cannot currently perform: per-language evaluation with real Spanish conversations. Without it, the team cannot see the gap, cannot tell whether closing it worked, and is relying on a statistic that is definitionally blind to this failure.\n\nThen the diagnosis, which is the part most teams skip. The plausible causes are concrete and checkable: retrieval corpora that are uneven across languages, so Spanish queries genuinely have less material to ground an answer in; or evaluation sets and few-shot examples authored only in English, which shape what 'good' looks like in a way that does not transfer. Those need different fixes - corpus work versus eval work - and the symptom is identical in both cases.\n\nThe rejected options each substitute a surface change for a cause. Uniform presentation is not uniform service; an instruction cannot create documents that do not exist; more random samples sharpen the number you are already misreading; and a bigger model on the smallest-volume language spends most where the problem is not.",
+      "whyWrong": {
+        "B": "This adds a translation failure mode and latency, and it is irrelevant if the underlying retrieval corpus has little Spanish content - there is nothing to translate from. Output-side translation makes symptom presentation uniform, not service quality.",
+        "C": "An instruction cannot create grounding material that does not exist. If Spanish documentation is thin in retrieval, more insistent wording makes confident answers from insufficient sources more likely.",
+        "D": "More random samples make the aggregate estimate more precise. The aggregate is already above target - the problem is that it conceals a subgroup, and precision on the wrong statistic does not surface it.",
+        "E": "A capability upgrade treats a data-coverage problem as a reasoning problem. It also costs the most where the volume is lowest, which is the opposite of targeting the actual cause."
+      },
+      "difficulty": 2,
+      "visualId": "bias-and-fairness",
+      "mindset": "Aggregates hide subgroups - measure per language, then diagnose the cause before treating the symptom.",
+      "tags": [
+        "bias",
+        "fairness",
+        "evaluation",
+        "multilingual"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests",
+        "https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents"
+      ]
+    },
+    {
+      "id": "p-d5-x4-013",
+      "taskStatementId": "5.1",
+      "stem": "A content-moderation pipeline screens user posts before publication. Two designs are under consideration for handling borderline content. Which ONE properties distinguish a sound layered design from a single-screen design? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Independent mechanisms at each stage: a pre-publication screen, a review path with human adjudicators for ambiguous cases, and an audit trail. A single screen is one point of failure for the whole system."
+        },
+        {
+          "id": "B",
+          "text": "A higher confidence threshold on the pre-publication screen, so fewer borderline posts ever reach human reviewers."
+        },
+        {
+          "id": "C",
+          "text": "The strongest available model with the longest possible policy prompt, since moderation quality tracks capability."
+        },
+        {
+          "id": "D",
+          "text": "Two screens using different models, so a bypass of one is unlikely to bypass the other."
+        },
+        {
+          "id": "E",
+          "text": "A published policy page listing the categories, with a takedown form for disputed removals."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "**Independence** is what makes layering worth having, and only one option delivers it. A pre-publication screen catches the clear cases, a human review path handles the genuinely ambiguous ones, and an audit trail makes the whole process inspectable - three different mechanisms, so a failure in one does not take down the others. That is what 'layered' has to mean; a single screen is a single point of failure no matter how good the model is.\n\nThe rejected options each collapse the independence the design depends on. Two models at the same stage see the same content and apply the same policy, so they are fooled by the same constructions. A stronger model is one mechanism. And a stricter threshold does not improve the review layer - it shrinks the queue by routing more decisions away from the humans, which is the opposite of strengthening a human control.\n\nNote that publishing the criteria is worth doing on its own terms. What it is not is a substitute for a decision path: transparency about rules is not the same as contestability of outcomes.",
+      "whyWrong": {
+        "B": "This trades false negatives for false positives, and the extra positives land in the human queue - which is exactly how a review layer becomes a rubber stamp. It also removes the human from the path rather than strengthening it.",
+        "C": "Collapses the design to one mechanism. A stronger model improves the single screen; it creates no independent failure domain and provides no appeal route.",
+        "D": "Different models at the same stage share a failure mode: same content, same policy, same blind spots. Independence requires different mechanisms, not different checkpoints in the same place.",
+        "E": "Publishing the criteria is genuinely good - it makes the policy testable - but on its own it is transparency without a decision path. A takedown form that only removes content, with no route to contest the removal, does not give anyone a way to have the decision reviewed."
+      },
+      "difficulty": 1,
+      "visualId": "security-guardrails",
+      "mindset": "Layering means independent mechanisms; a moderation policy with no appeal route is enforcement without accountability.",
+      "tags": [
+        "guardrails",
+        "content-policy",
+        "human-in-the-loop",
+        "accountability"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/mitigate-jailbreaks",
+        "https://www.anthropic.com/legal/aup"
+      ]
+    },
+    {
+      "id": "p-d5-x4-014",
+      "taskStatementId": "5.2",
+      "stem": "An IT-operations agent can read dashboards, restart services, scale clusters and rotate keys. A post-incident review finds the agent twice attempted a destructive database command, and once nearly rotated a production credential because a log line contained injected instructions. Which TWO risks does this illustrate, and which pairing addresses them? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Prompt injection from untrusted log content, addressed by treating log text as data and never letting it act as an instruction channel - plus scoping the agent so injected text cannot reach a credential it is able to rotate."
+        },
+        {
+          "id": "B",
+          "text": "Excess capability for the task, addressed by removing the destructive and credential operations from the agent entirely and providing them as separate, human-approved runbooks."
+        },
+        {
+          "id": "C",
+          "text": "Both incidents are latency problems, addressed by lowering the effort setting so the agent reasons less before acting."
+        },
+        {
+          "id": "D",
+          "text": "Both incidents stem from insufficient prompt wording, addressed by strengthening the system prompt's prohibitions against destructive and credential operations."
+        },
+        {
+          "id": "E",
+          "text": "Both incidents are inherent to agentic operation, and the only mitigation is to require human approval for every action the agent takes."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Two distinct risks, and naming them separately is what makes the response proportionate.\n\n**A** is indirect prompt injection through log content. Logs are exactly the kind of text an attacker can influence, and the moment they enter the context as something the model might act on, the agent's own tools become the payload. The fix has two parts: keep log text in the data channel, and - more importantly - scope the agent so that even a successful injection cannot reach a credential it is able to rotate. The second part is the one that holds when the first fails.\n\n**B** is excess capability, and it is the deeper issue. The agent does not need to rotate production credentials to read dashboards and scale a cluster. Removing destructive and credential operations entirely - and providing them as separate human-approved runbooks - makes the class of incident impossible rather than merely less likely.\n\nThe rejected options each collapse to a single-cause story. Latency has no bearing on either incident. Prompt wording is the control that failed in the first place. And blanket approval of every action trains approvers to click through, which removes the meaning of approval without removing the risk.",
+      "whyWrong": {
+        "C": "Effort governs how much the model reasons per step. Neither incident was a reasoning-depth problem, and lowering effort would change behaviour without removing either exposure.",
+        "D": "This is the model-as-control pattern applied to an incident that demonstrates the control failing. The prohibitions were presumably already there, and the agent acted on injected text regardless.",
+        "E": "Blanket approval recreates the rubber-stamp failure documented elsewhere in this domain. It also does not address the injection, only the response to it, and it removes the agent's ability to do routine work at all."
+      },
+      "difficulty": 2,
+      "visualId": "security-guardrails",
+      "mindset": "Name the two risks separately: untrusted content reaching a capable agent, and capability the task never needed.",
+      "tags": [
+        "prompt-injection",
+        "least-privilege",
+        "failure-modes",
+        "operations"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/mitigate-jailbreaks",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools"
+      ]
+    },
+    {
+      "id": "p-d5-x4-015",
+      "taskStatementId": "5.3",
+      "stem": "A healthcare provider uses Claude to draft replies to patient portal messages. Regulatory requirement: no reply may reach a patient until a licensed clinician has reviewed it. The team has implemented this by keeping the send capability on the agent but instructing it to draft, save, and wait. What is the assessment?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The control depends on model compliance with an instruction, so it can fail silently - a missed send is a regulatory breach with no error. Remove the send capability from the agent; make drafting and sending separate steps so the approval is structural."
+        },
+        {
+          "id": "B",
+          "text": "The design is appropriate and proportionate. The instruction is unambiguous, it sits in the system prompt where it has maximum weight, and clinicians review every draft before it is sent."
+        },
+        {
+          "id": "C",
+          "text": "Add a second Claude instance that reviews each draft for clinical accuracy and let the agent send only where the reviewer approves."
+        },
+        {
+          "id": "D",
+          "text": "Require the agent to record the approving clinician's name in the message before sending, so the audit trail is complete even if a review is missed."
+        },
+        {
+          "id": "E",
+          "text": "Add a system-prompt instruction that the agent must pause after every draft and state that it is awaiting clinician approval."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "This is the **hard-gate** principle, and the scenario has already established why it matters. A requirement phrased as 'no reply may reach a patient until reviewed' is a control, and a control implemented as an instruction is a **request**. The dangerous property is that failure is silent: an agent that sends anyway produces no error, no alert, and a regulatory breach discovered later.\n\nThe fix is structural - remove the send capability from the agent entirely, so the step that enforces the requirement is the step that does not exist for the model. Drafting and sending become separate, and the approval gate is a property of the workflow rather than of the model's restraint.\n\nThe distinction generalises beyond healthcare, and it is worth holding precisely because it feels severe: for actions that are irreversible, externally visible and regulated, the gate belongs in code or permissions, not in prose. Prose controls are appropriate for behaviour you would describe as 'should not usually' rather than 'must never'.\n\nNote that C is not a fix either - a second model reviewing does not satisfy a requirement written in terms of a licensed clinician.",
+      "whyWrong": {
+        "B": "This is the model-as-control pattern in its most consequential form. It accepts an instruction as a regulatory control, and it fails silently when the instruction is not followed - which is the worst combination for a hard requirement.",
+        "C": "The requirement names a licensed clinician. A second model instance is a useful quality check and it is not that, so the control remains unmet even if the technical pattern of review-then-send is sound.",
+        "D": "An audit field does not prevent the send. It records who should have approved something that went out anyway, which is documentation of a breach rather than a control against one.",
+        "E": "A second instruction expressing the same request adds emphasis, not enforcement. The agent still holds the capability to send without a clinician in the loop."
+      },
+      "difficulty": 2,
+      "visualId": "escalation-hitl",
+      "mindset": "Irreversible, externally visible, regulated actions get a gate in code or permissions - never in prose.",
+      "tags": [
+        "human-in-the-loop",
+        "guardrails",
+        "healthcare",
+        "least-privilege"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools",
+        "https://platform.claude.com/docs/en/manage-claude/api-and-data-retention"
+      ]
+    },
+    {
+      "id": "p-d5-x4-016",
+      "taskStatementId": "5.3",
+      "stem": "A document-extraction pipeline auto-approves high-confidence fields and routes low-confidence fields to human reviewers. Six months after launch, a new supplier form layout appears and accuracy on that form collapses - but overall metrics still look healthy because the form is 4% of volume. What is the strongest diagnosis?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The monitoring is aggregate-only, so a failure concentrated in a small slice is invisible by construction. Break accuracy down by document type and field on a labelled sample, with an alert on any slice below threshold - and re-check confidence calibration per slice, since a layout change can invalidate a threshold calibrated on old layouts."
+        },
+        {
+          "id": "B",
+          "text": "The confidence calibration drifted. Ask the model to rescore its confidence on the last month's auto-approved items for that form and re-send any it now scores low."
+        },
+        {
+          "id": "C",
+          "text": "The supplier changed the form layout, so this is a supplier-side issue rather than a model issue. Ask the supplier to revert to the previous layout."
+        },
+        {
+          "id": "D",
+          "text": "Lower the auto-approval threshold globally so that more fields route to reviewers, which will catch the new form's errors at the cost of more review volume."
+        },
+        {
+          "id": "E",
+          "text": "The 4% volume share is too small to act on. Leave the pipeline unchanged and revisit if the share grows."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The finding that stands out is not the accuracy collapse - it is that **the metrics did not show it**. A 4% slice failing badly is invisible inside an aggregate that is 96% healthy. That is a monitoring design failure, and it will recur for any new document type, language, customer or field the system meets.\n\nSo the primary fix is per-slice measurement: accuracy broken down by document type and by field, computed on a labelled sample, with an alert when any slice crosses its threshold. That converts a silent quality regression into a visible one within a sample cycle rather than a quarter.\n\nThe second half of A is the subtle part and the reason this is hard rather than easy. Confidence is calibrated **per slice**. A threshold tuned on last year's layouts does not transfer to a form whose structure differs - the model may be confidently wrong in exactly the way it was confidently right before. So a layout change requires re-checking calibration on that slice, not just watching the number.\n\nThe rejected options each handle the symptom once. Rescoring with the current model cannot recover what was already auto-approved from a layout it now misreads. Asking a supplier to revert is not a control the firm owns. And a global threshold change trades a 4% problem for a large permanent increase in review volume.",
+      "whyWrong": {
+        "B": "Rescoring is retrospective and unreliable here: the failure mode is confident misreading of a changed layout, which is exactly the case where self-reported confidence carries no signal. It also cannot recover items already auto-approved.",
+        "C": "A supplier changing their own document format is normal, not a supplier problem. The system's obligation is to detect that a format it now meets is handled badly - reverting the format removes the detection need rather than the failure.",
+        "D": "A global threshold reduction routes far more volume to reviewers to catch 4% of items. The cost is permanent and system-wide; the benefit is concentrated. Per-slice thresholds and alerts solve the actual problem.",
+        "E": "Volume share is not a measure of harm. A 4% slice can contain the most consequential records, and 'we will revisit if it grows' means the next format change is also invisible until it is large enough to notice."
+      },
+      "difficulty": 2,
+      "visualId": "escalation-hitl",
+      "mindset": "Aggregate metrics hide small concentrated failures - measure and calibrate per slice.",
+      "tags": [
+        "human-in-the-loop",
+        "calibration",
+        "monitoring",
+        "evaluation"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests",
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/increase-consistency"
+      ]
+    },
+    {
+      "id": "p-d5-x4-017",
+      "taskStatementId": "5.4",
+      "stem": "A health insurer's Claude API organisation has HIPAA readiness enabled under a signed BAA. Its engineers also run Claude Code, using API keys from that same organisation, to debug claims-processing code against real member records. What is the correct guidance?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Decline. Claude Code used with API keys from a commercial organisation is not covered by HIPAA readiness, so reproducing bugs with member PHI in the tool is outside the arrangement. Use synthetic or de-identified records, or debug against the vendor's own test harness."
+        },
+        {
+          "id": "B",
+          "text": "Allow it, since Claude Code with API keys from that organisation sends the same requests the covered production service sends, so the same arrangement applies."
+        },
+        {
+          "id": "C",
+          "text": "Allow it provided developers run Claude Code in plan mode, which restricts the session to read-only exploration and so limits exposure."
+        },
+        {
+          "id": "D",
+          "text": "Allow it after adding a CLAUDE.md rule instructing Claude Code never to print member names, dates of birth or claim identifiers."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Coverage follows the **specific arrangement for the specific product**, not the fact that both send similar requests. HIPAA readiness here is enabled for the organisation's API usage under a signed BAA; Claude Code operating on a developer's laptop with those keys is a different product in a different context, and the docs are explicit that it is not covered.\n\nThat makes the correct answer a decline with a workaround, not a compromise. Reproduce the bug with synthetic or properly de-identified records - which almost always works, because extraction bugs are usually about layout and parsing rather than about specific people - or debug against a test harness. If a specific record genuinely is required, that is a decision for compliance with a documented basis, not a default an engineer takes.\n\nThe rejected options each preserve the wrong part. B assumes identical request shapes imply identical coverage, which is precisely what the arrangement's scope is about. C confuses a permission mode with a data-handling boundary - plan mode changes what the agent may do, not what data may be present. D is a prompt instruction where a contractual boundary is required.",
+      "whyWrong": {
+        "B": "Coverage is defined per product and arrangement, not per request shape. Two tools sending similar requests can sit on completely different sides of a BAA's scope.",
+        "C": "A permission mode governs what the agent may do in the repository. It has no bearing on whether member PHI may be present in the tool at all, which is the question being asked.",
+        "D": "A CLAUDE.md rule is a request, and the exposure here is the presence of PHI in a tool outside the BAA's coverage - not what Claude Code chooses to print."
+      },
+      "difficulty": 3,
+      "visualId": "identity-and-pii",
+      "mindset": "Compliance follows the arrangement's scope per product - identical requests do not imply identical coverage.",
+      "tags": [
+        "hipaa",
+        "compliance",
+        "pii",
+        "scope-of-arrangement"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/manage-claude/api-and-data-retention",
+        "https://code.claude.com/docs/en/overview"
+      ]
+    },
+    {
+      "id": "p-d5-x4-018",
+      "taskStatementId": "5.4",
+      "stem": "A US state agency requires that inference for its citizen-services assistant run only on US infrastructure and that stored data remain in the US. Dozens of developers across several teams send requests through a shared client wrapper, and individual requests do not consistently specify a data-residency parameter. What is the correct architecture?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Set the workspace's allowed inference geos to US only with a US default, so an omitted or forgotten parameter cannot resolve outside the requirement. Then enforce it in the shared wrapper, and verify in CI that no request path bypasses the wrapper. Data at rest is governed separately by the workspace's own geo."
+        },
+        {
+          "id": "B",
+          "text": "Require every team to pass the residency parameter explicitly on each request through the shared wrapper, and rely on code review to catch the calls that omit it."
+        },
+        {
+          "id": "C",
+          "text": "Add an instruction to every system prompt stating that the assistant must only process requests on US infrastructure."
+        },
+        {
+          "id": "D",
+          "text": "Create the workspace with a US geo, on the understanding that the workspace geo covers both inference location and data residency, so no request-level configuration is needed."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The failure mode here is **the forgotten parameter**, and the architecture should make forgetting harmless. Setting the workspace's allowed inference geos to US only with a US default is the control that does that: a request that omits the parameter resolves to the allowed default rather than to whatever the platform would otherwise choose. Compliance requirements enforced only by every call site being correct are one refactor away from being violated.\n\nThen two supporting layers. The shared wrapper is the right enforcement point - one place to validate, rather than a rule every team remembers. And the CI check matters because a wrapper is only a control if nothing bypasses it; direct SDK usage from one service is exactly how the requirement would quietly lapse.\n\nThe last clause in A is worth keeping straight: storage at rest is governed by the workspace's geo setting, while inference location is governed by the allowed-inference-geo configuration. They are separate controls and both have to be right.\n\nThe rejected options each leave a gap that something can slip through - a reviewer, a developer, or a model.",
+      "whyWrong": {
+        "B": "This makes compliance depend on every call site being correct, forever. One forgotten parameter in one service is a compliance incident, and code review does not scale to dozens of teams.",
+        "C": "A prompt instruction is a request to a model about where computation happens. It is not a control on infrastructure, and no instruction survives as a compliance evidence artefact.",
+        "D": "The workspace geo governs storage at rest. Inference location is governed separately by allowed inference geos, so workspace configuration alone does not satisfy the inference requirement."
+      },
+      "difficulty": 2,
+      "visualId": "security-guardrails",
+      "mindset": "Enforce compliance where omission cannot cause harm - workspace defaults, not per-call discipline.",
+      "tags": [
+        "data-residency",
+        "compliance",
+        "configuration",
+        "governance"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/manage-claude/data-residency",
+        "https://platform.claude.com/docs/en/manage-claude/api-and-data-retention"
+      ]
+    },
+    {
+      "id": "p-d5-x4-019",
+      "taskStatementId": "5.5",
+      "stem": "An HR team uses Claude to pre-screen job applications against a role's requirements and produce a shortlist. Rejected candidates ask why they were not advanced, and the team cannot explain - the prompt returns a single overall fit score from 0 to 100 with no breakdown. Which ONE changes improve fairness and explainability together? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Score each candidate per published criterion, quoting the evidence from the application for each score, so the decision is inspectable criterion by criterion rather than one opaque number."
+        },
+        {
+          "id": "B",
+          "text": "Provide the recruiter with the single fit score plus a one-sentence justification, so the recruiter has something to read to a rejected candidate."
+        },
+        {
+          "id": "C",
+          "text": "Switch to a larger model, since more accurate ranking will produce fewer disputes and reduce the number of questions asked."
+        },
+        {
+          "id": "D",
+          "text": "Ask recruiters to accept the model's ranking as final and send rejected candidates a generic rejection message."
+        },
+        {
+          "id": "E",
+          "text": "Keep the overall fit score but require the model to cite the single most important requirement for each candidate."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The complaint is that nobody can explain a decision, and that is a **structural** problem with the output. A single 0-100 fit score collapses every criterion into one number, so nothing can be inspected, challenged, or checked for disparate impact - and a rejected candidate asking 'why' gets a number, which is not an answer.\n\nScoring per published criterion, each tied to quoted evidence, produces three things at once: an explanation a recruiter can give, a surface on which a disparity between candidate groups becomes visible, and a record that survives a challenge months later. That last property is what makes it a governance artefact rather than a courtesy.\n\nThe rejected options each leave the opacity in place while changing something else about it - adding a sentence, citing one requirement, or improving the ranking. None of them makes the criteria inspectable, which is the actual gap.\n\nWorth noting separately: a route for a rejected candidate to request human review of an employment decision is a real requirement, not a courtesy. But it is a control that works *on* explainable decisions - there is nothing to review if the system cannot say what it weighed.",
+      "whyWrong": {
+        "B": "This adds a sentence to an opaque number without making the number inspectable. The reviewer still cannot check the reasoning, and a per-group disparity is still invisible.",
+        "C": "Capability improves ranking accuracy, which is not the question. The gap is explainability, and a better model leaves the single opaque score exactly as opaque.",
+        "D": "This forecloses the appeals that would reveal where the criteria are misapplied, and leaves nobody able to say whether the ranking reflects the published requirements.",
+        "E": "Citing one requirement per candidate is still a single justification, and picking the most important requirement is a judgement about which requirement matters - made by the model, unrecorded, and invisible for review."
+      },
+      "difficulty": 1,
+      "visualId": "bias-and-fairness",
+      "mindset": "One opaque score cannot be explained or challenged - score per criterion with evidence, and give people a route to contest.",
+      "tags": [
+        "fairness",
+        "transparency",
+        "explainability",
+        "human-in-the-loop"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-hallucinations",
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests"
+      ]
+    },
+    {
+      "id": "p-d5-x4-020",
+      "taskStatementId": "5.2",
+      "stem": "A claims agent runs on a current model with adaptive thinking, at high effort. For 90% of tickets the work is simple lookups, yet reasoning depth and cost are driven almost entirely by the hardest 10%. A reviewer asks which lever addresses this. Which ONE statements are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Lower the effort setting for the simple-request class so adaptive thinking reasons less on work that does not need it, holding the model constant so the eval comparison stays clean. Effort applies to every output token, including thinking."
+        },
+        {
+          "id": "B",
+          "text": "Raise max_tokens so the model has room to finish reasoning about the hard tickets without truncating mid-thought."
+        },
+        {
+          "id": "C",
+          "text": "Add a system-prompt instruction telling the agent to skip reasoning for simple tickets, which achieves the same result without changing request configuration."
+        },
+        {
+          "id": "D",
+          "text": "Move every ticket to the smallest available tier, since reasoning depth cannot be adjusted on the current models."
+        },
+        {
+          "id": "E",
+          "text": "Cache the static system prompt and tool definitions so reasoning begins sooner on every request."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The lever is **effort**, applied where it belongs. Effort applies to every output token - text, tool calls, and thinking when active - and most current models default to `high`, so a workload that is 90% simple lookups is paying for reasoning it does not use. Lowering effort for the simple class, while holding the model constant, keeps the eval comparison interpretable and is the smallest change that attacks the identified cause.\n\nTwo honest caveats to hold with it. Effort is a behavioural signal rather than a strict budget - at a lower level Claude still thinks on genuinely hard problems, just less - so verify the effect on evals rather than assuming. And because the effort value is rendered into the prompt, changing top-level effort invalidates message-level cache blocks, which makes it a measured release rather than a live dial.\n\nThe structural alternative, if effort alone does not close the gap, is a cheap first pass handling the routine majority with only ambiguous work escalating to the higher-effort configuration. But it is a second step: effort is the lever that requires no new component.\n\nThe rejected options each fail on mechanism. A token ceiling truncates rather than shortens. An instruction leaves the cost-driving configuration untouched. A blanket tier change discards capability the hard cases need. And caching, while genuinely valuable, changes the price of a prefix - not reasoning depth.",
+      "whyWrong": {
+        "B": "A token ceiling is a safety net, not a cost control. Raising it gives hard tickets room to finish while adding no constraint on the 90% - and truncation is exactly the failure mode to avoid.",
+        "C": "An instruction asks the model to behave differently while leaving the configuration that actually sets the cost. It is also the least testable version: you cannot configure it, alert on it, or roll it back.",
+        "D": "Sweeping every ticket to the smallest tier discards the capability the hard 10% needs, and it answers a question that was not asked - effort *is* adjustable, which is why option A exists.",
+        "E": "Caching lowers the price of a stable prefix and processing time. It does nothing to reasoning depth, so it cannot reduce the cost driver identified in the scenario."
+      },
+      "difficulty": 3,
+      "visualId": "cost-model",
+      "mindset": "When cost is driven by the hard tail, lower effort on the bulk and escalate the rest - do not cap tokens or prompt for brevity.",
+      "tags": [
+        "failure-modes",
+        "effort",
+        "cost-performance",
+        "routing"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/effort",
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests"
+      ]
+    }
+  ]
+}

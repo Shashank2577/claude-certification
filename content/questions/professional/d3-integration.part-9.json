@@ -1,0 +1,1243 @@
+{
+  "certId": "professional",
+  "domainId": "d3-integration",
+  "questions": [
+    {
+      "id": "p-d3-w9-001",
+      "taskStatementId": "3.1",
+      "stem": "A hospital's bed-management agent has grown to 34 tools: three clinical lookups, eleven scheduling operations, eight billing tools, four transport tools, and eight general-purpose utilities (fetch URL, run SQL, read file, send email). A recent eval shows the agent calls a billing tool on about 1 in 12 bed requests, and each such call opens a manual investigation because the bed coordinator does not know why finance data was touched. What is the BEST response?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Give the agent only the tools its task requires in that context — bed search and scheduling for the coordinator role — and move the billing and transport tools behind separate, role-scoped agents or explicit user confirmation, so clinical scheduling runs with a small, unambiguous toolset."
+        },
+        {
+          "id": "B",
+          "text": "Rewrite all 34 tool descriptions to be more precise and non-overlapping, since imprecise descriptions are the documented cause of incorrect tool selection and the fix is in the descriptions rather than in the tool count."
+        },
+        {
+          "id": "C",
+          "text": "Add a short instruction to the system prompt saying that billing tools must not be called during bed requests, and monitor for violations, since prompt-level rules are cheaper than changing the tool configuration."
+        },
+        {
+          "id": "D",
+          "text": "Keep all 34 tools but enable the tool search tool so that most tool definitions are deferred and only discovered on demand, which reduces context without changing what the agent is permitted to do."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "This is capability bloat with a **blast-radius** problem, and the symptom makes it clear: the agent is reaching across a role boundary into finance data, and each reach costs a human investigation. The correct response is to shrink the permissioned surface — least privilege by role — not to make the existing surface more navigable. Note the tempting distinction: (B), (C) and (D) all make the wrong tool *less likely to be chosen*, while leaving the agent *permitted* to choose it. For a case where the wrong choice creates a compliance investigation, the control has to be authorisation, not preference. (D) is worth doing separately as a context optimisation, but it is explicitly the wrong answer to this question because it changes nothing about what the agent may do.",
+      "whyWrong": {
+        "B": "Better descriptions genuinely improve tool selection accuracy, and this is the right first move when the problem is that similar tools are confused. It does not address the finding here: a bed-management agent has no legitimate need for billing or transport tools, so this is an authorisation-scope problem wearing a selection-accuracy costume.",
+        "C": "A prompt-level prohibition is a soft control on a system that has the capability to do real financial harm. It will reduce frequency and it will not eliminate it, and it gives the coordinator no way to know in advance which calls will be attempted. For a control that must hold under adversarial or unusual input, capability boundaries are the mechanism.",
+        "D": "Tool search and deferred tool definitions are a real and valuable context-management technique, and they are the right answer to a different question about context size. Here they are the wrong answer precisely because they preserve the over-broad permission set — the agent can still reach billing, it just has to work slightly harder to find the tool."
+      },
+      "difficulty": 2,
+      "visualId": "capability-ladder",
+      "mindset": "When an agent reaches into capabilities its role does not need, remove the capability — better descriptions and prompt rules only change preference, not permission.",
+      "tags": [
+        "capability-bloat",
+        "least-privilege",
+        "tool-design",
+        "role-scoping"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools",
+        "https://www.anthropic.com/engineering/writing-tools-for-agents"
+      ]
+    },
+    {
+      "id": "p-d3-w9-002",
+      "taskStatementId": "3.1",
+      "stem": "An insurer's claims agent is built on the Agent SDK. It reads claim documents, queries a coverage database, computes a reserve recommendation, and can write the recommendation to the claims system. It also has Bash, Read, Write and a general web-fetch tool, because the first version needed them for a document-conversion script. An engineer argues they should stay so the agent can handle unexpected file formats without a code change. What does the architect recommend?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Remove Bash, Write and general web fetch from the production agent, and handle unexpected formats in a narrow, purpose-built converter that runs outside the agent — so the agent's capabilities match the documented task and the reasoning for each write is attributable."
+        },
+        {
+          "id": "B",
+          "text": "Keep the tools but restrict them to a `allowedTools` list that includes Read and the coverage query, and rely on the permission system to prompt a human when the agent reaches for anything outside the list."
+        },
+        {
+          "id": "C",
+          "text": "Keep the tools but move them behind a PreToolUse hook that logs every invocation and blocks any Bash command containing 'curl' or 'wget', which covers the realistic exfiltration path."
+        },
+        {
+          "id": "D",
+          "text": "Keep the tools but move the whole agent into a sandbox with no network access, so that even a misused tool cannot reach anything outside the claims environment."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The engineer is describing a real problem (unexpected input formats) with a solution that gives the agent an unbounded shell. The architect's job is to separate them: format handling is an **input-pipeline** concern and belongs in code you can test, review and constrain, while the agent's job is reading documents and reasoning about coverage. Removing the general-purpose tools also restores something the team has lost — the ability to state, in a risk assessment, exactly what this agent can do. All three distractors are genuinely reasonable controls and a thoughtful architect should respect them, but each leaves the capability present and moves the burden onto detection: a deny-list on Bash misses every exfiltration path that is not curl or wget, a permission prompt on a path that fires often trains people to click through, and a sandbox with no network does nothing about a wrong write to the claims system.",
+      "whyWrong": {
+        "B": "Permission prompting is a real control and it is the standard Claude Code and Agent SDK mechanism. The problem is placement: prompt-permission works for an interactive developer session, not for an unattended claims agent that runs thousands of times. If the agent needs Bash often enough to matter, humans will approve it reflexively, and the review trail then documents a rubber stamp rather than a decision.",
+        "C": "A deny-list over shell commands is the classic blocklist mistake — it enumerates the paths you thought of. A shell can read and exfiltrate through python, curl with a different flag, nc, base64, or any binary on the box, and none of those match. Hooks are the right lifecycle mechanism; a substring allow/deny list is the wrong policy inside it.",
+        "D": "Sandboxing is one of the strongest controls available and it belongs in the design — but it answers a different question. The agent's risk here is not primarily network egress; it is writing a wrong reserve recommendation into the claims system, which a sandbox with no network does not prevent at all. Sandboxing reduces blast radius; it does not reduce the toolset."
+      },
+      "difficulty": 3,
+      "visualId": "capability-ladder",
+      "mindset": "Least privilege is about removing capabilities, not about wrapping the same capabilities in more detection layers.",
+      "tags": [
+        "capability-bloat",
+        "agent-sdk",
+        "hooks",
+        "sandboxing"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/permissions",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools"
+      ]
+    },
+    {
+      "id": "p-d3-w9-003",
+      "taskStatementId": "3.1",
+      "stem": "A marketing team wants a Claude agent that can do three things: read a campaign brief from a shared drive, rewrite three ad variants, and save them back to the drive. It needs no shell, no database, no web access and no ability to read other files in the drive. Which configuration is the tightest fit?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Three narrow tools — read a file by id, write a file by id, and list files in one campaign folder — with no shell, network or database tool at all, and a toolset scoped to that folder."
+        },
+        {
+          "id": "B",
+          "text": "Read, Write and Glob built-in tools, which are already available and cover exactly these needs without any custom code."
+        },
+        {
+          "id": "C",
+          "text": "A single general-purpose `execute` tool that accepts a short script, so the team writes one tool instead of three and adds capabilities later without changing the schema."
+        },
+        {
+          "id": "D",
+          "text": "An MCP server exposing the drive's full API surface, so the agent can use whatever it needs and the server evolves independently of the agent."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Three named, purpose-built tools scoped to one folder give the agent exactly the three capabilities the task needs and nothing else. Each description is unambiguous, each argument is a known shape (an id, not a path expression), and the folder scope means a mistake cannot reach another campaign's assets. This is the capability ladder in its lowest-rung form for a well-defined task: custom tools rather than a shell, rather than a general script runner, and rather than a whole API surface. The key property is that the toolset can be *read* and shown to a reviewer: three verbs, three arguments, one folder.",
+      "whyWrong": {
+        "B": "Read, Write and Glob are powerful general-purpose tools: Read accepts any path, Write can create or overwrite anywhere the process has permission, and Glob can enumerate the entire drive. That is a much larger capability surface than three folder-scoped tools, and the toolset alone no longer explains what the agent may touch.",
+        "C": "A general script-execution tool is the maximal-blast-radius option dressed as a simplification — one tool, unlimited capability. It also destroys tool-selection quality: the model must write correct code in the same turn it is deciding what to do, and the descriptions of what the script may do become the entire interface contract.",
+        "D": "An MCP server over the full drive API is the integration answer when several clients need the same capability, and it is a reasonable architecture. Here it grants far more than the task requires, and it makes the agent's reach dependent on a server's surface that changes independently of the agent's review."
+      },
+      "difficulty": 1,
+      "mindset": "Build the narrowest custom toolset that matches the documented task — three named verbs on one folder beat Read/Write/Glob, a script runner or a full API surface.",
+      "tags": [
+        "tool-design",
+        "least-privilege",
+        "custom-tools",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools",
+        "https://www.anthropic.com/engineering/writing-tools-for-agents"
+      ]
+    },
+    {
+      "id": "p-d3-w9-005",
+      "taskStatementId": "3.2",
+      "stem": "A SaaS company's support assistant connects to customers' ticketing systems through remote MCP servers. Each customer completes an OAuth flow, and the platform stores the resulting tokens. A security review identifies four findings. Which TWO are genuine authentication or authorisation gaps that must be fixed before launch? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Access tokens are stored encrypted but there is no refresh path, so when a token expires the assistant fails mid-conversation and the user must reauthorise from scratch."
+        },
+        {
+          "id": "B",
+          "text": "The OAuth redirect URI registered with each vendor is a single shared platform callback, and the platform does not bind the authorisation request to the specific user and tenant that initiated it."
+        },
+        {
+          "id": "C",
+          "text": "Token scopes are requested at the maximum the vendor supports rather than the minimum each integration needs, so a compromise of the ticketing integration grants more access than required."
+        },
+        {
+          "id": "D",
+          "text": "Tokens are never logged, which makes it impossible to audit which integration last accessed a customer's data and therefore weakens the audit trail."
+        },
+        {
+          "id": "E",
+          "text": "The assistant retrieves the full body of every ticket in a customer's history rather than only the fields the assistant needs, so more customer data is exposed to the model than the task requires."
+        }
+      ],
+      "correct": [
+        "B",
+        "C"
+      ],
+      "explanation": "The two real gaps are both about **binding and minimising authority**. (B) is a serious authorisation defect: without binding the authorisation request to the initiating user and tenant, the platform cannot prove that the code it receives belongs to the flow it started — that is the structural precondition for cross-tenant token confusion. MCP's security guidance is explicit that authorization servers must validate these relationships and that clients must not accept tokens for a different request. (C) is least privilege at the OAuth layer. Requesting maximum scopes is the default that most teams never revisit, and it means a single integration compromise is a single-tenant-wide compromise. The other findings are real problems but they are not authentication or authorisation gaps: (A) is a reliability and UX defect, (D) and (E) are data-minimisation and auditability issues that belong to a privacy and logging review.",
+      "whyWrong": {
+        "A": "No refresh path is an availability and user-experience problem. Tokens expiring mid-conversation is bad, but it fails closed — the request is refused rather than performed with the wrong authority — so it is not a security gap in the authentication sense.",
+        "D": "Not logging tokens is the correct security posture; the reviewer's complaint is about auditability, and the answer is to log token *identity and use* (which integration, which tenant, when) without logging the secret. This is a logging-design question, not an authentication gap.",
+        "E": "Retrieving whole ticket bodies rather than needed fields is genuine over-collection and belongs in a data-minimisation review, and it does increase exposure. It is a least-data problem, not an authentication or authorisation gap — no unauthorised principal gained access."
+      },
+      "difficulty": 3,
+      "visualId": "identity-and-pii",
+      "mindset": "Authentication and authorisation questions are about who is calling, for which tenant, with which scopes — bind the request and minimise the grant before worrying about logging and field selection.",
+      "tags": [
+        "oauth",
+        "authorization",
+        "least-privilege",
+        "mcp-security"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization",
+        "https://modelcontextprotocol.io/specification/2025-11-25/basic/security_best_practices"
+      ]
+    },
+    {
+      "id": "p-d3-w9-008",
+      "taskStatementId": "3.2",
+      "stem": "A company's assistant needs to read a user's calendar and send email on that user's behalf. The architect is choosing how to hold the credentials. Which approach follows documented practice?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Run a delegated OAuth flow so the user grants scoped access, store the resulting token in the application's credential store rather than in the prompt or the repository, and never place the token in a system prompt or a committed settings file."
+        },
+        {
+          "id": "B",
+          "text": "Store the user's access token in the system prompt at the start of each session, so the assistant always knows which identity it is acting as."
+        },
+        {
+          "id": "C",
+          "text": "Use one service account owned by the platform, and pass the acting user's identity as a field in the tool arguments, so tools can attribute the action themselves."
+        },
+        {
+          "id": "D",
+          "text": "Store the token in a `.env` file at the repository root and add it to `.gitignore`, which keeps it out of version control while remaining convenient."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Delegated OAuth with a per-user grant, scoped to what the task needs, and a token held in a credential store rather than in model-visible text is the documented pattern. The reason is straightforward and architectural: **anything in the prompt is in the context window**, which means the token is in the model's reach, in every log that captures the request, and in any transcript a developer shares to debug a problem. Credential material does not belong in the inference path. (C) is the tempting engineering shortcut and it is a real anti-pattern: a shared service account with user identity passed as an argument means the *model* asserts who the user is, and the tool has no independent way to check it.",
+      "whyWrong": {
+        "B": "Putting a bearer token in the system prompt exposes it to the model, to every request log, and to any debugging transcript — and a token that leaks from context is a token that has to be rotated. It also makes the token visible in tooling that displays the request, which is exactly what a developer does when debugging.",
+        "C": "A shared service account converts the user into a model-supplied string. The tools then have no authoritative source for identity, which removes per-user authorisation entirely and concentrates all access in one credential — the opposite of least privilege. It is sometimes unavoidable for service-to-service work, but it must then be paired with a server-side authorisation decision the model cannot influence.",
+        "D": "A gitignored `.env` file is ordinary application practice, but it puts a live credential on disk in the working tree where it can be read by any tool the agent has, printed in a debug session, or copied into a container image. Claude Code's guidance is to keep sensitive settings out of the repository entirely and to use the environment only for the API key, not for third-party user tokens."
+      },
+      "difficulty": 1,
+      "mindset": "Never put a bearer token in the prompt: delegated OAuth into a credential store, because anything in the context window is in the model's reach and in every log.",
+      "tags": [
+        "oauth",
+        "credential-handling",
+        "least-privilege",
+        "pii"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/manage-claude/workspaces",
+        "https://code.claude.com/docs/en/authentication"
+      ]
+    },
+    {
+      "id": "p-d3-w9-009",
+      "taskStatementId": "3.2",
+      "stem": "A multi-tenant document platform adds an assistant. Users ask questions about their own documents. The retrieval index holds all tenants' documents, and the assistant's prompt includes a `tenant_id` that the model is expected to fill from the conversation. Testing shows correct answers for a tenant's own documents and confident, plausible answers containing another tenant's content about 4% of the time. What is the MOST robust fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Apply the tenant filter in the retrieval layer as a mandatory, server-side predicate derived from the authenticated session rather than from the conversation, so cross-tenant content can never be a candidate for the prompt — and add a cross-tenant canary test to the eval suite."
+        },
+        {
+          "id": "B",
+          "text": "Instruct the model in the system prompt that it must only ever answer from documents belonging to the tenant named in the conversation, and add an explicit instruction to refuse if the retrieved documents belong to anyone else."
+        },
+        {
+          "id": "C",
+          "text": "Give each tenant its own separate index and its own retrieval tool, so that the tenant boundary is expressed in the tool's configuration rather than in any argument."
+        },
+        {
+          "id": "D",
+          "text": "Add a post-generation filter that scans the answer for document titles belonging to other tenants and blocks the response when a match is found."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The root cause is that the tenant boundary is expressed as **model-supplied data**. The model fills `tenant_id` from conversation content, so a user can simply say ‘also include tenant 42’, or a document in context can mislead it, and then the retrieval layer does exactly what it was told. (A) removes the model from the decision: the filter is derived from the authenticated session, enforced server-side, and applied before anything reaches the prompt. That is the same principle as server-side authorisation in question 6 — **a control the model can influence is not a control**. Adding a cross-tenant canary to the eval suite matters as much as the fix, because a cross-tenant leak is a silent, high-severity failure that aggregate quality metrics will never surface. (C) is a stronger variant of the same idea and would also work; it costs more to operate.",
+      "whyWrong": {
+        "B": "This is the answer the exam is built to catch. It asks the model to enforce a security boundary on data it is being asked to reason about, using an instruction that arrives through the same untrusted channel as the content trying to escape it. It reduces the rate and provides zero guarantee — and the failure mode when it fails is a data breach.",
+        "C": "A separate index and tool per tenant genuinely removes the argument from the model's hands and is a legitimate strong design — especially at low tenant counts or where isolation is a contractual requirement. It is more operationally expensive (thousands of indexes, per-tenant embedding and rebuild pipelines), and as written it lacks the server-side predicate that (A) has, so the boundary depends on the tool the model chooses. It is a strong answer, but (A) is the more robust framing because it names the control and the test.",
+        "D": "A post-generation filter is a detective control running after the disclosure, and it can only match text it recognises — paraphrases, summaries and partial titles all pass it. It also means the cross-tenant content was already in the prompt and already in the model's output path, which for many regimes is itself the breach."
+      },
+      "difficulty": 2,
+      "visualId": "identity-and-pii",
+      "mindset": "A tenant or permission boundary must be derived from the authenticated session and enforced below the model, never from an argument the model fills in.",
+      "tags": [
+        "multi-tenant",
+        "authorization",
+        "retrieval",
+        "data-isolation"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/define-success",
+        "https://modelcontextprotocol.io/specification/2025-11-25/basic/security_best_practices"
+      ]
+    },
+    {
+      "id": "p-d3-w9-010",
+      "taskStatementId": "3.3",
+      "stem": "A freight forwarder's document-classification service assigns one of 60 document types. Today a single mid-tier model call returns the label in about 700 ms at p95, with 96.2% accuracy. A new customer handles French and German documents, and accuracy on those falls to about 88%. The product owner wants accuracy above 96% in all three languages before the customer goes live. What is the architect's BEST recommendation?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Keep the fast single-call design for the languages that already meet the bar, and route the languages that do not to a stronger model with a per-language eval set — so effort is spent where the gap is, and the routing decision is measured rather than assumed."
+        },
+        {
+          "id": "B",
+          "text": "Move every classification to the strongest available model and accept a p95 around 2.4 seconds, because one configuration that meets the bar everywhere is simpler to reason about than two."
+        },
+        {
+          "id": "C",
+          "text": "Add translated few-shot examples of each document type to the existing prompt, since the gap is caused by insufficient multilingual exemplars rather than by model capability."
+        },
+        {
+          "id": "D",
+          "text": "Split classification into two parallel calls — one on the original document and one on a machine translation of it — and reconcile the two labels, which uses redundancy to raise accuracy without changing the model."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The measured facts point at a **targeted** fix: three languages, one of which pair comfortably meet the bar, and a documented gap on the others. (A) spends the additional capability only where the gap exists and — the part an architect should insist on — it makes the routing measurable with a per-language eval set, so you learn whether the stronger model actually closes the French and German gap before committing to it. This is the standard shape for an accuracy-latency trade-off: keep the cheap, fast path for what is already solved, spend the budget on the residual. Latency is not a casualty here, because the slow path is a minority of traffic and the customer-facing requirement is a threshold, not a uniform distribution.",
+      "whyWrong": {
+        "B": "Uniformity is a real virtue — one configuration is easier to run, monitor and reason about — and this is the answer an architect gives when the languages are a small share of total volume and latency is not binding. But here latency is explicitly measured at p95 and the majority of traffic is already meeting the bar, so degrading 60%+ of traffic by 3.4x to improve two languages is a poor trade unless the customer's latency requirement forces it — which the stem does not say. The honest response is to say that explicitly rather than default to the expensive uniform option.",
+        "C": "Adding translated exemplars is the cheapest experiment available and it should be tried first, precisely because it might close most of the gap at zero latency cost. It is not the *best recommendation* as stated because nothing in the stem says exemplars are absent, and the failure rate — 12 points, not 2 — suggests something beyond example count: terminology the taxonomy itself assumes, or document layouts that differ by region. The right move is to run that experiment on a per-language eval set, and route if it does not close the gap.",
+        "D": "Two calls on the original and a translation of the same document are highly correlated — they are the same content through a similar lens — so this adds cost and latency without adding independent information. It also introduces a new failure mode: reconciling two disagreeing labels needs a rule, and there is no principled one here."
+      },
+      "difficulty": 2,
+      "mindset": "Spend stronger capability on the segment that fails, and make the routing measurable — not a blanket upgrade of everything.",
+      "tags": [
+        "accuracy-latency",
+        "model-selection",
+        "routing",
+        "multilingual"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/about-claude/models/optimizing-for-cost-and-intelligence",
+        "https://platform.claude.com/docs/en/build-with-claude/multilingual-support"
+      ]
+    },
+    {
+      "id": "p-d3-w9-011",
+      "taskStatementId": "3.3",
+      "stem": "A coding assistant's streaming output to a developer is 95% accurate on first attempt on a small, well-specified change, and about 71% on a large multi-file refactor. The team has set a goal of 95% on all task sizes. Latency is not user-visible (the developer is reading a diff), and cost per task is already 6x the target. Which two changes would the architect make?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add a test-run step in the agent loop so the model verifies its own edit against the repository's existing tests before declaring the task done, and treat a failing test run as a signal to keep working rather than to report success."
+        },
+        {
+          "id": "B",
+          "text": "Escalate large multi-file refactors to a stronger model with a verification loop, while keeping the fast path for small well-specified changes, so the extra capability and extra cost are spent only where accuracy is lost."
+        },
+        {
+          "id": "C",
+          "text": "Set the agent's thinking effort to its maximum setting for every task, since deeper reasoning is the general remedy for the accuracy gap on complex changes."
+        },
+        {
+          "id": "D",
+          "text": "Move the planning, retrieval and synthesis stages into three parallel branches that are joined before the answer is returned, so total latency becomes the slowest branch rather than the sum of the three."
+        },
+        {
+          "id": "E",
+          "text": "Have the model self-review its diff before returning it, asking whether the change is correct and complete, and regenerate the patch when it is not."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Two independent facts in the stem do the work: cost is already 6x over target, and the accuracy gap is **specific to large tasks**. That combination rules out blanket fixes and points at two changes. (A) is the verification step: a repository with tests has an **external, executable ground truth**, so the agent can check itself for free, deterministically, and the check is not another opinion about the same text. Anthropic's guidance on giving agents a way to verify their work is exactly this. (B) is the routing answer: escalation scoped to the segment where accuracy is lost is how you hit a uniform 95% without paying for stronger reasoning on the 95% of work that already passes — and it is the only one of these options that addresses the cost problem rather than adding to it.",
+      "whyWrong": {
+        "C": "Maximum effort on every task is the blanket fix that the cost figure rules out: it multiplies reasoning cost across all traffic to address a gap that exists only in one segment. It is also not guaranteed to close the gap — more reasoning helps on problems that are under-thought, not on problems where the model lacks an executable check that its edit was correct.",
+        "E": "Self-review is the most attractive distractor in this question because it is the only option that mentions verification. But asking the model to assess its own diff gives a second opinion from the same system on the same reasoning, with no new information — the failure mode where the model believes a refactor is complete and is wrong is precisely the failure mode a self-review will share. Verification has to come from outside the model: tests, a type checker, a build, a linter. Anthropic's own guidance pairs self-correction with a runnable signal rather than leaving it to judgement.",
+        "D": "This is the most common latency mistake in agent design: the three stages are sequentially dependent — the retrieval stage consumes the plan's output and the synthesis stage consumes the retrieved passages — so running them concurrently cannot shorten the chain. It also guesses at inputs rather than waiting for the ones it needs, so it would return a different answer rather than a faster one."
+      },
+      "difficulty": 3,
+      "visualId": "eval-loop",
+      "mindset": "Verify an agent's work with an external executable signal, and spend stronger reasoning only on the segment where accuracy actually fails.",
+      "tags": [
+        "accuracy-latency",
+        "verification",
+        "cost",
+        "model-routing"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/best-practices",
+        "https://platform.claude.com/docs/en/about-claude/models/optimizing-for-cost-and-intelligence"
+      ]
+    },
+    {
+      "id": "p-d3-w9-013",
+      "taskStatementId": "3.3",
+      "stem": "An architecture review is arguing about which of two extraction configurations to use for a mortgage pipeline. Config A: a single mid-tier call with the full 12-page document in context, $0.09 and 3.1 seconds. Config B: the same model with the document split into four overlapping segments processed in parallel and merged by a fifth call, $0.21 and 4.6 seconds. Config B's field-level accuracy is 96.1% against Config A's 92.8% on the same 800-document eval set, concentrated in fields that span a page break. What is the BEST decision?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Adopt Config B for the fields that demonstrably cross page boundaries and keep Config A for the rest, since the accuracy gain is localised and measurable; and confirm the win with a per-field eval set before the split applies to all fields."
+        },
+        {
+          "id": "B",
+          "text": "Adopt Config B everywhere, because 3.3 points of field-level accuracy on a mortgage pipeline is worth any cost, and a single configuration is simpler to operate."
+        },
+        {
+          "id": "C",
+          "text": "Keep Config A and add a prompt instruction telling the model to read across page boundaries, since the model already sees the whole document and only needs to be told to attend to the seams."
+        },
+        {
+          "id": "D",
+          "text": "Adopt Config B but remove the merge step and take the modal answer across the four segments, which keeps the accuracy gain at a third of the cost."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The stem gives the architect exactly what a good decision needs: an eval set, a quantified gap, and a **diagnosis of where the gap lives** — fields spanning page boundaries. (A) follows from that diagnosis. The failure mode is structural (relevant context is split across positions in the prompt), not a matter of the model failing to attend, so the targeted fix is to give the boundary-crossing fields segments that overlap — or simply to keep those fields in a single call — while not paying for segmentation on every field. Asking for a per-field eval set before extending the split is the discipline that keeps this from becoming ‘we segmented everything last year and never re-measured’. This is the standard shape of an accuracy-latency-cost decision: locate the failure, spend where it is.",
+      "whyWrong": {
+        "B": "3.3 points of accuracy on a mortgage pipeline is a large number and the uniform choice is easier to operate — this is a defensible position for a team that values simplicity over $0.12 a document. It is not the BEST decision because the accuracy gain is localised and documented as such: paying 2.3x cost and 1.5x latency on every document to fix a handful of fields is a poor trade, and it will be revisited as volume grows.",
+        "C": "This is the attractive low-effort fix and it is treating a structural problem as an instruction problem. The model is not failing to attend across the seam — it is a matter of where the information sits relative to the extraction instruction and how attention degrades across a long document. Instructions can help marginally; they cannot restore information the prompt has organised badly.",
+        "D": "Taking the modal answer across overlapping segments is unsafe in the presence of the very errors at issue. When a field straddles a boundary, the segment that does not contain the full field will confidently return a wrong or partial value, and four votes can produce a confident wrong modal answer. It is cheaper precisely because it discards the merge step that resolves conflicts using the overlapping context."
+      },
+      "difficulty": 2,
+      "visualId": "cost-model",
+      "mindset": "When accuracy, latency and cost conflict, locate the failure first and spend the budget only on the segment that fails.",
+      "tags": [
+        "accuracy-latency",
+        "cost",
+        "parallelization",
+        "chunking"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents",
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests"
+      ]
+    },
+    {
+      "id": "p-d3-w9-015",
+      "taskStatementId": "3.3",
+      "stem": "A claims-triage service processes 3,000 claims a day. It currently uses the top-tier model on every claim and costs $0.62 a claim. An eval shows a mid-tier model reaches 96.4% against the current 97.1% on 2,000 labelled claims, and the 0.7-point difference is concentrated entirely in claims with more than two parties. What is the architect's BEST recommendation?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Route multi-party claims to the top-tier model and single-party claims to the mid-tier model, with the party count derived from an already-extracted structured field rather than judged by the model — so the routing is deterministic, measurable and cheap."
+        },
+        {
+          "id": "B",
+          "text": "Switch all claims to the mid-tier model, accepting 0.7 points of accuracy loss because 3.0% total accuracy loss on multi-party claims is immaterial at this volume."
+        },
+        {
+          "id": "C",
+          "text": "Keep the top-tier model but reduce its effort setting for single-party claims, since effort is the primary cost lever and lowering it preserves the same model while cutting spend."
+        },
+        {
+          "id": "D",
+          "text": "Keep the top-tier model on every claim and reduce cost by shortening the prompt, because input tokens are the largest share of cost in a short structured-output claim triage."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "This is the clearest possible version of the accuracy-cost trade-off, and the eval has already done the work: the gap is **entirely localised** to multi-party claims. (A) captures nearly all of the top-tier accuracy at close to mid-tier cost, and the detail that makes it a good architecture rather than a clever trick is where the routing signal comes from — a structured field already extracted upstream, not a model judgement. That keeps routing deterministic, testable and cheap, and it means a multi-party claim can never be mis-routed because the router was unsure. The other options all either accept an accuracy loss nobody has agreed to accept, or optimise a lever that is not where the money is.",
+      "whyWrong": {
+        "B": "This converts a localised, understood gap into a global one to save money, and the claim that 0.7 points is ‘immaterial’ is a product judgement made by engineering. Multi-party liability claims are precisely the ones where a triage error has financial and regulatory consequences, so the segment the difference lives in is the segment where it hurts most. An architect's job is to surface that trade, not to close it unilaterally.",
+        "C": "Lowering effort on a top-tier model is a genuine cost lever and the option a careful engineer would raise. It is not the best recommendation because it addresses the wrong segment: it spends the saving on single-party claims that are already right, while multi-party claims — the actual source of the error — get the same treatment as before and keep failing. It also needs its own eval, since effort and accuracy interact non-linearly by task.",
+        "D": "The premise is wrong. Structured-output claim triage over a short document is dominated by **output and reasoning tokens**, not by a long input prompt; there is no 6,000-token policy block here to trim. Even if there were, shortening a prompt that contains claim-handling rules to save money is exactly the change that quietly degrades triage quality."
+      },
+      "difficulty": 2,
+      "mindset": "When an eval localises an accuracy gap to one segment, route that segment and leave the rest on the cheaper tier.",
+      "tags": [
+        "accuracy-latency",
+        "model-routing",
+        "cost",
+        "effort"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/about-claude/models/optimizing-for-cost-and-intelligence",
+        "https://platform.claude.com/docs/en/build-with-claude/effort"
+      ]
+    },
+    {
+      "id": "p-d3-w9-016",
+      "taskStatementId": "3.4",
+      "stem": "A multi-tenant SaaS runs one Agent SDK agent serving 400 customers. The dashboard shows request volume, HTTP error rate and p95 latency — all flat for eight weeks — while the support queue reports a steady rise in ‘the assistant gave me the wrong account’ from three specific customers. The architect proposes a change. Which proposal would MOST likely surface the cause?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Capture per-run traces — tenant, model, prompt version, tool calls with arguments, retrieved document ids, retrieved scores, stop reason and token counts — for a stratified sample of runs, then group them by tenant to see whether the failures share a retrieval or tool-argument pattern rather than a latency or error pattern."
+        },
+        {
+          "id": "B",
+          "text": "Raise the retry limit and add a fallback model, since the pattern of a few tenants being served worse data suggests those runs are failing and falling through to a degraded path."
+        },
+        {
+          "id": "C",
+          "text": "Add a user-facing thumbs-up and thumbs-down control and alert when the thumbs-down rate rises, so customer dissatisfaction becomes a monitored metric within a week."
+        },
+        {
+          "id": "D",
+          "text": "Increase the retrieval index's chunk size, since ‘the wrong account’ is most likely caused by neighbouring customers' chunks being retrieved together at too fine a granularity."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The three flat infrastructure metrics are the diagnostic clue: **latency, volume and error rate cannot see this class of failure**, so you need instrumentation at the level of what the agent actually did. (A) is the right shape because it records the intermediate values — which tenant, which prompt version, which tools with which arguments, which documents with which retrieval scores, and the `stop_reason` — and then segments by tenant. Cross-tenant contamination in a shared index shows up as a tenant whose retrieved document ids belong to other tenants, which is directly observable in that trace and invisible in every dashboard the team has. Stratum sampling keeps the cost bounded while still covering the affected tenants. Note also what the trace enables afterwards: `stop_reason` distinguishes a truncated answer from a completed one, and argument logging distinguishes a mis-scoped tool call from a bad retrieval.",
+      "whyWrong": {
+        "B": "Retries and a fallback model are the reflex response to ‘things are wrong’ and they are the wrong response to a problem with no error signal. There is nothing failing; requests are succeeding and returning the wrong account. Raising retries would multiply cost and latency against a failure that never surfaces as an error, and would make the traces harder to reason about rather than easier.",
+        "C": "Feedback controls are genuinely part of observability and they should exist. They are the wrong *first* move for diagnosis: with fewer than 1% of sessions rated in most products, the signal is sparse, biased toward extreme experiences, and tells you a customer was dissatisfied without telling you which tenant, which retrieval or which tool argument was responsible. It can confirm a problem you have already localised; it cannot localise this one.",
+        "D": "This is a plausible mechanism dressed as a fix. If the cause were chunk granularity, changing it would alter retrieval for *all* 400 tenants — and the symptom is three specific customers, which points at tenant-scoped data or filters rather than global chunking. Making a speculative index change across a multi-tenant system before you have a trace is how you convert a contained problem into a fleet-wide one."
+      },
+      "difficulty": 3,
+      "visualId": "error-recovery",
+      "mindset": "When infrastructure metrics are flat but outcomes are wrong, trace what the agent did and segment by tenant — the failure is above the HTTP layer.",
+      "tags": [
+        "observability",
+        "tracing",
+        "multi-tenant",
+        "retrieval"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/observability",
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests"
+      ]
+    },
+    {
+      "id": "p-d3-w9-017",
+      "taskStatementId": "3.4",
+      "stem": "A payments company's compliance team must be able to reconstruct exactly what an agent-based fraud review did, for any of 900,000 decisions in the last seven years. Legal requires retention of the prompt, the retrieved evidence, the model's reasoning and the final action. Privacy law forbids retaining full payment-card numbers beyond the transaction. A review proposes five designs. Which TWO are necessary to satisfy both obligations? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Log a durable per-decision record containing the prompt with sensitive fields tokenised, the retrieved evidence with ids and scores, the model's reasoning and tool calls, the final action and its authorising rule, and the prompt and model version — written to append-only storage under a retention policy that keeps the record but expires the raw personal data."
+        },
+        {
+          "id": "B",
+          "text": "Log only the final decision, the rule that fired and a decision id, and keep the full prompts and evidence in the application database's existing 90-day backup cycle."
+        },
+        {
+          "id": "C",
+          "text": "Log the complete request and response exactly as sent to and received from the API in a single structured log line, since that is the most faithful record and requires no interpretation."
+        },
+        {
+          "id": "D",
+          "text": "Retain full detail for a random 1% of decisions and only the decision, rule and outcome for the rest, on the reasoning that a statistically representative sample evidences how the system behaves."
+        },
+        {
+          "id": "E",
+          "text": "Maintain a periodic aggregate of outcomes by rule, amount band and outcome alongside the per-decision records, so oversight can see aggregate false-positive and false-negative rates without reading individual files."
+        }
+      ],
+      "correct": [
+        "A",
+        "E"
+      ],
+      "explanation": "The two obligations are **reconstructability** (per decision, not per period) and **minimisation** (raw personal data must expire), and compliance needs both a record and an aggregate view. (A) is the record: full decision context with sensitive fields tokenised **at write time**, so the tokenised form is what gets retained and nothing sensitive is stored that cannot later be un-retrieved, plus the prompt and model version — the fields that make it useful, because without them a seven-year-old decision cannot be interpreted against the system that made it, and a model migration silently rewrites the meaning of the archive. (E) is the aggregate: oversight genuinely cannot read 900,000 files, so a rule-and-band aggregate is what makes false-positive and false-negative rates visible — and it is also the minimisation mechanism, since the aggregate needs no personal data at all. The pair is what satisfies both obligations; each alone leaves a gap. Sampling (D) is the tempting third, and it is exactly the trade an architect should refuse: it substitutes statistical evidence for the ability to reconstruct an individual disputed decision, which is what the seven-year obligation exists for.",
+      "whyWrong": {
+        "B": "The final decision plus a rule reference is an audit of the outcome, not of the decision process, and it cannot answer the question legal actually asks: on what evidence and by what reasoning. It also relies on a 90-day backup cycle to hold evidence for a seven-year obligation — a plain mismatch between two retention requirements that someone will discover during the first audit.",
+        "C": "Faithful capture is appealing and it violates the privacy constraint, because a full request line containing a card number written into append-only storage is exactly the retention the law prohibits. It is also less faithful than it sounds: the API response is not the whole decision — the retrieved evidence, the tool calls and the authorising rule all live outside it — so this captures more personal data and less audit value than (A).",
+        "D": "Sampling is a reasonable minimisation technique and it is exactly the trade an architect should refuse to make here. It substitutes statistical evidence about behaviour for the ability to reconstruct an individual disputed decision, which is the purpose of a seven-year retention obligation — and it fails in the worst direction, since the one decision a customer disputes is the one most likely not to be in the sample."
+      },
+      "difficulty": 2,
+      "visualId": "identity-and-pii",
+      "mindset": "Reconstruction needs a per-decision record with versioned context; minimise by tokenising at write time and separating record retention from raw-data retention.",
+      "tags": [
+        "logging",
+        "compliance",
+        "pii",
+        "retention"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/manage-claude/api-and-data-retention",
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-prompt-leak"
+      ]
+    },
+    {
+      "id": "p-d3-w9-018",
+      "taskStatementId": "3.4",
+      "stem": "An engineer hits an intermittent HTTP 500 from the Claude API. Before contacting Anthropic support, what does Anthropic's documented guidance say the team should have ready?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The `request-id` from the failed response and the failing time window, which support uses to look up the request server-side — so log the request id on every call rather than reconstructing the request after the fact."
+        },
+        {
+          "id": "B",
+          "text": "A copy of the full request body, because support can reproduce the failure locally from the exact prompt that was sent."
+        },
+        {
+          "id": "C",
+          "text": "The account's API key and workspace identifier, so support can verify the account has access to the model that was requested."
+        },
+        {
+          "id": "D",
+          "text": "A screenshot of the application's error-monitoring dashboard, which shows the error rate and latency trend around the failure."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Anthropic's error documentation directs you to contact support with the **`request-id`** and the approximate time of the failure, because the request id is the handle support uses to locate that specific request in their own logs. The architectural consequence is the part worth taking away: you cannot reconstruct a request id after the fact, so every call's id has to be logged at the time — correlation ids belong in the request path permanently, not in a debug build. Everything else in the distractors is either useless to support or actively harmful. This is also the general observability lesson: make the identifier that ties your logs to the provider's logs part of the normal logging path from day one.",
+      "whyWrong": {
+        "B": "Support does not run your prompt. A full request body may also contain personal or regulated data, and sending it into a support channel creates a second copy of data you would rather not have. It also does not help identify a specific request server-side, which is what the request id is for.",
+        "C": "Never send an API key to anyone, including support. The workspace identifier is useful context and the key is not — an account with access problems produces a distinct authorisation error, not an intermittent 500.",
+        "D": "A dashboard screenshot is useful context but not an identifier. It tells support the shape of the failure, not which request failed, and it cannot be correlated against provider-side logs without the request id."
+      },
+      "difficulty": 1,
+      "mindset": "Log the provider's request-id on every call from day one — it cannot be reconstructed after the fact.",
+      "tags": [
+        "observability",
+        "logging",
+        "errors",
+        "request-id"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors"
+      ]
+    },
+    {
+      "id": "p-d3-w9-019",
+      "taskStatementId": "3.4",
+      "stem": "A university's research assistant uses a lead agent with up to eight subagents. Researchers want to see why a given answer cited a particular paper. Today the platform stores only the final answer. Which observability design BEST supports that, given that subagent results are returned to the coordinator?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Emit a trace per run in which each subagent invocation is a child span with its own prompt, tool calls, retrieved sources and returned findings, and carry those source ids forward so the coordinator's final citations can be resolved back to the specific subagent and document that produced them."
+        },
+        {
+          "id": "B",
+          "text": "Log the lead agent's full input and output text for every run, so a researcher can read the prompt the coordinator used and judge whether it asked the right questions."
+        },
+        {
+          "id": "C",
+          "text": "Ask the lead agent to include, in its final answer, the name of the subagent that supplied each piece of evidence, so researchers can follow up with that subagent directly."
+        },
+        {
+          "id": "D",
+          "text": "Store the number of subagents spawned, their runtimes and their token counts per request, so the team can see whether the answer came from more or less work than expected."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The question asks *why a specific citation appeared*, and that is a **lineage** question, not a logging question. (A) answers it because the trace is hierarchical: each subagent is a child span holding its own inputs and outputs, so the coordinator's citation can be resolved to the document the subagent actually retrieved and to the tool call that fetched it. Critically, it requires carrying source ids forward across the handoff, which is the same discipline that makes the architecture auditable in production — if the coordinator cannot name the source, no amount of tracing reconstructs it after the fact. (B) and (C) both log or ask for a *summary* of the work; the interesting content lives inside the subagents, which is precisely the context isolation the multi-agent pattern creates.",
+      "whyWrong": {
+        "B": "The coordinator's input is the question and its output is the answer. Neither contains the retrieved passages — that context existed only inside a subagent, which is the entire reason the multi-agent design was chosen. Logging the coordinator therefore captures precisely the part that cannot explain a citation.",
+        "C": "Asking the model to attribute its own evidence is asking for a self-report after the fact. The model may attribute a claim to a subagent that never supplied it, and the mapping adds tokens to every final answer to produce information you would rather capture structurally. If you need the mapping, record it in the trace when the handoff happens.",
+        "D": "Span counts, durations and token counts are resource metrics. They are genuinely useful for cost and capacity work — and the same trace that carries them carries the provenance — but on their own they explain nothing about *why* a citation appeared."
+      },
+      "difficulty": 2,
+      "mindset": "To explain why a citation appeared you need per-subagent provenance carried forward, not a log of the coordinator's prompt and answer.",
+      "tags": [
+        "observability",
+        "tracing",
+        "multi-agent",
+        "provenance"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/observability",
+        "https://platform.claude.com/docs/en/build-with-claude/citations"
+      ]
+    },
+    {
+      "id": "p-d3-w9-021",
+      "taskStatementId": "3.5",
+      "stem": "An insurance group has 200,000 claims PDFs. Each has a header with policy number and insured name, a body of free-text loss description, and a table of itemised losses that frequently runs across a page break. Claims handlers ask questions like 'what was claimed for vehicle repairs on claim X?' and the current system, which chunks everything into 512-token windows with 50-token overlap, answers them wrong about a third of the time. A review produced five observations. Which TWO changes are most appropriate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Chunk along the document's own structure — header metadata, narrative sections, and one chunk per table row group — keeping enough overlap that a row group split by a page break appears whole in at least one chunk, and attach the policy number as metadata on every chunk."
+        },
+        {
+          "id": "B",
+          "text": "Reduce the chunk size to 128 tokens and increase the overlap to 100 tokens, so that more chunks contain each individual table row intact."
+        },
+        {
+          "id": "C",
+          "text": "Add a reranking step after retrieval so the passage most relevant to the specific question is ranked first, since reranking is the documented remedy for a table row that is retrieved but not prioritised."
+        },
+        {
+          "id": "D",
+          "text": "Replace the vector index with a keyword index, since handlers' questions name specific claim numbers and item categories that keyword matching handles exactly."
+        },
+        {
+          "id": "E",
+          "text": "Before indexing, have Claude write a short contextual note for each chunk stating which claim, section and loss category it comes from, and prepend that note to the chunk text so it is embedded and retrievable alongside the passage."
+        }
+      ],
+      "correct": [
+        "A",
+        "E"
+      ],
+      "explanation": "Two changes address the causes the stem actually names. (A) is the structural fix: chunk on the **boundaries the document has**, so the metadata travels with every chunk, narrative stays readable, and — the specific failure — a row group straddling a page break appears intact somewhere; attaching the policy number as metadata rather than body text makes it filterable and keeps it out of every chunk's context. (E) is the documented contextual-retrieval technique, and it addresses the *other* half of the failure: a 512-token window that cuts mid-table is not just the wrong boundary, it is a chunk with no idea what document, claim or loss category it belongs to, so it embeds as a fragment and competes poorly against intact passages. Chunk on structure and contextualise, and both the boundary problem and the location problem are addressed. The remaining three observations aim at layers the evidence does not implicate.",
+      "whyWrong": {
+        "B": "Smaller chunks with more overlap is the reflexive answer and it does help precision — but it does not fix a page-break split, because a row split by a page boundary can still land across two chunks, and 128-token chunks of narrative prose lose the context that makes a passage interpretable. It also multiplies index size and retrieval candidates, which usually costs recall elsewhere. The failure is chunk boundary and chunk location, not chunk size.",
+        "C": "Reranking is a real and valuable technique and the honest architect raises it — but it operates on what retrieval already returned, so it cannot help when the correct passage was never chunked or never retrieved. A third of *all* questions failing is not a ranking problem: a ranking problem leaves the right passage in the candidate set.",
+        "D": "Keyword retrieval is genuinely better for identifier lookups — claim number, item category — and a hybrid index is a strong design. It fails the narrative part of the question set and it does nothing about a split table row, which is a segmentation problem rather than a matching problem. Changing the retrieval *mechanism* when the fault is in how the corpus was cut is treating the wrong layer."
+      },
+      "difficulty": 2,
+      "visualId": "rag-pipeline",
+      "mindset": "Chunk along the document's real structure and carry its metadata; a fixed-size window cannot fix a boundary that falls in the wrong place.",
+      "tags": [
+        "rag",
+        "chunking",
+        "contextual-retrieval",
+        "tables"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/news/contextual-retrieval",
+        "https://platform.claude.com/docs/en/build-with-claude/embeddings"
+      ]
+    },
+    {
+      "id": "p-d3-w9-022",
+      "taskStatementId": "3.5",
+      "stem": "A legal publisher's assistant answers questions across a mixed corpus: 900,000 pages of commentary, 40,000 statutes and regulations, 12,000 annotated judgments, and a large set of precedent contracts with clause-level structure. The current pipeline uses one chunk size, one embedding model, and one index. Researchers report that statute questions retrieve commentary and that contract questions retrieve whole agreements instead of the relevant clause. Which TWO changes are most appropriate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Build separate indexes per corpus type with type-appropriate chunking — clause-level for contracts, article-level for statutes, section-level for commentary — because the four corpora have genuinely different internal structures and one chunking policy cannot serve all of them."
+        },
+        {
+          "id": "B",
+          "text": "Add metadata filters (document type, jurisdiction, date in force, matter type) to every chunk and apply them from the structured part of the question, so that a statute question cannot retrieve commentary and a superseded provision can be excluded."
+        },
+        {
+          "id": "C",
+          "text": "Replace the single embedding model with a more capable one, because poor cross-corpus retrieval is primarily an embedding-quality problem and a stronger model will align the question to the right document type on its own."
+        },
+        {
+          "id": "D",
+          "text": "Increase the number of chunks retrieved from 10 to 40, so that the correct passage is more likely to appear somewhere in the results even if most of the rest are irrelevant."
+        },
+        {
+          "id": "E",
+          "text": "Write a one-paragraph contextual note for each chunk before indexing, stating which document, section and matter it comes from, and prepend that note to the chunk text so it is embedded and retrievable alongside the passage."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "The symptom — wrong document *type* being retrieved — is a structural problem with two independent causes, and the answer has to address both. (A) fixes the shape: a contract clause, a statutory article and a commentary section are not the same unit, so one chunking policy cannot serve them, and separating the indexes also lets each be refreshed and permissioned on its own schedule. (B) fixes the **selection**: typed, filterable metadata applied from the structured part of the query means the retriever cannot return a statute passage for a commentary question, and it handles the correctness dimension too — in-force versus superseded provisions and applicable jurisdiction, which no amount of embedding quality can infer from text alone. Both are index-design decisions taken before generation. Note the pattern: the distractors that sound most capable — a stronger embedding model, more retrieved chunks — either do not address document type at all or make the problem worse by widening the candidate set.",
+      "whyWrong": {
+        "C": "A better embedding model is worth evaluating and will improve semantic matching within a corpus. It does not know that a question is about a statute rather than commentary — that is a typing decision — and it cannot tell an in-force provision from a superseded one, which is a metadata question. Diagnosing model quality where the fault is index structure sends the team down an expensive path that will not fix the reported symptom.",
+        "D": "Retrieving 40 instead of 10 raises the chance the right passage appears and lowers the chance the model uses it. More candidates means more irrelevant context in the prompt, more cost and latency, and a measurable drop in answer quality — the classic precision collapse. If the type mismatch is not fixed first, the extra candidates are mostly wrong-type passages.",
+        "E": "Contextual notes — the contextual-retrieval technique — genuinely improve retrieval, and they are a real technique the exam expects you to know. As the answer to *these two symptoms* it is second-best: a note describing where a chunk came from makes the chunk more retrievable, but it does not stop a statute question from semantically matching commentary, and it does not encode in-force status or jurisdiction as something you can filter on. (B) is the stronger control because filters exclude; notes only re-rank."
+      },
+      "difficulty": 3,
+      "visualId": "rag-pipeline",
+      "mindset": "When retrieval crosses document types, fix the index shape and add filterable metadata — a better embedding model cannot know a document's type or whether it is still in force.",
+      "tags": [
+        "rag",
+        "chunking",
+        "metadata-filtering",
+        "hybrid-search"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/news/contextual-retrieval",
+        "https://platform.claude.com/docs/en/build-with-claude/embeddings"
+      ]
+    },
+    {
+      "id": "p-d3-w9-023",
+      "taskStatementId": "3.5",
+      "stem": "A hospital's formulary assistant must answer ‘what is the approved indication for drug X?’ from a 200-page formulary document. The whole document is about 45,000 tokens, which fits comfortably in the context window. The team is debating whether to build a RAG index. What is the architect's position?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Skip retrieval for this corpus and send the document in context, optionally with a cache breakpoint after the stable content — because retrieval adds a failure mode (the right passage may not be retrieved) and only earns its cost when the corpus will not fit."
+        },
+        {
+          "id": "B",
+          "text": "Build a RAG index, because RAG is the standard architecture for document question answering and reviewers will expect to see one in the design."
+        },
+        {
+          "id": "C",
+          "text": "Build a RAG index but index the document at sentence granularity, so that retrieval returns precisely the one sentence that states the indication."
+        },
+        {
+          "id": "D",
+          "text": "Build a RAG index over the document and, when retrieval confidence is low, fall back to sending the full document, so the system uses retrieval for speed and full context for safety."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "RAG is a tool for a specific problem — the corpus does not fit, or is too large to reason over at once — and here it does not apply: 45,000 tokens fits, the corpus is stable, and the question is about a specific document. Adding retrieval **introduces** a failure mode rather than removing one: if the wrong passage is not retrieved, the model cannot answer correctly even though the information was in the corpus the whole time. That is a strictly worse reliability position than putting the document in context, and it is more machinery for no benefit. The prompt-caching breakpoint is the right optimisation here because the document is a large stable prefix — the documented use case for a cache breakpoint — which cuts repeated input cost and time to first token across the many formulary questions.",
+      "whyWrong": {
+        "B": "Architecture by convention is how you end up with a RAG pipeline that adds retrieval failure modes, an index to keep fresh, an embedding bill and an eval suite for the retriever — all to solve a problem the corpus does not have. The exam's recurring lesson is that the modern or standard-looking component is often wrong when the constraints do not call for it.",
+        "C": "Sentence-level indexing makes each chunk maximally specific and maximally contextless. An approved indication is stated with conditions and exceptions across adjacent sentences, so a single retrieved sentence is the wrong unit for the question — and it multiplies the number of chunks to score for every query.",
+        "D": "The fallback design is more machinery than the first answer needs and it inverts the priority: it makes the cheap-but-lossy path the default and reserves full context for low-confidence cases. Since the full context path is available and affordable for every request here, the correct design uses it for every request."
+      },
+      "difficulty": 1,
+      "mindset": "RAG earns its cost only when the corpus does not fit; if it fits, adding retrieval adds a failure mode instead of removing one.",
+      "tags": [
+        "rag",
+        "context-window",
+        "prompt-caching",
+        "when-not-to-rag"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/context-windows",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching"
+      ]
+    },
+    {
+      "id": "p-d3-w9-025",
+      "taskStatementId": "3.6",
+      "stem": "An internal assistant serves three very different query types: (a) ‘what is our policy on expense limits?’ over documents, (b) ‘how many open tickets does team Atlas have, oldest first?’ over a live operational database, and (c) ‘show me every incident in the last 90 days that mentions the payments gateway, grouped by root cause’ across incident records. Which pairing of query type to retrieval strategy is BEST?",
+      "options": [
+        {
+          "id": "A",
+          "text": "(a) semantic retrieval over the policy library; (b) a structured query executed against the ticketing database, sorted server-side; (c) metadata-filtered retrieval or a structured query with filters on date window and keyword, then aggregation over the filtered set."
+        },
+        {
+          "id": "B",
+          "text": "(a) a metadata filter on document type; (b) semantic retrieval over recent ticket text; (c) semantic retrieval over the incident corpus with no filters, letting the model count and group."
+        },
+        {
+          "id": "C",
+          "text": "(a) semantic retrieval; (b) a SQL tool the agent writes and executes; (c) semantic retrieval with a larger top-k, on the reasoning that more candidates will contain the right incidents."
+        },
+        {
+          "id": "D",
+          "text": "(a) loading the whole policy library into context; (b) a structured query; (c) structured queries for the filter and aggregation, with no retrieval component at all."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The principle is to match the strategy to the **shape of the data and the shape of the question**. (a) is a question about meaning in prose, which is what semantic retrieval is for. (b) is a question about current operational state with an ordering requirement — the ticketing database is the source of truth, an index of tickets is stale the moment it is built, and ‘oldest first’ is a sort the store should apply rather than the model. (c) is a **filtered set operation**: the date window and the keyword are exact predicates, and the aggregation over the filtered set is arithmetic — a structured query does all of it correctly and completely, where retrieval returns a candidate list the model then has to count and group by hand. Getting this wrong in the other direction is the common failure: pushing (b) or (c) into retrieval produces stale or incomplete answers that look fine.",
+      "whyWrong": {
+        "B": "This inverts the mappings on all three. (a) is a meaning question and a type filter retrieves every policy document, not the one about expenses — that is the wrong tool even though the type is right. (b) served from an index means answering from a snapshot of a live queue, which is wrong for a question whose entire purpose is current state. (c) unfiltered means the model has to find the 90-day window itself and then count and group across however many chunks came back — arithmetic over an incomplete candidate set.",
+        "C": "Letting the agent write and execute SQL is the most agentic-sounding option and it is a real design (it is how a text-to-SQL assistant works). It is the wrong pairing here for two reasons: it puts an unbounded query surface in the path of a general assistant for questions that have a fixed shape, and it means the answer's correctness depends on the model generating valid SQL as well as on the data. For (b) and (c), a fixed, reviewed query template is both safer and reproducible. Worth noting that (a) is right here.",
+        "D": "Loading the whole policy library is defensible for a small corpus and is exactly the answer to the previous question, so it is not wrong in principle — but it is inconsistent with (c), where dropping retrieval entirely is not viable: incidents over 90 days across the estate exceed what fits, so ‘no retrieval component at all’ cannot answer the question."
+      },
+      "difficulty": 2,
+      "visualId": "rag-pipeline",
+      "mindset": "Match retrieval to the question's shape: meaning goes to semantic search, exact predicates and aggregation go to a structured query, and live state comes from the system of record.",
+      "tags": [
+        "retrieval-strategy",
+        "structured-query",
+        "semantic-search",
+        "tool-use"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/embeddings",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview"
+      ]
+    },
+    {
+      "id": "p-d3-w9-026",
+      "taskStatementId": "3.6",
+      "stem": "A support assistant handles multi-turn conversations about orders. After ‘what is my delivery estimate?’ the user says ‘and if I return it?’ The assistant has a vector index over help articles and a tool that reads the order. Users report the follow-up question is answered as if it were a standalone question, producing generic return-policy text instead of an answer about their order. Which fix is MOST appropriate?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Rewrite the follow-up into a self-contained query before retrieving — resolve pronouns and ellipsis against conversation state, so the retrieval sees ‘return policy for order 12345, delivered today’ rather than ‘and if I return it’ — and keep the structured order state available as a filter or tool argument rather than hoping the vector search infers it."
+        },
+        {
+          "id": "B",
+          "text": "Pass the last six turns of conversation into every retrieval call, so the retriever can see the context the user is referring to."
+        },
+        {
+          "id": "C",
+          "text": "Ask the model, before answering, to write a one-sentence restatement of the user's question, and retrieve using that restatement, since this is the standard query-rewriting technique for conversational retrieval."
+        },
+        {
+          "id": "D",
+          "text": "Increase the number of retrieved chunks from 5 to 15, so that both the general return policy and the order-specific information are more likely to appear in the results."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The failure is that the retrieval query — the string actually being embedded — is not a question anyone would have asked. ‘And if I return it?’ contains a pronoun, an implicit subject and an implicit object, none of which a vector search can resolve; it retrieves generic return-policy text because that is what the string resembles. (A) fixes it by resolving the utterance against conversation state **before** embedding, and — the part an architect should insist on — by keeping the order identifier as a structured value the pipeline can filter on or pass as a tool argument rather than hoping semantic similarity recovers an order number. This is the same finding as the tenant-isolation question in a different costume: **structure the model cannot infer must come from state, not from the query string.**",
+      "whyWrong": {
+        "B": "Passing conversation history into the retriever is the tempting fix and it barely helps, because the problem is not that the retriever lacks context — it is that the query string is unresolvable. Bolting recent turns onto an embedding query dilutes the signal further, and a vector index has no mechanism to look at turn three while embedding turn eight. Context helps the *model* reason; it does not fix the *retrieval key*.",
+        "C": "A model-written restatement is a real technique and it is much better than nothing — it is the standard conversational-query-rewriting approach and it would likely improve results here. It is not the BEST answer because the rewrite is generated from context the model may have mis-tracked, and because it still leaves the order number to be inferred: if the model writes ‘what is the return policy?’ instead of naming the order, the retrieval is still generic. Deterministic resolution of the referent, using state the system already holds, is the stronger control.",
+        "D": "More chunks is a precision-for-recall trade made in the wrong direction. The correct passage is not missing from the corpus — it is missing from the query. Retrieving 15 chunks mostly adds more generic return-policy text to the prompt, costing tokens and making the model more likely to answer generically."
+      },
+      "difficulty": 3,
+      "mindset": "Resolve pronouns and identifiers from conversation state before embedding — a query the retriever cannot resolve retrieves generic text.",
+      "tags": [
+        "retrieval-strategy",
+        "conversational-rewrite",
+        "pronoun-resolution",
+        "tool-use"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/search-results",
+        "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents"
+      ]
+    },
+    {
+      "id": "p-d3-w9-027",
+      "taskStatementId": "3.6",
+      "stem": "A developer-tooling company indexes documentation for an AI coding assistant. Codebase files change many times a day; the documentation set changes about weekly. Queries are of two kinds: ‘where is the retry helper defined?’ and ‘how should I configure exponential backoff?’. Which retrieval design is the BEST fit?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Hybrid retrieval: lexical or exact-match search for identifier-shaped questions about code that changes often, combined with semantic retrieval over the more stable documentation, with the code index kept current via incremental re-indexing on commit."
+        },
+        {
+          "id": "B",
+          "text": "A single semantic index rebuilt nightly over both code and documentation, so the assistant always has one consistent index to search."
+        },
+        {
+          "id": "C",
+          "text": "Semantic retrieval only, over both code and documentation, because a single embedding model handles code and prose equally well."
+        },
+        {
+          "id": "D",
+          "text": "A graph of symbol references built at commit time, queried for identifier questions and unused for everything else, so the assistant reasons about code structure rather than text similarity."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The two query types have different shapes and different data, and the answer should respect that. ‘Where is the retry helper defined?’ is an **identifier lookup**: the right tool is exact or lexical matching against symbols and their definitions, and code that changes several times a day needs an index refreshed on commit rather than nightly, or the assistant confidently points at a function that moved. ‘How should I configure exponential backoff?’ is a **meaning question** over stable prose, which is what semantic retrieval is for. Hybrid search is the documented recommendation when the corpus mixes structured identifiers with unstructured text, and the incremental refresh matters more than the choice of mechanism: a stale index on fast-changing code produces confidently wrong answers that look entirely correct.",
+      "whyWrong": {
+        "B": "One consistent index sounds tidy and is operationally simpler. It is wrong on both halves: a nightly rebuild on code that merges hundreds of times a day means the assistant routinely answers from a snapshot several days old, and a single embedding space over both code and prose is measurably weaker on identifier lookups than exact matching. Consistency of the index is not the property you want — currency and match quality are.",
+        "C": "Semantic-only is the weakest of the four on identifier questions. Embeddings capture similarity, not identity: `retryWithBackoff` and `retry_with_backoff` and a renamed `retryAsync` are all close in vector space, so the assistant retrieves plausible neighbours rather than the definition the user asked for. The premise that one model handles code and prose equally is not supported — the two have very different structure.",
+        "D": "A symbol-reference graph is genuinely the right tool for a class of code questions — where is this defined, what calls this — and is a strong complement. As the *whole* design it fails the second query type outright: ‘how should I configure exponential backoff?’ is answered by prose that a symbol graph does not contain, so the assistant has nothing to retrieve for half of what it is asked."
+      },
+      "difficulty": 1,
+      "mindset": "Match the retrieval mechanism to the query shape: exact matching for identifiers, semantics for meaning, and keep fast-moving code indexed on commit.",
+      "tags": [
+        "retrieval-strategy",
+        "hybrid-search",
+        "code-search",
+        "index-freshness"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/embeddings",
+        "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents"
+      ]
+    },
+    {
+      "id": "p-d3-w9-028",
+      "taskStatementId": "3.7",
+      "stem": "A company's developers use Claude Code daily. They want the assistant to read GitHub issues, create pull requests, check CI status and search the company wiki. Each of those services already has an MCP server maintained by its owning team, published to a shared registry, and authenticated per-developer with OAuth. What does the architect recommend?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add the four existing MCP servers to the project's configured MCP set, so Claude Code discovers their tools and resources through MCP, and the owning teams keep ownership of tool definitions, versioning and authentication rather than the consuming team maintaining four integrations."
+        },
+        {
+          "id": "B",
+          "text": "Build a single internal MCP server that wraps all four services with one unified toolset, so that developers experience one integration and the platform team controls the surface centrally."
+        },
+        {
+          "id": "C",
+          "text": "Wrap the four services as custom tools inside each consuming team's own codebase, since custom tools are simpler to maintain than running MCP servers."
+        },
+        {
+          "id": "D",
+          "text": "Expose each service's REST API to Claude Code through a generic HTTP-fetch tool plus a written prompt describing the API, so no integration code is needed at all."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "This is the textbook case for MCP: **multiple existing services, each already owning an MCP server, each with per-user authentication, consumed by a client that speaks the protocol**. Consuming them directly means the owning team keeps the tool definitions and the auth flow, a schema change is published once rather than reimplemented per consumer, and developers authenticate with their own credentials rather than a shared service token. MCP's design is specifically host/client/server with client-per-server connections, so a single client can hold several independent server connections with separate authorisation — which is also why the credential story stays clean. The alternatives each re-create the integration in a worse place.",
+      "whyWrong": {
+        "B": "A unifying wrapper is a real pattern and it does solve a genuine problem — one agent needing all four services coherently, with a curated toolset rather than four sets of overlapping tools. It is wrong here for two reasons: the owning teams still have to maintain their servers behind it, so the duplication it claims to remove reappears one layer down; and per-developer OAuth gets replaced by whatever the platform chooses, which is usually a shared credential — strictly worse for audit than four individually authorised connections.",
+        "C": "Custom tools are appropriate when the logic belongs to the consuming application — a database wrapper, a house pricing function. Here the logic belongs to four other teams, and reimplementing their APIs in each consumer is exactly the duplication MCP exists to remove: four copies to keep in step with four upstream APIs, none owned by the team that can fix a breaking change.",
+        "D": "Generic HTTP plus a written description sounds like zero integration work, and it is the worst of the four. The model would have to construct correct URLs, methods, headers and payloads for four APIs from prose, at run time, with no schema to validate against — so errors surface as confusing tool failures and auth has nowhere to attach. It also puts four service APIs' worth of detail into the prompt."
+      },
+      "difficulty": 2,
+      "visualId": "mcp-architecture",
+      "mindset": "When the capability's owner already publishes an MCP server, consume it — that keeps definitions, versioning and per-user auth with the team that owns the service.",
+      "tags": [
+        "mcp",
+        "integration-protocol",
+        "claude-code",
+        "oauth"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/mcp",
+        "https://modelcontextprotocol.io/docs/learn/architecture"
+      ]
+    },
+    {
+      "id": "p-d3-w9-029",
+      "taskStatementId": "3.7",
+      "stem": "A bank's back-end service calls the Claude API directly and must let Claude use two internal systems: a case-management system that is an existing SOAP service with no modern API, and a vendor's commercial underwriting tool that the bank has licensed as a locally-installed Windows application. What does the architect recommend for each?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Wrap the SOAP service as a remote MCP server so the bank controls the tool surface, the authorisation and the audit trail; and drive the desktop application through a purpose-built integration on the bank's own infrastructure rather than exposing it as a general agent capability."
+        },
+        {
+          "id": "B",
+          "text": "Wrap the SOAP service as a remote MCP server, and expose the desktop application as an MCP server that the model interacts with directly, since MCP is the protocol for tool integration and the desktop application's GUI is just another interface."
+        },
+        {
+          "id": "C",
+          "text": "Call the SOAP service directly from custom tools in the back-end service, since a service with no modern API cannot be wrapped; and give the model a computer-use tool for the desktop application."
+        },
+        {
+          "id": "D",
+          "text": "Build a single MCP server for both systems, so that Claude sees one server with one toolset and one authentication flow to reason about."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The two systems have different shapes and the integration mechanism should follow each. The SOAP case-management system is a network service with an unfashionable interface — a remote MCP server is the right wrapper, and wrapping it rather than calling it directly is what gives the bank a place to enforce per-user authorisation, narrow the tool surface to the operations an agent may perform, and record an audit trail per call. The licensed desktop application is different in kind: it runs on infrastructure the bank controls, it is licensed per-seat for a human user, and its state is local. (A) keeps it as a bank-operated integration rather than handing an agent the ability to drive a licensed application's GUI.",
+      "whyWrong": {
+        "B": "Exposing the desktop application as an MCP server the model drives is the maximally automated answer and it is the wrong one here. It hands an agent control of a licensed GUI application with unpredictable visual state — a licensed-per-seat commercial tool is not a general computer-control target — and the failure modes (wrong window, wrong field, an irreversible action in a underwriting system) are severe and hard to attribute in an audit. MCP is a protocol for tool integration; it does not make arbitrary GUIs a safe agent surface. Note that the SOAP half of (B) is right.",
+        "C": "Calling the SOAP service directly from custom tools is a perfectly reasonable implementation and is what a small team would do — it is not that SOAP ‘cannot be wrapped’, it simply may not be worth wrapping yet. The problem is the second half: a computer-use tool pointed at a licensed underwriting application is a large, hard-to-audit capability given for a task that an ordinary integration would cover.",
+        "D": "One server for both systems groups two things that share no property except that two teams named them in the same sentence. They differ in transport, in location, in licensing and in permission model — so one server means one authentication flow that cannot be right for both, one release coupling a SOAP wrapper to a desktop integration, and a toolset a reader cannot reason about."
+      },
+      "difficulty": 3,
+      "visualId": "mcp-architecture",
+      "mindset": "Pick the integration mechanism per system shape — wrap legacy network services as MCP; do not hand an agent the GUI of a licensed application.",
+      "tags": [
+        "mcp",
+        "integration-protocol",
+        "legacy-api",
+        "least-privilege"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/docs/learn/architecture",
+        "https://modelcontextprotocol.io/specification/2025-11-25/basic/transports"
+      ]
+    },
+    {
+      "id": "p-d3-w9-030",
+      "taskStatementId": "3.7",
+      "stem": "Every developer on a team has the GitHub CLI installed and authenticated on their own machine. They want Claude Code to read issue details, open pull requests and check CI status. Which approach is the SIMPLEST that works?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Wrap the existing `gh` CLI as a local MCP server over the stdio transport, so Claude Code gets typed tools for those operations while reusing the authentication each developer already has."
+        },
+        {
+          "id": "B",
+          "text": "Configure a remote MCP server for GitHub using the organisation's OAuth application, so that all developers share one centrally managed server configuration."
+        },
+        {
+          "id": "C",
+          "text": "Add a custom tool to Claude Code that runs `gh issue view <id> --json ...` as a shell command and returns stdout."
+        },
+        {
+          "id": "D",
+          "text": "Give Claude Code a general Bash tool and document the `gh` commands in the project CLAUDE.md, so the assistant can run them as needed."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "A local MCP server over **stdio** is the right shape when the capability already exists as a CLI on the developer's machine: the server runs as a subprocess of the client, needs no port or network configuration, and inherits the developer's existing `gh` authentication rather than creating a second credential to manage. Each developer's session gets its own server process, which is exactly the MCP client/server model for local tools. The important property is that the tool surface stays **typed and narrow** — ‘read issue’, ‘open pull request’, ‘check CI’ — rather than exposing a shell.",
+      "whyWrong": {
+        "B": "A remote server with an org OAuth app is a perfectly valid MCP configuration and it is what you want when there is no local CLI, when several clients outside the developer machine need the capability, or when the platform team wants central control. Here it is the heavier answer: it requires an OAuth app, a consent flow per developer, a deployment, and a credential that duplicates what `gh` already holds. Simpler is the criterion in the stem.",
+        "C": "This works and it is a one-file change, but it hands the model a shell and asks it to construct the right command line every time — including flags, JSON output shapes and pagination. It loses the typed schema, it loses the description that documents the operation, and it makes the tool impossible to reason about in a review. It also quietly reintroduces arbitrary command execution.",
+        "D": "This is the maximum-privilege answer dressed as the minimum-effort one. A general Bash tool means the model can run anything the developer can, on every prompt, in every repository, which is precisely the permission surface a security review will reject; and putting `gh` recipes in CLAUDE.md makes correctness depend on the model reading and following prose rather than on a validated schema."
+      },
+      "difficulty": 1,
+      "mindset": "When the capability already exists as a local CLI, a stdio MCP server gives typed tools and reuses the developer's existing authentication.",
+      "tags": [
+        "mcp",
+        "stdio",
+        "cli-integration",
+        "claude-code"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-11-25/basic/transports",
+        "https://code.claude.com/docs/en/mcp"
+      ]
+    },
+    {
+      "id": "p-d3-w9-032",
+      "taskStatementId": "3.8",
+      "stem": "A hospital's clinical assistant connects to six MCP servers exposing about 240 tools, covering drug information, guidelines, lab results, imaging, scheduling and billing. Measured on the eval set, correct tool selection has fallen from 91% to 74% over eight months as tools were added. The team is considering the tool search tool with most tools deferred. Which TWO considerations should MOST inform the decision? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Whether the *selection* failures are concentration problems — specific confusable tool clusters — or a diffuse problem across the whole toolset, because deferred loading shrinks context but does not by itself fix two tools whose descriptions are indistinguishable."
+        },
+        {
+          "id": "B",
+          "text": "Whether the assistant can obtain a sensitive result without loading its tool definition, because deferred tools are still reachable once discovered — so the access decision must not depend on whether a definition happened to be in context."
+        },
+        {
+          "id": "C",
+          "text": "Whether the team can maintain 240 tool descriptions across six owning teams, because description quality is the documented primary determinant of tool-selection accuracy and it degrades as the catalog grows without an owner."
+        },
+        {
+          "id": "D",
+          "text": "Whether the model is on the most capable tier, since selection accuracy on a large toolset is primarily a function of model capability rather than of context size."
+        },
+        {
+          "id": "E",
+          "text": "Whether the six servers can be consolidated into fewer, because a smaller number of tool *sources* is what determines selection quality independently of how many tools each exposes."
+        }
+      ],
+      "correct": [
+        "A",
+        "C"
+      ],
+      "explanation": "The measurement — a steady decline as tools were **added** — points at the toolset as the cause, so the decision should be driven by what is actually degrading. (A) is the diagnostic that matters: if the 17-point drop is concentrated in a few confusable clusters (two lab tools, three imaging tools), then the fix is to disambiguate those descriptions — and deferral will not help, because a deferred tool that gets discovered is still ambiguous. If the drop is diffuse across the toolset, context dilution is the mechanism and deferred loading is the right instrument. (C) names the structural cause of a diffuse decline: at 240 tools across six teams, description quality depends on an ownership and review process that nobody has, and descriptions — not model tier — are the documented primary determinant of tool-selection accuracy. Both correct answers also point at a process, not a one-off configuration change.",
+      "whyWrong": {
+        "B": "This is a real and important property — deferred tools remain reachable once discovered, so deferral must never be treated as an access control — and the exam expects you to know it. It is not one of the two considerations that *inform this decision*, because it does not vary with the choice: under either outcome the correct architecture requires authorisation at the server, so it is a standing constraint rather than an input. A careful architect notes it in the design and stops there.",
+        "D": "Model tier is the reflex explanation and it is the weakest. The evidence contradicts it: selection accuracy was 91% on essentially the same model and degraded as tools were added, which points at the toolset rather than the model. Anthropic's guidance is that prompt quality and tool descriptions drive selection accuracy, with capability gains a secondary factor — and a larger model would raise cost and latency across every clinical query to address a problem in the tool definitions.",
+        "E": "This confuses tool *sources* with tool *count*. Six servers versus one does not change how many tools the model must choose among, and consolidation would in practice make it worse — one owner publishing 240 descriptions is less accountable than six owners publishing 40 each. It also discards a real benefit of separate servers: independent credentials, permissions and release cadence."
+      },
+      "difficulty": 3,
+      "visualId": "capability-ladder",
+      "mindset": "When tool-selection accuracy decays as tools are added, find out whether the failure is confusable definitions or context dilution — deferral fixes the second, not the first.",
+      "tags": [
+        "progressive-discovery",
+        "tool-search",
+        "capability-bloat",
+        "tool-design"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool",
+        "https://www.anthropic.com/engineering/writing-tools-for-agents"
+      ]
+    },
+    {
+      "id": "p-d3-w9-033",
+      "taskStatementId": "3.8",
+      "stem": "A fintech's operations assistant answers questions against 900 pages of runbooks. The team moved from a monolithic prompt — all runbooks loaded every time — to progressive discovery: three on-demand skills that describe how to find and read the relevant runbook section. Accuracy on the eval set improved slightly and cost per question fell about 40%. Six months later, a new runbook is added and nobody updates the skills. What is the architect's diagnosis?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The design introduced a discovery-miss risk that the monolithic prompt did not have, and the failure mode is invisible: the assistant simply does not know the new runbook exists. So the index that skills point at needs an owner, a completeness check and a test that a newly added document is reachable."
+        },
+        {
+          "id": "B",
+          "text": "Cost per question fell 40% and accuracy improved, so the migration succeeded; the new runbook is a content-update issue for the documentation team rather than an architectural problem."
+        },
+        {
+          "id": "C",
+          "text": "The skills should be rewritten so that each one embeds the full runbook text it needs rather than describing where to find it, so discovery can never fail."
+        },
+        {
+          "id": "D",
+          "text": "The assistant should ask the user which runbook applies before answering, so that a missing runbook surfaces as a clarifying question rather than a wrong answer."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Progressive discovery trades a context-size problem for a **coverage** problem, and coverage is a property you have to maintain rather than one you get for free. With a monolithic prompt, every runbook was always present, so the only risk was distraction; with skills, a document nobody indexed is simply invisible and the assistant will answer from what it does find, confidently and wrongly. That is why the correct follow-up is organisational: an owner for the index the skills reference, a documented way to register a new document, and an eval case that fails if a recently added runbook is unreachable. The improved accuracy and 40% saving are real and do not remove this risk — they are exactly what you would expect on the cases the eval set already covered.",
+      "whyWrong": {
+        "B": "This reads the metrics as proof the design is sound. The metrics were measured on an eval set that reflects the runbooks that existed at the time — so they cannot speak to a document added afterwards. ‘It is a content-update issue‗ locates the failure in the documentation team when the failure is that the architecture depends on an index nobody owns.",
+        "C": "Embedding full runbook text in each skill converts discovery back into monolith: context grows to the sum of everything again, which is precisely what the migration was for. It also makes each skill a copy that drifts from its source document, so you would now maintain the same content twice — a worse version of the coverage problem.",
+        "D": "Asking the user which runbook applies is a usable mitigation for high-stakes flows and it does turn a silent miss into a visible one. It is a poor general fix for an internal operations assistant, where users do not know which runbook governs their question — and it taxes the user with the system's bookkeeping. The reliable fix is making the index complete and tested, not asking users to compensate for it."
+      },
+      "difficulty": 2,
+      "mindset": "Progressive discovery trades context for coverage — so the index it points at needs an owner, a registration path and a test that a new document is reachable.",
+      "tags": [
+        "progressive-discovery",
+        "skills",
+        "coverage",
+        "governance"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview",
+        "https://www.anthropic.com/engineering/equipping-agents-for-the-real-world-with-agent-skills"
+      ]
+    },
+    {
+      "id": "p-d3-w9-034",
+      "taskStatementId": "3.8",
+      "stem": "A customer-facing assistant for a bank's mortgage team serves both advisers (who need the full product suite, including internal margin data) and customers (who need rates and eligibility). The current design loads one prompt containing everything and relies on the model to work out who it is talking to. A proposed redesign would split this into two role-scoped assistants. Which TWO considerations MOST support the redesign? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Retrieval would be scoped by role, so internal margin data is never a candidate for a customer answer — removing a class of leak that depends on the model correctly inferring the audience from conversation, which it cannot be relied on to do."
+        },
+        {
+          "id": "B",
+          "text": "Each role's context gets smaller and more specific, so the customer assistant is not carrying the adviser-only material in every request — cutting tokens and reducing the chance of an irrelevant internal detail surfacing in a customer-facing reply."
+        },
+        {
+          "id": "C",
+          "text": "The bank could then retire the single assistant and standardise on one design, which simplifies the platform team's support burden."
+        },
+        {
+          "id": "D",
+          "text": "It would let the customer assistant use a cheaper model tier without any re-testing, since a smaller context makes quality insensitive to model choice."
+        },
+        {
+          "id": "E",
+          "text": "It removes the need for any authorisation check on the mortgage data, since a customer who reaches the customer assistant can no longer see adviser-only material."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "The two supporting considerations are the **security** one and the **context** one, and both follow from scoping rather than from instructing. (A) is the important one: today the audience is inferred by the model from conversation, which means the *only* thing preventing internal margin data from appearing in a customer answer is the model's judgement about who is talking — and that is exactly the kind of control the exam treats as insufficient. With role-scoped retrieval, adviser-only material is never a candidate. (B) is the quieter win: context shrinks and becomes specific, which cuts cost and reduces the chance of an irrelevant internal detail leaking into a customer reply. Together they mean both exposure and distraction fall, for the same underlying reason.",
+      "whyWrong": {
+        "C": "The redesign replaces one assistant with two, so it increases the number of things the platform team supports — it does not standardise on one design. ‘Retire the single assistant’ is true only in the trivial sense that the old combined one goes away, and it is not a consideration that supports the decision; if anything it argues against it, which is the sign it belongs on the wrong side.",
+        "D": "A smaller context does make a cheaper tier more viable, but it does not remove the need to re-test — quality still depends on the model, and the role-specific eval sets would need to be built and run per tier. The claim that quality becomes insensitive to model choice is simply wrong, and ‘without any re-testing’ is precisely the assertion no architect should let into a design review.",
+        "E": "This is the governance-skipping answer. Role-scoped retrieval reduces one exposure path; it does not remove the need for authorisation, because the customer assistant still retrieves real customer mortgage data, and a compromised or misconfigured session is still a client. The correct reading is that authorisation moves to the server and becomes narrower — not that it becomes unnecessary."
+      },
+      "difficulty": 2,
+      "mindset": "Scope retrieval by role rather than instructing the model to behave by role — instruction is not an access boundary.",
+      "tags": [
+        "progressive-discovery",
+        "role-scoping",
+        "pii",
+        "context-size"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents",
+        "https://modelcontextprotocol.io/specification/2025-11-25/basic/security_best_practices"
+      ]
+    },
+    {
+      "id": "p-d3-w9-036",
+      "taskStatementId": "3.5",
+      "stem": "A university's library assistant must answer questions using a mix of copyrighted books, journal articles, 60 years of internal seminar notes and the library's own catalogue. The legal team says excerpts must be limited and attributed, and that the assistant must not reproduce a chapter. The library wants answers to cite sources so patrons can find the physical item. Which design meets both obligations?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Answer from retrieved passages with citations to the specific work, page and shelfmark, using Claude's citations feature so each claim is traceable to the passage that supports it; keep retrieval scoped to short passages and instruct the model to summarise and quote briefly rather than reproduce, with a length guard on quoted spans."
+        },
+        {
+          "id": "B",
+          "text": "Fine-tune on the library's own digitised collection so the model has the content memorised, which removes the need to retrieve or reproduce text at request time."
+        },
+        {
+          "id": "C",
+          "text": "Cache the full text of each catalogued book as a prompt prefix, so the assistant always has the complete work available and can quote accurately from any part of it."
+        },
+        {
+          "id": "D",
+          "text": "Restrict the assistant to the library's own seminar notes and catalogue only, and answer all questions about books and articles by directing the patron to a librarian."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Both obligations point at the same design: **ground the answer in retrieved passages and make the grounding visible**. Citations are the mechanism — attaching the source to the specific supporting span means a patron can find the physical item and an auditor can verify the claim, which is what the library's requirement asks for and what a fair-use position on excerpting depends on. Keeping retrieval to short passages and instructing brief summarisation with a guard on quoted length addresses the reproduction limit directly and auditable. Note the pattern in the distractors: two of them try to solve a copyright problem by getting the content out of the retrieval path entirely, which does not make the rights question go away.",
+      "whyWrong": {
+        "B": "This is the answer that sounds most modern and is clearly wrong on the question being asked. Fine-tuning does not remove copyright obligations — it reproduces copyrighted material into a training artefact, which is a larger and less controllable exposure than a quoted passage, and it makes the source of any statement untraceable, which is exactly what the library needs. It also destroys the citation requirement and cannot reflect a collection that acquires new material.",
+        "C": "Caching the full text as a prompt prefix is a well-intentioned attempt to improve accuracy by giving complete context, and it maximises rather than minimises the copyright exposure — a full copyrighted work shipped on every request, with no passage-level scoping and no attribution attached to any claim. Prompt caching is the right tool for a large stable prefix you are entitled to send repeatedly; entitlement and granularity are the questions here, and neither favours this design.",
+        "D": "Excluding books and journal articles from the assistant is the maximally cautious position and it is over-exclusion: summarising and citing short passages with attribution is a normal, supportable use, and refusing all of it fails the library's stated goal of helping patrons find and use the collection. Over-caution is a design error — the answer is scoped, attributed retrieval, not none."
+      },
+      "difficulty": 2,
+      "visualId": "rag-pipeline",
+      "mindset": "Where use of content is limited, ground answers in short retrieved passages and attach citations to the supporting span — do not try to solve the rights question by removing the source.",
+      "tags": [
+        "rag",
+        "citations",
+        "compliance",
+        "grounding"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/citations",
+        "https://www.anthropic.com/legal/aup"
+      ]
+    }
+  ]
+}

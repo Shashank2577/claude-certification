@@ -1,0 +1,1041 @@
+{
+  "certId": "developer",
+  "domainId": "d8-tools-mcp",
+  "questions": [
+    {
+      "id": "v-d8-z4-001",
+      "taskStatementId": "8.1",
+      "scenario": "A booking agent built with the Claude Agent SDK defines a client tool `check_availability(property_id, check_in, check_out, guests)`. The harness validates arguments and calls the property system. The team is documenting the tool for a new engineer.",
+      "stem": "Which TWO statements about this tool's execution are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "It is a client tool: your harness receives the `tool_use` block, runs the function, and returns the result as a `tool_result` block."
+        },
+        {
+          "id": "B",
+          "text": "Its results appear in the model's context in the next turn, because tool results are added as user-role messages containing `tool_result` blocks."
+        },
+        {
+          "id": "C",
+          "text": "The API executes the function automatically once it sees the tool definition, without any code in the harness."
+        },
+        {
+          "id": "D",
+          "text": "It runs as a subprocess on a remote server managed by Anthropic, like a server-side tool."
+        },
+        {
+          "id": "E",
+          "text": "The tool's definition and schema are sent on every request, so they are part of the context budget."
+        }
+      ],
+      "correct": [
+        "A",
+        "E"
+      ],
+      "explanation": "A client tool is one **your** code runs: the model emits a `tool_use` block, your harness executes the function, and you return the outcome as a `tool_result` block in the next request. And because tool definitions travel with the request, every tool's name, description and schema occupies context on **every turn** — which is the practical reason tool-set size is an architectural decision rather than a detail.",
+      "whyWrong": {
+        "B": "Tool results are returned in the `user` turn message, but that turn also carries `tool_result` blocks, not the assistant's own text. Saying results are user messages is misleading about the structure — and the important fact is that the results land in the next request's context.",
+        "C": "The API never runs your code. Without a harness executing the function and returning a result, the conversation simply cannot continue.",
+        "D": "Describes server-side tools, which the provider executes. A client tool is the opposite case and requires your code to run."
+      },
+      "difficulty": 2,
+      "visualId": "tool-design",
+      "mindset": "Client tools run in your harness; server-side tools run by the provider. Tool definitions are a per-request context cost.",
+      "tags": [
+        "client-tools",
+        "tool-use",
+        "agent-sdk",
+        "multi-select"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools"
+      ]
+    },
+    {
+      "id": "v-d8-z4-002",
+      "taskStatementId": "8.1",
+      "scenario": "A developer is writing the description for a tool that returns a customer's recent orders. Its neighbour, `get_customer`, returns profile and contact details.",
+      "stem": "Which description gives Claude the best chance of choosing correctly?",
+      "options": [
+        {
+          "id": "A",
+          "text": "\"Returns a customer's order history — the most recent orders first, with date, items, total and status. Use when the question is about what was ordered, bought or shipped. For contact details or account status use `get_customer` instead.\""
+        },
+        {
+          "id": "B",
+          "text": "\"Returns orders for a customer.\""
+        },
+        {
+          "id": "C",
+          "text": "\"A read-only endpoint on the orders microservice. Accepts a customer identifier. Returns a JSON array.\""
+        },
+        {
+          "id": "D",
+          "text": "\"This is the preferred tool for all customer-related queries and should be used before any other customer tool.\""
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "A strong description does four things: it says **what the tool does**, **when to reach for it**, **what comes back** so the model can use the result, and — critically for adjacent tools — **what to use instead**. That last part is what resolves the choice between two tools about the same entity. Naming the sibling with a contrasting purpose is far more reliable than hoping the model infers the boundary.",
+      "whyWrong": {
+        "B": "The name carries almost all the meaning here, which is why the sibling gets confused with it. The description adds nothing that resolves the overlap.",
+        "C": "Describing the implementation tells the model about your architecture, not about when it should use the tool. The response shape is useful; the service topology is not.",
+        "D": "A blanket priority claim is unconditioned, so it fails the moment a request is genuinely about contact details — which is precisely the case that was going wrong."
+      },
+      "difficulty": 1,
+      "visualId": "tool-design",
+      "mindset": "Say what it does, when to use it, what comes back, and which sibling to use instead.",
+      "tags": [
+        "tool-descriptions",
+        "tool-selection",
+        "overlapping-tools",
+        "writing-tools"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/writing-tools-for-agents"
+      ]
+    },
+    {
+      "id": "v-d8-z4-003",
+      "taskStatementId": "8.1",
+      "scenario": "A team is exposing an internal REST API as tools. Each endpoint became its own tool: 18 tools such as `list_users`, `get_user`, `create_user`, `update_user`, `delete_user` and similar for teams, projects and permissions.",
+      "stem": "Which approach BEST follows tool-writing guidance?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Reshape the set around the tasks the agent performs, such as `manage_user(action, fields)`, so a common operation is one call with a clear contract rather than a chain of endpoint calls."
+        },
+        {
+          "id": "B",
+          "text": "Keep the 18 tools but add a shared prefix like `user_` and `project_` so the names group visually."
+        },
+        {
+          "id": "C",
+          "text": "Keep the 18 tools and set `disable_parallel_tool_use: true` so the agent can't call them concurrently."
+        },
+        {
+          "id": "D",
+          "text": "Merge everything into one `api_call(method, path, body)` tool and let the agent construct requests itself."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Guidance favours a **small set of task-shaped tools**: fewer definitions means less context per request, fewer turns per operation, and a smaller chance the model picks a read where a write was intended. B improves readability but nothing else — the count, and so the context cost and the round trips, are unchanged. C treats a symptom: parallelism isn't the problem, and disabling it removes useful capability. D removes the abstraction entirely and hands the agent raw HTTP, including its error handling.",
+      "whyWrong": {
+        "B": "Naming convention helps humans read the list. It does not reduce the context each tool definition costs, nor the turns a multi-step operation takes.",
+        "C": "`disable_parallel_tool_use` forces tool calls to be sequential. That is a restriction, not a design improvement, and it makes legitimately independent calls slower.",
+        "D": "A generic `api_call` pushes authentication, validation and error handling into agent-generated requests. That is the anti-pattern of putting the model's output where your system logic should be."
+      },
+      "difficulty": 2,
+      "visualId": "tool-design",
+      "mindset": "Fewer, wider, task-shaped tools beat one tool per endpoint — they cut context and turns together.",
+      "tags": [
+        "tool-set-construction",
+        "context-budget",
+        "consolidation",
+        "tool-design"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/writing-tools-for-agents",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools"
+      ]
+    },
+    {
+      "id": "v-d8-z4-004",
+      "taskStatementId": "8.1",
+      "scenario": "A finance agent exposes `record_payment(invoice_id, amount, currency, method)`. The harness must decide whether to run it. Policy says payments under $10,000 may execute automatically; anything larger needs recorded approval.",
+      "stem": "Where should this policy be enforced, and what is the BEST mechanism?",
+      "options": [
+        {
+          "id": "A",
+          "text": "In the harness, before execution — for example a permission callback that inspects the arguments, allows small payments, and requires approval for larger ones. Policy enforced in code runs every time, regardless of what the model does."
+        },
+        {
+          "id": "B",
+          "text": "In the tool description, stating that payments over $10,000 need approval, so the model decides correctly on its own."
+        },
+        {
+          "id": "C",
+          "text": "In the system prompt, as an explicit rule with the threshold spelled out."
+        },
+        {
+          "id": "D",
+          "text": "In a Skill the agent loads before making payments, so the rule is only read when relevant."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "This is an approval rule, and approval belongs in the **harness**, not in model-visible text. A permission callback runs on every matching call and can inspect the actual arguments, so a $12,000 payment is gated no matter how the request was phrased. Anything the model reads — descriptions, system prompts, Skills — is guidance with a non-zero failure rate, which is the wrong instrument for a control that must not have exceptions.",
+      "whyWrong": {
+        "B": "Descriptions inform tool selection. They are not an enforcement point, and the same description is present whether the amount is $900 or $90,000.",
+        "C": "A system prompt rule relies on the model both noticing it and applying it at the right moment, every time, with no independent check.",
+        "D": "A Skill adds know-how. It loads conditionally and still relies on the model to follow it — the weakest place for a hard limit."
+      },
+      "difficulty": 2,
+      "visualId": "security-guardrails",
+      "mindset": "If a rule admits no exceptions, enforce it in the harness. Model-visible text is guidance, not a control.",
+      "tags": [
+        "approval-patterns",
+        "permissions",
+        "least-privilege",
+        "enforcement"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/permissions",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools"
+      ]
+    },
+    {
+      "id": "v-d8-z4-005",
+      "taskStatementId": "8.1",
+      "scenario": "An agent's system prompt says \"never take destructive actions without approval.\" In testing, the agent proceeded once without asking, describing the action as routine.",
+      "stem": "What does this reveal, and what is the fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Prompt-level controls are probabilistic. Move the check into a permission rule or hook that intercepts the destructive call deterministically, and keep the prompt statement as documentation only."
+        },
+        {
+          "id": "B",
+          "text": "The model is inconsistent, so add the rule three times with emphasis so it is more likely to be followed."
+        },
+        {
+          "id": "C",
+          "text": "The system prompt is too long; move the rule to the top and it will be followed reliably."
+        },
+        {
+          "id": "D",
+          "text": "Use a more capable model, since instruction-following scales with model capability."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "A must-always control cannot live in model-visible text. The model reasoned that the action was routine and satisfied the rule as it understood it — that is the expected behaviour of a probabilistic system, not a bug. A hook or permission rule intercepts the matching call every time and can block it, regardless of the model's judgement. The prompt statement is still worth keeping, but only as documentation of intent.",
+      "whyWrong": {
+        "B": "Repetition and emphasis raise no guarantee. The model already understood the rule and judged it didn't apply; saying it louder doesn't change that judgement.",
+        "C": "Position affects attention, not enforcement. A rule at the top of a long prompt is still a rule the model may reinterpret when it seems reasonable to do so.",
+        "D": "Capability improves instruction-following on average, but 'average' is the problem. A control with a non-zero failure rate is the wrong instrument for something that must never happen."
+      },
+      "difficulty": 2,
+      "visualId": "security-guardrails",
+      "mindset": "Probabilistic text for a must-never rule is a design error. Move it to code that runs every time.",
+      "tags": [
+        "approval-patterns",
+        "hooks",
+        "deterministic-enforcement",
+        "least-privilege"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/hooks",
+        "https://code.claude.com/docs/en/permissions"
+      ]
+    },
+    {
+      "id": "v-d8-z4-006",
+      "taskStatementId": "8.1",
+      "scenario": "An order agent's tools include `cancel_order` and `issue_store_credit`. In one response the model returned both as `tool_use` blocks. Both execute against the same order and can succeed independently.",
+      "stem": "What MUST the harness do, and what is the resulting design consideration?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Return a `tool_result` for **every** `tool_use` block in that response, in the same order, before sending the results back. Because both actions can fire in one turn, the agent needs either an approval gate on such combinations or a tool that expresses the mutually exclusive choice directly."
+        },
+        {
+          "id": "B",
+          "text": "Execute only the first `tool_use` block and discard the rest, since the model may only take one action per turn."
+        },
+        {
+          "id": "C",
+          "text": "Execute both, and if the second fails report the whole turn as failed so the model can retry."
+        },
+        {
+          "id": "D",
+          "text": "Ask the model to re-issue one block at a time by rejecting the response and returning an error."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "When a response contains multiple `tool_use` blocks, the next user message must contain a `tool_result` block for **each** of them, in the same order — omitting one makes the conversation invalid. The design consequence is the interesting part: if two tools must never both apply to the same record, that constraint belongs in the interface (one tool that expresses the choice, an idempotency or conflict guard) or in an approval gate, not in an assumption that the model will serialise its own actions.",
+      "whyWrong": {
+        "B": "Silently dropping a `tool_use` the model requested leaves the conversation inconsistent and the model's picture of the world wrong. It may then assume the cancellation happened.",
+        "C": "Both actions can genuinely succeed. Reporting the turn as failed after partial success invites a retry that re-executes the successful one — which, for a cancellation, is not reversible.",
+        "D": "Rejecting a valid response to change its shape wastes a turn and teaches the model nothing it can act on. The constraint is an interface or policy concern, not a syntax error."
+      },
+      "difficulty": 3,
+      "visualId": "error-recovery",
+      "mindset": "One `tool_result` per `tool_use`, always — and guard mutually exclusive actions in the interface, not in the model's discretion.",
+      "tags": [
+        "tool-use",
+        "tool-result",
+        "parallel-tool-use",
+        "idempotency"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/parallel-tool-use",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls"
+      ]
+    },
+    {
+      "id": "v-d8-z4-007",
+      "taskStatementId": "8.1",
+      "scenario": "A developer is wrapping a third-party weather API as a client tool. The API key must not appear anywhere the model can see: not in the tool description, not in the schema, not in a prompt.",
+      "stem": "Where should it live?",
+      "options": [
+        {
+          "id": "A",
+          "text": "In the harness's configuration, read from the environment when the tool function executes, so the credential is never part of model-visible text."
+        },
+        {
+          "id": "B",
+          "text": "In the tool description, prefixed clearly as confidential, so the model knows not to repeat it."
+        },
+        {
+          "id": "C",
+          "text": "In the system prompt, in a section marked \"credentials — do not output\", so the model knows to keep it private."
+        },
+        {
+          "id": "D",
+          "text": "As a default value for an `api_key` parameter in the tool's input schema, so callers don't have to supply it."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Credentials belong in **harness configuration**, read at execution time. Descriptions, schemas and prompts are all model-visible: they travel in requests and appear in transcripts, so a secret in any of them is a secret the model can see, repeat, or log. A default in the schema is worse still — it makes the key part of a contract the model fills. Reading the key from the environment inside your tool function keeps the boundary exactly where it belongs.",
+      "whyWrong": {
+        "B": "Marking something confidential in the description doesn't remove it from the context. It is sent on every request and present in the transcript.",
+        "C": "The same applies to the system prompt, and instructions not to output a value are not a control over it.",
+        "D": "A schema default advertises the credential to the model and to every party reading the definition. It also invites the model to fill in credentials generally."
+      },
+      "difficulty": 1,
+      "visualId": "security-guardrails",
+      "mindset": "Secrets live in harness configuration. Anything the model can read, the model can leak.",
+      "tags": [
+        "credentials",
+        "client-tools",
+        "configuration",
+        "security"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools",
+        "https://code.claude.com/docs/en/agent-sdk/custom-tools"
+      ]
+    },
+    {
+      "id": "v-d8-z4-008",
+      "taskStatementId": "8.1",
+      "scenario": "A tool's error result contains a 150-line Java stack trace including a JDBC connection string with a username and password. The useful part is a single sentence: \"column 'created_at' does not exist\".",
+      "stem": "Which is the BEST error-handling change?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Return the actionable message with a category such as `validation` and a non-retryable marker, and log the stack trace server-side where it belongs."
+        },
+        {
+          "id": "B",
+          "text": "Return the stack trace but redact anything containing the word password, so the model still sees the shape of the failure."
+        },
+        {
+          "id": "C",
+          "text": "Return the stack trace unchanged, since the model may need the full detail to work out what to try next."
+        },
+        {
+          "id": "D",
+          "text": "Return only \"query failed\", keeping the implementation detail out of the conversation entirely."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Error results go into the model's context, so they should carry what the model needs to **act** and nothing it doesn't: the actionable message, a category, and whether retrying could help. Everything else is for the engineers who will read the logs. B's redaction is unreliable — the same secret may appear under a different key or in a URL — and C hands over credentials and a hundred irrelevant lines. D strips the one thing that would have let the model fix its query.",
+      "whyWrong": {
+        "B": "Pattern-matching one word is not a security control. Connection strings carry credentials under many field names, and redaction logic is exactly where leaks survive.",
+        "C": "The model cannot act on a stack trace, and the trace contains a live credential. This is a leak with extra steps.",
+        "D": "Removing all detail leaves the model unable to distinguish a fixable query problem from a permission failure, which is the problem the categories solve."
+      },
+      "difficulty": 3,
+      "visualId": "error-recovery",
+      "mindset": "Errors are model-facing: actionable message and category in, stack trace to the logs.",
+      "tags": [
+        "error-handling",
+        "secrets",
+        "structured-errors",
+        "logging"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/writing-tools-for-agents",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls"
+      ]
+    },
+    {
+      "id": "v-d8-z4-009",
+      "taskStatementId": "8.2",
+      "scenario": "A platform team is writing an MCP server in Python that Claude Code launches locally over stdio. During development they added `print()` calls to trace incoming requests.",
+      "stem": "What is the correct practice for this server?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Keep stdout strictly for JSON-RPC messages and send diagnostics to stderr or a log file, since the client parses stdout as protocol."
+        },
+        {
+          "id": "B",
+          "text": "Send the diagnostics to stdout but prefix each line with `//`, which JSON parsers ignore."
+        },
+        {
+          "id": "C",
+          "text": "Buffer the diagnostics and flush them only when the server shuts down, so they never interleave with protocol traffic."
+        },
+        {
+          "id": "D",
+          "text": "Switch the server to HTTP, since HTTP tolerates extra output on the response stream."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "With stdio, the client reads the server's **stdout** and parses it as JSON-RPC. The transport contract says the server must not write anything else there, so any stray print corrupts the stream and the client reports a connection failure while the server looks healthy when run by hand. stderr is the standard place for diagnostics, and it's why the symptom is so confusing: the code is fine, the stream is polluted.",
+      "whyWrong": {
+        "B": "JSON has no comment syntax that a parser would skip in this position. Unparseable text on stdout still breaks the stream.",
+        "C": "Buffering doesn't help — the bytes eventually have to go somewhere, and writing them to stdout at shutdown still corrupts the protocol channel.",
+        "D": "HTTP doesn't make stray writes safe, and changing transports is a redesign to work around a logging mistake."
+      },
+      "difficulty": 1,
+      "visualId": "mcp-architecture",
+      "mindset": "Over stdio, stdout carries only protocol messages. Diagnostics go to stderr.",
+      "tags": [
+        "mcp-transport",
+        "stdio",
+        "debugging",
+        "server-authoring"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-06-18/basic/transports"
+      ]
+    },
+    {
+      "id": "v-d8-z4-010",
+      "taskStatementId": "8.2",
+      "scenario": "A company stands up an internal MCP server over Streamable HTTP so several Claude applications can reach it. A security reviewer asks what the server must validate before serving requests.",
+      "stem": "Which TWO requirements are documented for this transport? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Validate the `Origin` header on incoming requests to prevent DNS-rebinding attacks, since a browser on a user's machine could otherwise reach a localhost-bound server."
+        },
+        {
+          "id": "B",
+          "text": "Require authentication on the server and bind it to localhost where appropriate, rather than exposing it to the network without access control."
+        },
+        {
+          "id": "C",
+          "text": "Serve the server's full source code at a public endpoint so clients can verify its behaviour."
+        },
+        {
+          "id": "D",
+          "text": "Use a fixed, documented JSON-RPC method name for health checks instead of a bespoke one."
+        },
+        {
+          "id": "E",
+          "text": "Serve the protocol over a single long-lived socket and reject any request that opens a second one."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "HTTP transports sit on the same origin model as web pages, which creates two specific risks the server must handle. **Origin validation** blocks DNS rebinding, where a malicious site resolves to a service on the user's own machine and drives it from the browser. **Authentication and appropriate binding** stop unauthenticated access to an internal capability. Both are about the server being reachable by something other than the intended clients.",
+      "whyWrong": {
+        "C": "Publishing source is not a transport requirement and may itself be undesirable. Clients verify behaviour by talking to the server, not by reading its code.",
+        "D": "Method naming is a server-design choice, not a security property of the transport.",
+        "E": "Streamable HTTP manages sessions over HTTP, not a single socket. Rejecting a second connection isn't how the transport works."
+      },
+      "difficulty": 3,
+      "visualId": "security-guardrails",
+      "mindset": "An HTTP MCP server is web-reachable: validate Origin and authenticate, or a browser can drive it.",
+      "tags": [
+        "mcp-transport",
+        "security",
+        "origin-validation",
+        "authentication"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-06-18/basic/transports",
+        "https://modelcontextprotocol.io/specification/2025-06-18/basic/security_best_practices"
+      ]
+    },
+    {
+      "id": "v-d8-z4-011",
+      "taskStatementId": "8.2",
+      "scenario": "A developer-docs platform wants Claude applications to be able to read a large, slowly changing set of internal reference documents — schema catalogues, runbooks, style guides — on demand, without those documents becoming tools the model must call.",
+      "stem": "Which MCP primitive fits, and why?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Resources, including templates such as `docs://{collection}/{name}` for dynamic catalogs — they are addressable data the client can read, and templated URIs let a large set be enumerated without one resource per document."
+        },
+        {
+          "id": "B",
+          "text": "Tools, because anything a model might need must be a tool for the model to reach it."
+        },
+        {
+          "id": "C",
+          "text": "Prompts, so the documents appear as slash commands a user can pick from."
+        },
+        {
+          "id": "D",
+          "text": "A single tool returning every document concatenated, so one call gets everything."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Resources exist for exactly this shape: data addressed by URI that the client reads into context when relevant, with **resource templates** allowing a whole catalog to be addressed by pattern instead of registering every document. Tools would make the model choose and invoke a function per document, spending turns on retrieval; prompts are user-invoked templates, not a document library; and one concatenated tool would dump the entire corpus into context every time.",
+      "whyWrong": {
+        "B": "Tools are for actions. Making 500 documents into 500 tools floods the tool list and forces a call per lookup — the cost resources exist to avoid.",
+        "C": "Prompts are user-controlled templates, usually surfaced as slash commands. They are a poor fit for a document corpus the model may want to consult unprompted.",
+        "D": "Returning everything means paying for the whole corpus on every use, in one enormous result. On-demand addressing is the point of resources."
+      },
+      "difficulty": 2,
+      "visualId": "mcp-architecture",
+      "mindset": "Addressable data belongs in resources; templates let one primitive serve a whole catalog.",
+      "tags": [
+        "mcp",
+        "resources",
+        "resource-templates",
+        "design"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-06-18/server/resources",
+        "https://modelcontextprotocol.io/specification/2025-06-18/architecture"
+      ]
+    },
+    {
+      "id": "v-d8-z4-012",
+      "taskStatementId": "8.2",
+      "scenario": "An MCP server needs the user to choose one of three delivery windows before `create_shipment` can proceed. The server must pause and ask, and the answer has to come from the person.",
+      "stem": "Which mechanism is designed for this?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Elicitation — the server sends a request to the client asking the user for input, and the client surfaces it and returns the response."
+        },
+        {
+          "id": "B",
+          "text": "Sampling, where the server asks the client's model to generate the answer for the user to confirm."
+        },
+        {
+          "id": "C",
+          "text": "Roots, so the client tells the server which paths the server may read."
+        },
+        {
+          "id": "D",
+          "text": "A progress notification, so the client can display a spinner while the server waits."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Elicitation is the mechanism for **server-initiated user input**: the server asks, the client presents the question to the human, and the response comes back. Sampling is different in kind — the server asks the client's model to *generate* something, which is the wrong actor for a decision only the user can make. Roots is about telling the server which filesystem boundaries are in scope. A progress notification carries no request and no response.",
+      "whyWrong": {
+        "B": "Sampling delegates to a model. A delivery-window choice is a commitment the user has to make, and a generated guess is not consent to ship.",
+        "C": "Roots communicates filesystem boundaries from client to server. It carries no question and no user answer.",
+        "D": "Notifications are one-way status information. They cannot ask the user anything or bring a reply back."
+      },
+      "difficulty": 2,
+      "visualId": "mcp-architecture",
+      "mindset": "Server needs a human decision: elicitation. Server needs model reasoning: sampling. Never confuse the two.",
+      "tags": [
+        "mcp",
+        "elicitation",
+        "sampling",
+        "primitives"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-06-18/client/elicitation",
+        "https://modelcontextprotocol.io/specification/2025-06-18/client/sampling"
+      ]
+    },
+    {
+      "id": "v-d8-z4-013",
+      "taskStatementId": "8.2",
+      "scenario": "An MCP server enriches CRM records and one of its tools needs an LLM judgement step, such as classifying a lead as sales-qualified. The team has an API key it could use directly.",
+      "stem": "What is the BEST analysis?",
+      "options": [
+        {
+          "id": "A",
+          "text": "MCP's sampling lets the server request an LLM completion from the client's model, which keeps the provider credential in the client rather than in the server. The tradeoff is that the server depends on the client supporting sampling, and it needs a depth or iteration cap to prevent unbounded sampling loops."
+        },
+        {
+          "id": "B",
+          "text": "Sampling is always better, because it removes any need to authenticate against the model provider at all."
+        },
+        {
+          "id": "C",
+          "text": "Calling the API directly from the server is always better, because it makes the tool synchronous and predictable."
+        },
+        {
+          "id": "D",
+          "text": "Neither works: MCP servers must be deterministic and cannot involve a model at any point."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Both routes work, and the deciding factor is **where the credential and the control live**. Sampling keeps the provider key in the client and lets the client's model configuration govern the reasoning step, which is the more contained design. Direct calls are simpler when you need determinism or when clients may not support sampling — but then the key lives in the server. Whichever you pick, cap any nesting, because a server that samples a model that calls a tool that samples again is an unbounded loop by construction.",
+      "whyWrong": {
+        "B": "Sampling moves the credential; it doesn't eliminate the need for model access. The server is relying on the client's model and its configuration rather than holding a key.",
+        "C": "Direct calls give more control, not less — but they put the credential in the server, which is usually the thing you're trying to avoid. The choice is a tradeoff, not a ranking.",
+        "D": "Nothing prevents a server from involving a model, and sampling exists precisely to make that request through the client. Determinism is a design property, not a language-level prohibition."
+      },
+      "difficulty": 3,
+      "visualId": "mcp-architecture",
+      "mindset": "Sampling keeps the model credential with the client; direct calls give control at the cost of holding the key. Cap nesting either way.",
+      "tags": [
+        "mcp",
+        "sampling",
+        "credentials",
+        "design"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-06-18/client/sampling",
+        "https://modelcontextprotocol.io/specification/2025-06-18/architecture"
+      ]
+    },
+    {
+      "id": "v-d8-z4-014",
+      "taskStatementId": "8.2",
+      "scenario": "A team publishes its MCP server to an internal registry. They plan to version the tool names and schemas as the upstream API changes, and want clients to fail loudly rather than silently when something no longer exists.",
+      "stem": "Which TWO practices are MOST important for this server's lifecycle? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Keep tool names and their schemas stable across versions where possible, so clients that were written against v1 keep working, and introduce new tools rather than repurposing old ones."
+        },
+        {
+          "id": "B",
+          "text": "Return a distinct, identifiable error for an unknown or removed tool, rather than a generic failure, so clients and agents can tell a missing capability from a transient fault."
+        },
+        {
+          "id": "C",
+          "text": "Publish the server's source code publicly so users can self-host it instead of relying on the team."
+        },
+        {
+          "id": "D",
+          "text": "Serve the tool list over SSE rather than Streamable HTTP, so clients poll it for changes."
+        },
+        {
+          "id": "E",
+          "text": "Rename tools on every release to reflect the current API version, so the names always match the upstream service."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "A published server is a **contract**, and the cost of breaking it lands on every client at once. So names and schemas stay stable where possible and new capability arrives as new tools rather than a repurposed existing one. And when something genuinely disappears, say so distinguishably: an unknown-tool failure and a transient failure call for opposite responses from the caller, and collapsing them is how integrations degrade silently.",
+      "whyWrong": {
+        "C": "Open-sourcing the server is a distribution and governance decision, unrelated to versioning or how clients learn a tool is gone.",
+        "D": "Streamable HTTP is the recommended transport for remote servers and already supports notifying clients of tool-list changes. SSE is the deprecated option.",
+        "E": "Renaming tools on every release breaks every client that used them. Version information belongs in metadata or the server's identity, not in churning the public tool names."
+      },
+      "difficulty": 3,
+      "visualId": "mcp-architecture",
+      "mindset": "A published tool name is a contract: keep it stable, add rather than repurpose, and error distinguishably when it's gone.",
+      "tags": [
+        "mcp",
+        "versioning",
+        "error-handling",
+        "server-lifecycle"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-06-18/server/tools",
+        "https://code.claude.com/docs/en/mcp"
+      ]
+    },
+    {
+      "id": "v-d8-z4-015",
+      "taskStatementId": "8.2",
+      "scenario": "A team runs an MCP server in CI, headless, against a test data warehouse. The same script is also run on developer laptops.",
+      "stem": "Which TWO choices best support deterministic, reproducible runs in both places? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Pass the server configuration explicitly in CI, with credentials from the environment and a pinned server version, rather than relying on a developer's local MCP settings."
+        },
+        {
+          "id": "B",
+          "text": "Give the CI job the same MCP configuration file the developers use locally, so both paths exercise identical server settings."
+        },
+        {
+          "id": "C",
+          "text": "Pin tool versions and, for structured output, validate the tool result against its schema and fail the run on mismatch."
+        },
+        {
+          "id": "D",
+          "text": "Disable all tool use in CI so the run cannot vary based on which tools it calls."
+        },
+        {
+          "id": "E",
+          "text": "Log every tool result to the CI output so failures can be diagnosed from the run log alone."
+        }
+      ],
+      "correct": [
+        "A",
+        "C"
+      ],
+      "explanation": "Reproducibility comes from removing what differs between environments. **A** does that on the configuration side: CI is handed its own explicit setup with credentials from the environment and a pinned version, so it can't drift with someone's local settings. **C** does it on the data side: schema validation turns a malformed tool result into a hard failure rather than a plausible-looking wrong answer that passes silently. Both make variation fail loudly rather than quietly.",
+      "whyWrong": {
+        "B": "Local MCP settings differ by developer and often include personal servers. Inheriting them into CI makes the run depend on whoever last configured their machine.",
+        "D": "Removing tools removes the thing under test. The task depends on tool calls, and disabling them tests nothing while hiding the variation you're trying to control.",
+        "E": "Logging results helps diagnosis but doesn't reduce variation. A run can vary and still produce a full, readable log."
+      },
+      "difficulty": 3,
+      "visualId": "mcp-architecture",
+      "mindset": "Determinism comes from explicit config in CI, pinned versions, and schema validation that fails loudly.",
+      "tags": [
+        "mcp",
+        "ci",
+        "determinism",
+        "schema-validation"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/headless",
+        "https://modelcontextprotocol.io/specification/2025-06-18/server/tools"
+      ]
+    },
+    {
+      "id": "v-d8-z4-016",
+      "taskStatementId": "8.3",
+      "scenario": "A platform team maintains an internal MCP server exposing deployment status. It is used by three Claude applications and by Claude Code in engineers' terminals, and it is maintained independently of any one application.",
+      "stem": "Which mechanism is the primary right choice, and why?",
+      "options": [
+        {
+          "id": "A",
+          "text": "An MCP server: the capability is shared across several consumers and maintained by a team that owns it independently, which is exactly what MCP is for."
+        },
+        {
+          "id": "B",
+          "text": "A custom tool inside each of the three applications, so each app controls its own access to deployments."
+        },
+        {
+          "id": "C",
+          "text": "A Skill that documents the deployment service's API so any agent can call it."
+        },
+        {
+          "id": "D",
+          "text": "A built-in tool, by wrapping deployment status into the application's existing HTTP client."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The two features that justify a server are **shared consumption** and **independent ownership**, and this capability has both: several applications and coding agents need it, and the platform group maintains it regardless of any one app's roadmap. That yields one integration to fix when the service changes, consistent authentication, and new consumers that connect rather than re-implement. The other options trade that for either duplication (B) or the wrong kind of mechanism (C, D).",
+      "whyWrong": {
+        "B": "Three copies of the same integration means three deployments to patch when the deployment API changes, and three places for permissions and behaviour to drift apart.",
+        "C": "A Skill adds procedural knowledge, not system access. Documenting the API teaches agents how to call it but doesn't provide the capability or hold credentials.",
+        "D": "There is no built-in for an internal deployment service, and reusing an HTTP client inside an app keeps the integration app-local rather than shared."
+      },
+      "difficulty": 2,
+      "visualId": "capability-ladder",
+      "mindset": "Shared capability plus an independent owner earns an MCP server; single-consumer or occasional use does not.",
+      "tags": [
+        "mcp",
+        "mechanism-selection",
+        "reuse",
+        "integration"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-06-18/architecture",
+        "https://code.claude.com/docs/en/agent-sdk/mcp"
+      ]
+    },
+    {
+      "id": "v-d8-z4-017",
+      "taskStatementId": "8.3",
+      "scenario": "A fintech's internal compliance agent must be able to read a payments-sandbox API that enforces per-call authorization, rate limits and audit logging. Three other teams' agents will need the same governed access within the year.",
+      "stem": "Which mechanism is the BEST fit?",
+      "options": [
+        {
+          "id": "A",
+          "text": "An MCP server owned by the platform group, where authentication, per-call authorization, rate limiting and audit logging live once, so every consumer is governed identically."
+        },
+        {
+          "id": "B",
+          "text": "A custom tool in the compliance agent, with the audit logging added to it now and duplicated into the other teams' agents as they arrive."
+        },
+        {
+          "id": "C",
+          "text": "A Skill documenting the sandbox API and its authorization rules, so each agent follows the rules when it calls."
+        },
+        {
+          "id": "D",
+          "text": "A CLI on developer machines that each team wraps in whichever way suits them."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "This is the governance case for a server, not just the reuse case: authorization, rate limits and audit logs are **controls that must be identical for every caller**, and the natural place to enforce them is the single component all callers go through. A server owned by the platform group means a new team connects and inherits the controls rather than re-implementing them — which is the failure mode B guarantees and which C can only describe in prose.",
+      "whyWrong": {
+        "B": "Duplicating controls into each consumer means they will diverge, and a consumer that forgets the audit logging has no enforcement catching it. This is precisely the work MCP centralises.",
+        "C": "A Skill can state that authorization rules exist, but it cannot enforce them. Controls that must hold for every call belong in the path of the call.",
+        "D": "Per-team wrappers reproduce the same divergence, and a local CLI makes the governed surface harder to audit centrally."
+      },
+      "difficulty": 2,
+      "visualId": "capability-ladder",
+      "mindset": "If several consumers must be governed identically, put the controls in the one component they all call.",
+      "tags": [
+        "mcp",
+        "governance",
+        "authorization",
+        "mechanism-selection"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-06-18/basic/security_best_practices",
+        "https://code.claude.com/docs/en/agent-sdk/mcp"
+      ]
+    },
+    {
+      "id": "v-d8-z4-018",
+      "taskStatementId": "8.3",
+      "scenario": "A commerce application has a discount estimator that reads the in-memory cart in the app's own process. No other application will use it, and it needs the live cart state to be correct.",
+      "stem": "Which mechanism is the MOST appropriate?",
+      "options": [
+        {
+          "id": "A",
+          "text": "A custom tool inside the application: single consumer, coupled to app state, nothing to deploy independently."
+        },
+        {
+          "id": "B",
+          "text": "An MCP server, so the estimator can be reused across the company's other applications later."
+        },
+        {
+          "id": "C",
+          "text": "A Skill, so the estimator's rules load only when a discount question comes up."
+        },
+        {
+          "id": "D",
+          "text": "A built-in tool, since calculating a discount is a generic action that doesn't need custom code."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "A custom tool is right when the capability is **app-specific and single-consumer** — which this is on both counts. It runs where the cart state already lives, needs no network hop, and adds no component to deploy or secure. The MCP benefits (cross-app reuse, independent maintenance) are explicitly absent, and its costs would be paid for nothing. Reuse that is only hypothetical shouldn't buy a deployable.",
+      "whyWrong": {
+        "B": "Building a server for possible future reuse pays today's cost for a benefit no one has committed to. If a second consumer appears, promoting a tool to a server is a straightforward later step.",
+        "C": "A Skill supplies know-how, not a call into the running application. The estimator needs to read live in-memory state, which no prompt can reach.",
+        "D": "There's no built-in for this calculation, and even if a generic calculator existed it still couldn't read the app's cart."
+      },
+      "difficulty": 2,
+      "visualId": "capability-ladder",
+      "mindset": "Single consumer plus app-internal state → custom tool. Don't build a server for reuse nobody has committed to.",
+      "tags": [
+        "custom-tools",
+        "mechanism-selection",
+        "single-consumer",
+        "app-state"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools",
+        "https://www.anthropic.com/engineering/writing-tools-for-agents"
+      ]
+    },
+    {
+      "id": "v-d8-z4-019",
+      "taskStatementId": "8.3",
+      "scenario": "A team has a mature Skill documenting a 25-step customer-onboarding procedure, including the exact wording of customer emails and the order of internal checks. Engineers have started asking the agent to actually create the customer record in the CRM, which the Skill says nothing about.",
+      "stem": "What is the BEST assessment of what's needed?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Two different gaps. The Skill is the right home for the procedure and stays as-is; the missing piece is system access, which needs a tool or an MCP server — and the Skill should then reference it rather than trying to describe the API."
+        },
+        {
+          "id": "B",
+          "text": "The Skill needs to be extended with the CRM API documentation so the agent can call it correctly, since a Skill already covers everything a task needs."
+        },
+        {
+          "id": "C",
+          "text": "The Skill should be converted into a tool that performs the whole procedure end to end, so the agent executes rather than reads."
+        },
+        {
+          "id": "D",
+          "text": "Nothing is missing: the agent can call the CRM API through its existing shell access, guided by the Skill's instructions."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "This is the **knowledge-versus-access** distinction, and it's the most common misdiagnosis in tool selection. A Skill packages procedure and wording; it cannot grant the ability to create a CRM record, because it has no credentials and no code path. Adding more instructions to it makes the gap wider, not narrower. The two mechanisms compose: the Skill says what to do and in what order, and a governed tool does the write.",
+      "whyWrong": {
+        "B": "Documenting an API teaches the agent its shape. It supplies no credential and no execution path, and pushing a live write through prompt-described HTTP is how credentials end up in transcripts.",
+        "C": "Collapsing a 25-step procedure into one opaque tool removes the model's ability to follow, adapt and report each step, and makes the procedure impossible to review as written guidance.",
+        "D": "Using shell access to call a production CRM turns a security boundary into prompt guidance and puts credentials within reach of model-issued commands."
+      },
+      "difficulty": 3,
+      "visualId": "capability-ladder",
+      "mindset": "Classify the gap first: missing procedure → Skill; missing system access → tool or server. They compose.",
+      "tags": [
+        "skills",
+        "custom-tools",
+        "gap-analysis",
+        "mechanism-selection"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/skills",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools"
+      ]
+    },
+    {
+      "id": "v-d8-z4-020",
+      "taskStatementId": "8.3",
+      "scenario": "A coding agent already ships with tools for reading, editing and searching repository files. A team wants to add a tool that reads a proprietary config format their build system uses, so the agent can interpret those files.",
+      "stem": "Which is the BEST approach?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Check what the built-in file tools can already do — reading files is covered — and add a custom tool only for the format-specific interpretation that genuinely isn't possible with the built-ins."
+        },
+        {
+          "id": "B",
+          "text": "Add custom tools for reading and writing files as well, so the whole workflow uses the team's own tooling."
+        },
+        {
+          "id": "C",
+          "text": "Build an MCP server exposing the proprietary format, so any agent in the company can use the same tooling."
+        },
+        {
+          "id": "D",
+          "text": "Skip tools entirely and teach the agent the format through CLAUDE.md rules."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "**Check built-ins first.** File reading is already solved by a maintained, permission-aware tool that integrates with hooks and checkpoints; reimplementing it adds surface area and costs context for no new ability. What's actually missing is format-specific interpretation — and that should be a tool (or server) only if it needs execution. CLAUDE.md can describe the format, which is often the cheaper first step, but it can't replace a tool where parsing has to happen in code.",
+      "whyWrong": {
+        "B": "Duplicating maintained built-ins means losing their permission model, hook coverage and checkpoint integration while gaining nothing.",
+        "C": "A server is a deployable with auth, versioning and a failure mode. Before considering one, confirm the gap is real and can't be closed with a tool or instructions — and check whether an existing server already covers it.",
+        "D": "For a format the agent must *parse*, prose instructions don't substitute for code. This is the right answer only for the portion of the work that is describable knowledge."
+      },
+      "difficulty": 3,
+      "visualId": "capability-ladder",
+      "mindset": "Built-in → use it. Confirm the gap is real, then reach for the smallest mechanism that closes it.",
+      "tags": [
+        "built-in-tools",
+        "custom-tools",
+        "mcp",
+        "proportionate-design"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools",
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "v-d8-z4-021",
+      "taskStatementId": "8.3",
+      "scenario": "A team wants a Claude Code skill to be picked up automatically when engineers start on a certain kind of task. Currently it is almost never invoked unless someone types the slash command, even though its body is thorough.",
+      "stem": "What is the MOST effective fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Rewrite the skill's description and when-to-use guidance so the listing names the concrete triggers — the file paths, error messages or task types it applies to — since selection happens on the listing, not the body."
+        },
+        {
+          "id": "B",
+          "text": "Move the skill's full contents into CLAUDE.md so every session sees the procedure and cannot miss it."
+        },
+        {
+          "id": "C",
+          "text": "Convert the procedure into a tool, so it appears in the tool list where the model always sees its name."
+        },
+        {
+          "id": "D",
+          "text": "Shorten the skill body to a few lines, so the model has less to read before deciding."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Until a skill is invoked, only its **name and description** occupy context. That means the model chooses from the listing, and a perfect body is invisible at the moment the decision is made. So when auto-invocation never fires, the listing is the problem — and the fix is to name the concrete triggers in the description. This is the general shape: selection happens at the index, not inside the document.",
+      "whyWrong": {
+        "B": "Paying the full cost in every session, for everyone, including work unrelated to the procedure, and it still doesn't teach selective use — it just removes the selection decision.",
+        "C": "A multi-step procedure isn't an action with a schema. Turning it into a tool distorts what it is and adds a parameterised surface the model must fill in.",
+        "D": "Length isn't why it's not selected — the body isn't read until after selection. Trimming it doesn't change the listing."
+      },
+      "difficulty": 2,
+      "visualId": "tool-design",
+      "mindset": "Skills are selected on their listing. If auto-invocation never fires, fix the description, not the body.",
+      "tags": [
+        "skills",
+        "descriptions",
+        "discovery",
+        "progressive-disclosure"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/skills"
+      ]
+    },
+    {
+      "id": "v-d8-z4-022",
+      "taskStatementId": "8.3",
+      "scenario": "An architecture review produced claims about how Claude Code's mechanisms relate to one another when deciding what to build for a new capability.",
+      "stem": "Which TWO statements are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "A Skill is loaded on demand, so a procedure that applies only to certain situations should be a Skill rather than something injected into every session."
+        },
+        {
+          "id": "B",
+          "text": "CLAUDE.md is the right place for conventions that should apply to every session in the repository, such as how code is structured and which commands must pass."
+        },
+        {
+          "id": "C",
+          "text": "Tools and MCP servers exist mainly to give the model better prose guidance, so a prompt that explains the API in detail is usually sufficient."
+        },
+        {
+          "id": "D",
+          "text": "If a capability is available as a built-in tool, a custom tool implementing the same thing can still be worthwhile because it fits the team's conventions better."
+        },
+        {
+          "id": "E",
+          "text": "Once a procedure lives in a Skill, it should also be duplicated into CLAUDE.md so that engineers reading the repo can see it."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "**A** and **B** are the two load-bearing distinctions: on-demand knowledge belongs in a Skill so idle sessions pay almost nothing, while always-on standards belong in CLAUDE.md because they genuinely apply every time. C is the misconception that causes the most wasted work — tools and servers exist to provide **access and effects**, not prose. D sounds like a reasonable preference but inverts the guidance: don't rebuild maintained built-ins for internal style. E creates a second copy that will drift.",
+      "whyWrong": {
+        "C": "Prose cannot create a capability. A detailed prompt cannot hold a credential, validate an input, or perform a write with the guarantees your system logic needs.",
+        "D": "Built-ins are maintained and tested for exactly this capability. Rebuilding one to match house style trades real coverage for cosmetic preference.",
+        "E": "Two copies of the same procedure diverge the first time one is updated. If engineers should read it, the skill directory is the single place it lives."
+      },
+      "difficulty": 2,
+      "visualId": "capability-ladder",
+      "mindset": "On-demand knowledge → Skill; always-on standards → CLAUDE.md; capability and effects → tools/MCP. Never rebuild a built-in.",
+      "tags": [
+        "skills",
+        "claude-code",
+        "built-in-tools",
+        "mechanism-selection",
+        "multi-select"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/skills",
+        "https://code.claude.com/docs/en/memory"
+      ]
+    }
+  ]
+}

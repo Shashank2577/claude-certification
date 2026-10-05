@@ -47,6 +47,7 @@ export default async function MockResultsPage({ params }: PageProps<"/mock/[atte
         explanation: q.explanation,
         whyWrong: q.whyWrong,
         mindset: q.mindset,
+        visualId: q.visualId,
         flagged: state.flags.includes(id),
         ms: state.timeMs[id] ?? 0,
         domainName: domainName.get(q.domainId) ?? q.domainId,

@@ -5,6 +5,7 @@ import { clsx } from "clsx";
 import { Check, ChevronDown, Compass, Flag, Minus, X } from "lucide-react";
 import type { PublicQuestion } from "@/lib/content-types";
 import { Markdown } from "@/components/ui/markdown";
+import { Visual } from "@/components/visuals/visual";
 
 export interface ReviewItem {
   n: number;
@@ -15,6 +16,7 @@ export interface ReviewItem {
   explanation: string;
   whyWrong: Record<string, string>;
   mindset: string;
+  visualId?: string;
   flagged: boolean;
   ms: number;
   domainName: string;
@@ -260,6 +262,11 @@ function ReviewDetail({ id, item: x }: { id: string; item: ReviewItem }) {
               {x.mindset}
             </span>
           </p>
+        ) : null}
+        {x.visualId ? (
+          <div className="mt-4 min-w-0 overflow-x-auto">
+            <Visual id={x.visualId} compact />
+          </div>
         ) : null}
       </div>
     </div>

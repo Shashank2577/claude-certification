@@ -61,6 +61,7 @@ All study content lives in `content/` as JSON. The app reads it at build/run tim
     "explanation": "why the correct answer is correct (markdown)",
     "whyWrong": { "A": "...", "C": "...", "D": "..." },
     "difficulty": 2,                   // 1 easy, 2 medium, 3 hard
+    "visualId": "agentic-loop",        // optional; MUST be an id from VISUAL REGISTRY. Rendered with the explanation.
     "mindset": "the architect-thinking principle this tests, one line",
     "tags": ["string"],
     "sourceRefs": ["https://docs.claude.com/..."]

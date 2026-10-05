@@ -1,0 +1,909 @@
+{
+  "certId": "developer",
+  "domainId": "d1-agents-workflows",
+  "questions": [
+    {
+      "id": "v-d1-z5-001",
+      "taskStatementId": "1.1",
+      "scenario": "Verrick Industries, a precision-components manufacturer, is scoping four internal features. (a) A dashboard that summarises last quarter's scrap rates from an existing warehouse query. (b) A triage assistant that classifies inbound work orders into eight fixed categories and routes each to the right cell. (c) A maintenance agent that reads vibration traces, consults manuals, and proposes a repair sequence a technician approves. (d) A nightly job that must run extract, validate against a contract database, calculate surcharge, and write the booking — in that order, every time.",
+      "stem": "Which mapping of feature to the simplest sufficient architecture is correct?",
+      "options": [
+        {
+          "id": "A",
+          "text": "(a) an augmented LLM — a single call over data you already have. (b) a workflow with routing. (c) an agent, because the path depends on what the traces show and the work is iterative against a human. (d) a workflow with prompt chaining and programmatic validation, because the sequence is fixed and compliance forbids skipping a step."
+        },
+        {
+          "id": "B",
+          "text": "All four should be agents, because an agent is the most capable option and Verrick's team can afford the token cost of the extra turns."
+        },
+        {
+          "id": "C",
+          "text": "(a) and (b) should both be workflows with prompt chaining, (c) should be a routing workflow that picks one of several pre-written repair procedures, and (d) should be an agent so it can recover when a step fails."
+        },
+        {
+          "id": "D",
+          "text": "Only (c) needs anything beyond a single call. (a), (b) and (d) are all deterministic enough to be ordinary application code with no model involvement at all."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The decision is about matching the architecture to how much of the work is actually undetermined. Anthropic's framing has three tiers: an augmented LLM for a single request-response over data you already have, which is what (a) is; a workflow when the paths can be predefined, which is (b) with routing over eight known categories and (d) with chaining, where the order is fixed and compliance forbids skipping a step; and an agent when the path depends on what the model discovers at runtime, which is (c), since the right repair sequence is not known until the traces and manuals have been read and a technician approves the outcome. The cost argument reinforces the same ordering — Anthropic's own framing notes that agents consume roughly four times the tokens of chat and multi-agent setups about fifteen times, so reaching for an agent where a workflow fits is paying for flexibility you will not use.",
+      "whyWrong": {
+        "B": "Capability is not the objective; fitness is. The same guidance that says start with the simplest solution that works also warns that agents and especially multi-agent systems cost multiples of a chat call, and (a), (b) and (d) have no runtime uncertainty to pay that for.",
+        "C": "Two errors. A routing workflow needs predefined paths, and (c)'s repair sequence is not known in advance — that is what makes it agentic. And making (d) an agent gives up the deterministic ordering that compliance depends on, replacing a guarantee with a probability.",
+        "D": "Over-corrects. Classification over natural-language work orders and summarising scrap rates are exactly the cases where a model earns its place; the guidance is to start simple, not to avoid models where the input is genuinely fuzzy."
+      },
+      "difficulty": 1,
+      "visualId": "workflow-patterns",
+      "mindset": "Pay for runtime uncertainty only where it exists: fixed paths and fixed order are workflows, one-shot requests are a single call, and agents are for paths you cannot know in advance.",
+      "tags": [
+        "workflow-vs-agent",
+        "architecture",
+        "cost"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "v-d1-z5-002",
+      "taskStatementId": "1.1",
+      "scenario": "A Verrick engineer proposes adopting an agent framework for a new feature: given a work order number, read the order, look up the part in the parts catalogue, and return a single recommended replacement part. Three API calls, no branching that depends on model output, no need to pause for approval, and no existing graph or state machinery anywhere in the codebase.",
+      "stem": "What is the best advice?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Skip the framework. This is a three-call chain with no runtime uncertainty, so a short prompt chain or one orchestrated call in plain code is clearer and easier to debug. The guidance is to start with the simplest solution that works and add complexity only when it demonstrably helps; a framework that adds state, graph and multi-agent wiring you do not need is pure translation cost."
+        },
+        {
+          "id": "B",
+          "text": "Adopt LangGraph, because durable execution and human-in-the-loop checkpoints are worth having from day one even if this feature does not need them yet, since retrofitting a graph later is expensive."
+        },
+        {
+          "id": "C",
+          "text": "Adopt PydanticAI, because every agent should return a validated typed object, and retrofitting output validation into a plain-code chain is harder than starting with it."
+        },
+        {
+          "id": "D",
+          "text": "Adopt a framework, because frameworks handle retries and tracing that would otherwise have to be written by hand, and those concerns apply to any agentic feature."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The honest test is whether the framework earns its abstraction. Under any framework sits the same machinery — a model, a set of tools, and a loop that sends messages, runs requested tools and feeds results back until the model stops asking — and what frameworks add is structure around that core: state handling, graphs, typed outputs, retries, tracing, multi-agent wiring. Here there is no graph to draw, no state to checkpoint, no multi-agent wiring, and no typed output problem to solve. What remains is three calls in a known order, which is a prompt chain in plain code, and the code is shorter, has one request path, and is debuggable without reading through a framework's internals. The cost that B and C describe is real but it is paid on every request and every debugging session, and it buys nothing this feature uses.",
+      "whyWrong": {
+        "B": "Retrofitting is not the deciding factor; necessity is. Durable execution and approval checkpoints address a failure mode this feature does not have, and the abstraction cost is paid on every request whether or not a checkpoint is ever taken.",
+        "C": "Typed validated output solves a real class of bug, but not one this feature has — it returns a single recommendation into ordinary code. The fix for that class, when it appears, is Claude's own structured outputs rather than a framework.",
+        "D": "Retries and tracing are genuine concerns, but they are not a reason to adopt an orchestration framework for a linear three-call feature. Those are small, well-understood components, and paying for an abstraction to get them obscures what is actually sent to the model."
+      },
+      "difficulty": 2,
+      "mindset": "Adopt a framework for orchestration, typing or provider portability you actually need — not for retries and tracing, which are small enough to own.",
+      "tags": [
+        "frameworks",
+        "simplicity",
+        "trade-offs"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents",
+        "https://code.claude.com/docs/en/agent-sdk/overview"
+      ]
+    },
+    {
+      "id": "v-d1-z5-003",
+      "taskStatementId": "1.1",
+      "scenario": "Verrick's maintenance agent is currently a custom loop written directly against the Messages API. It works, but the team now wants built-in file tools, permission prompts, hooks, subagents, MCP servers and automatic compaction, and they are weighing whether to keep maintaining the loop.",
+      "stem": "Which trade-off is the accurate description of custom harness versus Claude Agent SDK?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The Agent SDK packages Claude Code's loop, tools and context management as a library and bundles the native Claude Code binary, so built-in tools, permissions, hooks, subagents, MCP, sessions and compaction arrive ready-made. What you give up is the newest-API-on-day-one advantage and total transparency: Claude features that land in the API are reachable through the SDK on its own schedule, and a subprocess-backed harness means a session is a disk-backed conversation history on the local machine. That is a good trade for Verrick's list and a poor one for a team whose main differentiator is being first to a new capability."
+        },
+        {
+          "id": "B",
+          "text": "The Agent SDK is a thin convenience wrapper with no functional advantage. Everything it provides — built-in tools, permissions, hooks, subagents, context management — is equally easy to write against the Messages API directly."
+        },
+        {
+          "id": "C",
+          "text": "The two are equivalent in capability and differ only in language support: the SDK is available for Python and TypeScript while a custom loop can be written in any language with an HTTP client."
+        },
+        {
+          "id": "D",
+          "text": "A custom loop is strictly better because it runs in-process with no subprocess, so it has lower latency and no per-session memory overhead. The SDK is only appropriate when you cannot write TypeScript or Python."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The two options are not equivalent in capability, and the difference runs in both directions. What the Agent SDK gives is substantial and specific: the same tools, agent loop and context management that power Claude Code, exposed as a library, with built-in tools, permission handling, hooks, subagents, MCP integration, sessions and compaction already solved — and it bundles the native Claude Code binary, so the harness is the same engine the team uses interactively. What a custom loop gives is the opposite profile: a request path you control end to end, immediate access to new API capabilities on release, and no bundled subprocess. There is also a real operational consequence of the SDK's subprocess model, since each session is a conversation history written to local disk, which is why transcripts are machine-local unless you add a `SessionStore` adapter. Verrick's requirement list is almost entirely things the SDK already provides, so the decision is about which side of the trade they value more.",
+      "whyWrong": {
+        "B": "Materially understates the SDK. Solving permissions, hooks, subagents, MCP and compaction from scratch is most of the work in an agent harness, and the SDK also bundles the binary so the engine matches the interactive one.",
+        "C": "Conflates two different axes. Language support is real — `claude -p --output-format json` is the documented path from other languages — but the capability difference is the substantive one, not the language binding.",
+        "D": "Inverts the cost. The SDK runs a subprocess per session, which does add process overhead, but that is not why you would choose a custom loop; you would choose it for control over the request path and for day-one access to new capabilities."
+      },
+      "difficulty": 2,
+      "mindset": "Custom loop for control and day-one API access, Agent SDK for a solved harness — and know that the SDK buys its convenience partly with a bundled subprocess.",
+      "tags": [
+        "agent-sdk",
+        "custom-loop",
+        "trade-offs"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/overview",
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "v-d1-z5-004",
+      "taskStatementId": "1.1",
+      "scenario": "Verrick must review two hundred incoming supplier contracts for four fixed risk areas: liability caps, data-protection terms, termination rights and payment terms. Every contract has to be checked against the same four criteria, the findings are independent, and the result is a single matrix the compliance team reads as one table.",
+      "stem": "Which workflow pattern fits, and why is it not the other candidate?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Parallelisation: the two hundred contracts are independent, so fan them out and run them concurrently, then assemble the results. It is not orchestrator-workers because there is no shared, progressively-refined artifact here — each contract produces a complete, self-contained set of four findings, and an orchestrator that iteratively split and reassembled a single growing deliverable would add coordination cost for no gain."
+        },
+        {
+          "id": "B",
+          "text": "Orchestrator-workers: an orchestrator should assign each contract to a worker and then iteratively refine the consolidated matrix, because a single compliance table benefits from several passes of review."
+        },
+        {
+          "id": "C",
+          "text": "Evaluator-optimizer: one pass extracts the four clauses and a second pass critiques the extraction and requests revisions, because clause extraction on legal text reliably needs a critic."
+        },
+        {
+          "id": "D",
+          "text": "Prompt chaining with a validation step after each stage: extract, validate, extract again if validation fails, and so on, because the four risk areas must all be covered."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The pattern follows from the shape of the work, and the two candidates are genuinely different. Parallelisation fits because the units are independent — two hundred contracts, four fixed criteria each, no dependency between contracts — so running them concurrently reduces wall-clock time with no coordination logic. Orchestrator-workers is for the opposite shape: a task where an orchestrator progressively breaks work into subtasks, workers execute them against shared state, and the orchestrator re-evaluates and iterates on a single growing deliverable. That iteration is not free — it is where the synthesis loss comes from, because constraints surfaced in one worker's output can disappear in the next summary — and here it would buy nothing, since each contract's four findings are already complete. The documented practical consequence of parallelisation is cost and rate-limit pressure, so the fan-out should be bounded and retried with backoff rather than fired all at once.",
+      "whyWrong": {
+        "B": "Applies the iterative pattern to independent work. Orchestrator-workers earns its cost when subtasks feed a shared artifact that must be re-examined; here every worker returns a finished, self-contained result and there is nothing for an orchestrator to iterate on.",
+        "C": "Evaluator-optimizer is for work with a quality bar that a cheap critic can check — generate, critique, revise. Extracting four fixed clauses is the kind of task where the constraint is coverage, and a critic pass doubles cost on every contract for a small gain.",
+        "D": "Chaining with validation suits sequential transformations where each stage's output feeds the next, such as extract then summarise then draft. Coverage of four criteria is a prompt-content requirement, not a reason to chain stages per contract."
+      },
+      "difficulty": 3,
+      "visualId": "workflow-patterns",
+      "mindset": "Independent units with no shared artifact means parallelisation; an artifact that must improve across passes means orchestrator-workers.",
+      "tags": [
+        "workflow-patterns",
+        "parallelisation",
+        "orchestrator"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "v-d1-z5-005",
+      "taskStatementId": "1.1",
+      "scenario": "Verrick's returns desk receives free-text messages that all concern one of six known topics, but the wording varies wildly and the current prompt asks the model to 'pick the right category'. Accuracy is 84%, and the errors concentrate on messages that mention two topics — a refund question that also asks about delivery.",
+      "stem": "Which change is most likely to fix this, and what does the guidance say about when routing is the wrong tool?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Split the decision from the response: a routing step that classifies the message into one of the six explicit categories, then a second step that handles that category. Routing is the documented fit when there are distinct categories that can be predefined. It is the wrong tool when the categories themselves are not enumerable — where the right path depends on what the model discovers at runtime — or when the input does not actually fall into a small set, in which case a model-driven loop is the better fit."
+        },
+        {
+          "id": "B",
+          "text": "Add six few-shot examples, one per category, to the existing single prompt. The model is choosing from an implicit set, and examples will make the set explicit enough."
+        },
+        {
+          "id": "C",
+          "text": "Replace the classifier with an embedding-similarity match against six labelled centroids, because a routing step would add a latency the returns desk cannot afford."
+        },
+        {
+          "id": "D",
+          "text": "Split the prompt into six separate prompts and try each one, picking whichever produces the most confident answer. That removes the need to enumerate the categories in one place."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The failure is structural rather than about phrasing: the model is being asked to do classification and response generation in one step, and the messages that straddle two topics have no principled answer to 'pick one'. Splitting the decision out makes the taxonomy explicit, which is what routing is for — Anthropic's guidance lists routing among the workflow patterns precisely because distinct, definable categories can be predefined ahead of the run. The same guidance is equally clear about when not to route: not when the categories cannot be enumerated, and not when the path depends on what the model discovers at runtime, since a pre-built route map cannot express that. That is the discriminator to carry into design reviews — a routing step needs a finite, writable set of destinations, and 'figure out what to do next' is not one. The ambiguous cases then need an explicit tie-break rule rather than a better prompt.",
+      "whyWrong": {
+        "B": "Examples improve consistency within an implicit set; they do not separate a decision from a generation step. The dual-topic messages remain undecidable in a single prompt regardless of how many examples are added.",
+        "C": "Embedding similarity replaces one classifier with another and inherits its own failure modes, including the same confusion on straddling messages. It also discards the explicit category list that makes the decision auditable.",
+        "D": "Running six prompts and picking the most confident is six times the cost and still requires the same category set to be encoded somewhere, now implicitly in prompt selection rather than in one place you can inspect."
+      },
+      "difficulty": 3,
+      "visualId": "workflow-patterns",
+      "mindset": "Routing needs a finite, writable set of destinations; if the path depends on what the model discovers at runtime, you wanted an agent, not a route map.",
+      "tags": [
+        "workflow-patterns",
+        "routing",
+        "classification"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents",
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/increase-consistency"
+      ]
+    },
+    {
+      "id": "v-d1-z5-006",
+      "taskStatementId": "1.1",
+      "scenario": "Verrick's quality team proposes adding an evaluator-optimizer loop to every generated work instruction: one call drafts the instruction, a second call scores it against eight safety and completeness criteria, and revisions are requested until the score passes. They estimate this will roughly double token spend on a feature that already runs 400,000 generations a month.",
+      "stem": "Which assessment of this proposal is most accurate?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Cost is the primary objection, and it is structural: each iteration is another full generation plus a scoring call, so the loop multiplies spend rather than adding a fixed overhead. The pattern pays when there is a clear quality bar, a cheap reliable critic, and generations where quality genuinely varies — a short instruction against eight written criteria is exactly that shape. The proportionate version is to apply the loop to a sample for measurement first, so the team learns the pass rate and the average iteration count before paying for it on every generation."
+        },
+        {
+          "id": "B",
+          "text": "The proposal is sound and should ship as designed. Evaluator-optimizer is one of Anthropic's named patterns, so naming it is sufficient justification for its cost on a high-volume feature."
+        },
+        {
+          "id": "C",
+          "text": "The loop should be applied to all eight criteria at once rather than one at a time, because a single combined score is more reliable than separate judgements and costs the same."
+        },
+        {
+          "id": "D",
+          "text": "The critic should be the same model and effort level as the generator, so that it judges the output to the same standard the generator was held to."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Anthropic's guidance names evaluator-optimizer for exactly one job — when a generated result fails to meet a bar, and one or more scored attempts against explicit criteria can measurably improve it — and it is paired with a caution that this is among the most expensive patterns because it trades compute for quality. So the pattern is legitimate here: eight explicit criteria against a short instruction is a well-shaped use case. What makes the proposal disproportionate is applying it to every generation before anyone knows the pass rate or how many iterations revisions actually take, because both numbers determine the multiplier and neither is knowable in advance. The proportionate move is to sample. And on the specific design choices, the guidance says to use a different model for evaluation than for generation where possible, so the critic is not the same configuration as the drafter; that independence is worth more than matching effort levels.",
+      "whyWrong": {
+        "B": "Being a named pattern is a description of what it does, not a cost justification. The same guidance flags it as one of the most expensive patterns, so the volume argument has to be answered rather than skipped.",
+        "C": "A single combined score hides which criterion failed and makes the revision request vague, which usually means more iterations rather than fewer. Per-criterion feedback is what makes the loop converge — at the cost of more scoring calls, which is a real trade rather than a free win.",
+        "D": "The documented practice points the other way: a different model from the one that generated the output, so a shared blind spot does not become a shared blind spot in the critique as well."
+      },
+      "difficulty": 3,
+      "visualId": "workflow-patterns",
+      "mindset": "Evaluator-optimizer trades compute for quality on a clear bar — so sample it first to learn the multiplier before you pay it on every generation.",
+      "tags": [
+        "workflow-patterns",
+        "cost",
+        "quality"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents",
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests"
+      ]
+    },
+    {
+      "id": "v-d1-z5-007",
+      "taskStatementId": "1.1",
+      "scenario": "Verrick's onboarding pipeline must, for every new supplier: pull the W-9 and banking details from the onboarding portal, validate them against the vendor master, classify the supplier's risk tier from three written criteria, and write a record. Compliance requires that validation actually blocks the classification step when it fails.",
+      "stem": "Which TWO statements about the right pattern and its enforcement are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Prompt chaining fits: each step's output feeds the next, and the sequence has a natural gate where validation must succeed before classification runs. Chaining suits tasks that can be decomposed into fixed sequential subtasks, and the documented variant is to add programmatic validation between steps so a downstream step does not run on bad input."
+        },
+        {
+          "id": "B",
+          "text": "The blocking requirement should be enforced in application code or a hook rather than in the prompt. A prompt instruction to skip classification when validation fails is guidance with a non-zero failure rate, and the blueprint pairs hooks with deterministic enforcement precisely so ordering and gating do not depend on the model cooperating."
+        },
+        {
+          "id": "C",
+          "text": "Routing is the right pattern, because the pipeline must choose between a validated path and a rejected path, and routing is how a workflow branches."
+        },
+        {
+          "id": "D",
+          "text": "An agent is the right pattern, because the classification criteria may need judgement on an unusual supplier, and only an agent can apply judgement mid-sequence."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Both are accurate and they are complementary. The pattern is prompt chaining, because the task decomposes into fixed sequential subtasks where each output feeds the next, and the documented chaining variant adds programmatic validation between steps so a downstream step never runs on input that failed. That maps exactly onto the compliance requirement that validation must block classification. The second point is that the guarantee belongs outside the model: prompts are probabilistic, and the blueprint's guidance is that if something must always happen it belongs in a hook or permission rule rather than a system prompt — with `PreToolUse` able to deny, allow, ask or defer, and the most restrictive decision winning when several hooks apply. An agent's judgement is not the issue; the issue is that a sequence with a mandatory gate is a place where you want determinism, not probability.",
+      "whyWrong": {
+        "C": "Routing chooses among predefined paths for an input category, which is not what a validation gate is. A gate is a precondition on a later step, and the documented mechanism for that is validation between chained steps plus enforcement outside the model.",
+        "D": "Agents are for paths that depend on what the model discovers at runtime. Here the path is fixed, and the requirement is that one step must not run unless another succeeded — which argues for determinism rather than for an agent."
+      },
+      "difficulty": 2,
+      "visualId": "workflow-patterns",
+      "mindset": "A mandatory gate between fixed steps is chaining plus programmatic validation, and the guarantee itself belongs in code or a hook rather than in the prompt.",
+      "tags": [
+        "workflow-patterns",
+        "chaining",
+        "hooks"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents",
+        "https://code.claude.com/docs/en/agent-sdk/hooks"
+      ]
+    },
+    {
+      "id": "v-d1-z5-008",
+      "taskStatementId": "1.2",
+      "scenario": "Verrick's hosted maintenance agent runs on serverless functions that scale to zero and live on ephemeral containers. A technician can start an investigation, walk away for two hours, and expect to resume the same agent session with its full history. Today a resume attempt works only when it happens to land on the same machine.",
+      "stem": "What is the documented mechanism for this, and what constraint comes with it?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Implement a `SessionStore` adapter and pass it to the SDK. By default the SDK writes session transcripts to JSONL files under `~/.claude/projects/` on local disk, which is why resume is machine-local; a `SessionStore` mirrors those transcripts to your own object store, key-value store or database so a session created on one host can be resumed on another. The constraint is that `SessionKey.projectKey` is a stable encoding of the working directory, so resume from the store has to happen from a working directory matching the original run — unless you set `CLAUDE_CODE_PROJECT_DIR_NAME` beside `CLAUDE_CONFIG_DIR` to key by a chosen name."
+        },
+        {
+          "id": "B",
+          "text": "Capture the `session_id` from every `ResultMessage` and pass it as `resume` on the next call. The SDK resolves a session id from anywhere, so the session follows the technician across hosts with no further work."
+        },
+        {
+          "id": "C",
+          "text": "Move the transcript file to shared storage with a post-run copy step that runs after each query completes. Since the SDK writes JSONL locally, mirroring the file is equivalent to implementing a store."
+        },
+        {
+          "id": "D",
+          "text": "Run the agent with Managed Agents instead, because Anthropic-hosted sessions are stored on Anthropic infrastructure and therefore survive the container being destroyed."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The mechanism is a `SessionStore`, and the reason it is needed is specific: the SDK writes transcripts to JSONL under `~/.claude/projects/` on the local filesystem, so a session is reachable only from the machine that created it. A `SessionStore` is an adapter with required `append` and `load` methods that mirrors those entries to storage you control, which is what makes multi-host deployments, durability across redeploys and compliance-controlled retention possible. The constraint is real and easy to trip over: `SessionKey.projectKey` is a stable, filesystem-safe encoding of the working directory, so resume or continue from the store has to run from a matching working directory. The escape hatch is to set `CLAUDE_CODE_PROJECT_DIR_NAME` alongside `CLAUDE_CONFIG_DIR`, in the query's `env` and in the host process environment, so entries are keyed by a name you choose. Capturing `session_id` is necessary and not sufficient — it identifies the transcript, it does not move it.",
+      "whyWrong": {
+        "B": "A `session_id` identifies a transcript; it does not transport it. Without a shared store the transcript file only exists on the host that wrote it, so a resume on a different machine has nothing to load.",
+        "C": "A post-run copy is not equivalent, because the SDK calls `append` during the query — mid-run entries, including subagent transcripts written under a `subpath`, only reach your storage through the adapter.",
+        "D": "Managed Agents does move harness execution to Anthropic, but the question is about the self-hosted Agent SDK. Switching hosting models is a different architectural decision, not the mechanism for sharing transcripts between self-hosted hosts."
+      },
+      "difficulty": 2,
+      "visualId": "deployment-topology",
+      "mindset": "A session id names a transcript; only a `SessionStore` moves it — and remember the store is keyed by an encoding of the working directory.",
+      "tags": [
+        "session-store",
+        "sessions",
+        "deployment"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/session-storage",
+        "https://code.claude.com/docs/en/agent-sdk/sessions"
+      ]
+    },
+    {
+      "id": "v-d1-z5-009",
+      "taskStatementId": "1.2",
+      "scenario": "Verrick's platform team is implementing its first `SessionStore` against S3 plus a Postgres index. Two reviews raised questions the team cannot answer from the interface alone: their job uses `continue: true` rather than an explicit id, and their retention policy requires that deleting a session also removes its subagent transcripts.",
+      "stem": "Which TWO statements about the `SessionStore` contract are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "`append` and `load` are the only required methods; the other four are optional and their absence has defined consequences. `listSessions` is optional, but if it is undefined then `continue: true` throws — so a job that relies on continuing the newest session has to implement it, or implement `listSessionSummaries`, which `listSessions` falls back to when undefined. Similarly, `listSubkeys` is optional, and if it is undefined only the main transcript is restored on resume, so subagent transcripts are silently left behind."
+        },
+        {
+          "id": "B",
+          "text": "`delete` is optional, and if it is undefined deletion is a no-op, which suits append-only backends. Where it is implemented, deleting the main key — the one with no `subpath` — must cascade to all subkeys for that session and also remove the session's summary entry, so a deleted session stops appearing in `listSessionSummaries`."
+        },
+        {
+          "id": "C",
+          "text": "`append` is called before the subprocess starts, so a store implementation must be able to read entries it has not yet written. `load` is called after each batch of entries is written locally."
+        },
+        {
+          "id": "D",
+          "text": "`subpath` is the session id of the subagent, so a store can treat subagent transcripts as first-class sessions and delete them independently without cascading."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Both are accurate, and both describe consequences of optionality rather than free choices. The interface has two required methods and four optional ones, and each omission has a defined behaviour worth designing around. `append` is called after each batch of transcript entries is written locally, and `load` is called before the subprocess spawns when `resume` is set or `continue: true` resolves the newest store session, plus once per session when listing falls back — so the ordering in the wrong option is reversed. The two that bite hardest are `listSessions`, whose absence makes `continue: true` throw outright, and `listSubkeys`, whose absence means resume restores only the main transcript and subagent transcripts are quietly not restored. `delete` completes the retention story: undefined means deletion is a no-op, which is fine for an append-only backend, but if implemented it must cascade from the main key to every subkey and clear the summary entry.",
+      "whyWrong": {
+        "C": "Reverses both call sites. `append` is called after a batch of entries has been written locally; `load` is called before the subprocess spawns, when resuming or continuing.",
+        "D": "Misreads `subpath`, which is an opaque key suffix that follows the on-disk layout — for example `subagents/agent-<id>`. It is not a session id, and the documented cascade requirement exists precisely because subagent transcripts hang off the main key."
+      },
+      "difficulty": 3,
+      "visualId": "deployment-topology",
+      "mindset": "Optional `SessionStore` methods have defined failure modes: no `listSessions` breaks `continue`, no `listSubkeys` silently drops subagent transcripts, and `delete` must cascade.",
+      "tags": [
+        "session-store",
+        "sessions",
+        "contracts"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/session-storage"
+      ]
+    },
+    {
+      "id": "v-d1-z5-010",
+      "taskStatementId": "1.2",
+      "scenario": "A Verrick engineer's coding agent spent 30 minutes mapping every call site of a deprecated telemetry library. She now wants to try two different migration strategies that both start from that analysis, and to keep the original exploration intact so a third engineer can resume it.",
+      "stem": "What is the correct SDK mechanism, and what does it actually branch?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Fork the session: pass `resume: <session_id>` together with `fork_session: true` and capture the new id from the resulting `ResultMessage`. The fork gets its own session id and a copy of the history up to that point, while the original id and history stay unchanged, so both branches are independently resumable. What it branches is the conversation history, not the filesystem — if a forked agent edits files, those changes are real and visible to any session in the same directory, so file-level branching needs git worktrees or file checkpointing rather than a session fork."
+        },
+        {
+          "id": "B",
+          "text": "Start two fresh sessions and paste the earlier analysis into each prompt. Forking would not preserve the tool calls and reasoning, so the pasted summary is the only way to reuse the work."
+        },
+        {
+          "id": "C",
+          "text": "Use `fork_session: true` without `resume`. Forking from the current session duplicates whatever is in context, which is enough because the analysis is the most recent thing that happened."
+        },
+        {
+          "id": "D",
+          "text": "Resume the original session twice. Because resume does not mutate the transcript, both continuations will start from the same point independently."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Forking is the documented mechanism and it exists precisely for this shape of work. Forking creates a new session that starts with a copy of the original's history but diverges from that point; the fork gets its own session id and the original's id and history are untouched, so you end up with two independent sessions you can resume separately. That is what lets her try two strategies from the same 30-minute analysis and lets a third engineer return to the original thread. Two details are worth being precise about. The call needs both `resume` and `fork_session: true`, and you capture the fork's id from the `ResultMessage` — which is present even on error results, so capture it inside the loop before any exception handling, since connection or process failures yield no result message at all. And the fork branches conversation history only, not files: edits made by a forked agent are real and visible to any session in the same directory.",
+      "whyWrong": {
+        "B": "Understates what a fork preserves. A fork copies the full history including tool calls, tool results and reasoning, which is exactly the value of the 30 minutes spent — pasting a summary discards it.",
+        "C": "Drops the `resume` parameter. The documented usage forks from a named session by resuming it and setting `fork_session`, and relying on 'most recent in this directory' is ambiguous the moment anything else runs in the same project.",
+        "D": "Misunderstands resume. Resuming a session appends to that same session and moves it forward, so two resumes are two continuations of one history, not two branches from a common point."
+      },
+      "difficulty": 2,
+      "mindset": "Fork with `resume` plus `fork_session: true` and capture the new id from the result message — and remember it branches history, not files.",
+      "tags": [
+        "sessions",
+        "forking",
+        "agent-sdk"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/sessions"
+      ]
+    },
+    {
+      "id": "v-d1-z5-011",
+      "taskStatementId": "1.2",
+      "scenario": "A four-person Verrick spin-out wants a nightly agent that clones repositories, runs a script, opens a pull request and writes a maintenance report. Nobody wants to operate a loop, provision containers or manage session storage, and the whole product is one job that runs for a few minutes a night.",
+      "stem": "Which deployment model fits, and what are they explicitly choosing to hand over and to keep?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Anthropic-hosted Managed Agents. Self-hosted means you run the loop — a custom loop or the Agent SDK in your own infrastructure — and own sandboxing, scaling, session storage and observability; Managed Agents is the hosted harness where Anthropic runs the loop and you supply the task and configuration. Four engineers with one nightly job have nothing to gain from owning that machinery. What they keep is the task definition, the tools and their scoping, and the credentials; what they hand over is the harness, its operation and its scaling."
+        },
+        {
+          "id": "B",
+          "text": "Self-hosted with the Agent SDK, because a nightly job is exactly the workload where you must own session storage and sandboxing, and a four-person team can operate containers."
+        },
+        {
+          "id": "C",
+          "text": "A plain Messages API call from a cron job, because the work is 'run a script, open a pull request, write a report' and therefore needs no agent loop at all."
+        },
+        {
+          "id": "D",
+          "text": "Either is equally appropriate, since the only difference is who runs the loop and neither affects the guarantees the job needs."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The deployment decision turns on who runs the agent loop and what you consequently own. Self-hosted means you write or adopt the loop — a custom one or the Agent SDK in your own containers — and own sandboxing, scaling, session storage, observability and the security edges. Anthropic-hosted Managed Agents means Anthropic runs the loop through its hosted harness and you supply the task and its configuration. For a four-person team with one nightly job, the self-hosted column is pure overhead: there is no custom runtime, no VPC constraint and no requirement for bespoke approval logic that would justify it. The split is also not cosmetic. Even hosted, the task definition, the tool set and how those tools are scoped, and the credentials the agent uses remain the customer's to get right — a hosted harness removes infrastructure work, not the decisions that determine blast radius.",
+      "whyWrong": {
+        "B": "Inverts the fit. Owning sandboxing, scaling and session storage is valuable when you need control over the runtime; for one nightly job it is undifferentiated cost with no corresponding benefit.",
+        "C": "Dismisses a real requirement. The work is multi-step and involves running a script, committing, opening a pull request and reporting — a tool-use loop, which is what an agent harness provides. Note the related documented path for other languages: driving the CLI non-interactively with `claude -p` and `--output-format json`.",
+        "D": "Understates the consequences. Who runs the loop determines who owns sandboxing, session persistence, scaling and observability — those are real differences in failure modes and in what you can change."
+      },
+      "difficulty": 1,
+      "mindset": "Hosted means Anthropic runs the loop and you own the task, tools and credentials; self-host only pays off when you need a runtime you control.",
+      "tags": [
+        "deployment",
+        "managed-agents",
+        "trade-offs"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/hosting",
+        "https://platform.claude.com/docs/en/managed-agents/overview"
+      ]
+    },
+    {
+      "id": "v-d1-z5-012",
+      "taskStatementId": "1.2",
+      "scenario": "Verrick runs one Agent SDK service for all of its plants. A review finds four things worth changing: sessions and auto-memory are keyed to the working directory; project and user settings load by default; the SDK runs no interactive OAuth flow for MCP servers; and the same API key is used for every plant.",
+      "stem": "Which TWO changes correctly address this? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Give each tenant its own `cwd`, because sessions and auto-memory are keyed to the working directory — that is the documented isolation boundary. Pair it with an explicit empty `setting_sources` list for any tenant that must not load a CLAUDE.md, since the default loads project and user settings and an empty list loads none."
+        },
+        {
+          "id": "B",
+          "text": "Authenticate with API keys rather than a claude.ai login, pass MCP server tokens via headers because the SDK runs no interactive OAuth flow for MCP servers, and scope every credential to least privilege. A shared key across plants means one compromise reaches all of them and gives no way to attribute a call to a tenant."
+        },
+        {
+          "id": "C",
+          "text": "Pass one shared `setting_sources` list containing only the plant A configuration, and rely on the tenant id in the prompt to keep plants B and C from using plant A's tools."
+        },
+        {
+          "id": "D",
+          "text": "Set `CLAUDE_CONFIG_DIR` once for the whole service so all plants read the same configuration directory, which removes any chance of one tenant's settings leaking into another's."
+        },
+        {
+          "id": "E",
+          "text": "Keep the shared key but rotate it every 30 days, which bounds the window in which a leaked credential is usable."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Both are accurate and both act at the layer that actually holds. Isolation: sessions and auto-memory are keyed to the working directory, so a distinct `cwd` per tenant is the documented boundary, and `setting_sources` controls which CLAUDE.md files load — the default loads project and user settings, while an explicit empty list loads none. Credentials: agents built on the SDK should authenticate with API keys rather than a claude.ai login, the SDK runs no interactive OAuth flow for MCP servers so tokens are passed via headers, and every credential should be scoped to least privilege. Together these make a call attributable to one tenant and revocable for one tenant. The wrong answers each substitute a convention for a boundary: a tenant id in the prompt is an instruction the model may not honour, one shared config directory is precisely the leak it claims to prevent, and rotation bounds exposure without providing any isolation or attribution.",
+      "whyWrong": {
+        "C": "A prompt-level tenant id is guidance, and it also leaves every tenant sharing one settings directory. Isolation has to come from the working directory and the settings sources, which the runtime enforces.",
+        "D": "Inverts the effect. A single shared `CLAUDE_CONFIG_DIR` makes all plants read the same configuration, which is the leak. The variable is useful for isolating one tenant's config, not for sharing it.",
+        "E": "Rotation limits how long a leaked credential is useful; it does not stop plant A's agent from acting with plant B's authority in the meantime, and it gives no per-tenant revocation or attribution."
+      },
+      "difficulty": 2,
+      "visualId": "deployment-topology",
+      "mindset": "Multi-tenant isolation lives in `cwd` and `setting_sources`, and per-tenant least-privilege credentials live in headers — not in the prompt.",
+      "tags": [
+        "multi-tenant",
+        "credentials",
+        "configuration"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/hosting",
+        "https://code.claude.com/docs/en/agent-sdk/permissions"
+      ]
+    },
+    {
+      "id": "v-d1-z5-013",
+      "taskStatementId": "1.2",
+      "scenario": "Verrick's hosted maintenance agent is written with the Claude Agent SDK. Its lead agent spawns subagents to inspect a machine, and a review notes that nothing in the code bounds how deep or how wide that fan-out can go, and that a partial failure of the fan-out is treated as total failure.",
+      "stem": "Which TWO statements about bounding a subagent fan-out are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "The SDK's coordinator-plus-subagents pattern has documented defaults — three levels of nesting and 20 concurrent subagents — and the agentic guidance is not to issue an unbounded fan-out, because the coordinator will otherwise treat the whole dispatch as failed when part of it succeeds. Bound the width explicitly, retry the failed portion with backoff, and accept partial success as success."
+        },
+        {
+          "id": "B",
+          "text": "A wide fan-out generates many concurrent API requests, so it hits rate limits and capacity limits hard. Anthropic's guidance on wide fan-outs is to ramp concurrency gradually rather than fire everything at once — and the same errors page warns that a sharp increase in usage can surface as 429s from acceleration limits even below the nominal rate limit."
+        },
+        {
+          "id": "C",
+          "text": "Nesting depth and concurrency are unlimited in the SDK, so the only bound that matters is `max_turns` on the parent query."
+        },
+        {
+          "id": "D",
+          "text": "Partial failure should always be treated as total failure, because a subagent that failed to inspect one component may have produced findings that are inconsistent with the rest."
+        },
+        {
+          "id": "E",
+          "text": "The right bound is a per-subagent model downgrade, so a wide fan-out runs on a cheaper tier and therefore cannot exhaust capacity."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Two accurate statements, one about structure and one about load. Structurally, the Agent SDK's coordinator-plus-subagents pattern ships with documented defaults — three levels of nesting and 20 concurrent subagents — and the guidance is not to issue unbounded fan-outs, because a coordinator that treats the whole dispatch as failed on partial failure throws away completed work and re-runs it. Load is the other half: a wide fan-out is many concurrent requests, so it collides with rate limits and capacity, and Anthropic's guidance is to ramp concurrency gradually. That pairs with the documented warning on the errors page that a sharp increase in usage can produce 429s from acceleration limits even when the nominal rate limit has not been reached — which is exactly the signature of an unramped fan-out. Bounding width and ramping concurrency address the actual failure; treating partial failure as total failure and re-running is what turns a partial problem into a full one.",
+      "whyWrong": {
+        "C": "The defaults are documented and finite — three levels of nesting and 20 concurrent subagents. `max_turns` bounds the parent's tool-use turns and is not a substitute for bounding fan-out width.",
+        "D": "Inverts the guidance. Treating partial failure as total failure discards successful results and re-does work; the documented behaviour is to retry the failed portion and keep what succeeded.",
+        "E": "A cheaper model changes cost per call, not the number of concurrent calls. It does nothing about rate limits or capacity, which are about request volume."
+      },
+      "difficulty": 2,
+      "visualId": "orchestrator-subagents",
+      "mindset": "Fan-out fails on width and on restart-on-partial: bound concurrency, ramp it, and keep the results that succeeded.",
+      "tags": [
+        "subagents",
+        "fan-out",
+        "rate-limits"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/overview",
+        "https://platform.claude.com/docs/en/api/rate-limits"
+      ]
+    },
+    {
+      "id": "v-d1-z5-014",
+      "taskStatementId": "1.2",
+      "scenario": "Verrick's platform team sized the containers for its hosted maintenance agent and then noticed that container CPU and memory were a rounding error next to the model's bill. A colleague proposes buying larger nodes, and another proposes investing the same money in prompt and context work.",
+      "stem": "What does the published guidance say about where agent cost actually sits?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Token spend dwarfs infrastructure spend. Anthropic's multi-agent research system measured agents at roughly four times the tokens of a comparable chat interaction, and multi-agent setups at about fifteen times. That reframes the optimisation order: trim prompts, cut tool-output bloat and manage context before you size containers, because the per-token lever moves a much larger number than the per-node one. Infrastructure still matters — sandboxing and resource limits are part of running agents safely — it is just not where the money is."
+        },
+        {
+          "id": "B",
+          "text": "The two are comparable, because each agent turn costs about as much in compute as in tokens once you count retries, tool calls and the subprocess each session spawns."
+        },
+        {
+          "id": "C",
+          "text": "Agent cost is dominated by output tokens, so the only lever that matters is shortening responses, and container sizing is a rounding error on any workload above a few thousand calls a day."
+        },
+        {
+          "id": "D",
+          "text": "The published multiples are about accuracy rather than cost, so they say nothing about infrastructure sizing and the team's node decision stands on its own."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The published figures are about token consumption, and they set the optimisation order. Anthropic's write-up of its multi-agent research system reports agents consuming roughly four times the tokens of a comparable chat interaction, with multi-agent setups around fifteen times — which is why the guidance is to start simple, justify added complexity, and optimise prompts and context before provisioning. The mechanism is straightforward: each turn of a tool-use loop resends the system prompt, tool definitions, every prior tool call and every result, so context growth compounds per turn and multiplies across subagents. Infrastructure is not irrelevant — agents act through tools, errors compound, and Anthropic's guidance is that agents need sandboxed testing with resource and network limits — but it is not where a material fraction of the bill sits. So the node-sizing question is real and secondary, and the higher-return work is prompt design, tool-output pruning and context management.",
+      "whyWrong": {
+        "B": "Invents a cost equivalence that is not what the guidance says. Compute per turn is small next to token consumption, which is exactly why the published multiples are in tokens.",
+        "C": "Narrows the cost story to output tokens when the reported multipliers are total token usage across agents, driven heavily by resent input — system prompt, tool definitions and every prior tool result.",
+        "D": "The multiples are token-consumption measurements and are used to argue about cost, so they bear directly on where optimisation effort pays off."
+      },
+      "difficulty": 3,
+      "visualId": "deployment-topology",
+      "mindset": "Agents cost multiples of a chat call in tokens, not in compute — so trim prompts and context before you buy bigger nodes.",
+      "tags": [
+        "cost",
+        "deployment",
+        "optimisation"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/multi-agent-research-system",
+        "https://code.claude.com/docs/en/agent-sdk/hosting"
+      ]
+    },
+    {
+      "id": "v-d1-z5-015",
+      "taskStatementId": "1.3",
+      "scenario": "A Verrick lead agent delegated a security review to a subagent, which hit its turn limit and returned a partial result. When Verrick's engineer asked for a second opinion on the authorisation logic, the lead started a brand-new subagent, which re-read every file from scratch and reached a different conclusion.",
+      "stem": "Which mechanism would have avoided the wasted work, and what does it require?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Resume the subagent rather than spawning a new one. Claude uses the `SendMessage` tool with the agent's id or name as `to`, and a resumed subagent retains its full conversation history including previous tool calls, results and reasoning — plus anything its own subagents delivered — so it picks up exactly where it stopped. `SendMessage` does not require agent teams to be enabled; only structured team-protocol messages do. The requirement is an agent that can be resumed: the built-in Explore and Plan agents are one-shot and return no agent id, so use `general-purpose` or a custom subagent when continuation matters."
+        },
+        {
+          "id": "B",
+          "text": "Raise or remove `maxTurns` on the subagent so it never returns partial output, since a partial result is what forces the restart."
+        },
+        {
+          "id": "C",
+          "text": "Enable agent teams, which is the documented prerequisite for messaging an existing subagent rather than spawning a new one."
+        },
+        {
+          "id": "D",
+          "text": "Pass the earlier subagent's transcript into the new subagent's prompt. That is the supported way to carry context across subagent instances."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The documented mechanism is `SendMessage`, and the reason it exists is that each subagent invocation otherwise creates a new instance rather than continuing an earlier one. When a subagent completes, Claude receives its agent id, and `SendMessage` with that id or name resumes it in the background without a new `Agent` invocation. A resumed subagent keeps its full conversation history — prior tool calls, results and reasoning, including results its own subagents delivered while it ran — so it continues rather than restarting, and it keeps the tool set from where it first ran and can keep reading the prompt cache the original run warmed. Two prerequisites are easy to miss. `SendMessage` does not require agent teams; only structured team-protocol messages such as `shutdown_request` do. And the built-in Explore and Plan agents are one-shot and return no agent id, so they cannot be resumed — `general-purpose` or a custom subagent is the right choice when continuation is expected.",
+      "whyWrong": {
+        "B": "Treats the symptom rather than the mechanism. A partial result is a useful signal — a subagent that stopped at its turn limit is resumable precisely because its history is intact — and raising the limit does not give you continuation for subagents that complete normally.",
+        "C": "Agent teams are not required. `SendMessage` resumes a subagent without teams enabled; only structured team-protocol messages need them, and teams are experimental and disabled by default.",
+        "D": "Pasting a transcript into a new prompt is the manual version of the problem the engineer is trying to avoid: it loses tool-level detail, costs tokens to re-send, and reintroduces the risk that the new instance reasons differently."
+      },
+      "difficulty": 1,
+      "visualId": "orchestrator-subagents",
+      "mindset": "A subagent invocation is a new instance — to continue work, message the existing one by id, and only if it is a resumable agent.",
+      "tags": [
+        "sub-agents",
+        "resumption",
+        "context"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/sub-agents"
+      ]
+    },
+    {
+      "id": "v-d1-z5-016",
+      "taskStatementId": "1.3",
+      "scenario": "Verrick's `.claude/agents/shift-supervisor.md` sets `maxTurns: 12` because its job is genuinely bounded: read the handover notes, check six safety interlocks, and file a report. Once a month the interlock check needs a few more turns than expected.",
+      "stem": "What happens at the limit, and what is the right way to configure for it?",
+      "options": [
+        {
+          "id": "A",
+          "text": "`maxTurns` is the maximum number of agentic turns before the subagent stops. When it reaches the limit, Claude Code returns the subagent's output marked as partial, and for subagents that return an agent id it also notes in the result that Claude can message the subagent to continue from where it stopped — which is exactly the shape Verrick wants, since the overrun case is 'a few more turns' rather than 'lost work'. So set the limit at the level that bounds cost, treat a partial result as a resumable state rather than a failure, and let the lead send a follow-up message. Note the version caveat on the partial marking, which requires Claude Code v2.1.246 or later."
+        },
+        {
+          "id": "B",
+          "text": "At the limit the subagent's output is discarded and the parent receives an error, so the only safe configuration is a limit high enough that it is never reached."
+        },
+        {
+          "id": "C",
+          "text": "`maxTurns` counts every message in the conversation including tool results, so a subagent doing six interlock checks with several tool calls each will exceed 12 turns routinely."
+        },
+        {
+          "id": "D",
+          "text": "`maxTurns` is a wall-clock timeout rather than a turn count, so twelve is roughly twelve seconds of work."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The documented behaviour is a resumable partial, not a failure, and that changes the configuration decision. `maxTurns` is the maximum number of agentic turns before the subagent stops; when the limit is reached, Claude Code returns the output marked as partial, and for subagents that return an agent id it also notes in the result that Claude can message the subagent to continue from where it stopped. That makes `maxTurns` a cost bound with a graceful overrun path — set it where the economics say, and design the parent to follow up rather than restart. Two calibration points keep it honest: `maxTurns` counts agentic turns, so a subagent doing six checks with several tool calls each consumes more turns than six, and the partial marking requires Claude Code v2.1.246 or later, so an older CLI will not report the state the same way.",
+      "whyWrong": {
+        "B": "Inverts the documented behaviour. The returned output is marked partial and the result notes that the subagent can be continued, rather than being discarded.",
+        "C": "Miscounts what `maxTurns` counts. It bounds agentic turns, not individual messages or tool results, so the arithmetic of six checks is not what determines the limit.",
+        "D": "It is a turn count, not a duration. `maxTurns` has no wall-clock semantics, so twelve is not roughly twelve seconds."
+      },
+      "difficulty": 2,
+      "mindset": "`maxTurns` is a cost bound that ends in a resumable partial result — so set it where the economics say and follow up rather than restart.",
+      "tags": [
+        "sub-agents",
+        "max-turns",
+        "bounds"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/sub-agents"
+      ]
+    },
+    {
+      "id": "v-d1-z5-017",
+      "taskStatementId": "1.3",
+      "scenario": "Verrick's maintenance agent has four kinds of knowledge, and each has been put in the wrong place: the interlock test procedure lives in the first user message of every session, the plant's quirk that sensor 4 on line 2 reads high lives in a scratch note that compaction destroyed last week, per-plant configuration lives in a database tool call inside the prompt, and team-wide conventions live in a 900-line system prompt that is re-sent on every turn.",
+      "stem": "Which TWO mappings are correct? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "The interlock procedure belongs in the system prompt or CLAUDE.md, because both are re-sent every request; the sensor-4 quirk belongs in memory, which stores durable notes outside the context window so facts survive across sessions and context resets. The rule that generalises: compaction is lossy, so anything that must persist belongs where it is re-sent, and facts that must survive a reset belong in memory rather than in the conversation."
+        },
+        {
+          "id": "B",
+          "text": "Per-plant configuration belongs in a database exposed as a tool, so the agent looks it up on demand instead of carrying it in the prompt, and the team-wide conventions belong in a CLAUDE.md file rather than a 900-line system prompt — standing instructions the agent needs every session, split out so the system prompt can shrink. The four need-for-retrieval tool belongs in memory instead."
+        },
+        {
+          "id": "C",
+          "text": "All four belong in the system prompt, because the system prompt is re-sent on every request and is therefore the only durable location."
+        },
+        {
+          "id": "D",
+          "text": "All four belong in memory, because memory is outside the context window and survives both compaction and session resets."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "The two correct statements between them place all four kinds of knowledge correctly, and the placement logic is the point. Standing instructions that must apply on every request belong where they are re-sent — the system prompt or CLAUDE.md — which is exactly why the interlock procedure should not live in a first user message that compaction can summarise away, and why a 900-line system prompt should be split with team conventions moved into a CLAUDE.md. Durable facts belong in memory, which stores notes outside the context window so they survive sessions and context resets — the sensor-4 quirk is precisely that. Large, slow-changing reference material belongs behind a retrieval tool so it is fetched on demand rather than carried, which is where per-plant configuration belongs. The two wrong answers each over-generalise a single mechanism into a universal answer, and both contradict documented behaviour about which layer re-sends what.",
+      "whyWrong": {
+        "C": "The system prompt is re-sent every request, but that makes it the wrong place for anything large or slow-changing — a 900-line prompt is a standing cost on every turn, and per-plant configuration there is both expensive and wrong whenever the agent serves more than one plant.",
+        "D": "Memory is durable, but it is not a substitute for standing instructions or for on-demand retrieval. Loading conventions through memory on every turn costs tokens without the guarantee that they are in context when the agent needs them."
+      },
+      "difficulty": 2,
+      "visualId": "context-window",
+      "mindset": "Place knowledge by how often it is needed and how long it must live: standing rules in the system prompt or CLAUDE.md, durable facts in memory, large references behind a retrieval tool.",
+      "tags": [
+        "memory",
+        "context-management",
+        "system-prompt"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents",
+        "https://code.claude.com/docs/en/agent-sdk/overview"
+      ]
+    },
+    {
+      "id": "v-d1-z5-018",
+      "taskStatementId": "1.3",
+      "scenario": "Verrick adds Claude's memory tool to a shared assistant so each customer can 'remember my preferences'. A security review finds that the implementation stores files under `/memories/<tenant>/` built from a value in the request body, with no validation, and that the assistant can also create, edit and delete those files.",
+      "stem": "What is the most serious issue, and what must the implementation do?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The memory tool is client-side, so your application performs the file operations on storage you control — which means the application, not the model, is the security boundary. Three controls are required: validate the path so a tenant cannot traverse out of its own directory (`/memories/../other-tenant/...`), cap sizes so a single file cannot exhaust the store, and keep secrets out of memory entirely. And because sessions and auto-memory are keyed to the working directory, each tenant needs its own `cwd` as well, or tenant isolation is nominal."
+        },
+        {
+          "id": "B",
+          "text": "The risk is that the model might read another tenant's memory through the tool. Add a line to the system prompt telling it never to read outside the current customer's directory."
+        },
+        {
+          "id": "C",
+          "text": "The risk is unbounded growth. Store memory files in the conversation instead of on disk, so the context window's own limit constrains them."
+        },
+        {
+          "id": "D",
+          "text": "There is no material risk: memory is a documented API feature, so its contents are as trustworthy as any other tool result and need no additional controls."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The defining property of the memory tool is that it is client-side: Claude issues tool calls and your application performs the file operations on storage you control. That makes your code the enforcement point, and the reviewer's finding is a path traversal built from untrusted input — `/memories/../other-tenant/` resolves outside the intended directory, and because the tool can edit and delete as well as create, the impact is both cross-tenant disclosure and destruction. The documented requirements follow directly: block path traversal, cap sizes, and keep secrets out. There is a second boundary in the same design — sessions and auto-memory are keyed to the working directory, so per-tenant `cwd` is what makes the directory prefix meaningful. The wrong answers each assume the model or the API is doing the enforcement: a prompt instruction is guidance with a non-zero failure rate against an attacker who controls the input, conversation-scoped memory is not a store that survives what memory is for, and 'documented feature' describes the interface, not the isolation of your filesystem.",
+      "whyWrong": {
+        "B": "A prompt line cannot enforce a filesystem boundary against input the attacker controls. The path arrives in the request, and the mitigation that works is validating it in the code that performs the operation.",
+        "C": "Inverts the property. Memory is valued precisely because it lives outside the context window and survives context resets; putting it back inside the conversation removes that and reintroduces bloat.",
+        "D": "Being a documented feature says nothing about how your storage is isolated. The docs are explicit that the application performs the operations, which is why they tell you to secure it."
+      },
+      "difficulty": 3,
+      "mindset": "The memory tool is client-side, so path validation, size caps and per-tenant working directories are your code's job — not the model's.",
+      "tags": [
+        "memory",
+        "security",
+        "multi-tenant"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/memory-tool",
+        "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents"
+      ]
+    },
+    {
+      "id": "v-d1-z5-019",
+      "taskStatementId": "1.3",
+      "scenario": "Verrick's tool-heavy agent runs long sessions. One team proposes enabling context editing with `clear_tool_uses_20250919`, another proposes server-side compaction, and a third proposes a PostToolUse hook that truncates large tool results before they reach the model.",
+      "stem": "Which TWO statements about these three approaches are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Context editing and compaction are different mechanisms with different triggers. The `clear_tool_uses_20250919` strategy clears the oldest tool results once input passes a configured trigger and keeps the most recent few, replacing cleared content with a placeholder, and tools whose results must stay can be excluded; compaction summarises the earlier conversation once it crosses a threshold and returns a `compaction` block you pass back on the next request. If both strategies are combined, the thinking-clearing strategy must be listed first."
+        },
+        {
+          "id": "B",
+          "text": "Both context editing and compaction run server-side, and your client keeps the full, unmodified conversation history — you do not need to sync client state with the edited version. That is why pruning tool output at the source, in a PostToolUse hook, is complementary rather than redundant: the server-side strategies decide what Claude sees, while a hook that truncates a 40,000-line log at the tool boundary stops the bloat ever being sent."
+        },
+        {
+          "id": "C",
+          "text": "Context editing and compaction are two names for the same feature, so enabling either has the same effect on a tool-heavy agent."
+        },
+        {
+          "id": "D",
+          "text": "Tool result clearing preserves the prompt cache, because the cleared results are replaced with placeholders that still match the cached prefix."
+        },
+        {
+          "id": "E",
+          "text": "Both strategies are server-side, so your client must apply the same edits locally or the next request will be rejected as inconsistent."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Both are accurate, and between them they answer the question the team actually has. The mechanisms are distinct: tool result clearing is a rule about which tool results Claude sees, triggered by input size, keeping the most recent few and replacing the rest with placeholders, with an exclusion list for results that must survive; compaction is a summary of earlier conversation past a threshold that returns a `compaction` block you pass back. And the ordering constraint is documented — if you combine clearing strategies, the thinking-clearing one must be listed first. The second point settles the architecture question: both run server-side and your client retains the full history, so a hook that shrinks tool output at the boundary is not redundant — it prevents the tokens from ever costing anything, where the server-side strategies only remove them after they have been paid for. The cache interaction is worth carrying too, since clearing invalidates cached prefixes at the point where content is cleared, which is why a `clear_at_least` parameter exists.",
+      "whyWrong": {
+        "C": "Treats two documented, distinct strategies as one. One clears tool results by rule, the other summarises the conversation; they solve overlapping problems at different granularities.",
+        "D": "Inverts the cache interaction. Clearing tool results invalidates cached prompt prefixes at the point where content is cleared, which is why the docs add `clear_at_least` so enough is cleared to make the rewrite worthwhile.",
+        "E": "Backwards. Context editing is applied server-side before the prompt reaches Claude, and your client application maintains the full, unmodified conversation history — no local sync is required."
+      },
+      "difficulty": 1,
+      "visualId": "context-window",
+      "mindset": "Context editing clears tool results by rule, compaction summarises the conversation, both are server-side — and pruning tool output at the source is what stops the cost.",
+      "tags": [
+        "context-editing",
+        "compaction",
+        "tool-output"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/context-editing",
+        "https://platform.claude.com/docs/en/build-with-claude/compaction"
+      ]
+    },
+    {
+      "id": "v-d1-z5-020",
+      "taskStatementId": "1.3",
+      "scenario": "Verrick has work that is genuinely parallel in three different ways: (a) a lead agent asking three subagents to research independent parts of one question inside a single conversation; (b) a developer handing Claude three unrelated tasks to run while they work on something else, wanting to check status at a glance; (c) letting Claude split a 300-file migration into independent units, each in its own worktree, with results cross-checked against each other.",
+      "stem": "Which mapping of approach to work is correct?",
+      "options": [
+        {
+          "id": "A",
+          "text": "(a) subagents: Claude delegates and collects results inside one conversation, which keeps noisy exploration out of the main context. (b) agent view, opened with `claude agents`: you hand off independent tasks and check status at a glance, stepping in only when one needs you. (c) dynamic workflows: a script holds the plan instead of Claude's turn-by-turn judgement, fanning work out across many subagents in worktrees and cross-checking the results — which is what a codebase-wide audit or a 500-file migration needs, because it is too big to coordinate one turn at a time and wants more than a single pass."
+        },
+        {
+          "id": "B",
+          "text": "(a) agent teams, (b) subagents, (c) agent view. Agent teams are the lightest option because teammates share a task list, while subagents are for work you supervise directly."
+        },
+        {
+          "id": "C",
+          "text": "All three should be agent teams, since teams are the only approach where the workers can message each other directly and Claude can reassign work as it discovers what is actually needed."
+        },
+        {
+          "id": "D",
+          "text": "(a) and (c) should both be `/batch`, and (b) should be a routine, since all three are just packaged uses of subagents and worktrees and add no coordination of their own."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Claude Code documents five ways to work on several tasks at once and distinguishes them by who coordinates, whether workers talk to each other, and whether the work runs locally or in the cloud. Subagents are the lightest: Claude delegates inside one session, the workers have their own context, and they report results back — right for a side task that would flood the main conversation. Agent view is the hand-off-and-monitor surface for independent tasks you start yourself, with one screen to dispatch and check status. Dynamic workflows sit at the other end: a script holds the plan, fans work out across many worktree-isolated subagents, and cross-checks findings, which is the shape that suits a codebase-wide audit or a large migration. Two constraints are worth carrying: agent teams are experimental and disabled by default, add coordination overhead and use significantly more tokens, and are best when teammates can operate independently; and running several sessions at once multiplies token usage, so every parallel choice is also a cost decision.",
+      "whyWrong": {
+        "B": "Inverts the cost and coordination ordering. Subagents are the lightest option; teams are the heaviest — experimental, disabled by default, with shared task lists and direct inter-agent messaging, and they use significantly more tokens than a single session.",
+        "C": "Teams are for Claude planning, assigning and supervising a group, not for the lightest case, and the docs explicitly advise checking whether a lighter option does the job first. Nothing here requires workers to message each other — subagents report back through the conversation.",
+        "D": "Conflates packaged skills and features with coordination styles. `/batch` is a packaged use of subagents and worktrees and dynamic workflows are a distinct coordination style where a script holds the plan and cross-checks results; a routine runs a session on a schedule in the cloud."
+      },
+      "difficulty": 2,
+      "visualId": "orchestrator-subagents",
+      "mindset": "Pick the coordination surface by who holds the plan: Claude in-conversation, you across sessions, or a script that fans out and cross-checks — and remember parallel always multiplies tokens.",
+      "tags": [
+        "orchestration",
+        "sub-agents",
+        "parallelism"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agents",
+        "https://code.claude.com/docs/en/agent-teams"
+      ]
+    }
+  ]
+}

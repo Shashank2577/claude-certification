@@ -1,0 +1,1100 @@
+{
+  "certId": "developer",
+  "domainId": "d3-claude-code",
+  "questions": [
+    {
+      "id": "v-d3-g2-001",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian Payments keeps its ledger database rules in `.claude/rules/db-migrations.md`, whose frontmatter is `paths: [\"packages/ledger-core/db/**\"]`. The platform lead wants to know exactly what a session in the repo root is paying for, and when.",
+      "stem": "When do the instructions in that rule file actually enter the context window?",
+      "options": [
+        {
+          "id": "A",
+          "text": "At session start, alongside CLAUDE.md, because `.claude/rules/` is loaded as project instructions."
+        },
+        {
+          "id": "B",
+          "text": "When Claude uses the Read, Write, or Edit tool on a file matching the glob. A rule with no `paths` loads at launch; a path-scoped rule waits for a matching file."
+        },
+        {
+          "id": "C",
+          "text": "Only after someone runs `/reload-skills`, because `paths` is evaluated when the skill directories are re-scanned."
+        },
+        {
+          "id": "D",
+          "text": "When a file matching the glob changes on disk, via the `FileChanged` hook."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "`paths` is the only frontmatter field Claude Code reads from a rule. Without it, a rule loads at launch with the same priority as `.claude/CLAUDE.md`. With it, the rule is conditional: it triggers when Claude uses the Read, Write, or Edit tool on a matching file — not on every tool use, and not merely because the file exists. `InstructionsLoaded` hook matchers (`session_start`, `nested_traversal`, `path_glob_match`, `include`, `compact`) are the way to observe when a rule actually loaded and why.",
+      "whyWrong": {
+        "A": "That describes a rule with no `paths` field. Adding `paths` is precisely what makes loading conditional.",
+        "C": "`/reload-skills` re-scans skill and command directories. It has nothing to do with rule frontmatter.",
+        "D": "`FileChanged` notifies you that a watched file changed on disk. It does not decide what enters the model's context."
+      },
+      "difficulty": 1,
+      "visualId": "claude-code-config",
+      "mindset": "A rule scoped with `paths` is lazy — it loads when Claude touches a matching file, not at launch.",
+      "tags": [
+        "rules",
+        "path-scoped",
+        "context-management"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/memory",
+        "https://code.claude.com/docs/en/memory#path-specific-rules"
+      ]
+    },
+    {
+      "id": "v-d3-g2-002",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian Payments writes `.claude/skills/release-notes/SKILL.md` by hand and wants the actual list of merged pull requests inlined into the skill content before Claude reads the instructions, rather than spending a separate turn on a `gh` call.",
+      "stem": "Which line in the skill body achieves that?",
+      "options": [
+        {
+          "id": "A",
+          "text": "A file reference line: `@.github/merged_pull_requests.md`"
+        },
+        {
+          "id": "B",
+          "text": "A prose instruction: \"The merged pull requests are listed below, then a fenced block Claude is told to read.\""
+        },
+        {
+          "id": "C",
+          "text": "A line containing only dynamic context injection: !`gh pr list --state merged --limit 50`"
+        },
+        {
+          "id": "D",
+          "text": "A frontmatter grant: `allowed-tools: Bash(gh pr list *)`"
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Dynamic context injection replaces a `` !`command` `` line with the command's output before Claude ever sees the skill content, so the data is already in context when the instructions are read. A skill can also bundle supporting files and reference them, and `@` attaches a file's contents — but neither runs a shell command for you, and prose that asks Claude to fetch something adds a tool round trip and depends on the model choosing to do it.",
+      "whyWrong": {
+        "A": "`@path` attaches an existing file's contents; it cannot execute `gh` and there is no generated file being maintained here.",
+        "B": "Prose is an instruction, not a mechanism. Claude may or may not make the call, and it costs a turn plus a tool result.",
+        "D": "`allowed-tools` pre-approves the tool so it does not prompt. It grants permission; it never injects the command's output into the skill body."
+      },
+      "difficulty": 1,
+      "mindset": "Injection brings data in with the instructions; a permission grant only decides whether a prompt appears.",
+      "tags": [
+        "skills",
+        "dynamic-context",
+        "frontmatter"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/skills"
+      ]
+    },
+    {
+      "id": "v-d3-g2-003",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian Payments has three instruction sources that contradict each other on formatting: an org-wide managed policy CLAUDE.md saying \"use tabs\", the repo's `./CLAUDE.md` saying \"use 2-space indentation\", and one developer's gitignored `./CLAUDE.local.md` repeating the 2-space rule. Sessions in `packages/ledger-core/` intermittently produce tab-indented files.",
+      "stem": "Which assessment of the situation is correct?",
+      "options": [
+        {
+          "id": "A",
+          "text": "`CLAUDE.local.md` wins, because it is the most specific scope and is appended last at that directory level."
+        },
+        {
+          "id": "B",
+          "text": "The managed policy file wins, because the managed scope is evaluated first."
+        },
+        {
+          "id": "C",
+          "text": "No CLAUDE.md file overrides another. Discovered files are concatenated into context ordered from the filesystem root down to your working directory, so the closest file is read last — and when instructions contradict, Claude may follow either. The fix is to remove the contradiction."
+        },
+        {
+          "id": "D",
+          "text": "The project `./CLAUDE.md` wins, because project instructions outrank local ones in the load order."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "This is the most commonly misunderstood part of the hierarchy. CLAUDE.md files are **concatenated, not overridden**: load order runs managed policy → user (`~/.claude/CLAUDE.md`) → project (`./CLAUDE.md` or `./.claude/CLAUDE.md`) → local (`./CLAUDE.local.md`), and across the directory tree the order is filesystem root down to the working directory, so the instruction closest to where you launched is read last. Position is not precedence. The docs are explicit that when two files give different guidance for the same behaviour, Claude may pick one arbitrarily — so the deterministic fix is to delete one of the conflicting rules, not to reason about which scope wins.",
+      "whyWrong": {
+        "A": "Being read last is not the same as winning. Ordering only puts `CLAUDE.local.md` closest to the end of context, and a contradicting managed instruction can still be followed.",
+        "B": "Managed policy is broadest and is loaded earliest. Load order determines position in the prompt, not a deterministic override.",
+        "D": "This reverses the ordering — local is appended after project within a directory — and, more importantly, neither file wins deterministically in the first place."
+      },
+      "difficulty": 3,
+      "visualId": "claude-code-config",
+      "mindset": "CLAUDE.md files concatenate in order; they do not override. Conflicting instructions mean no reliable winner.",
+      "tags": [
+        "claude-md",
+        "hierarchy",
+        "conflict-resolution"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/memory",
+        "https://code.claude.com/docs/en/memory#how-claude-md-files-load"
+      ]
+    },
+    {
+      "id": "v-d3-g2-004",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian's platform team deploys managed settings that define `availableModels` with a single permitted model. An engineer launches a session with `claude --model claude-opus-5-5` and expects their flag to win because command-line arguments sit above every settings file.",
+      "stem": "What actually happens, and what is the governing rule?",
+      "options": [
+        {
+          "id": "A",
+          "text": "`--model` wins. Command-line arguments outrank all settings files, and managed settings only beat other managed sources."
+        },
+        {
+          "id": "B",
+          "text": "The session runs on the permitted model instead. Managed settings are the top level and nothing you set overrides them — not `--settings`, and not a flag such as `--model`, which picks only from the models your organization allows."
+        },
+        {
+          "id": "C",
+          "text": "Claude Code refuses to start and exits with an error naming the disallowed model."
+        },
+        {
+          "id": "D",
+          "text": "`--model` applies for this session's first request, then the allowlist is enforced the next time `/model` is used."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Settings precedence, highest first: **managed settings → command-line arguments → `.claude/settings.local.json` → `.claude/settings.json` → `~/.claude/settings.json`**. Managed is the ceiling: nothing below it can override the same key, including `--settings`. `availableModels` is the specific lever — it constrains `/model`, `--model`, and the `model` key in your own files, and an excluded value is simply not used, so the session keeps its current model. Environment variables are deliberately not a level in this stack: whether `ANTHROPIC_MODEL` or a settings key wins is decided per key pair, not by scope.",
+      "whyWrong": {
+        "A": "Command line sits above every file scope but below managed. Managed is explicitly the top of the stack.",
+        "C": "The documented behaviour is filtering to the allowed set and keeping the current model, not a startup failure for a disallowed value.",
+        "D": "The constraint applies from the first request. There is no window in which the excluded model is honoured and then revoked."
+      },
+      "difficulty": 2,
+      "mindset": "Managed settings are the ceiling; `--model` chooses within the allowlist, it does not escape it.",
+      "tags": [
+        "settings",
+        "precedence",
+        "managed-settings"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/settings",
+        "https://code.claude.com/docs/en/model-config"
+      ]
+    },
+    {
+      "id": "v-d3-g2-005",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian's shared standards — `.claude/agents/ledger-auditor.md`, `.claude/skills/reconcile/SKILL.md` and `.claude/commands/nightly.md` — live in a sibling checkout at `../shared-standards`. Some engineers add it with `permissions.additionalDirectories: [\"../shared-standards\"]` in the repo's `.claude/settings.json`; others launch with `claude --add-dir ../shared-standards`. Only the second group sees the subagent.",
+      "stem": "Which TWO statements about this are correct? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "`--add-dir` (and `/add-dir`) loads the added directory's `.claude/skills/`, `.claude/commands/` and `.claude/agents/` into the session, as does the SDK's `additionalDirectories`."
+        },
+        {
+          "id": "B",
+          "text": "`permissions.additionalDirectories` in settings.json grants file access only. It loads none of that configuration."
+        },
+        {
+          "id": "C",
+          "text": "The two are the same feature under two names, so both groups should behave identically."
+        },
+        {
+          "id": "D",
+          "text": "`--add-dir` also loads the added directory's CLAUDE.md automatically, provided `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1` is set."
+        },
+        {
+          "id": "E",
+          "text": "Neither mechanism loads any `.claude/` content; discovery is limited to the session's starting directory and its parents."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Configuration discovery and file access are deliberately separated. Passing the directory on the command line (`--add-dir`, `/add-dir`, or the SDK's `additionalDirectories`) also loads its `.claude/skills/`, `.claude/commands/` and `.claude/agents/`. Setting `permissions.additionalDirectories` in a settings file grants read/write reach only — \"additional directories grant file access, not configuration\". Loading that directory's CLAUDE.md needs a separate opt-in, `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1`, and that env var governs memory files, not `.claude/` configuration.",
+      "whyWrong": {
+        "C": "They are not synonyms. One is a launch-time/CLI path that includes configuration discovery; the other is a settings key scoped to file access.",
+        "D": "The env var enables CLAUDE.md, `.claude/CLAUDE.md`, `.claude/rules/*.md` and `CLAUDE.local.md` from added directories. It is not what makes `--add-dir` load skills, commands and agents.",
+        "E": "False for the command-line path: `--add-dir` is exactly the documented way to pick up another directory's skills, commands and subagents."
+      },
+      "difficulty": 3,
+      "mindset": "Separate file access from configuration discovery — they are different switches.",
+      "tags": [
+        "add-dir",
+        "settings",
+        "configuration-scope"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/skills",
+        "https://code.claude.com/docs/en/permissions"
+      ]
+    },
+    {
+      "id": "v-d3-g2-006",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian's nightly job runs `claude -p` to draft migration notes. It must behave the same on every runner and must never pick up a developer's personal hooks or plugins. Someone adds `--bare`, and the very next run fails with an authentication error even though every developer is signed in.",
+      "stem": "Which TWO statements about bare mode are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "It skips auto-discovery of hooks, skills, custom commands, subagents, installed plugins, MCP servers, auto memory and CLAUDE.md, which is what makes scripted calls start faster and reproducible."
+        },
+        {
+          "id": "B",
+          "text": "In bare mode Claude Code never reads OAuth credentials or the system keychain. You must set `ANTHROPIC_API_KEY` in the environment, or supply an `apiKeyHelper` through `--settings`."
+        },
+        {
+          "id": "C",
+          "text": "It disables only MCP servers and plugins; CLAUDE.md, skills and hooks from the project still load."
+        },
+        {
+          "id": "D",
+          "text": "It still connects the MCP servers listed in the working directory's `.mcp.json` unless you also pass `--strict-mcp-config`."
+        },
+        {
+          "id": "E",
+          "text": "It leaves background Bash tasks running after the run returns, so a long-running dev server keeps serving."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Bare mode exists for scripted and SDK calls: it drops every auto-discovered customization so the same command produces the same result on a clean runner and on a laptop full of personal hooks. The trade-off is credentials — bare mode \"never reads OAuth credentials or the system keychain\", so a subscription login is not enough and the job needs an API key in the environment or an `apiKeyHelper`. You then pass in what the run actually needs with `--append-system-prompt`, `--settings`, `--mcp-config`, `--agents` or `--plugin-dir`. Bare mode is the recommended mode for scripted calls and is on track to become the default for `-p`.",
+      "whyWrong": {
+        "C": "The opposite. Skipping CLAUDE.md, skills and hooks is most of the point — those are exactly what makes a `-p` run machine-dependent.",
+        "D": "Only servers supplied with `--mcp-config` connect in bare mode; the project's `.mcp.json` is not read, so `--strict-mcp-config` is not needed to suppress it.",
+        "E": "Background tasks do not run in bare mode: a command that reaches its timeout stops instead of moving to the background."
+      },
+      "difficulty": 2,
+      "mindset": "Bare mode buys reproducibility by dropping all discovered configuration — and you must supply the credential yourself.",
+      "tags": [
+        "bare-mode",
+        "headless",
+        "reproducibility"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/headless",
+        "https://code.claude.com/docs/en/headless#start-faster-with-bare-mode"
+      ]
+    },
+    {
+      "id": "v-d3-g2-007",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian's CI review job pre-approves read-only git commands with `--allowedTools \"Bash(git diff*)\" \"Bash(git log*)\" \"Read\"`. Security review finds the job can also run `git diff-index` and `git log --output=/workspace/pwned` without prompting.",
+      "stem": "What is the correct fix, and why does the current pattern over-match?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Use `Bash(git diff *)` and `Bash(git log *)`. The space before the `*` enables prefix matching; without it the pattern also matches other commands beginning with the same characters."
+        },
+        {
+          "id": "B",
+          "text": "Keep the patterns and add `--permission-mode dontAsk`, so anything outside the allow list is denied and the extra matches stop mattering."
+        },
+        {
+          "id": "C",
+          "text": "Use `Bash(git diff **)` so the prefix has an explicit boundary."
+        },
+        {
+          "id": "D",
+          "text": "Move the same patterns into the committed `.claude/settings.json` as `permissions.allow` and drop them from the command line."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "`--allowedTools` uses permission-rule syntax, and the documented gotcha is exactly this: \"The space before `*` is important: without it, `Bash(git diff*)` would also match `git diff-index`.\" Prefix matching is the feature you want — `Bash(git diff *)` allows any command starting with `git diff ` — but only with the separating space. Nothing about the permission mode or the file the rule lives in changes what the pattern matches.",
+      "whyWrong": {
+        "B": "The defect is in the pattern, not in what happens to unmatched calls. The extra commands already match, so they are allowed before any mode decision applies.",
+        "C": "A second `*` is not the documented prefix form. The documented pattern is `Bash(git diff *)` with a single trailing `*` and a space before it.",
+        "D": "Moving an over-broad pattern to another scope reproduces the same over-match. Scope decides which file's value wins; it does not re-interpret the glob."
+      },
+      "difficulty": 3,
+      "mindset": "In permission-rule syntax the space before `*` is load-bearing — `git diff*` also catches `git diff-index`.",
+      "tags": [
+        "permissions",
+        "permission-rules",
+        "ci"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/headless",
+        "https://code.claude.com/docs/en/headless#auto-approve-tools"
+      ]
+    },
+    {
+      "id": "v-d3-g2-008",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian's release pipeline tails the CI job log into Slack and wants Claude Code's progress visible as it happens, not just the final answer when the run ends.",
+      "stem": "Which invocation delivers token-level streaming into the job log?",
+      "options": [
+        {
+          "id": "A",
+          "text": "`claude -p \"...\" --output-format stream-json --verbose --include-partial-messages`"
+        },
+        {
+          "id": "B",
+          "text": "`claude -p \"...\" --output-format json --verbose`"
+        },
+        {
+          "id": "C",
+          "text": "`claude -p \"...\" --stream --verbose`"
+        },
+        {
+          "id": "D",
+          "text": "`claude -p \"...\" --output-format text --include-partial-messages`"
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "`--output-format` takes `text` (default), `json` (one structured result with `result`, `session_id`, `total_cost_usd` and a per-model cost breakdown), or `stream-json` (newline-delimited JSON events). For tokens as they are generated you need `stream-json` with `--verbose` and `--include-partial-messages`; the last line of the stream is a `result` message carrying the final text, cost and session metadata, so one invocation gives you both live progress and a parseable result.",
+      "whyWrong": {
+        "B": "`json` returns a single structured payload after the run completes. `--verbose` turns on verbose logging; it does not turn a non-streaming format into a stream.",
+        "C": "There is no `--stream` flag. The streaming transport is selected with `--output-format stream-json`.",
+        "D": "`--include-partial-messages` requires `--output-format stream-json`. With `text`, Claude Code prints only the final response once the turn ends."
+      },
+      "difficulty": 2,
+      "mindset": "Live progress needs `stream-json`; partial messages are a flag layered on top of it.",
+      "tags": [
+        "headless",
+        "streaming",
+        "ci"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/headless",
+        "https://code.claude.com/docs/en/cli-reference"
+      ]
+    },
+    {
+      "id": "v-d3-g2-009",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian wraps Claude Code in an internal script to pull the affected service names out of a pull-request description. Today the script regex-scrapes prose and breaks whenever the wording changes.",
+      "stem": "Which TWO statements about getting schema-conformant output from Claude Code are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Pass `--output-format json` together with `--json-schema '<schema>'`. The validated object arrives in the `structured_output` field alongside session id and usage metadata."
+        },
+        {
+          "id": "B",
+          "text": "`--json-schema` validates the schema you hand it: if the value is not valid JSON Schema, Claude Code exits with an error and the validator's diagnostic."
+        },
+        {
+          "id": "C",
+          "text": "Schemas may use the `format` keyword and it is enforced, so `\"format\": \"email\"` guarantees a deliverable address."
+        },
+        {
+          "id": "D",
+          "text": "An invalid schema is silently ignored and the run returns unstructured text, so you must validate client-side instead."
+        },
+        {
+          "id": "E",
+          "text": "`--json-schema` is honoured only in interactive sessions and has no effect under `-p`."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "`--json-schema` is print-mode only and pairs with `--output-format json`: the response keeps its normal envelope (result, session id, cost, usage) and the schema-validated payload lands in `structured_output`, so `jq '.structured_output'` is the whole integration. Claude Code also validates the schema itself and exits with `Error: --json-schema is not a valid JSON Schema` plus the validator's message rather than quietly degrading. One caveat to design around: `format` is accepted as an annotation only — \"Claude Code accepts schemas that use the `format` keyword, such as `\"format\": \"email\"`, but treats `format` as an annotation and doesn't enforce it.\"",
+      "whyWrong": {
+        "C": "`format` is explicitly not enforced. Anything that must hold has to be expressed structurally or checked in application code.",
+        "D": "The opposite of documented behaviour: an invalid schema is a startup error, not a silent fallback to text.",
+        "E": "It is a print-mode flag, which is precisely where this script is running it."
+      },
+      "difficulty": 2,
+      "visualId": "structured-output",
+      "mindset": "`--json-schema` gives you a validated payload in a named field — but `format` is an annotation, not a guarantee.",
+      "tags": [
+        "structured-output",
+        "json-schema",
+        "headless"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/headless",
+        "https://code.claude.com/docs/en/agent-sdk/structured-outputs"
+      ]
+    },
+    {
+      "id": "v-d3-g2-010",
+      "taskStatementId": "3.1",
+      "scenario": "A nightly `-p` job is prompted: \"Run /release-notes, switch with /model sonnet, then summarise.\" It reports that one of those is not available, and the on-call engineer cannot reproduce it interactively.",
+      "stem": "Which TWO statements about commands in `claude -p` are correct? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "User-invoked skills and custom commands work: include `/skill-name` in the prompt string and Claude Code expands it before running."
+        },
+        {
+          "id": "B",
+          "text": "`/model sonnet` and `/config key=value` accept their argument forms in print mode."
+        },
+        {
+          "id": "C",
+          "text": "Every built-in command available in the terminal works identically under `-p`, including `/login` and `/clear`."
+        },
+        {
+          "id": "D",
+          "text": "`/login` cannot be used under `-p`, which is why the job must use a long-lived token from `claude setup-token` rather than an API key in the environment."
+        },
+        {
+          "id": "E",
+          "text": "Built-in commands are only recognised as the first token of the prompt, so `/release-notes` in the middle of a sentence is ignored."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Non-interactive mode supports a specific subset. \"User-invoked skills and custom commands work. Include `/skill-name` in the prompt string and Claude Code expands it before running\" — and a set of built-ins accept arguments in print mode: `/model`, `/effort`, `/fast`, `/color` and `/rename` take a value, `/config` takes `key=value` pairs such as `/config thinking=false`, and `/mcp` with no argument prints a text summary. Built-ins that only exist in the terminal interface, `/login` among them, are not available under `-p`, which is why unattended runs authenticate with `ANTHROPIC_API_KEY` or a provider credential rather than a login flow.",
+      "whyWrong": {
+        "C": "Terminal-only built-ins are excluded. The `-p` surface is explicitly narrower than the interactive one.",
+        "D": "The premise about `/login` is right but the conclusion is wrong: an API key in the environment is a first-class option and is what the docs recommend for CI.",
+        "E": "Commands are expanded wherever they appear in the prompt string, which is why the guidance is to include `/skill-name` in the prompt rather than as the only token."
+      },
+      "difficulty": 3,
+      "mindset": "`-p` exposes a documented subset of commands — custom commands and argument-taking built-ins, not terminal-only ones.",
+      "tags": [
+        "headless",
+        "slash-commands",
+        "ci"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/headless",
+        "https://code.claude.com/docs/en/commands"
+      ]
+    },
+    {
+      "id": "v-d3-g2-011",
+      "taskStatementId": "3.1",
+      "scenario": "A Meridian ticket asks to rename `amount_minor` to `amount_cents` across `ledger-core`, `refunds-worker` and the payment SDK — roughly 90 files, plus generated types and snapshot tests. The tech lead wants the team aligned on the approach before any edits land in main.",
+      "stem": "What should she do?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Start the session in plan mode (`/plan`, `--permission-mode plan`, or Shift+Tab). Claude explores, reads files and runs shell commands, and writes a plan without editing your source; edits stay blocked until she approves the plan."
+        },
+        {
+          "id": "B",
+          "text": "Start in `acceptEdits` mode so Claude works quickly, then review the diff and revert anything that looks wrong."
+        },
+        {
+          "id": "C",
+          "text": "Add \"always plan before editing\" to the repository's root CLAUDE.md."
+        },
+        {
+          "id": "D",
+          "text": "Run Claude with `--max-turns 1` so it produces a plan instead of code."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Plan mode is the designed tool for exactly this: Claude researches and proposes changes without making them. It reads files, runs shell commands to explore and writes a plan, and edits stay blocked until you approve — approving exits plan mode and hands Claude the go-ahead. It is a permission mode, so it composes with the rest of the model: `claude --permission-mode plan`, `/plan <description>`, Shift+Tab in the cycle, or `defaultMode: \"plan\"` in `.claude/settings.json` to make it the project default for terminal sessions.",
+      "whyWrong": {
+        "B": "`acceptEdits` auto-approves file edits plus common filesystem commands. A 90-file rename is precisely the change you want agreed before it is written, and reviewing 90 files of diff afterwards is the cost plan mode exists to avoid.",
+        "C": "CLAUDE.md is context, not enforcement, and it has no effect on whether edits are permitted. It also still applies after the plan is approved.",
+        "D": "`--max-turns` is a budget guard: the run exits with an error when the limit is reached. It does not create a planning phase."
+      },
+      "difficulty": 2,
+      "visualId": "claude-code-config",
+      "mindset": "Large or irreversible changes get a plan first — plan mode blocks edits until a human approves.",
+      "tags": [
+        "permission-modes",
+        "plan-mode",
+        "workflow"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/permission-modes",
+        "https://code.claude.com/docs/en/permission-modes#analyze-before-you-edit-with-plan-mode"
+      ]
+    },
+    {
+      "id": "v-d3-g2-012",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian wants a plan-only gate inside a self-hosted CI container that runs the Agent SDK with no TTY, attached to a production repository. A team member argues that plan mode is \"just a suggestion, so it is fine to run it unattended\".",
+      "stem": "Which statement about plan mode's enforcement is correct?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Plan mode's blocks hold wherever Claude Code runs without an interactive terminal, including `-p` runs and Agent SDK sessions. The one place they are not enforced is an interactive terminal session where bypass permissions are available."
+        },
+        {
+          "id": "B",
+          "text": "Plan mode is advisory in every environment, because Claude decides for itself whether to honour it."
+        },
+        {
+          "id": "C",
+          "text": "Without an interactive terminal, plan mode degrades to `default` mode."
+        },
+        {
+          "id": "D",
+          "text": "Plan mode blocks file edits but still auto-approves shell commands, so exploration is unrestricted."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Plan mode is a permission mode, so Claude Code enforces it rather than asking the model nicely. The blocks are kept \"wherever Claude Code runs without an interactive terminal, including non-interactive runs with `-p`, Agent SDK sessions, and conversations in the VS Code extension's chat panel\". The documented exception is narrow and deliberate: in an interactive terminal session with bypass permissions available, Claude Code stops enforcing the blocks and relies on the instruction instead. So a no-TTY container is the *stronger* case, not the weaker one.",
+      "whyWrong": {
+        "B": "Permission modes are enforced by the client. Claude is instructed to plan; the client is what prevents the edit.",
+        "C": "Plan mode keeps its blocks in `-p` and SDK sessions. It does not fall back to `default` when there is no terminal.",
+        "D": "Plan mode is read-only exploration. Edits are blocked, and commands run as part of researching the plan rather than as pre-approved side effects."
+      },
+      "difficulty": 2,
+      "mindset": "Permission modes are client-enforced, and no-TTY environments are where plan mode's blocks are strongest.",
+      "tags": [
+        "permission-modes",
+        "plan-mode",
+        "headless"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/permission-modes",
+        "https://code.claude.com/docs/en/agent-sdk/permissions"
+      ]
+    },
+    {
+      "id": "v-d3-g2-013",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian wants a hard guarantee that Claude can never run `rm -rf` against a production checkout. Someone adds a `PreToolUse` hook with `\"if\": \"Bash(rm *)\"` whose script exits with a deny decision whenever the command contains `rm -rf`. The security reviewer blocks the change.",
+      "stem": "What is the reviewer's strongest objection, and what should they require instead?",
+      "options": [
+        {
+          "id": "A",
+          "text": "`if` is best-effort: when Claude Code cannot determine which commands a Bash input runs, it runs the hook regardless of the pattern, and a hook that stays silent does not approve the call. For a hard allow or deny, use the permission system — deny rules in managed settings — not a hook."
+        },
+        {
+          "id": "B",
+          "text": "`if` only matches whole Bash commands, so it has to be removed and replaced with a matcher on the tool name plus a script-side check."
+        },
+        {
+          "id": "C",
+          "text": "Matching hooks run in parallel, so a deny decision can be overtaken by the permission prompt that fires alongside it."
+        },
+        {
+          "id": "D",
+          "text": "`if` cannot express a wildcard, so `Bash(rm *)` is invalid configuration and is being silently ignored."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The docs draw the line explicitly: \"Because the `if` filter is best-effort, use the permission system rather than a hook to enforce a hard allow or deny.\" Two reasons. First, when Claude Code cannot determine which commands a Bash input runs, it runs the hook regardless of the pattern — so `if` narrows cost, not guarantee. Second, a hook's silence is not approval: \"Exit code 0 with no output means the hook has no decision to report, so the tool call continues through the normal permission flow. The hook can deny the call, but staying silent doesn't approve it.\" Deny rules live in the permission system and apply in every permission mode.",
+      "whyWrong": {
+        "B": "`if` uses permission-rule syntax and does support prefix patterns. The docs show subcommands, `$()` contents and backticks being checked, so it is narrower than a whole-command match but not invalid.",
+        "C": "Parallel execution of matching handlers is not the risk. The documented weakness is the best-effort filter and the fact that silence does not approve.",
+        "D": "`Bash(rm *)` is a documented, valid pattern used verbatim in the reference example for blocking `rm`."
+      },
+      "difficulty": 3,
+      "visualId": "hooks-lifecycle",
+      "mindset": "`if` narrows which hook runs; only the permission system makes a deny a guarantee.",
+      "tags": [
+        "hooks",
+        "permissions",
+        "enforcement"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/hooks",
+        "https://code.claude.com/docs/en/permissions"
+      ]
+    },
+    {
+      "id": "v-d3-g2-014",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian audits ledger-side effects with hooks. Two matchers are underperforming: `\"mcp__ledger__\"` never fires for the ledger MCP server, and `\"Edit.*\"\" also fires on `NotebookEdit`, which the team did not intend to intercept.",
+      "stem": "Which statement about Claude Code hook `matcher` values is correct?",
+      "options": [
+        {
+          "id": "A",
+          "text": "A matcher is compared as an exact string, or as a `|`/`,`-separated list, when it contains only letters, digits, `_`, `-`, spaces, commas and pipes. `mcp__ledger__` qualifies, so it is an exact string that matches no tool — the fix is `mcp__ledger__.*`, because the `.*` pushes the value onto the unanchored JavaScript-regex path."
+        },
+        {
+          "id": "B",
+          "text": "Matcher values are matched case-sensitively against the tool name only, so `Edit.*` cannot match `NotebookEdit`."
+        },
+        {
+          "id": "C",
+          "text": "Any matcher containing `|` or `,` is treated as a regular expression."
+        },
+        {
+          "id": "D",
+          "text": "Omitting `matcher` disables the hook group, so a hook with no matcher never runs."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The matcher grammar is decided by the characters in the value. `\"*\"`, `\"\"` or an omitted matcher matches all occurrences of the event. A value containing only letters, digits, `_`, `-`, spaces, commas and `|` is an exact string, or a list of exact strings — so `mcp__ledger__` matches no tool at all, which is why the docs insist the `.*` is required for MCP servers. A value containing any other character becomes an unanchored JavaScript regex tested with `RegExp.prototype.test`, so `Edit.*` matches `NotebookEdit` too and you need `^Edit$` for a whole-string match. A `matcher` added to an event with no matcher support is silently ignored.",
+      "whyWrong": {
+        "B": "On the regex path the test is unanchored, so `Edit.*` does match `NotebookEdit`. That is exactly the surprise the team hit.",
+        "C": "`|` and `,` are the *exact-match list* separators. A value needs some other character — a `.`, `*`, `^` — to land on the regex path.",
+        "D": "Omitting `matcher` (or using `\"*\"`) activates the group on every occurrence. It is an opt-out of filtering, not of execution."
+      },
+      "difficulty": 2,
+      "visualId": "hooks-lifecycle",
+      "mindset": "A matcher's characters decide how it is evaluated — exact string by default, unanchored regex only once it contains something else.",
+      "tags": [
+        "hooks",
+        "matchers",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/hooks",
+        "https://code.claude.com/docs/en/hooks#matcher-patterns"
+      ]
+    },
+    {
+      "id": "v-d3-g2-015",
+      "taskStatementId": "3.1",
+      "scenario": "A Meridian release script runs `claude -p` four times in a row, each with `--continue`, to build a draft changelog incrementally. On the fifth call it reports that it resumed a conversation from three weeks earlier that a developer had in the same directory — and the draft is nonsense.",
+      "stem": "Why did that happen, and what is the correct invocation pattern?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Interactive `--continue` loads the most recent conversation in the current directory but skips sessions created with `-p` or the Agent SDK. `claude -p --continue` includes `-p`, SDK and `/loop` sessions — so the script needs `-p` on every call, not just the first."
+        },
+        {
+          "id": "B",
+          "text": "`--continue` rotates through the last few sessions so context is spread across them; pinning each call with `--session-id` fixes the selection."
+        },
+        {
+          "id": "C",
+          "text": "`--continue` refuses to resume sessions whose earlier calls used `--output-format json`; switching the script back to text output makes them eligible."
+        },
+        {
+          "id": "D",
+          "text": "`--continue` starts fresh whenever the previous session cannot be authenticated; re-authenticating restores correct selection."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "There is a documented asymmetry between interactive and print mode. Interactive `--continue` \"skips sessions created with `claude -p` or the Agent SDK, and sessions whose first prompt was `/loop`\". So a script that keeps its conversation in `-p` sessions is invisible to a plain `claude --continue`, which happily reopens whatever real interactive session is newest in the directory. `claude -p --continue` opts back in: \"`claude -p --continue` includes `-p`, SDK, and `/loop` sessions.\" For multi-conversation scripts the robust pattern is to capture `session_id` from the first `--output-format json` run and pass it to `--resume` explicitly.",
+      "whyWrong": {
+        "B": "`--continue` means the most recent conversation, not a rotation. There is no spread-across-sessions behaviour.",
+        "C": "Output format has nothing to do with which sessions are eligible for `--continue`.",
+        "D": "The documented reason for the skip is the session's creation mode, not authentication state."
+      },
+      "difficulty": 3,
+      "mindset": "Interactive `--continue` skips `-p`/SDK sessions; in print mode you need `-p --continue` or an explicit `--resume <session_id>`.",
+      "tags": [
+        "sessions",
+        "continue",
+        "headless"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/headless",
+        "https://code.claude.com/docs/en/sessions"
+      ]
+    },
+    {
+      "id": "v-d3-g2-016",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian adopted `claude -w feature-chargebacks` so that several engineers — and now several Claude Code sessions — can work in the same repository concurrently without stashing each other's changes.",
+      "stem": "What does the `-w` / `--worktree` flag do?",
+      "options": [
+        {
+          "id": "A",
+          "text": "It starts the session in an isolated git worktree at `<repo>/.claude/worktrees/<name>`, so concurrent sessions get their own checkout instead of colliding in one working tree."
+        },
+        {
+          "id": "B",
+          "text": "It copies the repository into a temp directory outside the repo and leaves the original checkout untouched."
+        },
+        {
+          "id": "C",
+          "text": "It opens a second terminal tab attached to the same checkout with an independent session id."
+        },
+        {
+          "id": "D",
+          "text": "It snapshots the working tree with `git stash` and restores the snapshot when the session ends."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "`--worktree` (or `-w`) starts Claude Code in an isolated git worktree at `<repo>/.claude/worktrees/<name>`, generating a name if you do not supply one. You can pass `#<number>`, a GitHub pull-request URL or a GitLab merge-request URL to fetch and branch from that PR/MR instead. The same isolation primitive is available per subagent via `isolation: \"worktree\"` in a subagent definition, and a `WorktreeCreate` hook can replace the default git behaviour — which is also how `/batch` runs 5 to 30 parallel work units without them stepping on each other.",
+      "whyWrong": {
+        "B": "The worktree lives inside the repository under `.claude/worktrees/`, and it is a real linked git worktree sharing the object store — not a copy in temp space.",
+        "C": "It does not attach a second session to the same checkout. Separate checkouts are the entire point.",
+        "D": "No stashing is involved. Git worktrees coexist with the main checkout rather than suspending it."
+      },
+      "difficulty": 1,
+      "mindset": "Concurrent sessions need separate checkouts, not shared working trees.",
+      "tags": [
+        "worktrees",
+        "sessions",
+        "cli-flags"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/worktrees",
+        "https://code.claude.com/docs/en/cli-reference"
+      ]
+    },
+    {
+      "id": "v-d3-g2-017",
+      "taskStatementId": "3.1",
+      "scenario": "A Meridian lead agent delegates dependency audits and schema reviews to `.claude/agents/*.md` subagents. The team is writing onboarding docs and needs an accurate statement about what a subagent can and cannot see.",
+      "stem": "Which TWO statements about a non-fork subagent's initial context are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "It runs the system prompt from its own definition file, not Claude Code's system prompt."
+        },
+        {
+          "id": "B",
+          "text": "It loads the CLAUDE.md files of every level the main conversation loads, including `~/.claude/CLAUDE.md`, project rules, `CLAUDE.local.md` and managed policy files."
+        },
+        {
+          "id": "C",
+          "text": "It inherits the main conversation's message history, including every file Claude has already read."
+        },
+        {
+          "id": "D",
+          "text": "It inherits the main conversation's auto memory and the session's output style."
+        },
+        {
+          "id": "E",
+          "text": "Its context window is always sized by the parent session's model, even when its definition sets a smaller `model`."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "A non-fork subagent starts with a fresh, isolated context window. What it *does* get is a defined set of starting inputs: its own system prompt plus environment details Claude Code appends; the delegation message Claude writes; every level of the CLAUDE.md hierarchy the main conversation loads (the built-in Explore and Plan agents are the exception); a git-status snapshot; the full content of any skill named in the agent's `skills` field; and a sibling roster when `SendMessage` is in its tool set. What never arrives: the conversation history, files already read, the main conversation's auto memory, and your output style. A `fork` is the exception — it inherits the whole conversation, and trades the isolation away to get it.",
+      "whyWrong": {
+        "C": "Isolation is the point. \"Each subagent starts with a fresh context window. It doesn't see your conversation history, the skills you've already invoked, or the files Claude has already read.\"",
+        "D": "The main conversation's auto memory is not loaded into subagents, and because a subagent runs its own system prompt your output style doesn't shape its responses.",
+        "E": "A subagent's context window is sized by its own model. Delegating to a model with a smaller window gives that subagent the smaller window."
+      },
+      "difficulty": 3,
+      "visualId": "orchestrator-subagents",
+      "mindset": "Subagents get the CLAUDE.md hierarchy and their own definition — never the conversation, the memory, or the parent's window.",
+      "tags": [
+        "subagents",
+        "context-isolation",
+        "delegation"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/sub-agents",
+        "https://code.claude.com/docs/en/sub-agents#what-loads-at-startup"
+      ]
+    },
+    {
+      "id": "v-d3-g2-018",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian's `dependency-auditor` subagent keeps reading files under `vendor/` and reporting on them, burning most of its turn budget. The repository's root CLAUDE.md says \"ignore the vendor/ directory — it is generated\".",
+      "stem": "Why is the rule not holding, and what is the most reliable fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The rule is present but advisory, and a long run can drift away from it. The reliable fix is to restate it in the delegation prompt you hand the subagent — or, if everything it needs is in that prompt, set `omitClaudeMd: true` on the definition so it starts with none of the user, project and local CLAUDE.md files."
+        },
+        {
+          "id": "B",
+          "text": "Subagents never load CLAUDE.md at all, so the rule was never available and must be duplicated in every delegation prompt forever."
+        },
+        {
+          "id": "C",
+          "text": "The rule only applies to the main conversation because CLAUDE.md is injected into the system prompt, which a subagent replaces with its own."
+        },
+        {
+          "id": "D",
+          "text": "The subagent's `description` field is what Claude matches when it decides to delegate, so the fix is to move the rule into the description."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Two facts combine. A non-fork subagent *does* load the CLAUDE.md hierarchy (managed, user, project rules, `CLAUDE.local.md`), so the rule is in its context — but CLAUDE.md is \"context, not enforced configuration\", and the docs add the operational warning: \"If a rule must [reach the subagent], such as 'ignore the `vendor/` directory,' restate it in the prompt you give Claude when delegating.\" When a subagent's whole job is described by its delegation prompt, `omitClaudeMd: true` removes the standing instruction files entirely and guarantees nothing competes with that prompt.",
+      "whyWrong": {
+        "B": "Subagents load the CLAUDE.md hierarchy, with the built-in Explore and Plan agents as the named exception. Re-pasting the rule forever is treating a symptom that has a configuration fix.",
+        "C": "CLAUDE.md content is delivered as a user message after the system prompt, not inside the system prompt, and it does reach subagents.",
+        "D": "`description` affects whether Claude picks this agent for a task. It has no effect on instruction adherence inside the run."
+      },
+      "difficulty": 2,
+      "mindset": "If a rule must reach a subagent, put it in the delegation prompt — or cut the CLAUDE.md out with `omitClaudeMd`.",
+      "tags": [
+        "subagents",
+        "claude-md",
+        "delegation"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/sub-agents",
+        "https://code.claude.com/docs/en/memory"
+      ]
+    },
+    {
+      "id": "v-d3-g2-019",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian's `.claude/agents/release-notes-writer.md` carries `disallowedTools: [\"Bash(git push *)\", \"Write\"]` so the agent cannot publish anything. Since adding it, the agent can no longer read `git log` at all and its notes are missing every commit reference.",
+      "stem": "What is the documented behaviour here, and what is the correct configuration?",
+      "options": [
+        {
+          "id": "A",
+          "text": "`disallowedTools` removes tools from the available pool, and \"an entry with a specifier, such as `Bash(git push *)`, still removes the whole tool\". The fix is to drop the Bash entry — or express the publish ban as a permission deny rule — and keep `Write`."
+        },
+        {
+          "id": "B",
+          "text": "`disallowedTools` entries are evaluated per call, so `Bash(git push *)` denies only pushes and something unrelated in the config removed Bash."
+        },
+        {
+          "id": "C",
+          "text": "`disallowedTools` only accepts MCP tool names; built-in tools must be narrowed with the `tools` field instead."
+        },
+        {
+          "id": "D",
+          "text": "Denied tools are still advertised to the model and blocked only at execution time, so the agent sees Bash but can never call it."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "`tools` and `disallowedTools` take the same format, and `disallowedTools` operates on the pool rather than on individual calls: it removes tools from the inherited or specified list. The subtlety is that a specifier does not narrow the removal — \"An entry with a specifier, such as `Bash(git push *)`, still removes the whole tool.\" So a scoped-looking deny silently costs you every Bash call. For a genuinely narrow ban, express the rule in the permission system (`permissions.deny` with `Bash(git push *)`), which evaluates per call while leaving `Bash(git log *)` allowed.",
+      "whyWrong": {
+        "B": "This is exactly the misreading the docs warn against: the specifier does not narrow the removal to matching calls.",
+        "C": "`disallowedTools` uses the same format as `tools` and works on built-in tools. `tools` is for selecting an allow-list, not the only way to deny.",
+        "D": "The tool is removed from the subagent's available pool, so it is not advertised at all. Nothing is blocked at execution time."
+      },
+      "difficulty": 3,
+      "visualId": "orchestrator-subagents",
+      "mindset": "`disallowedTools` deletes tools from the pool — a specifier does not narrow the deletion, so use permission deny rules for scoped bans.",
+      "tags": [
+        "subagents",
+        "tools",
+        "permissions"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/sub-agents",
+        "https://code.claude.com/docs/en/permissions"
+      ]
+    },
+    {
+      "id": "v-d3-g2-020",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian's `/incident-report` skill is 400 lines long because it embeds the whole postmortem template plus every severity rubric. Once it loads, `/context` shows it occupying a large slice of the window for the rest of the session.",
+      "stem": "Which TWO statements about skill content cost are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Once a skill loads, its content stays in context across subsequent turns, so every line is a recurring token cost for the rest of the session. Keep the body concise and state what to do rather than narrating why."
+        },
+        {
+          "id": "B",
+          "text": "Only the description stays resident. The body is re-read from disk on each turn it is needed, so body length is nearly free."
+        },
+        {
+          "id": "C",
+          "text": "Descriptions — including `when_to_use` — are truncated at 1,536 characters in the skill listing specifically to reduce context usage."
+        },
+        {
+          "id": "D",
+          "text": "A skill's `allowed-tools` grant restricts the tools available for the rest of the session."
+        },
+        {
+          "id": "E",
+          "text": "Moving a procedure out of CLAUDE.md into a skill means it never costs context, even while it is running."
+        }
+      ],
+      "correct": [
+        "A",
+        "C"
+      ],
+      "explanation": "Progressive disclosure has two halves. Before a skill is used, only its name and description sit in context — and the docs cap that combined listing at 1,536 characters to keep the always-on footprint small. Once invoked, the situation inverts: \"once a skill loads, its content stays in context across turns, so every line is a recurring token cost.\" That is why moving a procedure out of CLAUDE.md helps only until the first invocation, and why the guidance is to keep the body short, state what to do rather than narrate how or why, and apply the same conciseness test you would use for CLAUDE.md. (`allowed-tools` is scoped to the invoking turn: \"the grant clears when you send your next message.\")",
+      "whyWrong": {
+        "B": "The opposite of the documented lifecycle. Loaded skill content persists, which is the reason body length matters.",
+        "D": "The grant is per-turn. It clears when you send your next message.",
+        "E": "It costs nothing only while the skill is unloaded. On invocation the body enters context and then stays."
+      },
+      "difficulty": 2,
+      "mindset": "Descriptions are the always-on cost; a loaded skill body becomes a recurring cost for the rest of the session.",
+      "tags": [
+        "skills",
+        "context-management",
+        "progressive-disclosure"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/skills"
+      ]
+    },
+    {
+      "id": "v-d3-g2-021",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian commits `.claude/skills/deploy/` at the repository root and a second `apps/console/.claude/skills/deploy/` inside the console app. Everyone starts Claude Code at the repo root, and the console team reports that `/deploy` sometimes runs the root recipe against console files.",
+      "stem": "Which statement about same-named skills in a monorepo is correct?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Both stay available. Project skills load from `.claude/skills/` in the directory where you started and every parent directory up to the repository root, so `/deploy` runs the root skill. The nested one loads the first time Claude reads or edits a file under `apps/console/`, and `/apps/console:deploy` runs it on its own."
+        },
+        {
+          "id": "B",
+          "text": "Project skills load only from the directory where Claude Code was started; Claude Code does not walk up parent directories, so the root skill is invisible from a subdirectory."
+        },
+        {
+          "id": "C",
+          "text": "Two skills with the same directory name collide, and only the root one loads."
+        },
+        {
+          "id": "D",
+          "text": "`--add-dir` loads an added directory's `.claude/commands/` and `.claude/agents/` immediately and watches them for changes, so no restart is needed after editing them."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Claude Code loads project skills from `.claude/skills/` in the starting directory and every parent up to the repository root, and it loads nested `.claude/skills/` directories lazily — \"they load the first time Claude reads or edits a file in that subdirectory and stay available for the rest of the session\". When names collide, \"both stay available\": `/deploy` runs the root skill, Claude is also told about the directory-qualified variant and told to invoke the one whose directory holds the files it is working on, and `/apps/console:deploy` runs the nested skill on its own. One related asymmetry worth knowing: live change detection watches `SKILL.md` text, but changes to a `--add-dir` folder's `.claude/commands/` or `.claude/agents/` need a session restart.",
+      "whyWrong": {
+        "B": "Claude Code explicitly walks up parent directories to the repository root, so starting in `packages/frontend/` still picks up root skills.",
+        "C": "Name clashes do not evict either skill. You get both, with a directory-qualified invocation for the nested one.",
+        "D": "Only skill directories are watched for changes. Commands and agents in an added directory are loaded, but edits to them require a restart."
+      },
+      "difficulty": 2,
+      "mindset": "Skills load from parents eagerly and from nested directories lazily; same names coexist with a directory-qualified invocation.",
+      "tags": [
+        "skills",
+        "monorepo",
+        "configuration-scope"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/skills",
+        "https://code.claude.com/docs/en/skills#discovery-from-parent-and-nested-directories"
+      ]
+    },
+    {
+      "id": "v-d3-g2-022",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian's repo predates Claude Code and carries a root `AGENTS.md` with the team's conventions. Since one developer added a gitignored `CLAUDE.local.md` with personal notes, Claude Code has stopped reading `AGENTS.md` entirely.",
+      "stem": "What is happening, and what are the options?",
+      "options": [
+        {
+          "id": "A",
+          "text": "By default (\"Project instructions\" = `claude-md-or-agents-md`) Claude reads `AGENTS.md` only when there is no `CLAUDE.md`, `.claude/CLAUDE.md` or `CLAUDE.local.md` in the working directory or above it. Either drop the local file, set Project instructions to `claude-md-and-agents-md` via `/config`, or add `@AGENTS.md` as an import inside a `CLAUDE.md`."
+        },
+        {
+          "id": "B",
+          "text": "`AGENTS.md` support requires an enterprise managed setting, so it can never be read in a plain local project."
+        },
+        {
+          "id": "C",
+          "text": "`CLAUDE.local.md` is appended after `CLAUDE.md` and therefore intentionally disables sibling `AGENTS.md` files by design."
+        },
+        {
+          "id": "D",
+          "text": "`AGENTS.md` and `CLAUDE.md` are always both read, so this behaviour means the file sits in the wrong directory."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "`CLAUDE.local.md` counts as a CLAUDE.md file for the purposes of this decision, which is the trap. The default `claude-md-or-agents-md` reads your `AGENTS.md` \"when you have no `CLAUDE.md` or `CLAUDE.local.md` in your working directory or above it\", and the file that breaks the tie can be a throwaway personal file. Note also what does *not* count: `~/.claude/CLAUDE.md`, the managed policy CLAUDE.md and `.claude/rules/` — those load alongside `AGENTS.md`. Three documented fixes: remove the local file, set Project instructions to `claude-md-and-agents-md` (which reads both, CLAUDE.md first), or put `@AGENTS.md` in a `CLAUDE.md` so the shared file is loaded through the import.",
+      "whyWrong": {
+        "B": "`AGENTS.md` is read on its own by default in a local project. No managed setting is required.",
+        "C": "The skip is a side effect of the \"no CLAUDE.md files\" rule, not of ordering and not an intentional disable.",
+        "D": "They are not both read by default. That is precisely why adding `CLAUDE.local.md` changed the behaviour."
+      },
+      "difficulty": 2,
+      "visualId": "claude-code-config",
+      "mindset": "`CLAUDE.local.md` counts as a CLAUDE.md file and silently suppresses `AGENTS.md` — check the tie-break before debugging anything else.",
+      "tags": [
+        "agents-md",
+        "claude-md",
+        "hierarchy"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/memory",
+        "https://code.claude.com/docs/en/memory#agents-md"
+      ]
+    },
+    {
+      "id": "v-d3-g2-023",
+      "taskStatementId": "3.1",
+      "scenario": "A new Meridian engineer wants to confirm that the repository's CLAUDE.md actually loaded in their session, and separately to find instructions that contradict each other across files before they start work.",
+      "stem": "Which pair of commands covers both needs?",
+      "options": [
+        {
+          "id": "A",
+          "text": "`/context` to see which memory files loaded (under **Memory files**), then `/doctor prompt-audit` to have Claude report outdated instructions, references to files that don't exist, and instructions that contradict each other across CLAUDE.md, rules, skills, commands and subagents."
+        },
+        {
+          "id": "B",
+          "text": "`/memory` alone, since conflicting instructions are audited automatically at the start of every session."
+        },
+        {
+          "id": "C",
+          "text": "`claude --debug`, which prints the fully resolved configuration including every instruction file and its precedence."
+        },
+        {
+          "id": "D",
+          "text": "`/hooks` to inspect the loaded configuration and `/mcp` to check which servers are connected."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Two separate diagnostics. `/context` visualises current context usage as a coloured grid and lists the memory files that loaded — the fastest way to confirm your CLAUDE.md, `CLAUDE.local.md` and `.claude/rules/` files are actually in context, and it also surfaces memory bloat and capacity warnings. `/doctor prompt-audit` is the deliberate repair pass: Claude \"looks for problems such as instructions written for older models, references to files or commands that don't exist, and files that contradict each other\", reports findings with proposed edits, and changes nothing until you ask. `/memory` is for viewing and editing memory files, not for cross-file conflict analysis.",
+      "whyWrong": {
+        "B": "`/memory` lists and edits memory files, but there is no automatic cross-file contradiction audit at session start. That is what `prompt-audit` is for.",
+        "C": "`--debug` writes debug logs. It is useful when a hook or MCP server misbehaves, not as a resolved-configuration report.",
+        "D": "`/hooks` and `/mcp` cover hook configuration and MCP server connections. Neither reports instruction files."
+      },
+      "difficulty": 1,
+      "mindset": "`/context` proves what loaded; `/doctor prompt-audit` finds what contradicts — use both before trusting your instructions.",
+      "tags": [
+        "init",
+        "troubleshooting",
+        "claude-md"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/memory",
+        "https://code.claude.com/docs/en/commands"
+      ]
+    },
+    {
+      "id": "v-d3-g2-024",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian's platform team set `disableAllHooks: true` in managed settings to stop untrusted repository hooks from running during onboarding. An engineer debugging a broken hook adds `\"disableAllHooks\": false` to the project's `.claude/settings.json`, restarts, and no hook runs.",
+      "stem": "Which statement explains the behaviour correctly?",
+      "options": [
+        {
+          "id": "A",
+          "text": "`disableAllHooks` is read as the value left after settings precedence applies, so a project file's `false` legitimately overrides a user-level `true`. But only `disableAllHooks` set at the managed settings level can disable managed hooks — user, project and local values cannot."
+        },
+        {
+          "id": "B",
+          "text": "The project file's `false` does override the user-level value, but Claude Code merges booleans across scopes, so a single `true` anywhere still wins."
+        },
+        {
+          "id": "C",
+          "text": "Skill-declared hooks are exempt from `disableAllHooks` at any scope, so once a skill is invoked its hooks run regardless."
+        },
+        {
+          "id": "D",
+          "text": "`disableAllHooks: true` removes the hook definitions from the settings files themselves, which is why re-enabling them has no effect until they are rewritten."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Two rules, and this question needs both. First, `disableAllHooks` is an ordinary key subject to precedence: \"Claude Code reads the value left after settings precedence applies\", and a `false` in `.claude/settings.json` outranks a `true` in `~/.claude/settings.json` because project settings sit above user settings. `--settings '{\"disableAllHooks\": true}'` is how you force it off for one run whatever the project's files say. Second, the managed tier is absolute: if an administrator configured hooks through managed policy settings, `disableAllHooks` set in user, project or local settings \"can't disable those managed hooks. Only `disableAllHooks` set at the managed settings level can disable managed hooks.\" So the engineer's change is correct in principle and irrelevant in effect here.",
+      "whyWrong": {
+        "B": "A boolean key is replaced by the highest-precedence file that sets it, not merged — and the managed tier is not overridable at all.",
+        "C": "`disableAllHooks` from managed settings still governs. Skill frontmatter hooks are registered on invocation, but they do not outrank the managed disable.",
+        "D": "The setting disables execution; it does not rewrite settings files. Hook definitions remain and reappear the moment the effective value is false."
+      },
+      "difficulty": 2,
+      "visualId": "hooks-lifecycle",
+      "mindset": "`disableAllHooks` follows normal precedence — except that only the managed tier can switch off managed hooks.",
+      "tags": [
+        "hooks",
+        "settings",
+        "precedence"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/hooks",
+        "https://code.claude.com/docs/en/settings"
+      ]
+    }
+  ]
+}
