@@ -10,6 +10,8 @@ import { ButtonLink } from "@/components/ui/button";
 import { ProgressBar } from "@/components/ui/progress";
 import { ScoreDial } from "./score-dial";
 import { ReviewList, type ReviewItem } from "./review-list";
+import { ReviewQueue } from "@/components/review-queue";
+import { buildReviewPlan } from "@/lib/review-plan";
 
 export const metadata: Metadata = { title: "Mock results" };
 
@@ -21,7 +23,7 @@ function fmtDuration(ms: number) {
 
 export default async function MockResultsPage({ params }: PageProps<"/mock/[attemptId]/results">) {
   const { attemptId } = await params;
-  const { user } = await getViewer();
+  const { user, settings } = await getViewer();
   const attempt = await getMockAttempt(user.id, attemptId);
   if (!attempt) notFound();
   if (attempt.status !== "submitted") redirect(`/mock/${attempt.id}`);
@@ -61,6 +63,7 @@ export default async function MockResultsPage({ params }: PageProps<"/mock/[atte
   const score = attempt.score ?? 100;
   const gap = score - pass;
   const weakest = [...attempt.breakdown].sort((a, b) => a.correct / a.total - b.correct / b.total)[0];
+  const plan = cert ? await buildReviewPlan(user.id, cert, settings.tz, attempt.id) : null;
 
   return (
     <>
@@ -116,6 +119,8 @@ export default async function MockResultsPage({ params }: PageProps<"/mock/[atte
           </ul>
         </Card>
       </div>
+
+      {plan && <div className="mt-6"><ReviewQueue plan={plan} /></div>}
 
       {slowest.length > 0 && slowest[0].ms > 0 ? (
         <Card tone="sunken" className="mt-6 p-5">

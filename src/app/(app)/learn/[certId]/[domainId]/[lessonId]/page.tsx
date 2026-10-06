@@ -12,6 +12,7 @@ import { getViewer } from "@/lib/viewer";
 import { Markdown } from "@/components/ui/markdown";
 import { Pill } from "@/components/ui/card";
 import { Visual } from "@/components/visuals/visual";
+import { ContentReport } from "@/components/content-report";
 import { CheckYourself } from "@/components/quiz/check-yourself";
 import { CompleteButton, type NextLesson } from "./complete-button";
 
@@ -122,6 +123,7 @@ export default async function LessonPage({ params }: Props) {
           {lesson.body}
         </Markdown>
       </div>
+      <div className="mt-4"><ContentReport kind="lesson" contentId={lesson.id} certId={cert.id} /></div>
 
       {lesson.keyTakeaways.length > 0 ? (
         <section className="mt-12 rounded-2xl border border-line bg-surface p-5 shadow-card sm:p-6" aria-labelledby="takeaways-h">

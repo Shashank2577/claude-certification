@@ -206,6 +206,37 @@ export async function summary(now = Date.now()) {
   };
 }
 
+/** Learning outcomes from recorded actions, rather than page views or time spent. */
+export async function learningMetrics() {
+  const [firstAnswer, missed, returnedToReview, delayedCorrection, repeatMock, improvedMock] = await Promise.all([
+    num(sql`SELECT COUNT(DISTINCT user_id)::int n FROM question_attempts`),
+    num(sql`SELECT COUNT(DISTINCT user_id)::int n FROM question_attempts WHERE NOT correct`),
+    num(sql`SELECT COUNT(DISTINCT later.user_id)::int n FROM question_attempts later
+      WHERE EXISTS (
+        SELECT 1 FROM question_attempts earlier
+        WHERE earlier.user_id = later.user_id AND earlier.question_id = later.question_id
+          AND NOT earlier.correct AND earlier.created_at <= later.created_at - 86400000
+      )`),
+    num(sql`SELECT COUNT(DISTINCT later.user_id)::int n FROM question_attempts later
+      WHERE later.correct AND EXISTS (
+        SELECT 1 FROM question_attempts earlier
+        WHERE earlier.user_id = later.user_id AND earlier.question_id = later.question_id
+          AND NOT earlier.correct AND earlier.created_at <= later.created_at - 86400000
+      )`),
+    num(sql`WITH ranked AS (
+      SELECT user_id, cert_id, ROW_NUMBER() OVER (PARTITION BY user_id, cert_id ORDER BY submitted_at, started_at) rank
+      FROM mock_attempts WHERE status = 'submitted'
+    ) SELECT COUNT(DISTINCT user_id)::int n FROM ranked WHERE rank = 2`),
+    num(sql`WITH ranked AS (
+      SELECT user_id, cert_id, score, ROW_NUMBER() OVER (PARTITION BY user_id, cert_id ORDER BY submitted_at, started_at) rank
+      FROM mock_attempts WHERE status = 'submitted'
+    ) SELECT COUNT(DISTINCT second.user_id)::int n FROM ranked first
+      JOIN ranked second ON first.user_id = second.user_id AND first.cert_id = second.cert_id
+      WHERE first.rank = 1 AND second.rank = 2 AND second.score > first.score`),
+  ]);
+  return { firstAnswer, missed, returnedToReview, delayedCorrection, repeatMock, improvedMock };
+}
+
 export interface HardQuestion {
   questionId: string;
   stem: string;

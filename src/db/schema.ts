@@ -214,3 +214,28 @@ export const rateLimits = pgTable(
   },
   (t) => [index("idx_rate_limits_reset").on(t.resetAt)],
 );
+
+/** Learner reports are reviewed against the source content before editing the bank. */
+export const contentReports = pgTable("content_reports", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  kind: text("kind", { enum: ["question", "lesson"] }).notNull(),
+  contentId: text("content_id").notNull(),
+  certId: text("cert_id").notNull(),
+  reason: text("reason", { enum: ["incorrect", "unclear", "outdated", "layout", "other"] }).notNull(),
+  detail: text("detail").notNull(),
+  status: text("status", { enum: ["open", "resolved", "dismissed"] }).notNull().default("open"),
+  createdAt: ms("created_at").notNull(),
+  reviewedAt: ms("reviewed_at"),
+  reviewedBy: integer("reviewed_by").references(() => users.id, { onDelete: "set null" }),
+  resolution: text("resolution"),
+}, (t) => [index("idx_content_reports_status").on(t.status, t.createdAt)]);
+
+/** A human decision on a rule-based mock signal. The signal itself is derived from server timestamps. */
+export const integrityReviews = pgTable("integrity_reviews", {
+  attemptId: text("attempt_id").primaryKey().references(() => mockAttempts.id, { onDelete: "cascade" }),
+  status: text("status", { enum: ["open", "reviewed", "dismissed"] }).notNull().default("open"),
+  note: text("note"),
+  reviewedAt: ms("reviewed_at"),
+  reviewedBy: integer("reviewed_by").references(() => users.id, { onDelete: "set null" }),
+});

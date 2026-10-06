@@ -13,6 +13,8 @@ import { NumberTicker } from "@/components/ui/number-ticker";
 import { StreakFlame } from "@/components/streak-flame";
 import { CommitDial } from "./commit-dial";
 import { MasteryRadar, ReadinessGauge, RotatingMessage } from "./widgets";
+import { ReviewQueue } from "@/components/review-queue";
+import { buildReviewPlan } from "@/lib/review-plan";
 
 export const metadata: Metadata = { title: "Today" };
 
@@ -42,6 +44,7 @@ export default async function TodayPage() {
   if (!d) {
     return <EmptyState title="No exam content found" body="Add content to the content folder following CONTENT_SCHEMA.md, then reload." />;
   }
+  const review = viewer.cert ? await buildReviewPlan(viewer.user.id, viewer.cert, viewer.settings.tz) : null;
   const { now, hour } = d;
   const goalFrac = d.dailyGoal ? d.minutesToday / d.dailyGoal : 0;
   const blocksDone = d.blocks.filter((b) => b.done).length;
@@ -109,6 +112,8 @@ export default async function TodayPage() {
           <CommitDial href={d.next.href} nextTitle={d.next.title} kindLabel={KIND_LABEL[d.next.kind] ?? "Next up"} />
         </div>
       </section>
+
+      {review && review.tasks.some((task) => task.id !== "lesson") && <ReviewQueue plan={review} compact />}
 
       {d.planMismatch ? (
         <Card className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">

@@ -7,6 +7,7 @@ import { Check, Compass, Flag, X } from "lucide-react";
 import type { PublicQuestion } from "@/lib/content-types";
 import type { AnswerFeedback } from "@/lib/quiz-types";
 import { Markdown } from "@/components/ui/markdown";
+import { ContentReport } from "@/components/content-report";
 
 export interface QuestionCardProps {
   question: PublicQuestion;
@@ -223,6 +224,7 @@ export function QuestionCard({
                 </span>
               </p>
             ) : null}
+            <div className="mt-4"><ContentReport kind="question" contentId={question.id} certId={question.certId} /></div>
           </motion.div>
         ) : null}
       </AnimatePresence>

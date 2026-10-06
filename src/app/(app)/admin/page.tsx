@@ -4,7 +4,7 @@ import { clsx } from "clsx";
 import { Card, CardHeader, EmptyState, PageHeader, Pill } from "@/components/ui/card";
 import { getCert, getCerts } from "@/lib/content";
 import { certShortName, MIN_READINESS_ANSWERS, STATUS_LABEL, STATUS_ORDER, STATUS_TONE } from "@/lib/admin-status";
-import { activeUsersPerDay, domainHeatmap, hardestDomains, hardestQuestions, listUsers, retention3Days, summary, type HeatCell } from "@/lib/repo/admin";
+import { activeUsersPerDay, domainHeatmap, hardestDomains, hardestQuestions, learningMetrics, listUsers, retention3Days, summary, type HeatCell } from "@/lib/repo/admin";
 import { getAdminViewer } from "@/lib/viewer";
 import { ActiveChart } from "./active-chart";
 import { UsersTable } from "./users-table";
@@ -20,7 +20,7 @@ export default async function AdminPage({ searchParams }: PageProps<"/admin">) {
   const requested = typeof sp.cert === "string" ? getCert(sp.cert) : undefined;
   const cert = requested ?? ownCert;
 
-  const [s, users, daily, retention] = await Promise.all([summary(), listUsers(), activeUsersPerDay(30, settings.tz), retention3Days(settings.tz)]);
+  const [s, users, daily, retention, learning] = await Promise.all([summary(), listUsers(), activeUsersPerDay(30, settings.tz), retention3Days(settings.tz), learningMetrics()]);
   const hard = await hardestQuestions(10, 3, cert?.id);
   const hardDomains = hard.length === 0 ? await hardestDomains(6, cert?.id) : [];
   const heat = cert ? await domainHeatmap(cert.id) : null;
@@ -29,6 +29,7 @@ export default async function AdminPage({ searchParams }: PageProps<"/admin">) {
   return (
     <div className="min-w-0">
       <PageHeader title="Admin" sub="Everyone studying on this instance, and where the cohort is struggling." />
+      <Link href="/admin/reviews" className="mb-5 inline-flex min-h-10 items-center rounded-lg border border-line bg-surface px-4 text-sm font-semibold hover:bg-surface-2">Open content and integrity reviews →</Link>
 
       <dl className="grid min-w-0 grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <Stat label="Users" value={String(s.users)} />
@@ -38,6 +39,16 @@ export default async function AdminPage({ searchParams }: PageProps<"/admin">) {
         <Stat label="Mocks taken" value={String(s.mocks)} />
         <Stat label="Mock pass rate" value={pct(s.passRate)} />
       </dl>
+
+      <Card className="mt-6 min-w-0 p-5">
+        <CardHeader title="Learning outcomes" sub="Based on answers and submitted mocks, not page views or minutes online." />
+        <dl className="mt-4 grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <Outcome label="First answer" value={learning.firstAnswer} base={s.users} detail="Learners who answered at least one question" />
+          <Outcome label="Returned to retry" value={learning.returnedToReview} base={learning.missed} detail="Learners who retried a missed question at least a day later" />
+          <Outcome label="Delayed correction" value={learning.delayedCorrection} base={learning.missed} detail="Learners who corrected a missed question at least a day later" />
+          <Outcome label="Second mock improved" value={learning.improvedMock} base={learning.repeatMock} detail="Learners whose second mock beat their first on the same exam" />
+        </dl>
+      </Card>
 
       <Card className="mt-6 min-w-0 p-5">
         <CardHeader title="At risk" sub={atRisk.length ? `${atRisk.length} of ${users.length} users need a nudge` : undefined} />
@@ -187,6 +198,14 @@ export default async function AdminPage({ searchParams }: PageProps<"/admin">) {
       </Card>
     </div>
   );
+}
+
+function Outcome({ label, value, base, detail }: { label: string; value: number; base: number; detail: string }) {
+  return <div className="min-w-0 rounded-xl bg-surface-2/60 p-4">
+    <dt className="text-sm font-semibold text-ink">{label}</dt>
+    <dd className="mt-1 font-display text-2xl font-semibold tabular">{value}<span className="text-base font-normal text-muted"> / {base}</span></dd>
+    <p className="mt-1 text-xs text-ink-2">{detail}</p>
+  </div>;
 }
 
 function HeatTd({ cell, domain, average }: { cell: HeatCell; domain: string; average?: boolean }) {
