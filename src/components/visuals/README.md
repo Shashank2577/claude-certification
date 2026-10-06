@@ -51,7 +51,11 @@ Tailwind classes such as `text-ink`, `bg-surface-2`, `border-line` work for HTML
 
 ## Motion and accessibility
 
-- Call `useReducedMotion()`. When true, jump straight to end states (duration 0, no travelling dots, no loops).
+- Call `useHydratedReducedMotion()` from `@/lib/use-reduced-motion` — NOT `useReducedMotion` from
+  `motion/react`, which answers the true value on the first client render and so hydrates mismatch
+  whenever a visual feeds it into `initial`, `style` or a branch. When reduced motion is on, jump
+  straight to end states (duration 0, no travelling dots, no loops). Start from
+  `templates/visual.tsx.template`, which carries this and every other rule as an inline checklist.
 - Prefer user-driven motion: steps, toggles, sliders. Avoid looping ambient animation.
 - Every control is a real `<button>` with `aria-label`; support arrow keys for step-throughs.
 - Put the current explanation in an `aria-live="polite"` region and give the `<svg>` `role="img"` with an `aria-label` describing the current state.

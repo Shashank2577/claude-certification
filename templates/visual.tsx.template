@@ -1,0 +1,238 @@
+// TEMPLATE for a new interactive explainer in src/components/visuals/<visual-id>.tsx.
+//
+// This file is the checklist we learned the hard way. Each rule below is a bug that
+// actually shipped and had to be fixed. Delete nothing except the guidance comments.
+//
+//   pnpm scaffold:visual <visual-id> "Title" "One-line caption"
+// then rename the component and write the content.
+//
+// Register it in src/components/visuals/registry.ts under the same id.
+
+"use client";
+
+import { useEffect, useState, type KeyboardEvent, type ReactNode } from "react";
+import { AnimatePresence, motion } from "motion/react";
+import { ChevronLeft, ChevronRight, RotateCcw } from "lucide-react";
+import clsx from "clsx";
+import { cos, sin } from "@/lib/trig";
+import { useHydratedReducedMotion } from "@/lib/use-reduced-motion";
+
+// ---------------------------------------------------------------------------
+// DATA LIVES HERE. The contract is default export and NO PROPS, so everything the
+// visual needs has to be in this file. No fetch, no context, no imports of content.
+// ---------------------------------------------------------------------------
+
+type StepId = "a" | "b" | "c";
+
+const STEPS: { id: StepId; title: string; caption: string }[] = [
+  { id: "a", title: "First idea", caption: "One sentence the reader takes away at this step. This is what the Listen button reads." },
+  { id: "b", title: "Second idea", caption: "Next sentence." },
+  { id: "c", title: "Third idea", caption: "Last sentence." },
+];
+
+// ---------------------------------------------------------------------------
+// CHECKLIST, learned from real defects. Read this before you write the diagram.
+//
+// 1. Every <text> in the SVG must FIT inside the viewBox.
+//    A sentence sized to the box when you wrote it will overflow the moment the
+//    wording changes, and an SVG clips to its viewBox with no scrollbar and no
+//    warning. Two captions shipped this way and were invisible at EVERY width.
+//    Rule of thumb: if a caption is a full sentence, it needs its own <tspan>
+//    line or a wrap. Measure it, do not eyeball it.
+//
+// 2. Any clickable SVG node needs a keyboard-reachable twin.
+//    <g onClick={...}> is mouse-only. If the SVG can be clicked, put a real
+//    <button> somewhere that does the same thing. This shipped twice: a tier
+//    selector and a stage selector that no keyboard user could reach.
+//
+// 3. Use useHydratedReducedMotion, never useReducedMotion.
+//    motion's version answers the true value on the first client render, so any
+//    `initial`, `style` or branch fed from it differs from the server output and
+//    React logs a hydration error. The hook in @/lib/use-reduced-motion returns
+//    false during SSR AND during hydration, then the real value after mount.
+//
+// 4. Import cos and sin from @/lib/trig, never Math.cos / Math.sin.
+//    Node and V8 can differ in the last bit, and an SVG attribute that differs
+//    is a hydration mismatch. Never Math.random() or Date.now() during render.
+//
+// 5. Colour only via CSS variables. No hex literals anywhere in this file.
+//    --ink --ink-2 --muted --surface --surface-2 --bg --line --line-strong
+//    --accent --accent-strong --accent-ink --accent-text --accent-soft
+//    --good --good-soft --bad --bad-soft --info --info-soft
+//    so the diagram works in both themes.
+//
+// 6. viewBox plus className="h-auto w-full". Never a fixed pixel width.
+//    Panels holding text need min-w-0, and grid tracks need minmax(0, 1fr),
+//    or long labels widen the whole figure on a phone.
+//
+// 7. The figure must read at 375px. Side panels go in a grid that stacks.
+//    If a single SVG genuinely cannot stack, give it a min-w and let the
+//    existing overflow-x-auto pan it, and say so in a comment.
+//
+// 8. Accessibility is not optional: every control is a <button> with an
+//    aria-label; the current explanation sits in an aria-live="polite" region;
+//    the svg has role="img" and an aria-label that describes the CURRENT state,
+//    not a generic title.
+// ---------------------------------------------------------------------------
+
+export default function MyVisual() {
+  // 3. Correct hook. Treat it as false until mounted.
+  const reduce = useHydratedReducedMotion();
+  const [step, setStep] = useState(0);
+  const last = STEPS.length - 1;
+  const stage = STEPS[step];
+
+  const go = (i: number) => setStep(Math.max(0, Math.min(last, i)));
+
+  // Arrow keys work on the wrapper, which must be focusable.
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+    e.preventDefault();
+    go(step + (e.key === "ArrowRight" ? 1 : -1));
+  };
+
+  const reset = () => setStep(0);
+
+  // User-driven step-through only. No looping ambient animation: it fights
+  // reduced motion and it is the thing people find distracting while reading.
+  useEffect(() => {
+    /* no timers unless the step-through genuinely needs one */
+  }, []);
+
+  return (
+    <div className="space-y-4" onKeyDown={onKey}>
+      <div className="grid grid-cols-1 gap-4 @2xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <div className="rounded-xl bg-surface-2/50 p-2" tabIndex={0} role="group" aria-label="Diagram. Use left and right arrow keys to step.">
+          <svg
+            viewBox="0 0 360 220"
+            className="h-auto w-full"
+            role="img"
+            aria-label={`Step ${step + 1} of ${STEPS.length}, ${stage.title}: ${stage.caption}`}
+          >
+            <defs>
+              <marker id="mv-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+                <path d="M0 0 L10 5 L0 10 z" fill="var(--line-strong)" />
+              </marker>
+            </defs>
+
+            {STEPS.map((s, i) => {
+              const on = i === step;
+              const x = 40 + i * 120;
+              return (
+                <g key={s.id} onClick={() => go(i)} style={{ cursor: "pointer" }}>
+                  <motion.rect
+                    x={x - 46}
+                    y={70}
+                    width={92}
+                    height={54}
+                    rx={10}
+                    fill={on ? "var(--accent-soft)" : "var(--surface)"}
+                    stroke={on ? "var(--accent-strong)" : "var(--line-strong)"}
+                    strokeWidth={on ? 2 : 1.25}
+                    animate={reduce ? {} : { scale: on ? 1.04 : 1 }}
+                    transition={{ type: "spring", stiffness: 300, damping: 20 }}
+                  />
+                  <text x={x} y={94} textAnchor="middle" fill="var(--ink)" style={{ font: "600 15px var(--font-display)" }}>
+                    {s.title}
+                  </text>
+                  <text x={x} y={110} textAnchor="middle" fill="var(--muted)" style={{ font: "500 11px var(--font-mono)" }}>
+                    step {i + 1}
+                  </text>
+                </g>
+              );
+            })}
+
+            <path
+              d="M 86 97 L 118 97"
+              fill="none"
+              stroke="var(--line-strong)"
+              strokeWidth={1.5}
+              markerEnd="url(#mv-arrow)"
+            />
+
+            {/* 1. A caption this long needs its own line. Check the width. */}
+            <text x="12" y="196" fill="var(--muted)" style={{ font: "500 11px var(--font-sans)" }}>
+              <tspan x="12">Illustrative figures, not published benchmarks.</tspan>
+              <tspan x="12" dy={14}>
+                Read the gap, not the absolute number.
+              </tspan>
+            </text>
+          </svg>
+        </div>
+
+        <div className="flex min-h-56 flex-col rounded-xl border border-line bg-bg/60 p-3">
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={step}
+              initial={reduce ? false : { opacity: 0, x: 12 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={reduce ? undefined : { opacity: 0 }}
+              transition={{ duration: reduce ? 0 : 0.22 }}
+              className="flex flex-1 flex-col gap-3"
+            >
+              <p className="text-xs font-medium text-muted">
+                Step {step + 1} · {stage.title}
+              </p>
+              <p className="text-[0.95rem] text-ink-2">{stage.caption}</p>
+              {/* 2. Anything clickable in the SVG needs a button twin down here. */}
+              <div className="mt-auto flex flex-wrap gap-1.5" role="group" aria-label="Choose a step">
+                {STEPS.map((s, i) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    aria-pressed={step === i}
+                    onClick={() => go(i)}
+                    className={clsx(
+                      "rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors",
+                      step === i ? "border-accent-strong bg-accent-soft text-ink" : "border-line bg-surface text-ink-2 hover:border-line-strong",
+                    )}
+                  >
+                    {s.title}
+                  </button>
+                ))}
+              </div>
+            </motion.div>
+          </AnimatePresence>
+        </div>
+      </div>
+
+      {/* 8. The Listen button reads this region's text. Keep it a plain sentence
+          per step, no bare numbers like "1/3" that a screen reader stumbles on. */}
+      <div className="flex flex-col gap-3 @lg:flex-row @lg:items-center @lg:justify-between">
+        <p className="min-h-12 text-[0.95rem] text-ink-2" aria-live="polite">
+          <span className="mr-2 font-display font-semibold text-ink tabular">
+            {step + 1}/{STEPS.length}
+          </span>
+          {stage.caption}
+        </p>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <CtrlButton label="Previous step" onClick={() => go(step - 1)} disabled={step === 0}>
+            <ChevronLeft size={18} />
+          </CtrlButton>
+          <CtrlButton label="Next step" onClick={() => go(step + 1)} disabled={step === last}>
+            <ChevronRight size={18} />
+          </CtrlButton>
+          <CtrlButton label="Reset to step 1" onClick={reset}>
+            <RotateCcw size={16} />
+          </CtrlButton>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// lucide icons are aria-hidden by default, so the accessible name goes on the wrapper.
+function CtrlButton({ label, onClick, disabled, children }: { label: string; onClick: () => void; disabled?: boolean; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={label}
+      title={label}
+      className="grid size-9 place-items-center rounded-xl border border-line-strong bg-surface text-ink transition-colors hover:border-ink active:scale-95 disabled:opacity-40"
+    >
+      {children}
+    </button>
+  );
+}

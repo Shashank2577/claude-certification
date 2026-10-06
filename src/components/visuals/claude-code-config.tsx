@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, type KeyboardEvent, type ReactNode } from "react";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
+import { useHydratedReducedMotion } from "@/lib/use-reduced-motion";
 import clsx from "clsx";
 import { ChevronLeft, ChevronRight, Crown, FileCode, FileText, Folder, GitBranch, Lock, User } from "lucide-react";
 
@@ -306,7 +307,7 @@ const TABS = [
 ] as const;
 
 export default function ClaudeCodeConfig() {
-  const reduce = !!useReducedMotion();
+  const reduce = !!useHydratedReducedMotion();
   const [tab, setTab] = useState<(typeof TABS)[number]["id"]>("memory");
   const onTabKey = (e: KeyboardEvent, i: number) => {
     const d = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;

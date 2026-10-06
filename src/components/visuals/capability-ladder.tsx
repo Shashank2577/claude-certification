@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, type KeyboardEvent, type ReactNode } from "react";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
+import { useHydratedReducedMotion } from "@/lib/use-reduced-motion";
 import { ChevronLeft, ChevronRight, RotateCcw, Undo2 } from "lucide-react";
 import clsx from "clsx";
 
@@ -89,7 +90,7 @@ const yCost = (c: number) => PLOT.top + PLOT.h - (c / PLOT.costMax) * PLOT.h;
 const line = (pts: [number, number][]) => pts.map(([x, y], i) => `${i ? "L" : "M"} ${x} ${y}`).join(" ");
 
 export default function CapabilityLadder() {
-  const reduce = !!useReducedMotion();
+  const reduce = !!useHydratedReducedMotion();
   const [stage, setStage] = useState(0);
   const [rung, setRung] = useState(2);
   const [n, setN] = useState(2);

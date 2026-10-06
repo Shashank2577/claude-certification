@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, type KeyboardEvent } from "react";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
+import { useHydratedReducedMotion } from "@/lib/use-reduced-motion";
 import clsx from "clsx";
 import { Brain, ChevronDown, Gauge, TriangleAlert } from "lucide-react";
 
@@ -148,7 +149,7 @@ const SHAPE: Record<string, { inTok: number; outTok: number; daily: number }> = 
 const p50: Record<Tier, number> = { haiku: 0.6, sonnet: 1.9, opus: 5.4 };
 
 export default function ModelSelection() {
-  const reduce = !!useReducedMotion();
+  const reduce = !!useHydratedReducedMotion();
   const [pid, setPid] = useState("contract");
   const [tier, setTier] = useState<Tier>("sonnet");
   const [mode, setMode] = useState<Mode>("standard");

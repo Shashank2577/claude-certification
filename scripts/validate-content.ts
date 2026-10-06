@@ -142,13 +142,12 @@ for (const cert of certs) {
         for (const c of correct) if (!optionIds.includes(String(c))) fail(rel, `${id}: correct answer ${c} is not an option`);
         if (correct.length > 1) multi++;
         if (correct.length === options.length) fail(rel, `${id}: every option is correct`);
-        if (correct.length === 1 && optionIds.length > 2) {
-          for (const c of correct) {
-            // multi-select needs whyWrong on the un-picked distractors; single-select on all non-answers
-            for (const o of optionIds) {
-              if (o === c) continue;
-                if (!whyWrong || !(o in whyWrong)) fail(rel, `${id}: missing whyWrong for option ${o}`);
-            }
+        // Every option the candidate could have picked and shouldn't have needs a reason.
+        // Gating this on single-select let multi-select questions omit whyWrong entirely.
+        if (optionIds.length > 2) {
+          for (const o of optionIds) {
+            if (correct.includes(o)) continue;
+            if (!whyWrong || !(o in whyWrong)) fail(rel, `${id}: missing whyWrong for option ${o}`);
           }
         }
         for (const c of correct) {
@@ -180,7 +179,85 @@ for (const cert of certs) {
   }
 }
 
-// ---- cross-cert question id uniqueness (the loader dedupes silently)
+// ── explainer source rules ───────────────────────────────────────────────────
+// These encode bugs that actually shipped: a hydration mismatch from the wrong
+// reduced-motion hook, Math.cos/sin differing in the last bit between Node and
+// the browser, and hard-coded hex that breaks one of the two themes.
+const visualSrc = path.join(process.cwd(), "src/components/visuals");
+const VISUAL_SOURCE_RULES: { re: RegExp; msg: string }[] = [
+  { re: /useReducedMotion[\s\S]{0,40}?from ["']motion\/react["']/, msg: "imports useReducedMotion from motion/react; use useHydratedReducedMotion from @/lib/use-reduced-motion instead" },
+  { re: /Math\.(cos|sin)\(/, msg: "calls Math.cos/Math.sin; import cos/sin from @/lib/trig so SSR and client agree" },
+  { re: /#[0-9a-fA-F]{6}\b/, msg: "contains a hard-coded hex colour; use the CSS variables (--ink, --accent, --line…)" },
+  { re: /useState\([^)]*Math\.random/, msg: "initialises state with Math.random, which differs between server and client" },
+  { re: /style=\{\{[^}]*(Date\.now|Math\.random)/, msg: "computes a style from Date.now/Math.random, which differs between server and client" },
+];
+// Only the diagram components themselves; visual.tsx/placeholder.tsx/registry.ts are infrastructure.
+const NOT_DIAGRAMS = new Set(["visual.tsx", "placeholder.tsx"]);
+for (const entry of fs.readdirSync(visualSrc)) {
+  if (!entry.endsWith(".tsx") || entry.endsWith(".template") || NOT_DIAGRAMS.has(entry)) continue;
+  const rel = `src/components/visuals/${entry}`;
+  const src = fs.readFileSync(path.join(visualSrc, entry), "utf8");
+  if (!src.trimStart().startsWith('"use client"')) fail(rel, "must start with \"use client\"");
+  if (!/export default function/.test(src)) fail(rel, "must have a default export");
+  for (const rule of VISUAL_SOURCE_RULES) {
+    if (rule.re.test(src)) fail(rel, rule.msg);
+  }
+  // A visual may draw with HTML instead of SVG, so only require a labelled graphic or a
+  // live region that the Listen button can read.
+  if (!/<svg|role="img"/.test(src) && !/aria-live/.test(src)) {
+    warn(rel, "has neither an SVG/role=img graphic nor an aria-live region");
+  }
+}
+
+// ── study plans ─────────────────────────────────────────────────────────────
+// The linter never opened this file, so an unresolvable refId silently produced a
+// plan with dead links.
+function readJson<T>(rel: string, fallback: T): T {
+  const file = path.join(ROOT, rel);
+  try {
+    return JSON.parse(fs.readFileSync(file, "utf8")) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+const plans = readJson<{ id?: string; certId?: string; days?: { day?: number; blocks?: { kind?: string; refId?: string | null }[] }[] }[]>("study-plans.json", []);
+const certIdSet = new Set(certs.map((c) => String(c.id)));
+// refIds are ids scoped to the plan's own cert, e.g. "f-agentic-loop" and "d1-agentic".
+const lessonsByCert = new Map<string, Set<string>>();
+const domainsByCert = new Map<string, Set<string>>();
+for (const cert of certs) {
+  const cid = String(cert.id);
+  lessonsByCert.set(cid, new Set());
+  domainsByCert.set(cid, new Set());
+  for (const domain of arr(cert.domains) as Json[]) {
+    domainsByCert.get(cid)!.add(String(domain.id));
+    const mod = readJson(`modules/${cid}/${String(domain.id)}.json`, {}) as Json;
+    for (const lesson of arr(mod.lessons)) lessonsByCert.get(cid)!.add(String((lesson as Json).id));
+  }
+}
+if (!plans.length) fail("study-plans.json", "no study plans");
+for (const plan of plans) {
+  if (!plan.certId || !certIdSet.has(plan.certId)) {
+    fail("study-plans.json", `plan ${plan.id} points at unknown certId "${plan.certId}"`);
+    continue;
+  }
+  if (!arr(plan.days).length) fail("study-plans.json", `plan ${plan.id} has no days`);
+  for (const day of arr(plan.days) as { blocks?: { kind?: string; refId?: string | null } }[]) {
+    for (const block of arr(day.blocks) as { kind?: string; refId?: string | null }[]) {
+      if (!block.refId) continue;
+      if (block.kind === "lesson" && !lessonsByCert.get(plan.certId!)?.has(block.refId)) {
+        fail("study-plans.json", `plan ${plan.id} references lesson "${block.refId}", which does not exist in ${plan.certId}`);
+      }
+      // "weak" is a sentinel the plan builder uses for the adaptive weakest-areas quiz.
+      if ((block.kind === "quiz" || block.kind === "flashcards") && block.refId !== "weak" && !domainsByCert.get(plan.certId!)?.has(block.refId)) {
+        fail("study-plans.json", `plan ${plan.id} references domain "${block.refId}", which does not exist in ${plan.certId}`);
+      }
+    }
+  }
+}
+
+// ── cross-cert question id uniqueness (the loader dedupes silently) ──────────
 const allQ: { id: string; label: string }[] = [];
 for (const cert of certs) {
   for (const domain of arr(cert.domains) as Json[]) {

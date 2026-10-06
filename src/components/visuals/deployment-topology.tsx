@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, type KeyboardEvent, type ReactNode } from "react";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
+import { useHydratedReducedMotion } from "@/lib/use-reduced-motion";
 import clsx from "clsx";
 import { ChevronLeft, ChevronRight, Eye, KeyRound, RotateCcw, Server, ShieldAlert } from "lucide-react";
 
@@ -158,7 +159,7 @@ function providerBox(t: Topo) {
 }
 
 export default function DeploymentTopology() {
-  const reduce = !!useReducedMotion();
+  const reduce = !!useHydratedReducedMotion();
   const [topoId, setTopoId] = useState<TopoId>("self");
   const [step, setStep] = useState(0);
   const topo = TOPOS[topoId];

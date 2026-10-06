@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, type KeyboardEvent, type ReactNode } from "react";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
+import { useHydratedReducedMotion } from "@/lib/use-reduced-motion";
 import { AlertTriangle, ChevronLeft, ChevronRight, Check, RotateCcw } from "lucide-react";
 import clsx from "clsx";
 
@@ -102,7 +103,7 @@ const PROMISES = [
 ];
 
 export default function StakeholderTradeoff() {
-  const reduce = !!useReducedMotion();
+  const reduce = !!useHydratedReducedMotion();
   const [step, setStep] = useState(0);
   const [audience, setAudience] = useState<Audience>("eng");
   const [promise, setPromise] = useState<string | null>(null);

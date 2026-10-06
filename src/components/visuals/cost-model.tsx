@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { motion, useReducedMotion } from "motion/react";
+import { motion } from "motion/react";
+import { useHydratedReducedMotion } from "@/lib/use-reduced-motion";
 import clsx from "clsx";
 import { Boxes, Cpu, DatabaseZap, Layers, Percent, Scissors, Timer, Zap } from "lucide-react";
 
@@ -38,7 +39,7 @@ const STABLE_SHARE = 0.7;
 const TPS: Record<Tier, number> = { haiku: 120, sonnet: 75, opus: 35 };
 
 export default function CostModel() {
-  const reduce = !!useReducedMotion();
+  const reduce = !!useHydratedReducedMotion();
   const [perDay, setPerDay] = useState(20_000);
   const [inTok, setInTok] = useState(4000);
   const [outTok, setOutTok] = useState(500);
@@ -260,7 +261,7 @@ function Pill({ on, onClick, label, children }: { on: boolean; onClick: () => vo
 }
 
 function Toggle({ on, onClick, label }: { on: boolean; onClick: () => void; label: string }) {
-  const reduce = useReducedMotion();
+  const reduce = useHydratedReducedMotion();
   return (
     <button type="button" role="switch" aria-checked={on} aria-label={label} onClick={onClick} className="flex w-full items-center gap-2 text-left text-xs font-medium text-ink">
       <span className={clsx("relative h-5 w-9 shrink-0 rounded-full transition-colors", on ? "bg-accent-strong" : "bg-line-strong")}>

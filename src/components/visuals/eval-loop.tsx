@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState, type KeyboardEvent, type ReactNode } from "react";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
+import { useHydratedReducedMotion } from "@/lib/use-reduced-motion";
 import { Check, ChevronLeft, ChevronRight, Minus, Pause, Play, RotateCcw, X } from "lucide-react";
 import clsx from "clsx";
 import { cos, sin } from "@/lib/trig";
@@ -78,7 +79,7 @@ const arc = (i: number) => {
 };
 
 export default function EvalLoop() {
-  const reduce = !!useReducedMotion();
+  const reduce = !!useHydratedReducedMotion();
   const [step, setStep] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [grader, setGrader] = useState<Grader>("judge");
@@ -489,7 +490,7 @@ function Pill({ on, onClick, label, children, wide }: { on: boolean; onClick: ()
 }
 
 function Toggle({ on, onClick, label, warn }: { on: boolean; onClick: () => void; label: string; warn?: boolean }) {
-  const reduce = useReducedMotion();
+  const reduce = useHydratedReducedMotion();
   return (
     <button type="button" role="switch" aria-checked={on} aria-label={label} onClick={onClick} className="flex w-full items-center gap-2 text-left text-xs text-ink-2">
       <span className={clsx("relative h-5 w-9 shrink-0 rounded-full transition-colors", on ? (warn ? "bg-bad" : "bg-accent-strong") : "bg-line-strong")}>

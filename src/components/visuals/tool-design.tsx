@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, type KeyboardEvent, type ReactNode } from "react";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
+import { useHydratedReducedMotion } from "@/lib/use-reduced-motion";
 import { AlertTriangle, Check, Lock, RefreshCw, ShieldAlert, Sparkles, X } from "lucide-react";
 import clsx from "clsx";
 
@@ -36,7 +37,7 @@ const GOOD: Part[] = [
 ];
 
 function Definitions() {
-  const reduce = useReducedMotion();
+  const reduce = useHydratedReducedMotion();
   const [active, setActive] = useState<string>("g-not");
   const all = [...BAD, ...GOOD];
   const current = all.find((p) => p.id === active) ?? GOOD[3];
@@ -139,7 +140,7 @@ const TOOL_Y = 170;
 const START = { x: 180, y: 70 };
 
 function Selection() {
-  const reduce = useReducedMotion();
+  const reduce = useHydratedReducedMotion();
   const [level, setLevel] = useState(0);
   const [req, setReq] = useState(1);
   const r = REQUESTS[req];
@@ -315,7 +316,7 @@ const SCENARIOS: Record<Scenario, { label: string; body: string; action: string;
 };
 
 function Errors() {
-  const reduce = useReducedMotion();
+  const reduce = useHydratedReducedMotion();
   const [scenario, setScenario] = useState<Scenario>("transient");
   const [structured, setStructured] = useState(false);
   const s = SCENARIOS[scenario];
@@ -400,7 +401,7 @@ function Errors() {
 
 /* ---------- Shell ---------- */
 export default function ToolDesign() {
-  const reduce = useReducedMotion();
+  const reduce = useHydratedReducedMotion();
   const [tab, setTab] = useState<Tab>("define");
   const onKey = (e: KeyboardEvent) => {
     const i = TABS.findIndex((t) => t.id === tab);

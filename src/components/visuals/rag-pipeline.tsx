@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, type KeyboardEvent, type ReactNode } from "react";
-import { AnimatePresence, motion, useReducedMotion, type Transition } from "motion/react";
+import { AnimatePresence, motion, type Transition } from "motion/react";
+import { useHydratedReducedMotion } from "@/lib/use-reduced-motion";
 import clsx from "clsx";
 import { ChevronLeft, ChevronRight, Database, ListOrdered, Quote, Scissors, Search, Sparkles, Stethoscope, type LucideIcon } from "lucide-react";
 
@@ -47,7 +48,7 @@ const goldRank = (hybrid: boolean, contextual: boolean) => (hybrid && contextual
 const TO_CLAUDE = 3; // this demo passes the top 3 to Claude; Anthropic's write-up passed the top 20
 
 export default function RagPipeline() {
-  const reduce = !!useReducedMotion();
+  const reduce = !!useHydratedReducedMotion();
   const [stage, setStage] = useState(0);
   const [size, setSize] = useState<Size>("small");
   const [overlap, setOverlap] = useState(false);

@@ -47,12 +47,15 @@ All study content lives in `content/` as JSON. The app reads it at build/run tim
 }
 ```
 
-## content/questions/{certId}/{domainId}.json
+## content/questions/{certId}/{domainId}.part-N.json
+The loader reads `{domainId}.json` first if it exists, then every `{domainId}.part-N.json` in
+name order. Batches of 15-25 live in part files; the whole bank uses the `.part-N.json` form.
+
 ```json
 {
   "certId": "foundations", "domainId": "d1-agentic",
   "questions": [{
-    "id": "f-d1-001",                  // globally unique
+    "id": "f-d1-b1-001",              // globally unique; `^[a-z]{1,2}-d\d+-[a-z0-9-]+$`
     "taskStatementId": "1.1",
     "scenario": "optional shared scenario paragraph (context setup)",
     "stem": "the question",
@@ -119,3 +122,23 @@ Lessons may only reference these `visualId`s. Each is a self-contained client co
 - `eval-loop` – evals: test set → run → grade (code / LLM-judge / human) → iterate
 - `security-guardrails` – permission modes, least privilege tools, prompt injection boundaries
 - `exam-strategy` – elimination funnel for scenario questions
+
+## Adding content — use the scaffolders, not this file
+
+This file documents the shapes. To create them, do not copy them by hand:
+
+```bash
+pnpm scaffold:exam --id=<kebab> --role="..." --tier="..." --domains="Name A,Name B"   # cert + domains + lessons + questions + flashcards + plans
+pnpm scaffold:visual <visual-id> "Title" "One-line caption"                            # new explainer + registry entry
+pnpm validate:content                                                                 # the gate; must be clean
+```
+
+Templates live in `templates/` (one per entity, see `templates/README.md`) and the scaffolders
+render from those files, so the template and the generator cannot drift apart. The authoring
+skill at `.claude/skills/claude-cert-content/SKILL.md` records the workflow, and the human-facing
+version of the same is `docs/authoring.html`.
+
+A certification must appear in eight places: `content/certs.json`, `content/modules/{cert}/`,
+`content/questions/{cert}/`, `content/flashcards/{cert}/`, `content/study-plans.json`,
+`content/insights.json`, `src/components/visuals/registry.ts` (only if it needs new explainers),
+and `docs/index.html`. The scaffolder covers six; the landing page is hand-written copy.

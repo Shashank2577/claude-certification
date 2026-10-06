@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, type KeyboardEvent, type ReactNode } from "react";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
+import { useHydratedReducedMotion } from "@/lib/use-reduced-motion";
 import clsx from "clsx";
 import { ChevronLeft, ChevronRight, KeyRound, LockKeyhole, RotateCcw, ShieldAlert, ShieldCheck } from "lucide-react";
 
@@ -50,7 +51,7 @@ const LEAK: { label: string; text: string }[] = [
 ];
 
 export default function IdentityAndPii() {
-  const reduce = !!useReducedMotion();
+  const reduce = !!useHydratedReducedMotion();
   const [step, setStep] = useState(0);
   const [leaky, setLeaky] = useState(false);
   const last = STEPS.length - 1;

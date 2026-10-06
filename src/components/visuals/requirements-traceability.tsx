@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, type KeyboardEvent, type ReactNode } from "react";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
+import { useHydratedReducedMotion } from "@/lib/use-reduced-motion";
 import { AlertTriangle, Check, ChevronLeft, ChevronRight, RotateCcw, ShieldCheck } from "lucide-react";
 import clsx from "clsx";
 
@@ -79,7 +80,7 @@ const colX = (i: number) => COL.x + i * (COL.w + COL.gap);
 const colMid = (i: number) => colX(i) + COL.w / 2;
 
 export default function RequirementsTraceability() {
-  const reduce = !!useReducedMotion();
+  const reduce = !!useHydratedReducedMotion();
   const [stage, setStage] = useState(0);
   const [focus, setFocus] = useState(0);
   const last = STAGES.length - 1;

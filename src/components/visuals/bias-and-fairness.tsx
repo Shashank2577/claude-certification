@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { motion, useReducedMotion } from "motion/react";
+import { motion } from "motion/react";
+import { useHydratedReducedMotion } from "@/lib/use-reduced-motion";
 import { Scale, ShieldAlert, Users } from "lucide-react";
 import clsx from "clsx";
 
@@ -49,7 +50,7 @@ const yFor = (p: number) => B.base - (p / 100) * B.h;
 const rate = (i: number, w: Wording, c: Corpus) => Math.round(Math.min(0.97, BASE[i] * MODEL_BIAS[i] * WORDING[w].mult[i] * CORPUS[c].mult[i]) * 100);
 
 export default function BiasAndFairness() {
-  const reduce = !!useReducedMotion();
+  const reduce = !!useHydratedReducedMotion();
   const [wording, setWording] = useState<Wording>("legacy");
   const [corpus, setCorpus] = useState<Corpus>("skewed");
   const [evalSet, setEvalSet] = useState<EvalSet>("skewed");

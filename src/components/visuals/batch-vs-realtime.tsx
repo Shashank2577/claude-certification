@@ -1,7 +1,8 @@
 "use client";
 
 import { useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from "react";
-import { AnimatePresence, LayoutGroup, motion, useReducedMotion, type PanInfo } from "motion/react";
+import { AnimatePresence, LayoutGroup, motion, type PanInfo } from "motion/react";
+import { useHydratedReducedMotion } from "@/lib/use-reduced-motion";
 import { Check, ChevronLeft, ChevronRight, Clock, Layers, RotateCcw, X, Zap } from "lucide-react";
 import clsx from "clsx";
 
@@ -44,7 +45,7 @@ const PER_REQ = (4000 * 2 + 500 * 10) / 1_000_000;
 const money = (n: number) => (n >= 1000 ? `$${Math.round(n).toLocaleString("en-US")}` : `$${n.toFixed(2)}`);
 
 export default function BatchVsRealtime() {
-  const reduce = useReducedMotion();
+  const reduce = useHydratedReducedMotion();
   const [tab, setTab] = useState<Tab>("sort");
   const tabIndex = TABS.findIndex(([id]) => id === tab);
   const onTabKey = (e: KeyboardEvent) => {

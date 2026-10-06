@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
+import { useHydratedReducedMotion } from "@/lib/use-reduced-motion";
 import { ChevronLeft, ChevronRight, Pause, Play, RotateCcw } from "lucide-react";
 
 type NodeId = "user" | "app" | "claude" | "tool";
@@ -61,7 +62,7 @@ const ROLE_STYLE: Record<string, string> = {
 };
 
 export default function AgenticLoop() {
-  const reduce = useReducedMotion();
+  const reduce = useHydratedReducedMotion();
   const [step, setStep] = useState(0);
   const [playing, setPlaying] = useState(false);
   const last = STEPS.length - 1;

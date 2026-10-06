@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
+import { useHydratedReducedMotion } from "@/lib/use-reduced-motion";
 import { Check, ChevronLeft, ChevronRight, Pause, Play, RotateCcw, X } from "lucide-react";
 import clsx from "clsx";
 
@@ -151,7 +152,7 @@ const QUIZ: { q: string; answer: PatternId; why: string }[] = [
 ];
 
 export default function WorkflowPatterns() {
-  const reduce = useReducedMotion();
+  const reduce = useHydratedReducedMotion();
   const [pattern, setPattern] = useState<PatternId>("chain");
   const [opt, setOpt] = useState(DEFAULT_OPT.chain);
   const [step, setStep] = useState(0);

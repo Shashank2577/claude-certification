@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, type KeyboardEvent, type ReactNode } from "react";
-import { AnimatePresence, motion, useAnimate, useReducedMotion } from "motion/react";
+import { AnimatePresence, motion, useAnimate } from "motion/react";
+import { useHydratedReducedMotion } from "@/lib/use-reduced-motion";
 import clsx from "clsx";
 import { Check, ChevronLeft, ChevronRight, Clock, Flag, RotateCcw, Scissors, X } from "lucide-react";
 
@@ -154,7 +155,7 @@ export default function ExamStrategy() {
 }
 
 function Walkthrough() {
-  const reduce = useReducedMotion();
+  const reduce = useHydratedReducedMotion();
   const [step, setStep] = useState(0);
   const [struck, setStruck] = useState<Set<number>>(new Set());
   const [note, setNote] = useState<string | null>(null);
@@ -408,7 +409,7 @@ const fmt = (m: number) => (Number.isInteger(m) ? String(m) : m.toFixed(1));
 function Pacing() {
   const [examId, setExamId] = useState<(typeof EXAMS)[number]["id"]>("f");
   const [avg, setAvg] = useState(2);
-  const reduce = useReducedMotion();
+  const reduce = useHydratedReducedMotion();
   const exam = EXAMS.find((e) => e.id === examId) ?? EXAMS[0];
   const n = exam.items;
   const per = MINUTES / n;
