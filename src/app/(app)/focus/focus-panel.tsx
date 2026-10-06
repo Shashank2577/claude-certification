@@ -37,8 +37,8 @@ export function FocusPanel({ todaySessions, todayMinutes, allTime }: { todaySess
   };
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[1.3fr_1fr]">
-      <Card className="flex flex-col items-center px-6 py-10">
+    <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
+      <Card className="flex min-w-0 flex-col items-center px-4 py-10 sm:px-6">
         <Ring value={progress} size={260} stroke={14} color={color} label={`${phaseLabel}, ${formatClock(left)} left`}>
           <div>
             <p className="text-sm text-muted">{phaseLabel}</p>
@@ -77,7 +77,7 @@ export function FocusPanel({ todaySessions, todayMinutes, allTime }: { todaySess
         <p className="mt-6 text-center text-sm text-muted">Finishing a focus block earns XP. Stopping early doesn’t cost you anything.</p>
       </Card>
 
-      <div className="space-y-4">
+      <div className="min-w-0 space-y-4">
         <Card className="p-5">
           <h2 className="font-display font-semibold">Today</h2>
           <div className="mt-3 grid grid-cols-3 gap-2">

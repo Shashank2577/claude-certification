@@ -61,8 +61,8 @@ export function Ring({
   const r = (size - stroke) / 2;
   const c = 2 * Math.PI * r;
   return (
-    <div className="relative inline-grid place-items-center" style={{ width: size, height: size }} role="img" aria-label={label}>
-      <svg width={size} height={size} className="-rotate-90" aria-hidden>
+    <div className="relative inline-grid max-w-full place-items-center" style={{ width: size, aspectRatio: "1" }} role="img" aria-label={label}>
+      <svg viewBox={`0 0 ${size} ${size}`} className="h-auto w-full -rotate-90" aria-hidden>
         <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={track} strokeWidth={stroke} />
         <motion.circle
           cx={size / 2}
