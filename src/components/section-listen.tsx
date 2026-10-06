@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback } from "react";
+import { Square, Volume2 } from "lucide-react";
 import { useSpeech } from "@/lib/speech";
 import { stripMarkdown } from "@/lib/speech-core";
 
@@ -48,7 +49,7 @@ export function SectionListen({ id, heading }: { id: string; heading: string }) 
             "mt-1 inline-grid size-11 -my-2 shrink-0 place-items-center rounded-md border border-line bg-surface text-muted transition-colors hover:border-line-strong hover:text-ink"
       }
     >
-      <span aria-hidden>{active ? "■" : "▶"}</span>
+      {active ? <Square size={12} aria-hidden /> : <Volume2 size={14} aria-hidden />}
     </button>
   );
 }
