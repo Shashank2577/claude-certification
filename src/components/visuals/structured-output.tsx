@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
+import { useHydratedReducedMotion } from "@/lib/use-reduced-motion";
 import clsx from "clsx";
 import { Check, ChevronLeft, ChevronRight, Pause, Play, RotateCcw, Sparkles, X } from "lucide-react";
 
@@ -201,7 +202,7 @@ const LAYOUTS: Record<"wide" | "tall", Layout> = {
 /* ───────────── Component ───────────── */
 
 export default function StructuredOutput() {
-  const reduce = useReducedMotion();
+  const reduce = useHydratedReducedMotion();
   const [part, setPart] = useState<"shape" | "meaning">("shape");
   return (
     <div className="space-y-4">
@@ -232,7 +233,7 @@ export default function StructuredOutput() {
 }
 
 function ShapePart({ onNext }: { onNext: () => void }) {
-  const reduce = useReducedMotion();
+  const reduce = useHydratedReducedMotion();
   const [mode, setMode] = useState<ModeId>("prompt");
   const [run, setRun] = useState(0);
   const [picked, setPicked] = useState<number | null>(null);
@@ -364,7 +365,7 @@ function ShapePart({ onNext }: { onNext: () => void }) {
 }
 
 function MeaningPart() {
-  const reduce = useReducedMotion();
+  const reduce = useHydratedReducedMotion();
   const [scenario, setScenario] = useState<ScenarioId>("fixable");
   const [maxRetries, setMaxRetries] = useState(2);
   const [nullable, setNullable] = useState(true);
@@ -544,6 +545,9 @@ function Diagram({
 }) {
   const active = new Set<NodeId>(EDGE_NODES[cur.edge]);
   const path = L.edges[cur.edge];
+  // Under reduced motion the dot cannot travel along the path, so park it on the node the
+  // current edge is heading for. Hiding it instead would lose the position indicator.
+  const dest = L.nodes[EDGE_NODES[cur.edge][1]];
   return (
     <svg viewBox={L.viewBox} className={clsx("h-auto w-full", className)} role="img" aria-label={label}>
       <defs>
@@ -601,17 +605,21 @@ function Diagram({
         const p = L.pip(i, maxRetries + 1);
         return <circle key={i} cx={p.cx} cy={p.cy} r={4.5} fill={i <= cur.attempt ? "var(--accent-strong)" : "var(--surface)"} stroke="var(--line-strong)" strokeWidth={1} />;
       })}
-      <motion.circle
-        key={`${scenario}-${maxRetries}-${step}`}
-        r={7}
-        fill="var(--accent)"
-        stroke="var(--accent-ink)"
-        strokeWidth={1.5}
-        style={reduce ? undefined : { offsetPath: `path("${path}")` }}
-        initial={reduce ? false : { offsetDistance: "0%", opacity: 0 }}
-        animate={reduce ? { opacity: 0 } : { offsetDistance: "100%", opacity: 1 }}
-        transition={{ duration: reduce ? 0 : 0.9, ease: [0.22, 1, 0.36, 1] }}
-      />
+      {reduce ? (
+        <circle cx={dest.x + dest.w / 2} cy={dest.y + dest.h / 2} r={7} fill="var(--accent)" stroke="var(--accent-ink)" strokeWidth={1.5} />
+      ) : (
+        <motion.circle
+          key={`${scenario}-${maxRetries}-${step}`}
+          r={7}
+          fill="var(--accent)"
+          stroke="var(--accent-ink)"
+          strokeWidth={1.5}
+          style={{ offsetPath: `path("${path}")` }}
+          initial={{ offsetDistance: "0%", opacity: 0 }}
+          animate={{ offsetDistance: "100%", opacity: 1 }}
+          transition={{ duration: 0.9, ease: [0.22, 1, 0.36, 1] }}
+        />
+      )}
     </svg>
   );
 }

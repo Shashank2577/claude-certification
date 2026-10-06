@@ -1,6 +1,7 @@
 "use client";
 
 import { lazy, Suspense, type ComponentType, type LazyExoticComponent } from "react";
+import clsx from "clsx";
 import { VISUALS } from "./registry";
 import { VisualPlaceholder } from "./placeholder";
 
@@ -16,11 +17,17 @@ function Loading() {
 }
 
 /** Renders a registered interactive visual inside a captioned frame. */
-export function Visual({ id }: { id: string }) {
+export function Visual({ id, compact }: { id: string; compact?: boolean }) {
   const info = VISUALS[id];
   const Component = LAZY[id];
+  if (!Component && !info) return null;
   return (
-    <figure className="not-prose @container my-2 max-w-full min-w-0 overflow-x-clip rounded-2xl border border-line bg-surface p-3 shadow-card sm:p-5">
+    <figure
+      className={clsx(
+        "not-prose @container my-2 max-w-full min-w-0 overflow-x-clip rounded-2xl border border-line bg-surface shadow-card",
+        compact ? "p-2 sm:p-3" : "p-3 sm:p-5",
+      )}
+    >
       {Component ? (
         <Suspense fallback={<Loading />}>
           <Component />
@@ -28,7 +35,7 @@ export function Visual({ id }: { id: string }) {
       ) : (
         <VisualPlaceholder title={info?.title ?? "Diagram"} description={info?.description} />
       )}
-      {info && Component ? <figcaption className="mt-3 px-1 text-sm text-muted">{info.description}</figcaption> : null}
+      {info && Component ? <figcaption className={clsx("px-1 text-muted", compact ? "mt-2 text-xs" : "mt-3 text-sm")}>{info.description}</figcaption> : null}
     </figure>
   );
 }

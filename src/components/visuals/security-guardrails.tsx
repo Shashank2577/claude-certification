@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
+import { useHydratedReducedMotion } from "@/lib/use-reduced-motion";
 import clsx from "clsx";
 import { Box, Brain, Eye, EyeOff, Globe, ListChecks, Play, RotateCcw, ShieldCheck, ShieldX, Skull, StepForward, UserCheck, Webhook, Wrench } from "lucide-react";
 
@@ -134,7 +135,7 @@ function judge(id: LayerId, on: boolean, s: Scenario, mode: Mode, fooled: boolea
 const INITIAL: Record<LayerId, boolean> = { boundary: true, tools: false, hook: false, rules: false, mode: true, sandbox: false };
 
 export default function SecurityGuardrails() {
-  const reduce = useReducedMotion();
+  const reduce = useHydratedReducedMotion();
   const [scn, setScn] = useState<ScnId>("exfil");
   const [on, setOn] = useState<Record<LayerId, boolean>>(INITIAL);
   const [mode, setMode] = useState<Mode>("bypassPermissions");

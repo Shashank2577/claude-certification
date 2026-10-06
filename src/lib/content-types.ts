@@ -91,6 +91,8 @@ export interface Question {
   explanation: string;
   whyWrong: Record<string, string>;
   difficulty: 1 | 2 | 3;
+  /** Id from the visual registry. Rendered under the explanation, after answering. */
+  visualId?: string;
   mindset: string;
   tags: string[];
   sourceRefs: string[];
@@ -99,6 +101,14 @@ export interface Question {
 export interface QuestionRef extends Question {
   certId: CertId;
   domainId: string;
+}
+
+/** Grading feedback plus the fields only revealed once the answer is locked in. */
+export interface QuestionReveal {
+  explanation: string;
+  whyWrong: Record<string, string>;
+  mindset?: string;
+  visualId?: string;
 }
 
 /** What the client sees before answering: no answers or explanations. */

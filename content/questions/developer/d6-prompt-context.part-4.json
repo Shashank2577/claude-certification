@@ -1,0 +1,899 @@
+{
+  "certId": "developer",
+  "domainId": "d6-prompt-context",
+  "questions": [
+    {
+      "id": "v-d6-g4-001",
+      "taskStatementId": "6.1",
+      "scenario": "Kestrel's support assistant uses Claude Code's auto memory to accumulate project knowledge. A teammate added eleven topic files to `~/.claude/projects/<project>/memory/` and expected the assistant to know all of them. It reliably knows the first two or three and has never mentioned the rest.",
+      "stem": "What explains this, and what is the correct structure?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Only `MEMORY.md` is loaded at session start, and only its first 200 lines or 25KB, whichever comes first. `MEMORY.md` is a one-line-per-entry index; the detail belongs in topic files that Claude reads on demand with its normal file tools. The index is kept short so the load stays inside the limit."
+        },
+        {
+          "id": "B",
+          "text": "Auto memory is disabled by default in local sessions, so nothing beyond the first few notes was ever written."
+        },
+        {
+          "id": "C",
+          "text": "Topic files are loaded in alphabetical order, so files later in the alphabet fall outside the window."
+        },
+        {
+          "id": "D",
+          "text": "The 25KB limit applies to the whole memory directory, so the last files written were truncated away."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Auto memory is deliberately shaped like an index so the always-on cost stays fixed. `MEMORY.md` \"acts as an index of the memory directory\" and \"the first 200 lines of `MEMORY.md`, or the first 25KB, whichever comes first, is loaded at the start of every conversation\"; \"Claude doesn't load topic files such as `user_role.md` or `feedback_testing.md` at startup. Claude reads them on demand using its standard file tools when it needs the information.\" Claude Code also nags about this: if `MEMORY.md` is near a limit it reminds Claude to keep one line per entry and move detail into topic files, and if it is over the limit the write succeeds but returns an error because everything past the limit is dropped on the next load.",
+      "whyWrong": {
+        "B": "Auto memory is on by default in local sessions, and the interface reports \"Saved N memories\" and \"Recalled N memories\" when it works — so it is writing.",
+        "C": "There is no alphabetical truncation. Topic files load on demand; the assistant knows about one only when it goes looking for it.",
+        "D": "The limit is measured against `MEMORY.md`, not the whole directory. Topic files are unbounded by it because they are not loaded at startup."
+      },
+      "difficulty": 1,
+      "mindset": "The always-on budget is the index: keep `MEMORY.md` to one line per entry and push detail into topic files.",
+      "tags": [
+        "auto-memory",
+        "context-management",
+        "memory"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/memory"
+      ]
+    },
+    {
+      "id": "v-d6-g4-002",
+      "taskStatementId": "6.2",
+      "scenario": "Kestrel's contract-review feature puts a 60-page counterparty contract, three exhibits and a 400-word set of review instructions into a single prompt. The instructions are currently between the contract body and the final question. Accuracy on the specific clauses is inconsistent.",
+      "stem": "Which change is MOST likely to improve results, and why?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Restructure so the long documents come first and the instructions plus the question come last. Anthropic's long-context guidance is to \"put longform data at the top\" near the beginning of the prompt, above the query, instructions and examples, because \"queries at the end can improve response quality by up to 30 percent in tests, especially with complex, multidocument inputs\"."
+        },
+        {
+          "id": "B",
+          "text": "Move the instructions to the very beginning so Claude reads them before it encounters any contract text."
+        },
+        {
+          "id": "C",
+          "text": "Raise `max_tokens` so the review can be more thorough in a single call."
+        },
+        {
+          "id": "D",
+          "text": "Split the contract into 60 separate one-page API calls and concatenate the results."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Long-context performance is a layout problem before it is a capability problem. The documented pattern for 20k+ token inputs is: put longform data at the top, wrap each document in `<document>` tags with `<source>` and `<document_content>` subtags, put the query and instructions after the material, and — for document tasks specifically — \"ground responses in quotes\", asking Claude to quote the relevant parts before carrying out its task. That last technique matters here specifically: it forces the model to locate the clause text before reasoning about it, which is exactly the failure mode when a review instruction sits between 60 pages of contract and the question.",
+      "whyWrong": {
+        "B": "Instructions at the very front compete with 60 pages of text before them; the documented advice is the opposite — query and instructions last, where they are most recent.",
+        "C": "`max_tokens` bounds output length, not attention. A longer answer over a badly ordered prompt does not find the right clause more reliably.",
+        "D": "Sixty independent calls lose cross-document reasoning, multiply cost and latency, and require you to solve the consolidation problem you were trying to avoid."
+      },
+      "difficulty": 2,
+      "visualId": "context-window",
+      "mindset": "Documents first, query and instructions last, and make the model quote the source before it reasons about it.",
+      "tags": [
+        "long-context",
+        "prompt-structure",
+        "grounding"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices#long-context-prompting"
+      ]
+    },
+    {
+      "id": "v-d6-g4-003",
+      "taskStatementId": "6.1",
+      "scenario": "Kestrel's long-running investigation agent compacts automatically several times per session. After the third compaction, engineers report that one rule stopped applying — but only in the files under `packages/settlement/`. The same rule in the repository root still works.",
+      "stem": "Which TWO statements about what survives compaction are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Project-root CLAUDE.md survives: after compaction Claude re-reads it from disk and re-injects it into the session."
+        },
+        {
+          "id": "B",
+          "text": "Nested CLAUDE.md files in subdirectories and rules with `paths:` frontmatter reload as Claude reads files they apply to — so a scoped rule stays dormant until a matching file is touched again."
+        },
+        {
+          "id": "C",
+          "text": "Instructions that were only given in conversation are preserved, because compaction summarises the conversation including any rules stated in it."
+        },
+        {
+          "id": "D",
+          "text": "Skills invoked earlier in the session are automatically re-injected in full after a compaction."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Compaction rewrites the conversation, and instruction files are re-supplied by a different mechanism, which is why they behave differently from chat content. What survives: the project-root CLAUDE.md, because \"after `/compact`, Claude re-reads it from disk and re-injects it into the session.\" What is conditional: nested subdirectory CLAUDE.md files and path-scoped rules, which \"reload as Claude reads files they apply to\" — exactly the symptom Kestrel is seeing, a scoped rule that is dormant again until something under `packages/settlement/` is opened. What does not survive: instructions that only ever existed in the conversation. The docs are direct about this: \"If an instruction disappeared after compaction, it was given only in conversation, lives in a nested CLAUDE.md that hasn't reloaded yet, or is a path-scoped rule that hasn't matched a file since. Add conversation-only instructions to CLAUDE.md to make them persist.\"",
+      "whyWrong": {
+        "C": "This is the most common cause and the docs name it directly — a conversation-only instruction is exactly what compaction removes.",
+        "D": "A skill's body is loaded on invocation and stays in context, but compaction does not go and re-invoke skills. Anything important enough to survive compaction belongs in CLAUDE.md or a rule."
+      },
+      "difficulty": 2,
+      "visualId": "context-window",
+      "mindset": "After compaction, file-based instructions come back by re-reading; conversation-only instructions do not come back at all.",
+      "tags": [
+        "compaction",
+        "context-management",
+        "claude-md"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/memory",
+        "https://code.claude.com/docs/en/context-window"
+      ]
+    },
+    {
+      "id": "v-d6-g4-004",
+      "taskStatementId": "6.1",
+      "scenario": "Kestrel's internal knowledge assistant retrieves the top 8 chunks by embedding similarity and pastes them into the prompt verbatim. Answer quality plateaus no matter how the chunk size is tuned, and engineers suspect retrieval rather than the model.",
+      "stem": "What is the strongest structural improvement?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add a reranking stage and require citations. Embedding similarity retrieves topically near chunks, which is why the top-k plateaus; reranking the candidate set against the actual query is what surfaces the chunk that answers the question. Requiring the answer to cite its source then makes grounding checkable, because a missing or wrong citation is visible in the output rather than hidden behind fluent prose."
+        },
+        {
+          "id": "B",
+          "text": "Increase `top_k` from 8 to 40 so more of the corpus reaches the model."
+        },
+        {
+          "id": "C",
+          "text": "Switch to a larger model, since the plateau indicates the current model cannot reason over retrieved context."
+        },
+        {
+          "id": "D",
+          "text": "Reduce chunk size so each chunk is more focused, which removes the need for a second retrieval stage."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "A RAG pipeline has distinct stages — chunk, embed, retrieve, rerank, ground, cite — and quality plateaus when you optimise only one. Embedding similarity is a coarse first pass: chunks that are topically adjacent to the query score well whether or not they contain the answer, so tuning chunk size and `top_k` explores one axis of a multi-axis problem. Reranking the candidate set against the query is the stage that actually reorders by usefulness. Grounding and citation then do something no retrieval change can: they make the answer's basis inspectable, which is what lets you tell a retrieval miss from a reasoning failure.",
+      "whyWrong": {
+        "B": "More chunks add more near-miss context that competes for attention. It widens the recall you already had without improving precision.",
+        "C": "A model upgrade cannot retrieve a chunk that was never surfaced. The evidence that retrieval is the bottleneck is the plateau across chunk-size tunings.",
+        "D": "Chunk size is worth tuning, but smaller chunks raise the number of chunks needed for the same context, which makes the reranking problem larger rather than removing it."
+      },
+      "difficulty": 3,
+      "visualId": "rag-pipeline",
+      "mindset": "If retrieval quality plateaus, the fix is a stage you skipped — rerank and cite — not a bigger k or a bigger model.",
+      "tags": [
+        "rag",
+        "retrieval",
+        "grounding"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/cookbook/capabilities-retrieval-augmented-generation-guide",
+        "https://www.anthropic.com/engineering/contextual-retrieval"
+      ]
+    },
+    {
+      "id": "v-d6-g4-005",
+      "taskStatementId": "6.1",
+      "scenario": "Kestrel's operations agent keeps a running list of every exception it has raised in a session, so it can avoid re-raising the same one. After an hour the list is the largest object in the window and the agent has started missing constraints stated at the start of the session.",
+      "stem": "Which TWO changes address the root cause? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Write the exception register to a file as it grows and re-read it on demand, rather than accumulating it in the message history. Only the path and a count need to stay in context."
+        },
+        {
+          "id": "B",
+          "text": "Have the agent maintain the register as structured state — a schema with a fixed set of fields per entry — rather than as prose, so each entry costs a predictable, small number of tokens and can be queried."
+        },
+        {
+          "id": "C",
+          "text": "Ask the agent to summarise its exception register every few turns and carry only the summary forward."
+        },
+        {
+          "id": "D",
+          "text": "Move the register into the system prompt so it is always maximally salient and cannot be lost."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "This is a state-versus-history problem. Working memory that only exists as conversation text has to be re-sent and re-processed on every request, so it grows the window linearly and dilutes everything else — which is exactly the symptom, since the constraints that matter most are the oldest and most buried. Two structural fixes, and they compose. Put the register outside the conversation: a file the agent appends to and reads when it needs detail keeps the bulky content out of the window while the path stays resident. And make it structured rather than prose, so each entry has a bounded, predictable cost and the agent can filter it rather than re-reading a wall of text. Anthropic's context-engineering guidance makes the same point about keeping the working set small and the durable state outside the window.",
+      "whyWrong": {
+        "C": "Summarising the register adds another derived artifact to maintain, still lives in the window, and is exactly the kind of lossy compression that drops the exception you needed.",
+        "D": "The system prompt is re-sent on every request and is the most expensive place in the window. Putting a growing register there makes the problem strictly worse."
+      },
+      "difficulty": 3,
+      "mindset": "Durable working state belongs outside the conversation, in structured form — the window is for what this turn needs.",
+      "tags": [
+        "context-management",
+        "structured-output",
+        "memory"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents",
+        "https://code.claude.com/docs/en/agent-sdk/session-storage"
+      ]
+    },
+    {
+      "id": "v-d6-g4-006",
+      "taskStatementId": "6.1",
+      "scenario": "Kestrel added six narrow tools so the model would pick precisely — `get_customer_by_id`, `get_customer_by_email`, `get_customer_by_name`, `get_order_by_id`, `get_order_by_reference`, `get_order_by_invoice` — and per-request token counts rose noticeably. Throughput did not improve.",
+      "stem": "What is the most likely explanation?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Tool definitions are part of the request payload, so every tool is sent on every call whether or not it is used. Splitting one capability into six near-identical tools multiplies that fixed cost and increases the chance of a wrong selection; Anthropic's tool-design guidance is to consolidate overlapping tools and make descriptions unambiguous, so fewer well-described tools win."
+        },
+        {
+          "id": "B",
+          "text": "Tool names longer than a certain length are truncated in the request, so the three `get_order_*` names arrive identical."
+        },
+        {
+          "id": "C",
+          "text": "Only the tools the model actually calls are billed, so the definitions cannot affect per-request input tokens."
+        },
+        {
+          "id": "D",
+          "text": "Six tools exceed the parallelism limit, so the extras are silently dropped from the request."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Tool definitions are standing context. They are part of the request on every call, whether selected or not, so the cost of a tool is paid whether or not it is ever used — which means splitting one capability across six near-identical tools buys you precision you probably did not need and pays for it six times over. It also adds selection risk: with six overlapping options the descriptions must disambiguate cleanly, and close variants are a well-known source of wrong picks. The guidance is to give the model tools with distinct, unambiguous purposes and a small enough set that choosing correctly is easy. Fewer, better-described tools are both cheaper and more accurate.",
+      "whyWrong": {
+        "B": "There is no tool-name length truncation. The names reach the model intact; the problem is that six similar names are hard to choose between, not that they collapse.",
+        "C": "The opposite. Definitions are input on every request, which is why they show up directly in per-request `input_tokens`.",
+        "D": "There is no tool-count limit that silently drops definitions. Parallelism limits apply to tool calls per response, not to how many tools are advertised."
+      },
+      "difficulty": 2,
+      "mindset": "Every tool definition is standing context — consolidate overlapping tools instead of splitting them for precision.",
+      "tags": [
+        "tool-design",
+        "context-management",
+        "tool-output"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/writing-tools-for-agents",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools"
+      ]
+    },
+    {
+      "id": "v-d6-g4-007",
+      "taskStatementId": "6.1",
+      "scenario": "Kestrel's nightly agent runs with a large, stable system prompt and tool set on prompt caching. Once a session grows long enough to auto-compact, `cache_read_input_tokens` collapses to zero on every subsequent call and the bill jumps.",
+      "stem": "What explains the collapse, and what should Kestrel change?",
+      "options": [
+        {
+          "id": "A",
+          "text": "A cache hit requires an identical prefix, and compaction rewrites the message history — so everything after the cached breakpoint is new content and the prefix no longer matches. Cache usefulness does not survive a compaction boundary. Keep the large stable material in a place compaction does not rewrite, and treat compaction as an event that invalidates cache economics rather than expecting the cache to absorb it."
+        },
+        {
+          "id": "B",
+          "text": "Compaction exceeds the model's minimum cacheable length, so caching is silently skipped after the first compaction."
+        },
+        {
+          "id": "C",
+          "text": "The `cache_creation_input_tokens` field stops being reported once a session has been compacted."
+        },
+        {
+          "id": "D",
+          "text": "Switch to a model with a larger context window so compaction never triggers and the cache stays warm."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "This follows directly from the cache-hit rule: an identical prefix through the breakpoint, with TTL refreshed on hits. Compaction summarises the conversation, which means the message prefix is *replaced* — so the next request's prefix differs from the one that was cached, and you pay a write instead of a read. That is a structural interaction between two features, not a bug or a threshold: you can see it in the trace as reads going to zero while writes continue. The practical responses are to accept it and re-warm deliberately after compaction, to keep the bulk of stable material in the system prompt and tool definitions (which compaction does not rewrite) rather than in conversation history, and to trigger compaction at a point you choose.",
+      "whyWrong": {
+        "B": "The trace still shows cache writes after compaction, which means the minimum cacheable length is comfortably met. Below the threshold both creation and read would be zero.",
+        "C": "`cache_creation_input_tokens` keeps being reported — that is precisely the signature here: writes continue while reads do not.",
+        "D": "A larger window defers compaction rather than solving the interaction, and it is an expensive change made to avoid a cost spike in a specific phase of long sessions."
+      },
+      "difficulty": 3,
+      "visualId": "prompt-caching",
+      "mindset": "Compaction rewrites the prefix, so cache reads die at that boundary — keep stable material where compaction cannot reach it.",
+      "tags": [
+        "prompt-caching",
+        "compaction",
+        "context-management",
+        "cost"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/compaction",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching"
+      ]
+    },
+    {
+      "id": "v-d6-g4-008",
+      "taskStatementId": "6.2",
+      "scenario": "Kestrel's release-notice generator currently carries the instruction \"write clearly\" in its system prompt. Notices are readable but inconsistent: some sections use British dates, some ISO, and the tone drifts between sections and between runs.",
+      "stem": "Which change is MOST likely to make the output consistently follow the intent?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Replace the vague adjective with instructions that can be checked: name the date format, the section list, the maximum length per section, and what to do with an input that lacks the information. Ambiguity is the cause of variance, not the model's creativity."
+        },
+        {
+          "id": "B",
+          "text": "Ask for the tone to be \"professional and consistent\" at the top of the system prompt as well."
+        },
+        {
+          "id": "C",
+          "text": "Raise the temperature slightly so the notices read less mechanically."
+        },
+        {
+          "id": "D",
+          "text": "Add \"be careful\" to the instruction to encourage the model to double-check its own output."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "\"Write clearly\" has no observable criterion attached to it, so there is nothing for the model to converge on and nothing for you to assert in a test. Anthropic's guidance is to be clear and direct, and to state requirements concretely enough to verify — name the format, the sections, the length bound, and the behaviour for missing inputs. Once the instruction is checkable you can do two further things that \"be clear\" forecloses: assert the format in an eval, and quote the violated rule back when output fails. Vagueness and variance are the same problem seen twice.",
+      "whyWrong": {
+        "B": "A second vague adjective at a different position adds nothing checkable and adds standing context. It also competes with the first one rather than resolving it.",
+        "C": "Higher temperature increases variation. If the problem is inconsistency, widening the distribution moves you in the wrong direction.",
+        "D": "\"Be careful\" is the vaguest instruction available and produces no observable behaviour you could test for."
+      },
+      "difficulty": 1,
+      "mindset": "Variance comes from vague instructions — replace the adjective with a checkable requirement.",
+      "tags": [
+        "prompt-engineering",
+        "clarity",
+        "consistency"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices"
+      ]
+    },
+    {
+      "id": "v-d6-g4-009",
+      "taskStatementId": "6.2",
+      "scenario": "Kestrel's classifier prompt describes the label taxonomy in prose: \"Label as BILLING when the customer is asking about money, and as SUPPORT when they need help using the product.\" Accuracy is 88% and the errors cluster on messages that mention both a charge and a login problem.",
+      "stem": "What is the best FIRST improvement?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Replace the prose descriptions with worked examples as real message turns, including the hard cases where two labels are plausible. Examples are what disambiguate a boundary that a sentence cannot; show the message and the correct label as separate turns so the model sees the mapping rather than a description of it."
+        },
+        {
+          "id": "B",
+          "text": "Rewrite the descriptions to be more precise, for example defining exactly what counts as \"asking about money\"."
+        },
+        {
+          "id": "C",
+          "text": "Add a tie-breaking rule: \"if both apply, choose the one the customer would be most frustrated to have delayed.\""
+        },
+        {
+          "id": "D",
+          "text": "Move the taxonomy description into the user turn so it appears closer to the message being classified."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The errors are all on boundary cases, and boundary cases are what examples resolve. A description states what a category is in general terms; it cannot say what to do when two categories both partly apply, because that is precisely the situation the definition does not cover. Worked examples encode the boundary directly — and the guidance is to make them realistic and to cover the edge cases, not just the obvious ones. Presenting them as real conversation turns (the user message, then the assistant's label) rather than as prose examples keeps the shape of the task unambiguous. A better-written definition still leaves the overlapping cases unresolved.",
+      "whyWrong": {
+        "B": "You can tighten the wording indefinitely and the overlap remains, because the two categories genuinely intersect. Examples resolve intersection; definitions cannot.",
+        "C": "A tie-breaker is a guess at the policy. It helps only if it is the policy, and you have no evidence that is the intent.",
+        "D": "Moving the taxonomy closer to the message does not disambiguate the labels. It only changes position, and the description belongs with the stable instructions."
+      },
+      "difficulty": 2,
+      "mindset": "Descriptions define categories; only worked examples resolve the boundary where two categories overlap.",
+      "tags": [
+        "few-shot",
+        "prompt-engineering",
+        "classification"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices#use-examples-effectively",
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/increase-consistency"
+      ]
+    },
+    {
+      "id": "v-d6-g4-010",
+      "taskStatementId": "6.2",
+      "scenario": "Kestrel's agent must decide between `search_order_history` and `search_refund_history`. Both are described as \"searches the relevant history\". In testing, roughly one call in three picks the wrong tool, and each wrong pick costs an extra turn.",
+      "stem": "What is the most effective fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Rewrite the descriptions so each tool's trigger condition is unambiguous — state what each one searches, what fields it returns, when to use it, and when *not* to use it, plus a concrete example call. Ambiguity in a description is the defect; the model is choosing correctly given the information it has."
+        },
+        {
+          "id": "B",
+          "text": "Add a system-prompt instruction telling the agent to read both tool descriptions before choosing."
+        },
+        {
+          "id": "C",
+          "text": "Consolidate both tools into a single `search_history` with a `type` parameter, so there is no choice to get wrong."
+        },
+        {
+          "id": "D",
+          "text": "Raise `maxTurns` so the agent has budget to recover from a wrong pick."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Tool selection accuracy is driven by description quality — that is the core claim of Anthropic's tool-design guidance: descriptions should say what the tool does, when to use it, and give concrete examples, because that text is the only thing the model has when choosing. \"Searches the relevant history\" describes neither tool. The fix is to make each description carry its own trigger condition and its exclusions, so the decision can be made from the descriptions alone. Consolidation is a legitimate alternative when the tools genuinely are one capability — but that is a different design choice, not a repair of the descriptions, and it moves the branch into a parameter the model can still get wrong.",
+      "whyWrong": {
+        "B": "Reading both descriptions is what the model already does implicitly. Adding an instruction to read them more carefully does not add the information that would disambiguate them.",
+        "C": "Merging is defensible if the tools are one capability, but as a fix for vague descriptions it just relocates the ambiguity into a parameter value the model must still choose correctly.",
+        "D": "More turns lets the agent recover from a wrong pick; it does not reduce how often it picks wrong, and you pay for the recovery every time."
+      },
+      "difficulty": 2,
+      "mindset": "When tool selection goes wrong, fix the description's trigger conditions — the model chooses correctly from the information you give it.",
+      "tags": [
+        "tool-design",
+        "prompt-engineering",
+        "tool-selection"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/writing-tools-for-agents",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools"
+      ]
+    },
+    {
+      "id": "v-d6-g4-011",
+      "taskStatementId": "6.2",
+      "scenario": "Kestrel's report generator produces an eight-section compliance report. Asking for it in one call, the last two sections routinely omit constraints that appear in the first six, and re-running the same request produces a different set of gaps.",
+      "stem": "Which change is most likely to fix this?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Generate it as a chain: produce the section outline and the shared constraints first, then generate each section with that outline and constraint list in context, passing the finished prior section forward as input. Long outputs drift because the model is holding a long plan and a long output at once; staging shortens both and gives you a checkpoint to inspect."
+        },
+        {
+          "id": "B",
+          "text": "Raise `max_tokens` so the whole report fits comfortably in one response."
+        },
+        {
+          "id": "C",
+          "text": "Lower the temperature to zero so the same request produces the same report every time."
+        },
+        {
+          "id": "D",
+          "text": "Add the word \"thorough\" to the instruction asking for a comprehensive report."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The failure is a planning-and-output-length problem, and prompt chaining is the documented remedy for multi-step generation like this. Anthropic's guidance is to \"chain complex prompts\", each step using the previous step's output, precisely because long single-shot generations degrade: the model must simultaneously hold a plan for the whole document and produce a long output against it. Staging fixes that and adds something else — an intermediate artifact you can inspect and correct before the expensive part runs. Note the distinction from option C: consistency across runs is a separate property from completeness within a run, and neither is achieved by an adjective.",
+      "whyWrong": {
+        "B": "The output is not being truncated — sections are present but incomplete. `max_tokens` addresses a different failure and raises cost.",
+        "C": "Deterministically reproducing an incomplete report does not complete it. Temperature addresses run-to-run variance, not within-run drift.",
+        "D": "\"Thorough\" has no checkable meaning, and it is the kind of instruction that makes outputs longer without making them more complete."
+      },
+      "difficulty": 2,
+      "visualId": "prompt-anatomy",
+      "mindset": "Long generated documents drift — chain the sections so each step holds a short plan and a short output.",
+      "tags": [
+        "prompt-chaining",
+        "workflow-patterns",
+        "long-context"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices#chain-complex-prompts",
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "v-d6-g4-012",
+      "taskStatementId": "6.2",
+      "scenario": "Kestrel's compliance system has a hard-won rule: \"always use ISO-8601 dates\". The team discovered it was written after a defect where a European-format date was sorted lexicographically into the wrong quarter in the ERP.",
+      "stem": "Which formulation makes the rule stick most reliably, and why?",
+      "options": [
+        {
+          "id": "A",
+          "text": "State the rule, its reason, and its observable consequence in one sentence: \"Use ISO-8601 (`YYYY-MM-DD`) for every date field, because the ERP sorts these fields lexicographically and locale formats silently sort into the wrong period.\" An instruction that names the mechanism it protects survives novel situations better than a bare prohibition, and the reason lets the model resolve cases the rule did not enumerate."
+        },
+        {
+          "id": "B",
+          "text": "Repeat the rule three times at different points in the prompt, since repetition improves compliance."
+        },
+        {
+          "id": "C",
+          "text": "Replace the rule with \"never use a non-ISO date\", which removes any ambiguity about the format."
+        },
+        {
+          "id": "D",
+          "text": "Move the rule to the top of the system prompt and put it in bold."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Guidance that names *why* generalises better than guidance that only names *what*, because the model can then reason about situations the rule did not enumerate — for example, a date embedded in a quoted customer email, or a date field it is asked to preserve from an input document. This is consistent with Anthropic's guidance to give context and motivation: \"if you've tried a few approaches and something isn't working, be explicit about what has and hasn't worked... if possible, provide context or motivation.\" Repetition and emphasis add standing context without adding information, and option C's phrasing is narrower in one respect and vaguer in another: it never says which ISO variant, and `DD-MM-YYYY` is technically an ISO-8601-adjacent format people reach for.",
+      "whyWrong": {
+        "B": "Repetition does not add the missing information. It adds tokens and makes the prompt harder to maintain when the rule changes.",
+        "C": "It does not specify which format, and \"non-ISO\" is harder to apply at a boundary than a concrete format with an example of the shape.",
+        "D": "Position and emphasis do not make an instruction deterministic. The value is in the reason attached to the rule."
+      },
+      "difficulty": 2,
+      "mindset": "An instruction with its reason generalises to cases the rule never enumerated; a bare rule does not.",
+      "tags": [
+        "prompt-engineering",
+        "instruction-clarity",
+        "output-constraints"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices#be-clear-and-direct",
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/increase-consistency"
+      ]
+    },
+    {
+      "id": "v-d6-g4-013",
+      "taskStatementId": "6.2",
+      "scenario": "Kestrel's policy assistant is handed a 40-page vendor security policy. The instruction \"flag any clause that conflicts with our data-residency requirements\" sits halfway through the document, and reviewers report it is honoured for early clauses and missed for later ones.",
+      "stem": "Which TWO changes follow the documented guidance? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Put the long document first and the instructions plus the question last. Long-context guidance is explicit that queries at the end improve response quality, especially with long multi-document inputs."
+        },
+        {
+          "id": "B",
+          "text": "Ask the model to quote the relevant clause text from the document before giving its assessment, so it has to locate the evidence before reasoning about it."
+        },
+        {
+          "id": "C",
+          "text": "Repeat the instruction once before the document and once after it, to cover both ends of the input."
+        },
+        {
+          "id": "D",
+          "text": "Convert the instruction into a tool the model must call with the clause it found, which removes the need to place the instruction at all."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Both are documented long-context techniques and they address different halves of the problem. Placement: \"Put longform data at the top... above your query, instructions, and examples\", because \"queries at the end can improve response quality by up to 30 percent in tests\". Grounding: \"for long document tasks, ask Claude to quote relevant parts of the documents first before carrying out its task. This helps Claude focus on the relevant content and ignore the rest of the document.\" The symptom Kestrel sees — honoured early, missed late — is a salience problem, and these are the two documented levers on salience. Option D is worth noting as a design idea but the model still has to decide *when* to call the tool, so it does not remove the need to make the instruction findable.",
+      "whyWrong": {
+        "C": "Duplicating an instruction is not a documented placement strategy, and it adds tokens without changing that the later part of a long document competes for attention.",
+        "D": "A tool call does not remove the placement problem — deciding whether to call the tool is itself driven by how findable the instruction is. Tools change the output shape, not the retrieval of the rule."
+      },
+      "difficulty": 3,
+      "visualId": "prompt-anatomy",
+      "mindset": "Fix salience, not repetition: documents first, instructions and question last, and make the model quote before it reasons.",
+      "tags": [
+        "long-context",
+        "prompt-structure",
+        "grounding"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices#long-context-prompting"
+      ]
+    },
+    {
+      "id": "v-d6-g4-014",
+      "taskStatementId": "6.2",
+      "scenario": "Kestrel keeps rewriting a growing system prompt that now contains guidance for `search_orders`, `search_refunds` and `issue_refund` alike. The token cost of the standing prompt has tripled and the `issue_refund` guidance is loaded on all the many turns that never issue a refund.",
+      "stem": "Where should this guidance live, and why?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Move tool-specific guidance into the tool description, where it is loaded alongside the tool and applies when the tool is in front of the model. The system prompt should hold behaviour that is true for every turn; per-tool rules are standing context paid for on turns that never touch that tool."
+        },
+        {
+          "id": "B",
+          "text": "Keep it in the system prompt but compress it into a single dense paragraph, which reduces tokens without losing meaning."
+        },
+        {
+          "id": "C",
+          "text": "Move it into the user turn, so it is resent only on the turns that need it."
+        },
+        {
+          "id": "D",
+          "text": "Move it into a skill, so it loads only when the agent decides the task involves refunds."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Instruction placement across components is a cost and relevance question, not just an organisation question. Guidance that only applies when a specific tool is used belongs in that tool's description: it is already in context when the model is choosing and calling that tool, and it costs nothing on the turns where the tool is irrelevant. The system prompt is the right home for behaviour that holds on every turn — persona, output format, safety and escalation rules — and the wrong home for anything scoped to one capability. Compression (B) reduces tokens without reducing relevance; the user turn (C) is per-request and would need assembling this rule every time; a skill (D) is for multi-step procedures invoked as a unit, not for a rule that attaches to one tool.",
+      "whyWrong": {
+        "B": "Compression lowers the byte count, not the relevance cost. The rule is still loaded on every turn that never issues a refund.",
+        "C": "The user turn changes nothing about frequency — it is resent every request too, and it puts a tool rule in a role meant for the request's own data.",
+        "D": "A skill is for a procedure invoked as a unit with its own steps. A rule that qualifies one tool call belongs with the tool, where it is guaranteed to be adjacent to the decision it governs."
+      },
+      "difficulty": 1,
+      "mindset": "Per-tool rules belong in the tool description; the system prompt is only for behaviour true on every turn.",
+      "tags": [
+        "instruction-placement",
+        "prompt-engineering",
+        "tool-design",
+        "context-management"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/writing-tools-for-agents",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/overview"
+      ]
+    },
+    {
+      "id": "v-d6-g4-015",
+      "taskStatementId": "6.2",
+      "scenario": "Kestrel has one classification decision with real consequences: whether a payment dispute is routed to a human. The prompt returns a label and a confidence word in roughly 94% agreement with human review. They are considering asking for a confidence percentage and escalating below 90%.",
+      "stem": "Which TWO statements about using that confidence signal are correct? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Escalate on signals you can verify instead: cases where required evidence is missing, where the extracted facts fall outside an expected range, or where two independent extraction passes disagree. All three are checkable in code and testable in an eval."
+        },
+        {
+          "id": "B",
+          "text": "If you do want a confidence signal, calibrate it against human labels first and measure whether it correlates with correctness — the 94% label agreement the team already measures is the right starting point — and only then choose a threshold."
+        },
+        {
+          "id": "C",
+          "text": "Thresholding on a stated confidence is sound, because what the model reports is a well-calibrated estimate of its own certainty."
+        },
+        {
+          "id": "D",
+          "text": "A stated confidence is more useful than a single label because it gives the router a second dimension to sort on, regardless of whether that dimension is calibrated."
+        },
+        {
+          "id": "E",
+          "text": "Lower the threshold to 70% so more cases reach a human. Since the extra cases are only ones the model was unsure about, this cannot make routing worse."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "The appeal of a stated confidence is that it is cheap; the problem is that it is uncalibrated, so a number that looks like a probability does not behave like one. Thresholding on it produces a gate whose behaviour you cannot predict, and the failures concentrate on the cases you most needed handled — so the correct move is to escalate on verifiable signals instead, all of which live in code and in an eval set. And if the team does want a confidence signal, the discipline is to calibrate it against human labels and measure its correlation with correctness before any threshold goes live; the label agreement rate they already compute is exactly the baseline that measurement needs. Temperature does not affect grounding of any of this, and lowering the threshold only increases volume without increasing information.",
+      "whyWrong": {
+        "C": "This is the assumption to avoid. A self-reported certainty is a generation artefact, not a measured probability, and nothing in the model's output calibrates it.",
+        "D": "A second dimension is only useful if it is meaningful. Sorting on an uncalibrated number makes routing unpredictable rather than better.",
+        "E": "If the signal does not correlate with correctness, escalating more cases is more cost and more human load, not more safety — and the extra cases are not reliably the easy ones."
+      },
+      "difficulty": 3,
+      "mindset": "Never threshold on uncalibrated self-reported confidence — escalate on verifiable signals, or calibrate before you trust a threshold.",
+      "tags": [
+        "output-validation",
+        "scepticism",
+        "escalation"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-hallucinations",
+        "https://platform.claude.com/docs/en/test-and-evaluate/define-success"
+      ]
+    },
+    {
+      "id": "v-d6-g4-016",
+      "taskStatementId": "6.3",
+      "scenario": "Kestrel's extraction schema marks `notes` as optional. Their parser reads fields positionally in a loop, and a downstream job has twice read the wrong value because optional properties came back in a different order and one was absent entirely.",
+      "stem": "Which statement about consuming structured output is correct?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Optional properties may be omitted and output order is not guaranteed: \"if property order in the output is important to your application, mark all properties as required, or account for this reordering in your parsing logic.\" Consume by key, and if you need every key always present, mark it required."
+        },
+        {
+          "id": "B",
+          "text": "The guarantee covers shape and order together: a schema-conformant response always lists properties in declaration order, so positional reading is safe."
+        },
+        {
+          "id": "C",
+          "text": "An omitted optional property is emitted as `null`, so the key is always present in the object."
+        },
+        {
+          "id": "D",
+          "text": "Ordering only varies when streaming is enabled, so switching to non-streaming requests removes the problem."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Structured outputs guarantee conformance to the schema, and a schema that declares a property optional permits its absence — so a conforming response may legitimately have fewer keys than your type suggests, and the documentation warns that property order is not something to rely on. The guidance is explicit about the fix: \"mark all properties as required, or account for this reordering in your parsing logic.\" Reading by key is the default expectation for JSON consumers; positional reading is the bug. If a key genuinely must always exist, declare it required rather than coding a default that hides the absence.",
+      "whyWrong": {
+        "B": "Order is exactly what is not guaranteed. Conformance is about which properties and types appear, not their sequence.",
+        "C": "Omission is omission. The API does not backfill `null` for a property the schema marked optional and the model left out.",
+        "D": "Order is not a streaming artefact. It is not guaranteed in either mode, which is why the documented remedy is at the schema or parser level."
+      },
+      "difficulty": 1,
+      "visualId": "structured-output",
+      "mindset": "Optional means it can be absent and order is not guaranteed — consume by key, or mark every property required.",
+      "tags": [
+        "structured-output",
+        "defensive-parsing",
+        "schema-design"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs"
+      ]
+    },
+    {
+      "id": "v-d6-g4-017",
+      "taskStatementId": "6.3",
+      "scenario": "Kestrel's summarisation service feeds one model's output straight into the next model's prompt as context, without labelling it. Answers that depend on the first stage now drift further from the source with each hop, and the team cannot tell which stage introduced an error.",
+      "stem": "What is the correct fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Label provenance explicitly and keep the source alongside the summary. Wrap the intermediate output so the downstream model can see it is a model's summary rather than a primary source, carry the underlying source identifiers with it, and pass the original material alongside it when the task needs grounding. Without provenance, a downstream model treats generated text as fact and amplifies it — and you cannot attribute an error to a stage you cannot identify."
+        },
+        {
+          "id": "B",
+          "text": "Insert the second stage's output into a system prompt so the downstream model treats it as authoritative context."
+        },
+        {
+          "id": "C",
+          "text": "Ask the summarising model to add a confidence note to each claim so the downstream model can weigh them."
+        },
+        {
+          "id": "D",
+          "text": "Cache the second stage's prompt so that at least repeated questions return consistent answers."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Multi-stage pipelines fail in a specific way: a downstream model cannot distinguish retrieved evidence from another model's prose, so it treats generated text as authoritative and errors compound at each hop. The fix is to make provenance part of the data. Mark the intermediate output as a summary, carry the identifiers of the sources it came from, and pass the original material through when the task depends on grounding — the same principle as long-context work, where you ask the model to quote relevant parts of the documents before reasoning. Provenance also gives you attribution: when an answer is wrong, the identifiers tell you which stage to inspect. This is a data-modelling problem before it is a prompting one.",
+      "whyWrong": {
+        "B": "Promoting generated text to the system prompt makes the model *more* likely to treat it as fact. That amplifies the error rather than labelling it.",
+        "C": "A confidence note is an uncalibrated self-report, and it still leaves the downstream model unable to tell summary from source.",
+        "D": "Caching makes repeated identical requests cheaper and consistent with each other. It does nothing about whether the content is correct or attributable."
+      },
+      "difficulty": 2,
+      "mindset": "Generated text must arrive labelled as generated, with its source identifiers — or the next stage amplifies the error.",
+      "tags": [
+        "output-handling",
+        "provenance",
+        "multi-stage"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/citations",
+        "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents"
+      ]
+    },
+    {
+      "id": "v-d6-g4-018",
+      "taskStatementId": "6.3",
+      "scenario": "Kestrel's claims pipeline produces a schema-perfect object every time. Finance still finds records where `claim_total` disagrees with the sum of `line_totals` by a few cents, and one where the claim date falls before the policy start date.",
+      "stem": "What does this tell you, and what is the right control?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Schema conformance is not correctness — a perfectly shaped object can be wrong, so the schema is only the first filter. Add domain invariants that the schema cannot express: cross-field checks that `claim_total` equals the sum of `line_totals` within tolerance, date-range checks against the policy period, and enum membership for anything the schema left loose. Reject to a review queue rather than coercing a failing value into a default."
+        },
+        {
+          "id": "B",
+          "text": "The schema should be widened so the model can express partial certainty, for example by making `claim_total` optional."
+        },
+        {
+          "id": "C",
+          "text": "The pipeline should retry records that fail these checks with a stricter prompt until they pass."
+        },
+        {
+          "id": "D",
+          "text": "The records should be corrected in post-processing, since the arithmetic is deterministic once the model has produced its numbers."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "This is the central distinction in output handling: the schema guarantees shape, not truth. It cannot express \"these two fields must agree\", \"this date must fall in range\", or \"this value must be one of these in the context of this record\" — those are invariants of your domain, and only code can check them. Add them as a validation layer after the schema passes, and route failures to a review queue rather than repairing them silently, because a coerced value destroys the signal that something was wrong. The checks are cheap, deterministic, and testable, which makes them the highest-value validation you can add to a schema-conformant pipeline.",
+      "whyWrong": {
+        "B": "Making a field optional weakens the guarantee you have without addressing cross-field consistency. The totals disagree; both fields are present.",
+        "C": "Retrying a deterministic arithmetic inconsistency with a stricter prompt burns cost on a defect that code arithmetic will always catch. Fix the validation, not the prompt.",
+        "D": "Post-processing correction hides the defect and, worse, produces a record that looks correct, so the underlying extraction problem never surfaces in your metrics."
+      },
+      "difficulty": 2,
+      "mindset": "Schema conformance is the first filter, not the last — cross-field invariants must be checked in code and failures routed to review.",
+      "tags": [
+        "output-validation",
+        "structured-output",
+        "scepticism",
+        "defensive-parsing"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs",
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-hallucinations"
+      ]
+    },
+    {
+      "id": "v-d6-g4-019",
+      "taskStatementId": "6.3",
+      "scenario": "Kestrel's policy assistant answers questions about a 200-page insurance policy. Reviewers found fluent answers to questions the policy does not cover, and they cannot always tell which answers came from the document.",
+      "stem": "Which TWO changes ground the answers? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Require the answer to cite the specific clause or page, and verify after the fact that each cited reference actually exists in the source you supplied."
+        },
+        {
+          "id": "B",
+          "text": "Give the model an explicit way to say the policy does not cover the question — for example a `not_covered` outcome with a required short explanation — rather than forcing an answer."
+        },
+        {
+          "id": "C",
+          "text": "Lower the temperature so the model is less likely to produce a confident guess."
+        },
+        {
+          "id": "D",
+          "text": "Increase the size of the retrieved chunk set so more of the policy is present in every request."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Grounding has two halves, and both are needed. Verification: require a citation and then check mechanically that the cited text exists in the source, which turns an unverifiable answer into one whose basis you can inspect — and a missing citation is a visible failure rather than invisible fluency. Coverage: the model's confidence that a policy addresses a question is itself a guess, so the honest move is to give it a legal way to decline, which is the same principle as making an absent field representable rather than forcing a fabrication. Temperature does not affect grounding, and more retrieved text increases the chance of finding a superficially relevant clause that is not actually on point.",
+      "whyWrong": {
+        "C": "Temperature changes sampling variance, not whether an answer is supported by the document. A low-temperature unsupported answer is still unsupported.",
+        "D": "More context raises the chance of retrieving a topically-adjacent clause that does not actually answer the question, which makes unsupported answers more confidently wrong."
+      },
+      "difficulty": 3,
+      "visualId": "escalation-hitl",
+      "mindset": "Ground with verifiable citations and give the model a legal way to say \"not covered\" — both, or unsupported answers stay invisible.",
+      "tags": [
+        "grounding",
+        "citations",
+        "rag",
+        "scepticism"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/citations",
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-hallucinations"
+      ]
+    },
+    {
+      "id": "v-d6-g4-020",
+      "taskStatementId": "6.3",
+      "scenario": "Kestrel's extraction schema uses `\"format\": \"email\"` on a contact field and a `pattern` on an account number, and the team believes those two keywords guarantee well-formed values. A downstream system still rejects about 1% of records.",
+      "stem": "What is the correct understanding and response?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Structured outputs support a subset of JSON Schema, and these keywords are not guarantees. In Claude Code, `format` is explicitly \"accepted as an annotation\" and not enforced; the same applies to `pattern`. Treat the schema as a shape contract and enforce anything you need to be true in application code, rejecting to a review queue when the check fails."
+        },
+        {
+          "id": "B",
+          "text": "Both are enforced by the schema engine, so the residual 1% must come from your own parsing code."
+        },
+        {
+          "id": "C",
+          "text": "The schema is invalid because `format` is unsupported, so the API silently ignores the whole schema."
+        },
+        {
+          "id": "D",
+          "text": "Enforcement depends on the model: newer models honour `format` and `pattern`, older ones ignore them."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Structured outputs guarantee conformance to the schema, and the guarantee is bounded by the supported JSON Schema subset — validation keywords that are annotations rather than constraints are outside it. Claude Code states it outright: \"Claude Code accepts schemas that use the `format` keyword, such as `\"format\": \"email\"`, but treats `format` as an annotation and doesn't enforce it.\" The SDKs additionally validate a schema locally and reject constructs the API does not support, so an unsupported keyword is a validation error rather than a silent no-op. The engineering consequence is the same either way: shape belongs in the schema, semantics belong in your code, and anything you need to be true must be checked and rejected on failure.",
+      "whyWrong": {
+        "B": "Neither keyword is enforced, so the residual failures are not coming from your parser — they are arriving in the response as conformant values.",
+        "C": "An unsupported construct triggers local schema validation, not a silent fallback to unstructured output. Claude Code exits with the validator's diagnostic for an invalid schema.",
+        "D": "The behaviour is a property of the schema contract, not of the model version. Newer models are not more likely to honour an annotation as a constraint."
+      },
+      "difficulty": 3,
+      "visualId": "structured-output",
+      "mindset": "Schema is a shape contract, and `format`/`pattern` are annotations — enforce what must be true in your own code.",
+      "tags": [
+        "structured-output",
+        "schema-design",
+        "output-validation",
+        "defensive-parsing"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs"
+      ]
+    }
+  ]
+}

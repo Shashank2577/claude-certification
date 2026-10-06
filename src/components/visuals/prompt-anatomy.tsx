@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, type KeyboardEvent, type ReactNode } from "react";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
+import { useHydratedReducedMotion } from "@/lib/use-reduced-motion";
 import { Check, RefreshCw, Sparkles, Eraser } from "lucide-react";
 import clsx from "clsx";
 
@@ -76,7 +77,7 @@ const KIND_COLOR: Record<Kind, string> = { real: "var(--good)", noise: "var(--mu
 const KIND_LABEL: Record<Kind, string> = { real: "true positive", noise: "noise (false positive)", bad: "unsafe / invented", unsure: "honest uncertainty" };
 
 export default function PromptAnatomy() {
-  const reduce = useReducedMotion();
+  const reduce = useHydratedReducedMotion();
   const [on, setOn] = useState<Record<PartId, boolean>>({ role: false, context: false, xml: false, examples: false, format: false, idk: false });
   const [criteria, setCriteria] = useState<Criteria>("vague");
   const [run, setRun] = useState(0);

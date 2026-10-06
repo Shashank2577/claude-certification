@@ -1,0 +1,1210 @@
+{
+  "certId": "developer",
+  "domainId": "d3-claude-code",
+  "questions": [
+    {
+      "id": "v-d3-z3-001",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian Payments has built a shared Claude Code bundle for its 180 engineers: three skills describing the ledger migration procedure and the incident write-up format, two subagents (`ledger-auditor`, `release-notes-writer`), a PostToolUse hook that runs the formatter, and an MCP server for the internal schema registry. It is now packaged as a plugin called `meridian-core`, published through a private marketplace, and enabled in the repository's `.claude/settings.json`.",
+      "stem": "A platform engineer runs `claude plugin details meridian-core` and sees an always-on figure plus a note that hooks carry no model context cost. What does that always-on number represent, and why does it matter to Meridian?",
+      "options": [
+        {
+          "id": "A",
+          "text": "It is the cost of reading the plugin's files from disk at session start. Claude Code caches the plugin directory, so this is I/O rather than tokens."
+        },
+        {
+          "id": "B",
+          "text": "It is the tokens the plugin's skill, agent and command names plus their `description` and `when_to_use` frontmatter add to every session where the plugin is enabled, whether or not anything runs. Meridian can lower it by shortening descriptions or splitting the plugin."
+        },
+        {
+          "id": "C",
+          "text": "It is the number of tokens the plugin's SKILL.md bodies occupy once a skill has been invoked once, which then persists for the rest of the session."
+        },
+        {
+          "id": "D",
+          "text": "It estimates the tokens the plugin's MCP server tool schemas add to the window. The docs note MCP schemas are resolved at runtime and are not counted per component."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "An enabled plugin is part of every session, not just the sessions that use it. For each skill, agent and command Claude can invoke on its own, the name and description sit in Claude's context on every turn, and those tokens count against usage whether or not the plugin is ever used. `claude plugin details` splits that into an always-on share (the name plus `description` and `when_to_use`) and an on-invoke cost, which is the body that loads only when the component fires. Hooks are harness-only and carry no model context cost, and MCP servers get no cost estimate or per-component row at all, so you read their cost from the `MCP tools` category in `/context`. The documented levers are shortening descriptions and splitting the plugin so users install only the components they need.",
+      "whyWrong": {
+        "A": "The figure is explicitly a token cost that counts against the user's usage, not a disk or caching metric.",
+        "C": "That describes the on-invoke column. The always-on figure is the listing overhead every user carries whether or not the component ever runs.",
+        "D": "Hooks and MCP servers get no cost estimate and no per-component row in `claude plugin details`. MCP tool cost is read separately from `/context`."
+      },
+      "difficulty": 2,
+      "visualId": "claude-code-config",
+      "mindset": "Anything enabled pays rent on every turn: measure a plugin's always-on listing cost before you roll it out to a whole org.",
+      "tags": [
+        "plugins",
+        "context-cost",
+        "measurement"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/plugins/measure",
+        "https://code.claude.com/docs/en/plugins/overview"
+      ]
+    },
+    {
+      "id": "v-d3-z3-002",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian Payments is standardising on Claude Code. Today three separate teams maintain a shared `.claude/` directory in a sibling checkout and copy it into new repositories by hand, which is why the copies have drifted. The platform team is deciding what to build.",
+      "stem": "Which assessment of plugin versus standalone components is most accurate for Meridian's situation?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Build a plugin. Skills, subagents, hooks and MCP servers all work on their own, but a plugin packages several of them as one unit that installs with one command, updates from a marketplace, and can be required on every machine."
+        },
+        {
+          "id": "B",
+          "text": "Keep the sibling checkout and add it with `--add-dir` on every engineer's machine. That makes the directory a full configuration root, so the drifted copies disappear without any packaging."
+        },
+        {
+          "id": "C",
+          "text": "Build a plugin, because a plugin's components only load into context when the matching skill description fires. That removes the always-on cost the shared `.claude/` directory imposes today."
+        },
+        {
+          "id": "D",
+          "text": "Publish each of the three skills to Anthropic's public directory. Public distribution solves the drift problem and gives Meridian automatic updates from a catalog it controls."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Skills, subagents, hooks and MCP servers each work standalone, so a plugin is packaging rather than a requirement. The documented reason to reach for one is exactly Meridian's case: several skills, subagents, hooks or MCP servers delivered as a single unit, installed with one command, updated from its marketplace, and installable across many projects without hand-copying. A marketplace you host is a catalog you control, so an administrator can require it on every machine. The distractors each fail on a documented point: `--add-dir` grants file access rather than configuration, so most `.claude/` configuration is still not discovered from it and CLAUDE.md, rules and `CLAUDE.local.md` need an environment variable as well; an enabled plugin is part of every session and its invocable components still contribute name-and-description tokens to every turn; and Anthropic's public directory is for plugins you want to offer to everyone, not for internal version control.",
+      "whyWrong": {
+        "B": "Additional directories grant file access, not configuration. Most `.claude/` configuration is not discovered from an added directory, so this does not replace packaging.",
+        "C": "Progressive disclosure is real for the skill body, but an enabled plugin's invocable skills, agents and commands still contribute their names and descriptions to every session. Packaging does not make the listing free.",
+        "D": "Submitting to Anthropic's directory is for plugins you want to offer publicly. A private marketplace is the mechanism for a team or organisation to install and keep receiving updates from a catalog it controls."
+      },
+      "difficulty": 2,
+      "visualId": "capability-ladder",
+      "mindset": "Reach for a plugin when the unit of work is a bundle plus a distribution channel, not when you need the components to behave differently.",
+      "tags": [
+        "plugins",
+        "distribution",
+        "marketplace"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/plugins/overview",
+        "https://code.claude.com/docs/en/plugins/publish"
+      ]
+    },
+    {
+      "id": "v-d3-z3-003",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian Payments hosts its own plugin catalog in a private git repository. The root holds `.claude-plugin/marketplace.json` and each plugin lives under `plugins/`. A new engineer runs `claude plugin marketplace add ../meridian-marketplace` and sees a confirmation ending in `(declared in user settings)`, then installs a plugin and finds its skill invoked as `/meridian-core:incident-report`.",
+      "stem": "Which TWO statements about this setup are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "The marketplace file requires a `name`, an `owner` and a `plugins` array, and each entry needs at least a `name` and a `source` written as a path from the marketplace root."
+        },
+        {
+          "id": "B",
+          "text": "The add command records the marketplace in the project's `.claude/settings.json`, so it is shared with everyone who clones the repository."
+        },
+        {
+          "id": "C",
+          "text": "Adding the marketplace writes to your user settings file, which is personal to the machine. To guarantee it everywhere, an administrator can require the marketplace on every machine."
+        },
+        {
+          "id": "D",
+          "text": "A marketplace repository must be public, because Claude Code refuses to inspect a git remote that requires authentication."
+        },
+        {
+          "id": "E",
+          "text": "Plugin skills arrive namespaced, so the skill is typed as `/meridian-core:incident-report` rather than `/incident-report`."
+        }
+      ],
+      "correct": [
+        "A",
+        "C"
+      ],
+      "explanation": "Two of these are accurate. The marketplace file is `.claude-plugin/marketplace.json` and requires `name`, `owner` and a `plugins` array, where each entry has a `name` and a `source` path relative to the marketplace root; `claude plugin validate` checks the JSON syntax, the required fields and each entry. And registering the directory writes to your user settings — the confirmation line says so explicitly — so it is per-machine and never reaches version control. The documented path to org-wide enforcement is having an administrator require the marketplace on every machine. The namespacing detail is also real but is a property of the plugin rather than the marketplace, which is why it is a distractor here rather than a second answer.",
+      "whyWrong": {
+        "B": "The command's own output says the marketplace is `declared in user settings`. User settings are personal to the machine and never reach version control, which is exactly why an administrator has to require it separately.",
+        "D": "A marketplace repository can be private. That is the normal case for an internal catalog, and the docs say so explicitly.",
+        "E": "Plugin skills are indeed namespaced as `/meridian-core:incident-report`. That is a property of how a plugin exposes its skills, not evidence about how the marketplace was registered, so it is not one of the two answers about this setup."
+      },
+      "difficulty": 2,
+      "mindset": "Marketplace registration writes to user settings, so distribution to a whole org is an administrator action rather than a git clone.",
+      "tags": [
+        "plugins",
+        "marketplace",
+        "settings-scope"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/plugin-marketplaces",
+        "https://code.claude.com/docs/en/plugins/publish"
+      ]
+    },
+    {
+      "id": "v-d3-z3-004",
+      "taskStatementId": "3.1",
+      "scenario": "A Meridian engineer pressed Esc twice, got the rewind menu, and found that a correction she had queued while Claude was still working is not listed anywhere. She also cannot tell which entries will let her get her files back.",
+      "stem": "Which TWO statements about the rewind menu and what it offers are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "The menu lists each prompt that started a turn, and from the selected point you can restore code and conversation, restore conversation only, restore code only, summarize from here, or summarize up to here. The two code-restore options appear only when that checkpoint actually has tracked file changes — with no edits after it, only the conversation and summarize options are offered."
+        },
+        {
+          "id": "B",
+          "text": "A message queued while Claude was working is not a separate checkpoint if it reached Claude inside the running turn — it joins that turn, appears in the conversation, and is neither a checkpoint nor a rewind-menu entry. A queued message that instead starts a new turn gets a checkpoint as usual."
+        },
+        {
+          "id": "C",
+          "text": "Every message in the conversation is listed, because the menu is built from the transcript rather than from checkpoint records."
+        },
+        {
+          "id": "D",
+          "text": "Checkpoints are held in memory for the life of the process only, so `/rewind` stops working after the session is resumed and the conversation is reloaded from the transcript."
+        },
+        {
+          "id": "E",
+          "text": "The summarize options compress the conversation while leaving every file on disk untouched, and unlike `/compact` they also preserve the messages that were compressed verbatim in the transcript."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Both are documented, and together they explain the menu she is looking at. The menu lists each prompt that started a turn and offers five actions from a selected point: restore code and conversation, restore conversation, restore code, summarize from here, summarize up to here, or do nothing. The two code-restore options are conditional — they appear only when the selected checkpoint has tracked file changes to revert, so a point with no edits after it gives her conversation and summarize choices only. And a message she queued mid-turn is not a checkpoint at all: if it reaches Claude within the running turn it joins that turn instead of starting a new one, so it shows in the conversation but creates no checkpoint and is absent from the menu, whereas a queued message that does start a new turn is checkpointed normally. Two related facts round this out: checkpoints are saved with the conversation, so `/rewind` still works after resuming, and summarizing does not change files on disk while the original messages stay in the transcript.",
+      "whyWrong": {
+        "C": "The menu is built from checkpoint records — one per prompt that started a turn — so a mid-turn message that joined an existing turn is absent from it by design.",
+        "D": "Checkpoints are saved with the conversation, which is why `/rewind` is available after resuming a session rather than being limited to the original process.",
+        "E": "Half right about files and wrong about the transcript comparison. Summarizing compresses the conversation for the working context, which is why it is described as a targeted `/compact`; the summaries are not a general guarantee that the compressed messages stay verbatim everywhere."
+      },
+      "difficulty": 2,
+      "visualId": "claude-code-config",
+      "mindset": "The rewind menu is one entry per turn-starting prompt, and code restore only appears where there are tracked edits to revert.",
+      "tags": [
+        "checkpointing",
+        "rewind",
+        "sessions"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/checkpointing",
+        "https://code.claude.com/docs/en/commands"
+      ]
+    },
+    {
+      "id": "v-d3-z3-005",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian adds the schema-registry MCP server to the repository's `.mcp.json` at project scope, so every clone gets it. Two engineers see a dialog asking them to approve the server the first time they open the repo. Nobody saw a dialog in CI.",
+      "stem": "Why does the approval behave differently in an interactive session than in a `claude -p` run, and what should the platform team do about it?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Claude Code prompts for project-scoped servers in interactive sessions for security reasons. In `claude -p` runs, Agent SDK sessions and cloud sessions it cannot show the prompt, so it loads them without asking. To keep a server out, block it with `disabledMcpjsonServers`, exclude project settings with `--setting-sources`, or run with `--strict-mcp-config`."
+        },
+        {
+          "id": "B",
+          "text": "The dialog appears once per machine and is recorded in `~/.claude.json`. CI runs on fresh containers, so there is no record yet and no prompt is shown, which is why the job proceeds unattended."
+        },
+        {
+          "id": "C",
+          "text": "The dialog is controlled by `enableAllProjectMcpServers` in the project's committed `.claude/settings.json`. Setting it to `true` makes CI skip the prompt while still prompting engineers interactively."
+        },
+        {
+          "id": "D",
+          "text": "Servers at project scope never prompt. The dialog the two engineers saw came from the workspace-trust prompt for the repository, which doubles as MCP server approval."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The asymmetry is deliberate. Project-scoped servers come from a file inside the repository, so Claude Code asks before using them in an interactive session — a cloned repo should not be able to quietly start a server on your machine. In `claude -p` runs, Agent SDK sessions and cloud sessions there is nobody to ask, so Claude Code loads them without the prompt. That makes CI the riskier surface rather than the safer one, and the documented ways to keep a server out are `disabledMcpjsonServers`, which blocks it in every permission mode; excluding project settings entirely with `--setting-sources` or the SDK's `settingSources`; or starting with `--strict-mcp-config` so only servers passed with `--mcp-config` are used. `claude mcp reset-project-choices` resets recorded approvals.",
+      "whyWrong": {
+        "B": "It is not a once-per-machine answer that CI simply lacks. The interactive prompt exists because repository content is untrusted, and non-interactive sessions skip it because they cannot ask, not because they failed to find a cached decision.",
+        "C": "`enableAllProjectMcpServers` and `enabledMcpjsonServers` committed to project settings are ignored in an untrusted folder, where the server stays pending. It is not a general 'CI skips the prompt' switch.",
+        "D": "Workspace trust is a separate dialog. MCP approval is its own prompt for project-scoped servers, and project-scoped servers do prompt interactively."
+      },
+      "difficulty": 2,
+      "visualId": "mcp-architecture",
+      "mindset": "A prompt you cannot show is a prompt you do not have: unattended sessions load project MCP servers without asking, so the allow decision belongs in configuration.",
+      "tags": [
+        "mcp",
+        "project-scope",
+        "ci"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/mcp",
+        "https://code.claude.com/docs/en/settings-reference"
+      ]
+    },
+    {
+      "id": "v-d3-z3-006",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian's committed `.mcp.json` configures a remote HTTP server with `\"headers\": { \"Authorization\": \"Bearer ${ANTHROPIC_AUTH_TOKEN}\" }`. Engineers whose shells export that variable see the server connect. In CI, where it is absent, the connection is reported as failed and the server returns 401.",
+      "stem": "What explains the difference, and what is the correct configuration pattern?",
+      "options": [
+        {
+          "id": "A",
+          "text": "In a remote server's `url` and `headers`, Claude Code reads credential variables from your environment as empty rather than expanding them, precisely so a project file cannot ship your Claude Code or cloud provider credentials to a server it names. Use a dedicated per-server variable instead."
+        },
+        {
+          "id": "B",
+          "text": "The variable expanded normally and the server rejected the token as malformed. Pass the token with `--header` when adding the server rather than in the committed file."
+        },
+        {
+          "id": "C",
+          "text": "The variable was unset with no default, so Claude Code left the literal text `${ANTHROPIC_AUTH_TOKEN}` in the header and warned about a missing variable. Add a default so the server starts with the value you intend."
+        },
+        {
+          "id": "D",
+          "text": "Credential variables expand only in `command` and `args`, never in `url` or `headers`. Move the token into a query parameter on the URL and it will expand."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Claude Code deliberately treats credential variables in a remote server's `url` and `headers` as empty instead of expanding them, so that a project's `.mcp.json` or a plugin cannot forward your Claude Code or cloud provider credentials to a server it names. `Bearer ${ANTHROPIC_AUTH_TOKEN}` therefore arrives as `Bearer ` with no credential, the server rejects it with a 401, and Claude Code reports a failed connection. Ordinary expansion rules still apply to non-credential variables: `${VAR}` and `${VAR:-default}` expand in `command`, `args`, `env`, `url` and `headers`, and an unset variable with no default yields a missing-variable warning plus the unexpanded text. The fix is a per-server credential, not different quoting.",
+      "whyWrong": {
+        "B": "That is the ordinary unset case, not this one. The named variable is a Claude Code credential, and those read as empty in a remote `url` or `headers`, which is exactly the 401 case here.",
+        "C": "Accurate as a description of an ordinary unset variable with no default, but not this one. There is no unexpanded-text warning for credential variables in a remote `url` or `headers`; they simply read as empty.",
+        "D": "Expansion in `url` and `headers` is supported. What is special is the deliberate empty-read for credential variables, not a restriction on which fields expand."
+      },
+      "difficulty": 3,
+      "visualId": "mcp-architecture",
+      "mindset": "A committed MCP config must never be able to ship your provider credential to a server it names, so design per-server secrets instead of reusing one.",
+      "tags": [
+        "mcp",
+        "credentials",
+        "configuration"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/mcp",
+        "https://code.claude.com/docs/en/settings"
+      ]
+    },
+    {
+      "id": "v-d3-z3-007",
+      "taskStatementId": "3.1",
+      "scenario": "A Meridian engineer's machine has a personal copy of the schema-registry server in `~/.claude.json` under the name `schema-registry`. The repository also defines a server with that same name in `.mcp.json`, pointing at a different endpoint with different scopes. The engineer expected the committed definition to win.",
+      "stem": "Which statement about how Claude Code resolves the duplicate is correct?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The project's committed definition wins, because a shared file should take precedence over a personal one so the whole team behaves identically."
+        },
+        {
+          "id": "B",
+          "text": "Local scope ranks first, then project scope, then user scope, then plugin-provided servers and claude.ai connectors. Claude Code connects once and uses the entire entry from the highest-precedence source — fields are not merged across scopes."
+        },
+        {
+          "id": "C",
+          "text": "Both definitions are connected and their tools are merged, with the project-scoped tools sorted first so the model prefers them."
+        },
+        {
+          "id": "D",
+          "text": "Claude Code detects the conflict and refuses to start the server until the duplicate is removed with `claude mcp remove`."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Precedence for duplicate MCP servers is local, then project, then user, then plugin-provided servers, then claude.ai connectors, with a managed `managedMcpServers` entry outranking all of them. Duplicates across the three scopes are matched by name, and Claude Code connects once using the whole entry from the highest-precedence source: the entire server entry is used and fields are never merged, so a local `url` will not be combined with a project `env` block. Plugin servers and connectors are matched by endpoint instead, and two URL spellings count as the same endpoint when they differ only in scheme or host case, a default port, or a trailing slash. The practical consequence is that a personal entry can quietly shadow a committed one, which is a good reason to name personal servers distinctly.",
+      "whyWrong": {
+        "A": "Personal configuration outranks project configuration for MCP servers. Only the highest-precedence source's entry is used, so the personal definition is what connects here.",
+        "C": "Claude Code connects to the server once. There is no merging of tool lists across scopes and no preference ordering of tools.",
+        "D": "There is no refusal. Claude Code resolves the duplicate silently by precedence, which is why a name clash is worth avoiding rather than debugging."
+      },
+      "difficulty": 1,
+      "mindset": "MCP servers resolve by precedence, not by merge, so a personal entry with the same name as a committed one silently wins.",
+      "tags": [
+        "mcp",
+        "scope",
+        "precedence"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/mcp"
+      ]
+    },
+    {
+      "id": "v-d3-z3-008",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian's CI review job must not be able to reach the schema-registry MCP server, even though the repository commits it in `.mcp.json` and the job runs `claude -p --bare`. The security team wants a control that holds in every permission mode.",
+      "stem": "Which TWO changes keep that server out of the CI run? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add the server's name to `disabledMcpjsonServers`, which rejects a `.mcp.json` server from any settings file and blocks it in every permission mode."
+        },
+        {
+          "id": "B",
+          "text": "Launch the job with `--strict-mcp-config`, so Claude Code uses only the MCP servers passed with `--mcp-config`."
+        },
+        {
+          "id": "C",
+          "text": "Add `permissions.deny: [\"mcp__schema-registry__*\"]` to the repository's `.claude/settings.json`, on the reasoning that denying the tools is equivalent to not loading the server."
+        },
+        {
+          "id": "D",
+          "text": "Set `--permission-mode dontAsk` on the CI job, since any MCP tool the job has not pre-approved is denied in that mode."
+        },
+        {
+          "id": "E",
+          "text": "Remove the server from `.mcp.json` in the CI branch, which is the simplest way to keep it out of the job without touching the repository's shared config."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Two documented controls keep a project-scoped server out. `disabledMcpjsonServers` rejects a `.mcp.json` server from any settings file and blocks it in every permission mode, and `--strict-mcp-config` restricts Claude Code to servers passed explicitly with `--mcp-config`. Either is the right shape for CI. The distinction matters: a tool-name deny rule removes the server's tools from the pool, but the server itself is still configured, discovered and connected, which is exactly what you do not want from an untrusted repository in an unattended job. `dontAsk` denies calls that would prompt, so it narrows what the agent may do without changing what got loaded.",
+      "whyWrong": {
+        "C": "A tool-name deny rule removes the tools from Claude's context; it does not stop Claude Code from connecting to and initialising the server. That is a different control from keeping the server out.",
+        "D": "`dontAsk` is a permission posture, not a discovery control. Servers still load, and any tool already covered by an allow rule remains callable.",
+        "E": "Editing the committed file per branch defeats the purpose of a shared config and reintroduces drift — the same class of problem packaging was meant to solve. The documented controls operate without modifying the repository's MCP configuration."
+      },
+      "difficulty": 2,
+      "visualId": "mcp-architecture",
+      "mindset": "Separate 'do not load this server' from 'do not let these tools run' — in CI the first one is the control you want.",
+      "tags": [
+        "mcp",
+        "ci",
+        "least-privilege"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/mcp",
+        "https://code.claude.com/docs/en/cli-reference"
+      ]
+    },
+    {
+      "id": "v-d3-z3-009",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian's team settings file allows `Bash(npm run *)`, `Bash(git commit *)` and denies `Bash(git push *)`. A new engineer asks why `Bash(npm run *)` also covers the bare `npm run`, and why a colleague's rule `Bash(ls*)` seems to approve far more than they intended.",
+      "stem": "Which TWO statements about Claude Code's Bash rule matching are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "A `*` at the end, with a space before it, also matches the bare command: `Bash(ls *)` matches `ls`, and `Bash(git log *)` matches `git log`."
+        },
+        {
+          "id": "B",
+          "text": "The space before a trailing `*` is part of the rule. `Bash(ls *)` requires a space after `ls` so `lsof` does not match, while `Bash(ls*)` has no space and matches `lsof` too."
+        },
+        {
+          "id": "C",
+          "text": "Rules are matched longest-pattern-first, so a narrower rule always beats a broader one that also matches."
+        },
+        {
+          "id": "D",
+          "text": "Only a `*` in the middle of a rule is a wildcard. Leading and trailing asterisks are treated as literal characters."
+        },
+        {
+          "id": "E",
+          "text": "Claude Code warns at startup about an allow rule with a `*` before the subcommand, such as `Bash(git * main)`, because that pattern is broader than it looks."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Two documented behaviours line up here. A trailing `*` preceded by a space also matches the bare command, so `Bash(ls *)` covers `ls -la` and `ls`. And the space is part of the rule rather than cosmetic: `Bash(ls *)` requires a space after `ls` and therefore does not match `lsof`, whereas `Bash(ls*)` does. The `:*` suffix is an equivalent way to write a trailing wildcard, so `Bash(ls:*)` matches the same commands as `Bash(ls *)`. The startup warning for a `*` before the subcommand is also real, but that belongs to a different question — it is about where the first wildcard falls, not about the trailing space.",
+      "whyWrong": {
+        "C": "Permission rules are evaluated deny, then ask, then allow, first match wins, and specificity is not a factor. A broader deny beats a narrow allow.",
+        "D": "A `*` can go anywhere in the rule — at the start, in the middle, or at the end. What matters is where the first `*` falls, because everything before it is matched as written.",
+        "E": "Accurate as a documented behaviour, but it concerns a `*` placed before the subcommand rather than the trailing space. The two behaviours being tested here are the bare-command match and the space being part of the rule."
+      },
+      "difficulty": 2,
+      "visualId": "claude-code-config",
+      "mindset": "In a Bash rule the space before a trailing `*` is load-bearing, so write the subcommand and a space before you add the wildcard.",
+      "tags": [
+        "permissions",
+        "bash-rules",
+        "matching"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/permissions",
+        "https://code.claude.com/docs/en/settings-reference"
+      ]
+    },
+    {
+      "id": "v-d3-z3-010",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian wants to block every MCP tool from every server with one rule, and separately wants to pre-approve all `get_` tools from a single named server. A security engineer proposes `\"allow\": [\"mcp__*\"]` for the first and `\"allow\": [\"mcp__github__get_*\"]` for the second.",
+      "stem": "Which assessment of those two rules is correct?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Both work as written. Tool-name globs in allow rules can match any server."
+        },
+        {
+          "id": "B",
+          "text": "The first is right: `\"deny\": [\"mcp__*\"]` denies every MCP tool across all servers and removes them from Claude's context. The second is right in shape — allow globs are accepted only after a literal `mcp__<server>__` prefix whose server segment is glob-free — but an unanchored allow glob such as `\"*\"`, `\"B*\"` or `\"mcp__*\"` is skipped with a warning and auto-approves nothing."
+        },
+        {
+          "id": "C",
+          "text": "Neither works. Deny and ask rules must name a full tool name; globs in the tool-name position are only supported by hooks."
+        },
+        {
+          "id": "D",
+          "text": "Both work, but a tool matched by a glob deny rule stays visible to the model with an extra confirmation step, unlike a bare tool-name deny."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "The two rule types are deliberately asymmetric. Deny and ask rules accept glob patterns in the tool-name position: `\"*\"` matches every tool and `\"mcp__*\"` matches every MCP tool across all servers, and a tool matched by a bare-name glob deny rule is removed from Claude's context just as a bare tool name would be. Allow rules are stricter, because an allow rule grants power without asking: globs are accepted only after a literal `mcp__<server>__` prefix whose server segment is glob-free, so `mcp__github__get_*` names one specific server. An unanchored allow glob such as `\"*\"`, `\"B*\"` or `\"mcp__*\"` is skipped with a warning and approves nothing at all. A deny or ask rule whose tool name matches no known tool also produces a startup warning, which catches typos.",
+      "whyWrong": {
+        "A": "Allow rules are the restricted case. `mcp__github__get_*` is valid because of its literal server prefix, but `mcp__*` as an allow glob is skipped with a warning.",
+        "C": "Globs in the tool-name position are supported for deny and ask rules. What is restricted is the allow side.",
+        "D": "A tool matched by a glob deny rule is removed from context the same way a bare tool-name deny removes it. There is no confirmation-step variant."
+      },
+      "difficulty": 3,
+      "mindset": "Globs are liberal where they remove power (deny, ask) and narrow where they grant it (an allow glob must name its server).",
+      "tags": [
+        "permissions",
+        "mcp",
+        "tool-globs"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/permissions",
+        "https://code.claude.com/docs/en/settings-reference"
+      ]
+    },
+    {
+      "id": "v-d3-z3-011",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian's team settings allow `Bash(git log * main)`, written so read-only history queries against the main branch need no prompt. A security review notes the rule also approves `git log --output=/workspace/creds.txt main`, and a developer proposed widening it to `Bash(git * main)` to cover merges.",
+      "stem": "What explains the over-match, and what is the correct fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Claude Code compares only the subcommand and ignores options, so any option order should be safe. The rule is correct and the reviewer is mistaken."
+        },
+        {
+          "id": "B",
+          "text": "A `*` stands in for whatever text is in its place, so in `Bash(git log * main)` it covers any options between the subcommand and the branch — including `--output=<file>`. Widening to `Bash(git * main)` is worse: the `*` then covers the subcommand too, so it approves every git subcommand and every option before it, including `-c`, which makes git run a program you name. Claude Code also warns at startup about allow rules with a `*` before the subcommand."
+        },
+        {
+          "id": "C",
+          "text": "The rule is fine because deny rules are evaluated first. Because `Bash(git push *)` is denied, no other git rule can grant a push."
+        },
+        {
+          "id": "D",
+          "text": "Permission rules cannot match on options at all, so the recommended approach is to list each exact command with no wildcards, such as `Bash(git log --oneline main)`."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Everything before the first `*` is matched as written, and the `*` stands in for whatever text occupies its place, including spaces. So `Bash(git log * main)` matches `git log --oneline main`, `git log -5 main` and `git log --output=<file> main`, which is a write. Pushing the wildcard left to swallow the subcommand, `Bash(git * main)`, matches every git subcommand and every option before it, including `-c core.fsmonitor=<script>`, which executes a script — which is why Claude Code warns at startup about an allow rule with a `*` before the subcommand. The safe form is to keep the wildcard after the subcommand and narrow the family, or to enumerate the exact commands you mean. Deny-first ordering does not help: it only means a deny rule beats an allow rule for the same command, and no deny rule covers `--output`.",
+      "whyWrong": {
+        "A": "The wildcard explicitly covers the option text between the subcommand and the trailing argument, which is precisely how `--output=` slips in.",
+        "C": "Deny-first ordering is real, but it is about which rule type wins for a matching command. It does nothing about options your deny rules never mention.",
+        "D": "Rules do match on option text — that is the problem. The guidance is to put the `*` after the subcommand and keep the pattern narrow, not to abandon wildcards."
+      },
+      "difficulty": 3,
+      "mindset": "Put the wildcard after the subcommand: everything before the first `*` is a literal prefix, and the wildcard swallows option text including redirection and `-c`.",
+      "tags": [
+        "permissions",
+        "bash-rules",
+        "over-match"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/permissions",
+        "https://code.claude.com/docs/en/errors"
+      ]
+    },
+    {
+      "id": "v-d3-z3-012",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian's security team turns on Claude Code's built-in Bash sandbox so shell commands Claude runs are confined by the operating system. The lead engineer's first complaints are that `filesystem.denyRead` did not stop Claude from reading `~/.aws/credentials`, and that `network.allowedDomains` did not stop WebFetch from reaching an unlisted host.",
+      "stem": "What explains both observations, and what would actually put those tools behind the same boundary?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The sandbox wraps shell commands only. Built-in file and web tools such as Read, Edit, Write, WebFetch and WebSearch follow permission rules instead, and a `denyRead` entry does not stop the Read tool. To get one boundary around everything, run the Claude Code process itself inside a container, virtual machine or the sandbox runtime."
+        },
+        {
+          "id": "B",
+          "text": "The two settings are misnamed. `filesystem.denyRead` is a deny rule for the Read tool and `network.allowedDomains` applies to every outbound connection Claude Code makes."
+        },
+        {
+          "id": "C",
+          "text": "The sandbox is off by default and the engineer's `/sandbox` panel change did not persist because Claude Code saves the mode to `.claude/settings.local.json`, which the repository gitignores."
+        },
+        {
+          "id": "D",
+          "text": "The sandbox only applies to Bash, PowerShell and Monitor commands started by Claude, and it is unsupported on macOS, which relies on a different mechanism."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The scope statement is the whole answer. The sandbox is an operating-system boundary around the shell commands Claude runs, and it covers Bash, PowerShell and Monitor commands plus the processes they start. Read, Edit, Write, WebFetch and WebSearch follow permission rules instead — a `denyRead` entry does not stop the Read tool and `allowedDomains` does not limit WebFetch. MCP servers, hooks, plugin monitors, LSP servers and helper commands such as your status line and `apiKeyHelper` also run outside it with full access. The documented resolution is to put the tools, processes and commands behind one boundary by running the Claude Code process itself in a container, virtual machine or the sandbox runtime. Sandboxing is supported on macOS, Linux and WSL2; on native Windows commands run unsandboxed unless you run inside WSL2.",
+      "whyWrong": {
+        "B": "That contradicts the documented boundary. The sandbox settings govern shell commands, and the built-in file and web tools are governed by permission rules — which is why neither setting touched them.",
+        "C": "True that the sandbox is off by default and that `/sandbox` saves the mode to `.claude/settings.local.json`, but that does not explain the two observations. Where a setting lives has no bearing on which tools the sandbox wraps.",
+        "D": "macOS is a first-class sandbox platform, implemented with the built-in Seatbelt framework. Linux and WSL2 rely on bubblewrap and socat."
+      },
+      "difficulty": 2,
+      "mindset": "The Bash sandbox bounds shell commands only — if you need one boundary around file tools, MCP servers and hooks, containerise the process itself.",
+      "tags": [
+        "sandbox",
+        "isolation",
+        "permissions"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/sandboxing",
+        "https://code.claude.com/docs/en/sandbox-environments"
+      ]
+    },
+    {
+      "id": "v-d3-z3-013",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian turns on the sandbox and selects auto-allow mode so commands running inside it need no prompt. A reviewer asks which guarantees survive, because the team relies on `deny` rules and on `Bash(git push *)` being an ask rule.",
+      "stem": "Which TWO statements about auto-allow mode are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Explicit deny rules are always respected, `rm` or `rmdir` commands targeting a critical path still go through the regular permission flow, and content-scoped ask rules like `Bash(git push *)` still force a prompt even for sandboxed commands."
+        },
+        {
+          "id": "B",
+          "text": "A bare `Bash` ask rule, or the equivalent `Bash(*)` form, is skipped for commands that run sandboxed. It still applies to commands that fall back to the regular permission flow, and in plan mode it is not skipped."
+        },
+        {
+          "id": "C",
+          "text": "Auto-allow mode disables the permission system for sandboxed commands entirely, so allow, ask and deny rules are consulted only for unsandboxed commands."
+        },
+        {
+          "id": "D",
+          "text": "Auto-allow mode is equivalent to `bypassPermissions`: both remove prompts for commands inside the working directory."
+        },
+        {
+          "id": "E",
+          "text": "Because the sandbox starts commands in a restricted filesystem, auto-allow cannot widen what a sandboxed command reaches, so it is safe on its own regardless of the command."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Auto-allow removes the prompt for commands that run inside the sandbox; it does not remove the rule set. Explicit deny rules are always respected, `rm` and `rmdir` removals targeting a critical path still go through the regular permission flow, and content-scoped ask rules such as `Bash(git push *)` still force a prompt even for sandboxed commands. There is one documented exception in the other direction: a bare `Bash` ask rule, or `Bash(*)`, is skipped for sandboxed commands, though the rule still applies to commands that fall back to the regular permission flow and in plan mode it is not skipped at all. Auto-allow also works independently of your permission mode setting, with three exceptions around plan mode, per-command allowed domains and classifier review.",
+      "whyWrong": {
+        "C": "Rule evaluation survives auto-allow. Deny rules, critical-path removals and content-scoped ask rules all still apply, which is the point of the mode.",
+        "D": "`bypassPermissions` skips prompts and protected-path checks and is meant for isolated containers or VMs. Auto-allow still routes the listed cases through the regular permission flow, and it works independently of your permission mode.",
+        "E": "The sandbox bounds writes and network egress, but a sandboxed command that runs inside the boundary is auto-approved, so safety does not rest on the filesystem restriction alone. Critical-path removals and ask rules still prompt."
+      },
+      "difficulty": 3,
+      "visualId": "claude-code-config",
+      "mindset": "Auto-allow suppresses prompts for sandboxed commands, not the rule set — deny rules, critical paths and content-scoped ask rules all still hold.",
+      "tags": [
+        "sandbox",
+        "auto-allow",
+        "permissions"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/sandboxing",
+        "https://code.claude.com/docs/en/permission-modes"
+      ]
+    },
+    {
+      "id": "v-d3-z3-014",
+      "taskStatementId": "3.1",
+      "scenario": "After enabling the sandbox, Meridian found a build tool that fails inside it with `Operation not permitted`. Claude sees the denial and retries the command with the `dangerouslyDisableSandbox` parameter, which runs it unsandboxed. A security engineer wants that escape hatch closed for everyone in the company.",
+      "stem": "What is the correct way to close the unsandboxed retry, and what follows from doing it in managed settings?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Set `\"allowUnsandboxedCommands\": false` in the sandbox settings. Claude Code then ignores the `dangerouslyDisableSandbox` parameter, and setting `failIfUnavailable` as well keeps Claude Code from running commands unsandboxed when the sandbox cannot start. When the retry is disabled in managed settings or with `--settings`, the sandbox becomes admin-required and repository settings that loosen it — `excludedCommands` included — are ignored."
+        },
+        {
+          "id": "B",
+          "text": "Add a deny rule for `Bash(*)` in the project's `.claude/settings.json`. Deny rules apply in every permission mode, so the unsandboxed retry will be blocked."
+        },
+        {
+          "id": "C",
+          "text": "Set `permissions.defaultMode` to `plan` in managed settings, so the retry is classified like any other command during planning."
+        },
+        {
+          "id": "D",
+          "text": "The escape hatch cannot be disabled. The only supported controls are who approves the retry, which depends on your permission mode."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The escape hatch has an explicit off switch. Setting `\"allowUnsandboxedCommands\": false` makes Claude Code ignore the `dangerouslyDisableSandbox` parameter, and adding `failIfUnavailable` prevents the fallback where Claude Code runs commands unsandboxed because the sandbox could not start; the `/sandbox` panel's Overrides tab calls this strict sandbox mode. The precedence detail matters for the org-wide case: a `false` in user settings, `--settings` or managed settings holds even when a project's settings set `true`, and disabling the retry in managed settings or with `--settings` makes the sandbox admin-required, at which point repository settings that loosen it are ignored. There is also a targeted alternative — an ask rule for `Bash(dangerouslyDisableSandbox:true)` prompts on Bash retries and takes precedence over a matching allow rule.",
+      "whyWrong": {
+        "B": "A `Bash(*)` deny rule would block essentially all Bash, and it does not express the requirement. The parameter exists so you can ask about or block the retry specifically.",
+        "C": "Plan mode changes how commands are gated while planning; it is not the switch for the unsandboxed retry, which is governed by the sandbox settings.",
+        "D": "It can be disabled. `allowUnsandboxedCommands: false` is the documented control, and who approves the retry is a separate question that depends on permission mode."
+      },
+      "difficulty": 3,
+      "mindset": "The unsandboxed retry is an escape hatch with its own switch: close it with `allowUnsandboxedCommands: false`, and in managed settings that also makes the sandbox admin-required.",
+      "tags": [
+        "sandbox",
+        "managed-settings",
+        "escape-hatch"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/sandboxing",
+        "https://code.claude.com/docs/en/settings-reference"
+      ]
+    },
+    {
+      "id": "v-d3-z3-015",
+      "taskStatementId": "3.1",
+      "scenario": "A Meridian engineer asks a colleague which mechanism wins when a model is specified in several places at once: she typed `/model sonnet` in the session, launched with `claude --model opus`, exported `ANTHROPIC_MODEL=haiku`, and has `model` set in `~/.claude/settings.json`.",
+      "stem": "Which statement about Claude Code's model configuration precedence is correct?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The order of priority is: `/model <alias|name>` during the session, then `--model` at startup, then the `ANTHROPIC_MODEL` environment variable, then the `model` field in a settings file, then `ANTHROPIC_DEFAULT_MODEL`. With all four in play, the session's `/model sonnet` wins."
+        },
+        {
+          "id": "B",
+          "text": "Settings files always beat command-line flags, because a settings file is the administrator's declared intent while a flag is per-session. The `model` field in `~/.claude/settings.json` wins here."
+        },
+        {
+          "id": "C",
+          "text": "Environment variables beat everything, since they are set closest to the process. `ANTHROPIC_MODEL=haiku` wins here."
+        },
+        {
+          "id": "D",
+          "text": "There is no ordering: Claude Code resolves the most specific match by comparing the strings, so a full model ID beats an alias and an alias beats an environment variable."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Claude Code documents a single ordered list for specifying a model: `/model <alias|name>` during the session, `claude --model <alias|name>` at startup, the `ANTHROPIC_MODEL` environment variable, the `model` field in a settings file, and `ANTHROPIC_DEFAULT_MODEL` as the default for new sessions. A `/model` switch inside a session therefore beats the flag she launched with. Two related behaviours are worth knowing: in the `/model` picker, `s` switches for this session only and leaves the saved default alone, while typing `/model <name>` directly behaves like pressing `Enter`, which also saves the choice as the default in user settings. Separately, if an organisation sets `availableModels`, that allowlist applies everywhere a user can specify a model, including `--model` and `ANTHROPIC_MODEL`.",
+      "whyWrong": {
+        "B": "That inverts the documented order. Within model configuration, `--model` outranks a settings file, and `/model` outranks both.",
+        "C": "The environment variable sits below both the in-session `/model` switch and the `--model` flag.",
+        "D": "There is no string-specificity comparison. Precedence is positional, and when an administrator sets `availableModels` the allowlist is what constrains the choice."
+      },
+      "difficulty": 1,
+      "visualId": "claude-code-config",
+      "mindset": "Model precedence is positional and documented: in-session `/model` beats `--model`, which beats the environment variable, which beats settings.",
+      "tags": [
+        "model-config",
+        "precedence",
+        "settings"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/model-config",
+        "https://code.claude.com/docs/en/settings"
+      ]
+    },
+    {
+      "id": "v-d3-z3-016",
+      "taskStatementId": "3.1",
+      "scenario": "A Meridian engineer in plan mode has just received Claude's proposed migration plan. She wants to read it in her editor before agreeing, and she also wants the option of approving it and clearing the exploration context so the execution turn starts fresh.",
+      "stem": "Which TWO statements about accepting a plan are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Press `Ctrl+G` to open the proposed plan in your default text editor and edit it directly before Claude proceeds. With `showClearContextOnPlanAccept` enabled, the approval list gains a first option that approves the plan and clears the planning context."
+        },
+        {
+          "id": "B",
+          "text": "Approving a plan exits plan mode and switches the session to the permission mode each approve option describes — auto mode, manually approve edits, or bypass permissions if you started with bypass available — so Claude starts editing. Pressing `Shift+Tab` again instead leaves plan mode without approving anything."
+        },
+        {
+          "id": "C",
+          "text": "Plan mode is advisory only. Claude may edit files during planning if the model's own judgement says the change is obviously safe, and the plan is a summary of what it has already done."
+        },
+        {
+          "id": "D",
+          "text": "Once you approve, the plan is deleted from the session so it cannot influence the implementation, which is why the execution turn starts with an empty context by default."
+        },
+        {
+          "id": "E",
+          "text": "In plan mode, shell commands outside the built-in read-only set always prompt for approval, including when the sandbox's auto-allow mode is enabled and auto mode is unavailable."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Both are documented behaviours of the plan-approval step. `Ctrl+G` opens the proposed plan in your default text editor so you can edit it before Claude proceeds, and `showClearContextOnPlanAccept` adds a first option that approves the plan and clears the planning context. And approving is not just a yes: each approve option names the permission mode the session switches into, so 'Yes, and use auto mode', 'Yes, manually approve edits' and the bypass-permissions variant each land you somewhere different, and approving also gives the session a generated title based on the plan unless you already named it. `Shift+Tab` cycles back out without approving. The wrong answers each misstate enforcement: edits stay blocked until you approve, with the documented exception of interactive sessions that have bypass permissions available; the plan is not deleted on approval; and command gating during planning depends on whether auto mode is available and `useAutoModeDuringPlan` is on, since then a classifier reviews commands instead of prompting.",
+      "whyWrong": {
+        "C": "Plan mode tells Claude to research and propose changes without making them, and edits stay blocked until you approve — the exception being interactive sessions with bypass permissions available. The plan is a proposal, not a record of work already done.",
+        "D": "Approving does not clear the context by default; clearing is an explicit extra option behind `showClearContextOnPlanAccept`. The plan remains as the agreed basis for the work.",
+        "E": "When auto mode is available and `useAutoModeDuringPlan` is on, which it is by default, the classifier reviews shell commands other than critical-path removals instead of prompting you. The always-prompt case is the other branch."
+      },
+      "difficulty": 2,
+      "visualId": "claude-code-config",
+      "mindset": "Approving a plan is a permission decision, not a rubber stamp: each option moves you to a different mode, and edits are blocked until you pick one.",
+      "tags": [
+        "plan-mode",
+        "permissions",
+        "workflow"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/permission-modes",
+        "https://code.claude.com/docs/en/settings-reference"
+      ]
+    },
+    {
+      "id": "v-d3-z3-017",
+      "taskStatementId": "3.1",
+      "scenario": "A Meridian engineer's incident investigation has filled the context window. The conversation contains her original constraint from the first message — 'the ledger migration must stay backward compatible with the 2024 schema' — and several hundred lines of log output since. She wants to keep going without losing that constraint.",
+      "stem": "What happens if she runs `/compact`, and what is the documented reason the constraint can still bite her?",
+      "options": [
+        {
+          "id": "A",
+          "text": "`/compact` replaces older history with a summary in the same conversation, and the project-root `CLAUDE.md` is re-read from disk afterwards, so standing instructions survive. Anything she only typed into the chat can be summarised away, which is why a rule that must persist belongs in the system prompt or CLAUDE.md rather than an early user message."
+        },
+        {
+          "id": "B",
+          "text": "`/compact` starts a new, empty conversation, so nothing from the current one carries over. The old conversation stays resumable with `/resume` if she needs it."
+        },
+        {
+          "id": "C",
+          "text": "`/compact` preserves the conversation verbatim and only changes how much of it is sent to the model, so no detail can be lost."
+        },
+        {
+          "id": "D",
+          "text": "`/compact` restores the conversation to the last checkpoint, discarding everything typed after that checkpoint."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "`/compact` summarises the conversation in place, freeing context while continuing in the same conversation, and the project-root `CLAUDE.md` is re-read from disk afterwards, which is why committed standing instructions survive it. That is also the documented reason her constraint is at risk: rules that must persist belong in the system prompt or CLAUDE.md, which are re-sent every request, not in an early user message that a summary can lose. The neighbouring options are each a different feature. `/clear` starts a new empty conversation while leaving the old one resumable, which is the right tool for switching to an unrelated task. The rewind menu's summarize options are targeted variants of compaction, and restoring a checkpoint is a different action entirely.",
+      "whyWrong": {
+        "B": "That is `/clear`. `/compact` keeps the same conversation and replaces older history with a summary.",
+        "C": "Compaction is lossy by design — it produces a summary, and Claude Code documents that early instructions can be summarised away.",
+        "D": "That describes restoring a checkpoint from the rewind menu. Compaction compresses the conversation; it does not roll it back."
+      },
+      "difficulty": 2,
+      "mindset": "`/compact` summarises in place and re-reads CLAUDE.md, so durable rules go in the system prompt or CLAUDE.md — never only in an early user turn.",
+      "tags": [
+        "compact",
+        "context-window",
+        "sessions"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/context-window",
+        "https://code.claude.com/docs/en/checkpointing"
+      ]
+    },
+    {
+      "id": "v-d3-z3-018",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian's `incident-report` skill is 900 lines. It runs often in a long session, and after the session auto-compacts twice, engineers report that the skill's later steps stop being followed while its opening instructions still are.",
+      "stem": "What is happening to the skill's content, and what should Meridian change?",
+      "options": [
+        {
+          "id": "A",
+          "text": "When the conversation is summarised, Claude Code re-attaches the most recent invocation of each skill, keeping the first 5,000 tokens of each, with a combined budget of 25,000 tokens filled starting from the most recently invoked skill. That is why the opening instructions survive and the later ones do not. Put the most important instructions near the top of `SKILL.md`, and push detail into supporting files that load on demand."
+        },
+        {
+          "id": "B",
+          "text": "Compaction invalidates every invoked skill entirely, so the opening instructions survive only because they are duplicated in the repository's CLAUDE.md."
+        },
+        {
+          "id": "C",
+          "text": "Skill content is capped at 5,000 tokens at invocation, so a 900-line skill was already truncated to its first 5,000 tokens before compaction ever ran."
+        },
+        {
+          "id": "D",
+          "text": "The skill's `allowed-tools` grant expired at compaction, so later steps fail because the tools they need are no longer pre-approved."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Two lifecycles are being confused. The rendered `SKILL.md` content enters the conversation as a single message and stays there across later turns; Claude Code does not re-read the skill file, so guidance meant to apply throughout a task should be written as standing instructions. When the conversation is summarised to free context, Claude Code re-attaches the most recent invocation of each skill after the summary, keeping the first 5,000 tokens of each, and those re attachments share a combined 25,000-token budget filled from the most recently invoked skill — so older skills can be dropped entirely. `allowed-tools` is a separate mechanism: it is a per-turn pre-approval whose grant clears when you send your next message, whether or not compaction happened. The practical fix is front-loading the skill and moving reference material into supporting files.",
+      "whyWrong": {
+        "B": "Invoked skills are re-attached after compaction, up to the documented token budgets. Nothing here implies they survive only by being duplicated in CLAUDE.md.",
+        "C": "The 5,000-token figure is the re-attachment budget after compaction, not a cap applied at invocation. The docs instead advise keeping `SKILL.md` focused and moving detail into supporting files.",
+        "D": "The `allowed-tools` grant clears on your next message by design, independent of compaction. That is why the docs say to put session-long grants in permission settings instead."
+      },
+      "difficulty": 3,
+      "visualId": "claude-code-config",
+      "mindset": "Skill content is re-attached after compaction only up to the first 5,000 tokens each and 25,000 combined, so front-load the instructions that matter.",
+      "tags": [
+        "skills",
+        "compaction",
+        "context-budget"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/skills",
+        "https://code.claude.com/docs/en/how-claude-code-works"
+      ]
+    },
+    {
+      "id": "v-d3-z3-019",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian has accumulated 60 skills across the organisation. Engineers report that rarely used skills seem not to trigger at all, and `/context` shows a Skills row smaller than the sum of the descriptions the team wrote.",
+      "stem": "Which statement about skill listings in Claude Code is most accurate?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Only names and descriptions enter context until a skill runs, and that listing has a character budget scaling at 1% of the model's context window. Every skill name is always present, but an overflowing listing drops descriptions starting with the least-invoked skills. `skillListingBudgetFraction` raises the budget, each entry's combined `description` plus `when_to_use` is capped at 1,536 characters, and low-priority entries can be set to `\"name-only\"` in `skillOverrides`."
+        },
+        {
+          "id": "B",
+          "text": "A skill that has not been invoked in a session is removed from the listing entirely, so a skill has to be used once before Claude can consider it."
+        },
+        {
+          "id": "C",
+          "text": "Trimming a description is free, because descriptions are only read when the skill runs, so shortening them never affects whether Claude picks a skill up."
+        },
+        {
+          "id": "D",
+          "text": "The listing is unlimited, so a large skill count cannot affect triggering. The size shown in `/context` is only a display artefact."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "This is progressive disclosure with a budget attached. Only the name and description of each skill sits in context until the skill runs, and the listing is bounded: the budget scales at 1% of the model's context window, an overflowing listing drops descriptions starting with the skills you invoke least, and every name is always present. Each entry's combined `description` and `when_to_use` text is capped at 1,536 characters regardless of budget, and that cap is configurable with `skillListingMaxDescChars`. The levers are therefore both raising the budget — `skillListingBudgetFraction`, or a fixed character count — and reducing demand: mark low-priority entries `\"name-only\"` in `skillOverrides`, or trim the description at the source with the key use case first. `/doctor` estimates the listing's cost and names its biggest contributors, and the Skills row in `/context` reports the post-budget size, which is what the model actually receives. Crucially, a skill's description is also what Claude matches a request against, so trimming it can stop the skill triggering; check afterwards with a `tool_used: Skill` grader.",
+      "whyWrong": {
+        "B": "Every skill name stays in the listing. What gets dropped under pressure is descriptions, and only for the least-invoked skills.",
+        "C": "The description is what Claude matches against, so shortening it is not free. The docs recommend trimming and then re-checking triggering with an eval.",
+        "D": "The listing is explicitly budgeted, and the docs describe overflow behaviour, a configurable budget and `name-only` overrides precisely because the limit is real."
+      },
+      "difficulty": 1,
+      "visualId": "context-window",
+      "mindset": "A skill costs only its name and description until it runs — but that listing has a character budget, so the least-used skills lose their descriptions first.",
+      "tags": [
+        "skills",
+        "progressive-disclosure",
+        "context-budget"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/skills",
+        "https://code.claude.com/docs/en/settings-reference"
+      ]
+    },
+    {
+      "id": "v-d3-z3-020",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian's team wants a `/triage-ledger` command that takes a ticket id and a severity, shows both in autocomplete, and grants read-only git commands for the turn it runs.",
+      "stem": "Which frontmatter and body combination delivers all three requirements?",
+      "options": [
+        {
+          "id": "A",
+          "text": "`argument-hint: \"[ticket-id] [severity]\"` for the autocomplete hint, `allowed-tools: Bash(git log *) Bash(git diff *)` for the turn-scoped pre-approval, and `Review ticket $0 at severity $1` in the body. An indexed placeholder with no matching argument is left unchanged, and `$ARGUMENTS` always expands to the full argument string as typed."
+        },
+        {
+          "id": "B",
+          "text": "`args: \"ticket-id severity\"` plus a body line reading `Review ticket $ticketId at severity $severity`. `args` is the documented frontmatter field for positional arguments."
+        },
+        {
+          "id": "C",
+          "text": "`allowed-tools: Read, Grep` plus a body line reading `Run git log for $ARGUMENTS`. Listing bare tool names pre-approves those tools for the rest of the session rather than only the invoking turn."
+        },
+        {
+          "id": "D",
+          "text": "A command file in `.claude/commands/` accepts `argument-hint` and `allowed-tools`, but `${CLAUDE_SKILL_DIR}` expands only inside a skill's `SKILL.md`, never in a command file's `allowed-tools`."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The documented field is `argument-hint`, which shows during autocomplete to indicate expected arguments such as `[issue-number]` or `[filename] [format]`. `allowed-tools` accepts permission-rule syntax, so `Bash(git log *)` pre-approves those commands without a prompt — and the grant clears when you send your next message, even though the skill content stays in context. In the body, `$0` and `$1` are shorthand for `$ARGUMENTS[0]` and `$ARGUMENTS[1]`, with shell-style quoting so a quoted multi-word value becomes one argument. Two behaviours trip teams up and are worth stating: an indexed placeholder with no corresponding argument stays unchanged rather than becoming empty, and `$ARGUMENTS` always expands to the full argument string as typed. Named substitution is available too, via an `arguments:` list accepting a space-separated string or a YAML list — the field is `arguments`, not `args`.",
+      "whyWrong": {
+        "B": "`args` is not a frontmatter field, so Claude Code ignores it without reporting an error. Named positional arguments are declared with `arguments:` and referenced as `$name`.",
+        "C": "The turn-scoped clearing is a real property of `allowed-tools`, so this is the opposite of what it claims. The permission-rule syntax is also what lets you scope the grant to specific commands rather than whole tools.",
+        "D": "A command file in `.claude/commands/` accepts the same frontmatter fields as a skill except `name` and `paths`. `${CLAUDE_SKILL_DIR}` and `${CLAUDE_PROJECT_DIR}` are substituted in the markdown content and in Bash rules in `allowed-tools`."
+      },
+      "difficulty": 2,
+      "mindset": "Command frontmatter is `argument-hint` for autocomplete, `allowed-tools` for a turn-scoped grant, and `$0`/`$1` or a declared `arguments:` list for substitution.",
+      "tags": [
+        "slash-commands",
+        "frontmatter",
+        "skills"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/skills",
+        "https://code.claude.com/docs/en/commands"
+      ]
+    },
+    {
+      "id": "v-d3-z3-021",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian's `render-report` skill bundles a script at `.claude/skills/render-report/scripts/render.sh`. The team wants Claude to run it without a permission prompt, but the skill is installed at different absolute paths on different machines and in CI.",
+      "stem": "What is the correct pattern, and what does it depend on?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Use `${CLAUDE_SKILL_DIR}` in both places: `allowed-tools: Bash(${CLAUDE_SKILL_DIR}/scripts/render.sh *)` in the frontmatter and a body line invoking `${CLAUDE_SKILL_DIR}/scripts/render.sh $ARGUMENTS`. Claude Code substitutes `${CLAUDE_SKILL_DIR}` and `${CLAUDE_PROJECT_DIR}` in the skill's markdown content and in Bash rules in `allowed-tools`, which is what makes the rule match the exact command the body tells Claude to run."
+        },
+        {
+          "id": "B",
+          "text": "Use `$CLAUDE_SKILL_DIR` with a single dollar sign. The double-dollar form is only valid inside the markdown body, and in `allowed-tools` a single dollar sign is what the matcher expands."
+        },
+        {
+          "id": "C",
+          "text": "Add a project allow rule for `Bash(bash scripts/render.sh *)` in `.claude/settings.json`. Skill-level `allowed-tools` cannot contain Bash rules with path variables."
+        },
+        {
+          "id": "D",
+          "text": "There is no supported way to make a bundled script run without a prompt, because `allowed-tools` grants tools rather than command patterns."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "This is exactly the documented pattern, and it exists because the grant and the command have to agree. `allowed-tools` accepts permission-rule syntax, so it can contain Bash rules, and Claude Code substitutes `${CLAUDE_SKILL_DIR}` and `${CLAUDE_PROJECT_DIR}` in exactly two places: the skill's markdown content, and Bash rules in the `allowed-tools` frontmatter. Using the same variable in both means the rule matches the precise command the body instructs Claude to run, so the script executes without a prompt regardless of where the skill is installed. `${CLAUDE_PROJECT_DIR}` for referencing project-local scripts requires Claude Code v2.1.196 or later. For a plugin skill, `${CLAUDE_PLUGIN_ROOT}` and `${CLAUDE_PLUGIN_DATA}` substitute in the same two places. `allowed-tools` remains a per-turn grant that clears on your next message, so it is a convenience rather than a sandbox.",
+      "whyWrong": {
+        "B": "It is the `${...}` braced form that is substituted, in both the content and the `allowed-tools` Bash rules. A bare `$CLAUDE_SKILL_DIR` is not the documented syntax.",
+        "C": "Skill `allowed-tools` does accept Bash rules, including with path variables — that is the documented mechanism. A relative `bash scripts/render.sh` rule would also fail to match an absolute invocation.",
+        "D": "`allowed-tools` takes permission rules, so command patterns are exactly what it grants. The limitation is that the grant clears after your next message."
+      },
+      "difficulty": 3,
+      "visualId": "claude-code-config",
+      "mindset": "Use the same `${CLAUDE_SKILL_DIR}` variable in the body and in `allowed-tools` — that is what makes the pre-approved rule match the command the skill actually runs.",
+      "tags": [
+        "skills",
+        "allowed-tools",
+        "permissions"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/skills"
+      ]
+    },
+    {
+      "id": "v-d3-z3-022",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian's platform team is writing `.claude/agents/ledger-auditor.md`. It must read the repository, run `pnpm test` for the ledger package, never push, run on a cheaper model than the main session, and remember audit patterns across the team. A personal copy also exists at `~/.claude/agents/ledger-auditor.md`.",
+      "stem": "Which TWO statements about that subagent definition are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "`tools: Read, Grep, Glob, Bash` is an allowlist, and omitting `tools` inherits every tool available to subagents. An entry in `disallowedTools` that carries a specifier, such as `Bash(git push *)`, still removes the whole tool, so denying one command that way costs you Bash entirely."
+        },
+        {
+          "id": "B",
+          "text": "Multi-word frontmatter fields use camelCase, such as `maxTurns` and `disallowedTools`, and a field Claude Code does not recognise is ignored without reporting an error — so a typo fails silently. `name` and `description` are the only required fields, and a `name` containing `:` is not loaded because the colon is reserved for plugin-scoped identifiers."
+        },
+        {
+          "id": "C",
+          "text": "The user's `~/.claude/agents/ledger-auditor.md` wins, because personal subagents outrank project ones so each engineer can tune their own."
+        },
+        {
+          "id": "D",
+          "text": "`model: haiku` pins the subagent permanently and overrides a later `/model` switch in the main conversation for the rest of the session."
+        },
+        {
+          "id": "E",
+          "text": "`memory: project` gives the subagent a directory that is deliberately not committed to version control, so audit patterns stay on each engineer's machine."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Two things matter here for least privilege and for maintenance. First, `tools` is an allowlist and omitting it inherits everything available to subagents — while an entry in `disallowedTools` that carries a specifier such as `Bash(git push *)` removes the whole tool, so the fine-grained form costs you Bash entirely. For read-only specialists, list the tools instead. Second, multi-word frontmatter fields are camelCase and must match the table exactly: Claude Code ignores an unrecognised field without reporting an error, so a typo fails silently. `name` and `description` are the only required fields, and `SubagentStart` hooks receive the `name` value as `agent_type`. The wrong answers each invert documented behaviour — location priority runs managed settings, the `--agents` flag, project `.claude/agents/`, then `~/.claude/agents/`, then a plugin's; `model` sets the subagent's model rather than the session's; and `memory: project` is precisely the scope that is shareable via version control, with `local` being the one that is not committed.",
+      "whyWrong": {
+        "C": "Project subagents in `.claude/agents/` outrank personal ones in `~/.claude/agents/`. Personal is for definitions you want everywhere, not for overriding the project's.",
+        "D": "Setting `model` on a subagent keeps it on that model. A `/model` switch in the main conversation reaches subagents that inherit the main model, not ones pinned explicitly in their definition.",
+        "E": "`project` scope is the shareable one — `.claude/agent-memory/<name-of-agent>/` in the repository, and the docs call it the recommended default. `local` is the scope that stays off version control."
+      },
+      "difficulty": 3,
+      "visualId": "orchestrator-subagents",
+      "mindset": "Subagent `tools` is an allowlist that inherits everything when omitted, and a specifier in `disallowedTools` takes the whole tool with it.",
+      "tags": [
+        "sub-agents",
+        "frontmatter",
+        "least-privilege"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/sub-agents",
+        "https://code.claude.com/docs/en/hooks"
+      ]
+    },
+    {
+      "id": "v-d3-z3-023",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian sets `memory: project` on `.claude/agents/ledger-auditor.md` so audit patterns persist across conversations and can be reviewed in pull requests. Six months later the subagent's memory directory is empty, and the platform team cannot tell whether the feature was removed or never worked.",
+      "stem": "What are the documented conditions under which that `memory` field takes effect, and what does the subagent get when it does?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Subagent memory is part of auto memory. If auto memory is turned off with `autoMemoryEnabled` or `CLAUDE_CODE_DISABLE_AUTO_MEMORY`, the `memory` field has no effect and the subagent launches without the memory instructions or memory tool access. When enabled, its system prompt gets instructions for reading and writing the memory directory, the first 200 lines or 25KB of `MEMORY.md` whichever comes first, and Read, Write and Edit are enabled automatically."
+        },
+        {
+          "id": "B",
+          "text": "The `memory` field requires a matching directory to exist before the subagent launches. Without `.claude/agent-memory/ledger-auditor/` checked into the repository, Claude Code ignores the field and runs the subagent with no memory."
+        },
+        {
+          "id": "C",
+          "text": "`memory` only takes effect for subagents that also set `context: fork`, because a forked subagent is the only kind that persists state between invocations."
+        },
+        {
+          "id": "D",
+          "text": "The field works, but the subagent writes to memory only when its prompt explicitly instructs it to update memory as it discovers patterns, so an empty directory means that instruction is missing."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The `memory` field is gated on auto memory being enabled, because subagent memory is documented as part of auto memory. Turn auto memory off with `autoMemoryEnabled` or `CLAUDE_CODE_DISABLE_AUTO_MEMORY` and the field has no effect at all: the subagent launches without the memory instructions or the memory tool access described in the docs. When it is on, the scope decides the location — `user` is `~/.claude/agent-memory/<name>/` for learnings across all projects, `project` is `.claude/agent-memory/<name>/` and is the recommended default because it is shareable via version control, and `local` is `.claude/agent-memory-local/<name>/` for project-specific knowledge that should not be checked in. The subagent also gets the first 200 lines or 25KB of `MEMORY.md` injected, whichever comes first, plus automatic Read, Write and Edit so it can curate the files. Because no pre-existing directory is a prerequisite, an empty directory after months is a signal to check auto memory and the scope.",
+      "whyWrong": {
+        "B": "No pre-existing directory is required. Claude Code provisions the memory directory and injects the memory instructions when auto memory is enabled and a scope is set.",
+        "C": "`context: fork` is about running a skill in an isolated subagent. Subagent memory works for ordinary subagents, including the built-in Explore and Plan agents.",
+        "D": "The prompt guidance is a strong recommendation the docs make, but it is not a precondition for the feature. The gating condition is auto memory."
+      },
+      "difficulty": 2,
+      "mindset": "Subagent `memory` rides on auto memory: if auto memory is off the field is inert, and `project` is the scope that makes the learnings shareable in git.",
+      "tags": [
+        "agent-memory",
+        "sub-agents",
+        "auto-memory"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/sub-agents",
+        "https://code.claude.com/docs/en/memory"
+      ]
+    },
+    {
+      "id": "v-d3-z3-024",
+      "taskStatementId": "3.1",
+      "scenario": "A Meridian engineer kicks off a long dependency audit and asks Claude to keep working while she starts an unrelated fix in the same repository. She also notices that a background subagent asks for permission on a command she would have approved in the foreground.",
+      "stem": "Which TWO statements about background work in Claude Code are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Background subagents run concurrently while you continue working. When one reaches a tool call that needs permission, Claude Code surfaces the prompt in your main session and names the subagent asking; approving lets it continue, and Esc denies that one tool call without stopping the subagent."
+        },
+        {
+          "id": "B",
+          "text": "Background subagents run with a smaller built-in tool set than foreground subagents, with the exception of conversation forks and resumed foreground subagents. A background subagent can also leave a background shell command running past the end of its turn, and Claude Code sends it a notification when that command ends."
+        },
+        {
+          "id": "C",
+          "text": "Once you choose an answer that lasts beyond that one tool call, such as a grant for the rest of the session, Claude Code applies it only to the subagent that asked, leaving the main conversation's permissions untouched."
+        },
+        {
+          "id": "D",
+          "text": "Foreground subagents always run with the full built-in tool set, so moving a subagent to the background never changes what tools it can reach."
+        },
+        {
+          "id": "E",
+          "text": "Setting `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1` makes Claude Code run subagents in the background anyway, for safety, since the flag only hides them from the task list."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Both details are documented and both change what you should expect. Background subagents run concurrently while you keep working, and their permission prompts surface in your main session with the subagent named — approve to continue, or press Esc to deny that one tool call without stopping the subagent. And they run with a smaller built-in tool set than foreground subagents, the exceptions being conversation forks and resumed foreground subagents, so a background worker can be genuinely less capable. A background subagent may also leave a background shell command running past the end of its turn, and Claude Code sends it a notification when that command ends. Two more documented behaviours frame the choice: fork mode is on by default in an interactive session, in which case subagents run in the background and Claude cannot ask for the foreground, and `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1` forces the foreground in every kind of session.",
+      "whyWrong": {
+        "C": "The grant is applied session-wide. If you answer a background subagent's prompt with a choice that lasts beyond that tool call, Claude Code applies it to the whole session, including your main conversation.",
+        "D": "The smaller tool set for background subagents is documented, with two named exceptions. Foreground is not unconditionally the full set either.",
+        "E": "Setting that variable to `1` runs subagents in the foreground in every session, whether or not fork mode is on. It restricts backgrounding rather than enabling it."
+      },
+      "difficulty": 1,
+      "visualId": "orchestrator-subagents",
+      "mindset": "Background subagents trade capability for concurrency: fewer built-in tools, and their permission prompts arrive in your main session by name.",
+      "tags": [
+        "background-tasks",
+        "sub-agents",
+        "permissions"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/sub-agents",
+        "https://code.claude.com/docs/en/env-vars"
+      ]
+    },
+    {
+      "id": "v-d3-z3-025",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian's CI runs `claude -p \"draft release notes for the merged PRs\" --output-format stream-json --verbose`, and the job must know whether any tool call was blocked before it posts the notes as a PR comment.",
+      "stem": "Which TWO signals in that output can the job rely on? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "With `stream-json`, denied tool calls appear as `permission_denied` system messages during the run, and the final result message lists them in a `permission_denials` field."
+        },
+        {
+          "id": "B",
+          "text": "A `system` init event reports session metadata including the model, tools, MCP servers and loaded plugins, so the job can fail fast when a required MCP server did not load. Retry and error detail arrive as `system` events with subtype `api_retry`, carrying `attempt`, `retry_delay_ms`, `error_status` and an error category such as `rate_limit`, `overloaded` or `authentication_failed`."
+        },
+        {
+          "id": "C",
+          "text": "Each line of `stream-json` output is a complete JSON object with no interleaving, so a consumer can process them in any order."
+        },
+        {
+          "id": "D",
+          "text": "`stream-json` requires `--verbose`, and without it the run falls back to a single JSON object at the end rather than failing."
+        },
+        {
+          "id": "E",
+          "text": "A `cached` status on an MCP server means the server failed to connect and its tools are unavailable."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Both are documented fields you can branch on. With `--output-format stream-json`, denials appear as `permission_denied` system messages, and the final result message lists them in `permission_denials`, which is exactly what a CI gate needs. The init event carries the model, tools, MCP servers and loaded plugins, and the Agent SDK's equivalent init message reports each MCP server's status so a pipeline can fail fast when a required server did not load — with `pending` by itself not a failure. Retry visibility is explicit too: a `system` event with subtype `api_retry` reports `attempt`, `max_retries`, `retry_delay_ms`, `error_status` and an `error` category from a documented list. The two wrong answers each misread the format: events arrive as a stream to be consumed in order rather than an unordered set, and `stream-json` requires `--verbose` — the docs state it explicitly, so an omission is an error, not a graceful downgrade. A `cached` MCP status means the tool list came from a discovery cache and connects on first use.",
+      "whyWrong": {
+        "C": "The point of `stream-json` is that events arrive as the run progresses, so a consumer reads them in order. There is no unordered-complete-objects guarantee.",
+        "D": "`stream-json` emits newline-delimited JSON events as they happen and requires `--verbose`. Add `--include-partial-messages` for token-level deltas.",
+        "E": "A `cached` status such as `cached 2h ago · connects on first use · 5 tools` means Claude Code loaded the tool list from its discovery cache instead of connecting at startup; the tools are available from the first message."
+      },
+      "difficulty": 2,
+      "visualId": "structured-output",
+      "mindset": "A CI gate should read the structured signals — `permission_denials`, the init event's server statuses and `api_retry` categories — rather than scraping prose.",
+      "tags": [
+        "headless",
+        "ci",
+        "structured-output"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/headless",
+        "https://code.claude.com/docs/en/agent-sdk/typescript"
+      ]
+    },
+    {
+      "id": "v-d3-z3-026",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian wants every incident write-up to lead with a short summary paragraph and a bulleted impact list, in every session, without engineers having to ask for it. One colleague proposes a custom output style; another proposes adding the requirement to the project CLAUDE.md; a third proposes a Stop hook.",
+      "stem": "Which assessment of the three proposals is most accurate?",
+      "options": [
+        {
+          "id": "A",
+          "text": "A custom output style is the documented home for voice, length and format across every response in a session, saved at `.claude/output-styles/` for the team or `~/.claude/output-styles/` for one person, with `keep-coding-instructions: true` to keep Claude's standard engineering behaviour. But it is an instruction Claude follows, so nothing enforces it — for something that must happen every time, the docs point at a hook."
+        },
+        {
+          "id": "B",
+          "text": "Output styles and CLAUDE.md are both instruction layers, so the last one loaded wins. Adding the requirement to CLAUDE.md overrides whatever the output style says, which makes CLAUDE.md the more reliable home for it."
+        },
+        {
+          "id": "C",
+          "text": "Switching output styles changes the session's permission mode, so choosing a formatting style also alters which tool calls run without asking."
+        },
+        {
+          "id": "D",
+          "text": "Custom output styles live in `.claude/output-styles/` but Claude Code reads them only at launch, so editing one mid-session takes effect immediately after saving."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "An output style is the right mechanism with honest limits. It is a set of instructions that sets Claude's role, tone and response format for every response in a session, so it beats restating the requirement per prompt, and the docs are explicit that it gives instructions to follow rather than guaranteeing an outcome. The custom style file is Markdown with frontmatter, saved at `~/.claude/output-styles/` for one person, `.claude/output-styles/` for the team, or the managed settings directory; `keep-coding-instructions: true` keeps Claude Code's built-in software engineering instructions alongside it, and plugins can ship styles with `force-for-plugin` to apply automatically. Neither wrong answer about layering holds: output styles and CLAUDE.md are separate instruction layers that both reach the model rather than one overriding the other, and switching style explicitly does not change the permission mode. The terminal reads style files when it starts, so a file created or edited during a running session needs a restart.",
+      "whyWrong": {
+        "B": "There is no last-one-wins relationship between output styles and CLAUDE.md. Both are instruction layers sent to the model, and the guidance is to pick the mechanism whose scope matches the need.",
+        "C": "Switching to the Proactive style does not change your permission mode; your permission mode still decides which tool calls run without asking, so prompts appear the same as before.",
+        "D": "In the terminal Claude Code reads style files when it starts, so creating or editing one during a running session requires a restart before the change is picked up."
+      },
+      "difficulty": 2,
+      "visualId": "capability-ladder",
+      "mindset": "Output style for how every response should read, CLAUDE.md for what Claude should know, a hook for what must happen every time — and know a style is guidance, not enforcement.",
+      "tags": [
+        "output-styles",
+        "configuration",
+        "scope"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/output-styles",
+        "https://code.claude.com/docs/en/permission-modes"
+      ]
+    }
+  ]
+}

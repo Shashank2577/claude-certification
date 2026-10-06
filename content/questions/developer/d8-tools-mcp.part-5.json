@@ -1,0 +1,822 @@
+{
+  "certId": "developer",
+  "domainId": "d8-tools-mcp",
+  "questions": [
+    {
+      "id": "v-d8-z5-001",
+      "taskStatementId": "8.3",
+      "scenario": "Wrenmoor Health is rolling out an assistant to six departments. Today each team has written its own wrapper tool against the same clinical-systems vendor, giving the model eleven near-duplicate tools — `list_patients`, `find_patient_by_mrn`, `find_patient_by_dob`, `search_encounters` and so on, each with its own credential handling and its own idea of what a 'result' looks like.",
+      "stem": "What is the BEST assessment of what Wrenmoor should build?",
+      "options": [
+        {
+          "id": "A",
+          "text": "A single MCP server over the vendor's API, exposing a small task-shaped toolset. One credential path, one result shape, one place to version it, and the same governed access available to Claude Code and every Claude application without six reimplementations. The tool count also comes down, which matters because the guidance is explicit that the description is the primary signal for tool selection and that too many tools degrade it — a narrower set is more accurate, not just cheaper."
+        },
+        {
+          "id": "B",
+          "text": "Keep the wrappers but consolidate them into one shared client library that all six teams import, since the duplication is in the code rather than in the tool surface."
+        },
+        {
+          "id": "C",
+          "text": "Expose the vendor's REST endpoints one-for-one as tools, because a complete surface lets the model find whatever it needs without Wrenmoor having to guess which operations matter."
+        },
+        {
+          "id": "D",
+          "text": "Add each department's wrappers as tools but attach a longer description to each explaining when to prefer it, so the model can disambiguate at selection time."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The duplication Wrenmoor has is not a code problem, it is a tool-surface problem, and the two mechanisms exist for different reasons. Wrenmoor needs the vendor's governed integration to be reachable from more than one client — Claude applications and Claude Code — and to be maintained independently of any single application, which is the documented condition for choosing an MCP server as the primary mechanism. It also solves the selection problem, because the guidance on tool-writing is that the description is how the model chooses, and that giving it eleven near-duplicate tools makes each pick worse. So the server should expose a small, task-shaped set with precise, distinguishable descriptions rather than a mirror of the REST surface. A shared client library consolidates code but leaves eleven tools in the context, which is the failure mode being reported.",
+      "whyWrong": {
+        "B": "Consolidates implementation while leaving the interface duplicated. The model still sees eleven tools with overlapping purposes, which is exactly what degrades selection accuracy.",
+        "C": "Inverts the guidance. A complete one-for-one surface guarantees overlap between tools and makes the descriptions ambiguous, which is why tool-writing guidance argues for a focused, well-described set.",
+        "D": "Longer descriptions cannot disambiguate genuinely overlapping tools, and they cost context on every turn. If two tools both answer 'find a patient', prose is not the fix — collapsing them into one is."
+      },
+      "difficulty": 2,
+      "visualId": "capability-ladder",
+      "mindset": "One governed integration used by several clients is an MCP server, and expose a narrow task-shaped toolset because overlapping tools are what break selection.",
+      "tags": [
+        "mcp",
+        "toolset-construction",
+        "capability-ladder"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/writing-tools-for-agents",
+        "https://modelcontextprotocol.io/docs/learn/architecture"
+      ]
+    },
+    {
+      "id": "v-d8-z5-002",
+      "taskStatementId": "8.1",
+      "scenario": "Wrenmoor's `get_encounters` tool returns every encounter row for a patient with no limit: admission and discharge timestamps, three diagnosis codes, the attending physician's full name, and a 4,000-character narrative note. Six months ago an engineer added a `fields` parameter and then discovered the model never used it — it always asked for the default — and so the default stayed unfiltered.",
+      "stem": "What does tool-writing guidance say Wrenmoor should do, and what does it say about optional parameters?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Return the narrow default, not the full row. The guidance is that a tool should return only the information the task requires, plus an identifier or hint so more can be fetched on demand — so make the default the summary fields, and expose the narrative note behind a separate call the model reaches for when it actually needs it. Optional parameters are the weak point: the docs' example of an over-parameterised tool shows a large optional-parameter list alongside too many tools, so `fields` invites the model to guess and it will usually omit it. Move it out of the default response path."
+        },
+        {
+          "id": "B",
+          "text": "Keep the `fields` parameter but document it more prominently in the tool description, including a worked example, so the model learns to use it."
+        },
+        {
+          "id": "C",
+          "text": "Make `fields` required so the model must state what it wants. That removes the guessing while keeping the flexibility."
+        },
+        {
+          "id": "D",
+          "text": "Truncate the narrative note to the first 500 characters in the response and return the rest on request, keeping the current default shape otherwise."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Two documented principles meet here. First, return only what the task requires: a tool should give the model what it needs to act, plus an identifier or hint so it can fetch more on demand. Wrenmoor's default is the opposite — it hands over everything and relies on the model to ask for less, which it demonstrably does not do. Second, optional parameters are a known failure mode: the guidance's counter-example pairs a tool carrying a long list of optional parameters with an overcrowded toolset, because each extra option is another decision the model has to get right and it will usually take the default. So the fix is structural — a narrow default plus a separate follow-up call — not better documentation of the parameter. Option D is a partial improvement of the wrong thing: it still leaves four optional fields on the default path, so the model still has the same choice to make.",
+      "whyWrong": {
+        "B": "Documentation helps selection, not parameter discipline. The model's failure to use an optional parameter is a design signal — the guidance treats optional parameters as a source of unreliable tool behaviour rather than a documentation gap.",
+        "C": "Making it required moves the guess rather than removing it, and it adds a decision the model now cannot skip. The narrowing has to happen in what the tool returns by default, not in what it insists you name.",
+        "D": "Improves the payload but preserves the structure that caused the problem. The diagnosis note is now a separate call — good — yet the default still carries four optional parameters the model must get right, which is the pattern the guidance warns about."
+      },
+      "difficulty": 2,
+      "visualId": "tool-design",
+      "mindset": "A tool's default response is the contract: return only what the task needs plus an id for follow-up — optional parameters are where tool behaviour goes wrong.",
+      "tags": [
+        "tool-design",
+        "toolset-construction",
+        "optional-parameters"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/writing-tools-for-agents",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools"
+      ]
+    },
+    {
+      "id": "v-d8-z5-003",
+      "taskStatementId": "8.2",
+      "scenario": "Wrenmoor's internal MCP server is reached by three Claude applications and by Claude Code in engineers' terminals. Six servers are configured, together exposing 140 tools. The team wants the six rarely-used servers to stop consuming context on every session without losing any capability, and `claude plugin measure`-style measurement is not available to them because these are not plugins.",
+      "stem": "Which mechanism gives Wrenmoor that, and what is the trade-off?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Rely on tool search. By default, servers other than a small exempt set have their tool lists deferred: Claude searches for the tools it needs with the `ToolSearch` call instead of receiving every schema up front, which is what removes the standing cost. The trade-off is a step in the loop — while a server is still connecting, the wait happens inside the `ToolSearch` call, and a resumed session that calls a tool from a server still on its first connection attempt has the call held for up to ten seconds before failing with `No such tool available`. For a server needed on every turn, set `alwaysLoad: true`, which exempts it from deferral at the cost of loading all of its tools at session start and making startup wait for that server's tools, capped at the standard five-second connect timeout."
+        },
+        {
+          "id": "B",
+          "text": "Disable the six servers in `/mcp` and re-enable them per session when needed. That removes their context cost without any added step in the loop."
+        },
+        {
+          "id": "C",
+          "text": "Move the six rarely-used servers into a plugin and enable it only for the sessions that need them. That removes their cost from other sessions with no trade-off at all."
+        },
+        {
+          "id": "D",
+          "text": "Consolidate the six servers into one server exposing all 140 tools. A single server's tools are loaded together, so the cost is the same as one server's tools rather than six."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Deferral is the mechanism that exists for exactly this shape of problem, and it comes with costs worth naming. With tool search — the default — servers have their tool lists deferred and Claude locates what it needs with a `ToolSearch` call, which is what removes the standing context cost across 140 tools. The trade-offs are real: the search adds a step, and there is a specific failure shape where a resumed session calls a tool from a server still on its first connection attempt, so the call is held for up to ten seconds and then fails with `No such tool available`; configurations without tool search instead use a `WaitForMcpServers` tool for the wait. `alwaysLoad: true` is the documented exemption for a server needed every turn, and it has its own price — every tool from that server loads at session start and startup waits for it. Consolidation is not a free alternative: one server exposing 140 tools still means 140 schemas, so the cost is unchanged and only the `alwaysLoad` boundary moves.",
+      "whyWrong": {
+        "B": "Turning a server off removes its tools but also removes its capability, which is exactly what Wrenmoor said it does not want. Per-session re-enabling is manual and does not scale to sessions they do not see.",
+        "C": "Genuinely reduces cost in other sessions, but it is not free and it is not what the question is about: it requires a distribution and update channel, and it still costs context in the sessions that do enable it. Tool search achieves the reduction without moving anything.",
+        "D": "Does not reduce per-session cost. One server exposing 140 tools presents 140 schemas; consolidation changes the `alwaysLoad` grouping, not the number of schemas in the window."
+      },
+      "difficulty": 3,
+      "visualId": "mcp-architecture",
+      "mindset": "Deferral through tool search is how many servers stay cheap — and it buys that with a search step plus a ten-second hold risk on servers that are still connecting.",
+      "tags": [
+        "mcp",
+        "tool-search",
+        "token-lifecycle"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/mcp",
+        "https://modelcontextprotocol.io/docs/learn/architecture"
+      ]
+    },
+    {
+      "id": "v-d8-z5-004",
+      "taskStatementId": "8.2",
+      "scenario": "Wrenchmoor — Wrenmoor's engineering team — noticed that Claude Code spends about four seconds at the start of every session waiting on two remote MCP servers before the first prompt can be built, even though those servers' tools are deferred and only used occasionally. They set `alwaysLoad: true` on the four servers they use constantly and the startup wait disappeared.",
+      "stem": "Which statement best explains why `alwaysLoad` fixes startup while deferral did not?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Deferred servers connect in the background by default, so their tools are not present when the first prompt is built and startup does not wait for them; but when a tool is actually needed from a still-connecting server, the wait happens then — inside the `ToolSearch` call, or via `WaitForMcpServers` where tool search is not in play. Setting `alwaysLoad: true` on a server makes its tools present at session start, which means startup waits for that server, capped at the standard five-second connect timeout — so the wait moves from every tool call to once per session, and only for the servers marked exempt."
+        },
+        {
+          "id": "B",
+          "text": "`alwaysLoad` disables the connection timeout entirely, so exempt servers are fetched without any limit at startup and the first prompt is never delayed."
+        },
+        {
+          "id": "C",
+          "text": "Deferral still connects every server at startup and simply hides the schemas from the context, so the four-second delay was never related to deferral at all."
+        },
+        {
+          "id": "D",
+          "text": "The improvement came from the MCP discovery cache, which `alwaysLoad` enables. Without it, every session reconnects to every server from scratch."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The behaviour follows from where the wait is placed. Deferred servers connect in the background — by default startup does not wait for them, which is why the tools are not in context at the first prompt and why the cost is deferred along with the connection. The price is that the wait relocates to first use: if Claude needs a tool from a server that is still connecting, the wait happens inside the `ToolSearch` call, or via a `WaitForMcpServers` tool where tool search is not in play. `alwaysLoad: true` puts the server's tools into context at session start, and because they must be present when the first prompt is built, startup waits for that server — capped at the standard five-second connect timeout. So the engineering trade is precise: four exempt servers convert a per-use wait into a once-per-session wait, and the servers that stay deferred cost nothing until something needs them. A server with a valid `cached` discovery entry supplies its tools without connecting, so it does not hold startup either.",
+      "whyWrong": {
+        "B": "Inverts the effect. `alwaysLoad` makes startup wait for that server, bounded by the connect timeout — it is what caused the wait to reappear in the first place.",
+        "C": "Contradicts the documented default. Other servers connect in the background and startup does not wait unless you make it, for example with `MCP_CONNECTION_NONBLOCKING=0`.",
+        "D": "Attributes the gain to the wrong mechanism. The discovery cache is off by default unless a rollout enables it, is controlled by `MCP_DISCOVERY_CACHE`, and is a separate feature from `alwaysLoad`."
+      },
+      "difficulty": 2,
+      "mindset": "Deferral moves the connection wait to first use; `alwaysLoad` moves it to session start — pick per server based on how often it is needed.",
+      "tags": [
+        "mcp",
+        "connection-lifecycle",
+        "token-lifecycle"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/mcp"
+      ]
+    },
+    {
+      "id": "v-d8-z5-005",
+      "taskStatementId": "8.2",
+      "scenario": "Wrenmoor's compliance agent calls three tools that take 40, 90 and 200 seconds respectively, against systems with no partial results. Users watch a spinner and assume the system is down. The server team wants the progress visible without changing the tool contracts the model already uses.",
+      "stem": "Which mechanism fits, and what does the protocol require of it?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Progress notifications. The sender includes a `progressToken` in the request's `_meta`, and the receiver may then send `notifications/progress` messages carrying that token, a `progress` value, and optionally a `total` and a human-readable `message`. The requirements are specific: tokens must be a string or integer and unique across active requests; progress notifications must only reference tokens provided in an active request and associated with an in-progress operation; and `progress` must increase with each notification even when the total is unknown. Receivers may choose not to send them at all, so a client must not depend on receiving them."
+        },
+        {
+          "id": "B",
+          "text": "Elicitation. The server pauses the tool call and asks the client to collect the progress values from the user, which are then returned to the server."
+        },
+        {
+          "id": "C",
+          "text": "Roots. The server declares the paths it is still working in, and the client polls them to derive progress."
+        },
+        {
+          "id": "D",
+          "text": "A `listChanged` notification on the tools capability, which tells the client the tool set changed as the long-running call progressed."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Progress is a first-class part of the protocol rather than something improvised per tool, which is what lets it work without changing the tool contracts. The sender opts in by putting a `progressToken` in the request's `_meta`; the receiver may then emit `notifications/progress` with the same token, a `progress` value, an optional `total` and an optional human-readable `message`. The behavioural rules matter for a client implementation: `progress` must increase with each notification even when the total is unknown, the value may be a float, the token must be unique across active requests, and notifications must only reference tokens from active, in-progress operations. And because receivers may choose not to send progress at all, and may send at whatever frequency they like, a client must treat progress as optional — it is a usability affordance, never a correctness dependency. The distractors are each a different protocol feature with a different purpose.",
+      "whyWrong": {
+        "B": "Elicitation is for collecting input from the user mid-interaction — a decision or a piece of data the server needs. It is not a status channel, and asking the user to relay progress would invert the roles.",
+        "C": "Roots are the client's declaration of which directories the server may work with, and Claude Code sends a list-changed notification when that set changes — nothing to do with reporting the progress of a call.",
+        "D": "`notifications/tools/list_changed` signals that the set of available tools has changed. A long-running call that is progressing has not changed the tool list, so no notification is warranted."
+      },
+      "difficulty": 1,
+      "visualId": "mcp-architecture",
+      "mindset": "Progress is opt-in via a `progressToken` in `_meta`, must increase monotonically, and is never something a client can depend on receiving.",
+      "tags": [
+        "mcp",
+        "progress",
+        "protocol"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-06-18/basic/utilities/progress",
+        "https://modelcontextprotocol.io/specification/2025-06-18/server/tools"
+      ]
+    },
+    {
+      "id": "v-d8-z5-006",
+      "taskStatementId": "8.2",
+      "scenario": "Wrenmoor's scheduling MCP server needs the user to pick one of four appointment slots before `book_appointment` can proceed, and the choice has to come from the person rather than the model. A colleague proposes having the server ask the client's model to pick the most convenient slot instead.",
+      "stem": "Which TWO statements about the correct mechanism and its boundaries are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Elicitation is the mechanism: the server sends an `elicitation/create` request carrying a message and a `requestedSchema`, and the response returns an `action` of `accept` or `decline` with the content. A client that supports elicitation must declare the `elicitation` capability during initialization. The request is nested inside another MCP feature, so the server can gather information mid-tool-call without ending the interaction."
+        },
+        {
+          "id": "B",
+          "text": "The boundaries are documented and matter for a scheduling flow. Servers must not use elicitation to request sensitive information, and applications should make it clear which server is requesting information, let users review and modify their responses before sending, and provide clear decline and cancel options. In Claude Code the dialog appears automatically with no configuration, in form mode or in URL mode for flows that finish outside the terminal."
+        },
+        {
+          "id": "C",
+          "text": "Sampling is the better mechanism, since the client's model can weigh the patient's stated preferences against availability and pick the best slot, and the user can confirm afterwards."
+        },
+        {
+          "id": "D",
+          "text": "Neither is appropriate. The server should return `isError: true` with a message asking the model to ask the user, and continue once the model relays the answer."
+        },
+        {
+          "id": "E",
+          "text": "Elicitation requires agent teams to be enabled, since it is a structured message between session participants."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Two accurate statements, and the boundary in B is the part that keeps this from becoming a data-collection hazard. The mechanism is elicitation: a server sends `elicitation/create` with a message and a `requestedSchema`, and the response carries an `action` of `accept` or `decline` plus the content; clients that support it must declare the `elicitation` capability during initialization, and the flow is designed to nest inside other MCP server features so information can be gathered mid-interaction. The spec's trust and safety guidance is explicit that servers must not use elicitation to request sensitive information, and that applications should show which server is asking, let the user review and modify the response before sending, and offer clear decline and cancel paths — which matters when the answer is a medical appointment. In Claude Code the dialog needs no configuration and comes in form mode or URL mode. Sampling is the opposite of what is wanted: it asks the client's model to generate content, so the choice would come from a model rather than the person.",
+      "whyWrong": {
+        "C": "Inverts who decides. Sampling requests an LLM generation from the client's model — text, audio or image — so it answers the question instead of the person. The spec's guidance is that there should always be a human in the loop with the ability to deny.",
+        "D": "Routes a protocol feature through the model as a messenger, which costs an extra turn and makes the human's answer dependent on the model relaying it correctly. Elicitation exists precisely so the client collects the answer directly.",
+        "E": "Elicitation has nothing to do with agent teams. It is a client capability declared during initialization; only structured team-protocol messages in Claude Code depend on teams being enabled."
+      },
+      "difficulty": 2,
+      "visualId": "mcp-architecture",
+      "mindset": "Elicitation collects from a person and sampling generates with a model — and elicitation must never be used to request sensitive information.",
+      "tags": [
+        "mcp",
+        "elicitation",
+        "sampling"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-06-18/client/elicitation",
+        "https://code.claude.com/docs/en/mcp"
+      ]
+    },
+    {
+      "id": "v-d8-z5-007",
+      "taskStatementId": "8.2",
+      "scenario": "Wrenmoer's summarisation MCP server has one tool that needs an LLM judgement step — deciding whether a draft discharge summary is missing a required element. The team has an Anthropic API key it could use directly, and the server runs in production where a second key would be a new secret to manage.",
+      "stem": "What is the BEST analysis of the options?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Use MCP sampling, and recognise what it changes. Sampling lets a server request an LLM generation from the client's model, which keeps the provider credential in the client rather than in the server — so Wrenmoor avoids a second production secret entirely. The trade-offs are real and should be stated: the server depends on the client having declared the `sampling` capability and on the client's model choice, `modelPreferences` are hints with an intelligence and speed priority rather than a guarantee, and the spec's guidance is that there should always be a human in the loop with the ability to deny sampling requests, with prompts viewable and editable before sending."
+        },
+        {
+          "id": "B",
+          "text": "Use the API key directly. Sampling's dependence on the client's model means a clinical judgement step could run on a model Wrenmoor has not validated for that task."
+        },
+        {
+          "id": "C",
+          "text": "Sampling is always preferable, because it removes any need for authentication against the model provider at all."
+        },
+        {
+          "id": "D",
+          "text": "Neither works. An MCP server must be deterministic, so any tool involving a model judgement belongs in the application rather than behind the protocol."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Sampling is designed for exactly this shape — an LLM call nested inside a server feature — and its architectural benefit is credential placement: the server requests the generation from the client, so the provider credential stays with the client and the server needs no key of its own. That is a genuine security and operations win for Wrenmoor. What it costs has to be weighed honestly rather than waved away. The client must have declared the `sampling` capability during initialization, and `modelPreferences` are hints — the spec's example carries an intelligence priority and a speed priority — so the client, not the server, decides which model answers. The spec also states there should always be a human in the loop able to deny sampling requests, with prompts easy to review and editable before sending and generated responses presented for review before delivery. For a clinical completeness check that is arguably the right posture anyway. Option B is a legitimate alternative on validation grounds, which is why the trade-off rather than the verdict is the point.",
+      "whyWrong": {
+        "B": "A defensible alternative on grounds that belong in the decision rather than in a dismissal — model control and validation matter for a clinical judgement. But it does not address the credential problem, and it is not what makes sampling the default choice.",
+        "C": "Overstates the benefit. Sampling removes the server's need for a provider credential; it does not remove authentication, and the client still controls and authorises the model call.",
+        "D": "False. MCP explicitly provides sampling so servers can implement agentic behaviour with LLM calls nested inside server features — the protocol anticipates exactly this."
+      },
+      "difficulty": 2,
+      "mindset": "Sampling keeps the model credential in the client — at the cost of client-controlled model choice and a required human deny path.",
+      "tags": [
+        "mcp",
+        "sampling",
+        "credentials"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-06-18/client/sampling",
+        "https://modelcontextprotocol.io/docs/learn/architecture"
+      ]
+    },
+    {
+      "id": "v-d8-z5-008",
+      "taskStatementId": "8.2",
+      "scenario": "Wrenmoor stands up a remote MCP server over Streamable HTTP so several Claude applications and Claude Code can reach the same governed clinical integration. It will be reached from developer laptops as well as from the corporate network, and the security team has asked what must be validated before the server serves anything.",
+      "stem": "Which THREE requirements are documented for this transport?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Servers must validate the `Origin` header on all incoming connections to prevent DNS rebinding attacks, because a browser on a user's machine could otherwise reach a localhost-bound server."
+        },
+        {
+          "id": "B",
+          "text": "When running locally, servers should bind only to localhost rather than all network interfaces, and should implement proper authentication for all connections. Without these protections, attackers could use DNS rebinding to interact with local MCP servers from remote websites."
+        },
+        {
+          "id": "C",
+          "text": "The server must provide a single HTTP endpoint path supporting both POST and GET, since the transport is defined that way and clients depend on it."
+        },
+        {
+          "id": "D",
+          "text": "Every JSON-RPC message the client sends must be a new HTTP POST request to the MCP endpoint."
+        },
+        {
+          "id": "E",
+          "text": "The server must publish a manifest at `/.well-known/oauth-protected-resource` listing every tool schema, so clients can validate the tool set before connecting."
+        }
+      ],
+      "correct": [
+        "A",
+        "B",
+        "C"
+      ],
+      "explanation": "Three are documented requirements for Streamable HTTP, and they are stated together because they defend the same attack. The transport requires a single MCP endpoint path that supports both POST and GET — for example `https://example.com/mcp`. It also carries three explicit security requirements: servers must validate the `Origin` header on all incoming connections to prevent DNS rebinding, should bind only to localhost when running locally rather than to all interfaces, and should implement proper authentication for all connections. The reason the first two matter is spelled out in the spec: without them, attackers could use DNS rebinding to interact with local MCP servers from remote websites — which is exactly Wrenmoor's situation, since the same server is reached from developer laptops and from the corporate network. The fourth statement is also true of the transport, but it describes the client's send behaviour rather than a requirement on what the server must validate before serving, which is what the security team asked.",
+      "whyWrong": {
+        "D": "Accurate about the protocol — every JSON-RPC message from the client is a new POST to the endpoint — but it is a client obligation, not one of the server-side validation requirements security review is asking about.",
+        "E": "Invented. The OAuth protected resource metadata document is part of the authorization specification, used to advertise authorization server locations; it is not a tool-schema manifest."
+      },
+      "difficulty": 3,
+      "visualId": "mcp-architecture",
+      "mindset": "A remote MCP server must validate Origin, bind locally where relevant, and authenticate — the first two exist to stop DNS rebinding reaching a localhost server.",
+      "tags": [
+        "mcp",
+        "transport",
+        "security"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-06-18/basic/transports",
+        "https://modelcontextprotocol.io/specification/2025-06-18/basic/security_best_practices"
+      ]
+    },
+    {
+      "id": "v-d8-z5-009",
+      "taskStatementId": "8.2",
+      "scenario": "Wrenmoer's remote MCP server returns 401 to Claude Code's first unauthenticated request. The team expected the client to already hold a token, because an engineer had run the OAuth flow manually in a browser weeks earlier.",
+      "stem": "Which TWO statements about the documented authorization flow are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "The flow starts from the 401. MCP servers must use the `WWW-Authenticate` header when returning 401 Unauthorized to indicate the location of the resource server metadata URL, and clients must be able to parse that header and respond appropriately. The client then fetches the protected resource metadata, which must include an `authorization_servers` field with at least one authorization server, builds the authorization server metadata URL from it, and fetches that."
+        },
+        {
+          "id": "B",
+          "text": "Authorization is optional, and its reach is specific. Implementations using an HTTP-based transport should conform to the authorization spec, while implementations using a stdio transport should not follow it and instead retrieve credentials from the environment. Implementations on alternative transports must follow established security best practices for their protocol."
+        },
+        {
+          "id": "C",
+          "text": "Clients are expected to cache the access token from the first flow indefinitely, so the engineer completing the flow in a browser weeks ago means every client is already authenticated."
+        },
+        {
+          "id": "D",
+          "text": "Dynamic client registration is mandatory, so the client must register itself with the authorization server before it can request a token, and a server that omits it is non-conformant."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Two are accurate, and together they describe the whole documented shape. The discovery chain begins at the 401: a protected MCP server acts as an OAuth 2.1 resource server, must implement OAuth 2.0 Protected Resource Metadata — whose document must include the `authorization_servers` field with at least one authorization server — and must use the `WWW-Authenticate` header on a 401 to point at the resource metadata URL. Clients must parse that header and respond, must fetch protected resource metadata for discovery, and must obtain authorization server metadata per OAuth 2.0 Authorization Server Metadata before the OAuth 2.1 flow runs. Reach is deliberately bounded: authorization is optional for MCP implementations, HTTP-based transports should conform, stdio transports should not follow the spec and should get credentials from the environment instead, and alternative transports must follow established best practices for their protocol. That last point is what should end Wrenmoor's expectation — the engineer's browser flow was never a client token cache.",
+      "whyWrong": {
+        "C": "Invents indefinite client caching and conflates a browser flow with a client credential. The flow is initiated by the client's 401, and Wrenmoor's local stdio servers should be reading credentials from the environment rather than participating in OAuth at all.",
+        "D": "Overstates an obligation. Dynamic client registration is something authorization servers and clients should support, not a MUST that makes a server omitting it non-conformant — unlike protected resource metadata and the `WWW-Authenticate` header, which are MUSTs."
+      },
+      "difficulty": 2,
+      "mindset": "MCP authorization starts at the 401: parse `WWW-Authenticate`, read protected resource metadata, read authorization server metadata — and stdio servers should skip OAuth entirely and use environment credentials.",
+      "tags": [
+        "mcp",
+        "oauth",
+        "authorization"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization",
+        "https://modelcontextprotocol.io/specification/2025-06-18/basic/transports"
+      ]
+    },
+    {
+      "id": "v-d8-z5-010",
+      "taskStatementId": "8.3",
+      "scenario": "Wrenmoor is choosing mechanisms for three needs: (a) a 60-step clinical-trial close-out procedure with exact required wording for site communications; (b) read and write access to the trial master data file with per-call authorization and audit logging; (c) a discount estimator that reads the live shopping cart held in the commerce app's own process.",
+      "stem": "Which mapping of need to primary mechanism is correct?",
+      "options": [
+        {
+          "id": "A",
+          "text": "(a) a Skill — a documented, repeatable procedure whose content loads when the task matches, which is exactly what a fixed multi-step procedure with prescribed wording is. (b) an MCP server — governed access to a system of record with per-call authorization and audit logging, needed by more than one client and maintained independently of any application. (c) a custom tool — it reads in-memory state that only exists inside the commerce app's own process, so there is nothing to share and no system to integrate with."
+        },
+        {
+          "id": "B",
+          "text": "(a) an MCP server, because a procedure with prescribed wording must be enforced by the protocol rather than by instructions. (b) a Skill, because authorization rules belong in documentation the agent follows. (c) an MCP server, because all three needs are integrations and integration implies MCP."
+        },
+        {
+          "id": "C",
+          "text": "(a) a Skill, (b) a custom tool, (c) a Skill. A Skill can document both the authorization rules and the cart access, so two mechanisms cover all three needs."
+        },
+        {
+          "id": "D",
+          "text": "(a) a custom tool, because prescribed wording is best enforced in code. (b) an MCP server. (c) a custom tool, because only code can read another process's memory."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Each need maps to the mechanism whose defining property it actually has. (a) is a Skill because the problem is know-how: a long, repeatable procedure with exact wording that should load when a trial close-out is requested and cost nothing on unrelated turns. Note the boundary — a Skill is instructions, so if the wording had to be guaranteed rather than merely likely, that would be a hook or a permission rule instead. (b) is an MCP server because the requirement is governed access to a system of record with per-call authorization and audit logging, reachable from more than one client and maintained independently of any one application — that is the documented condition for MCP as the primary mechanism, and per-call authorization is something the server can enforce rather than something a prompt can request. (c) is a custom tool because it reads state that exists only inside the commerce app's own process: there is no external system to integrate, no other consumer, and no protocol boundary to cross.",
+      "whyWrong": {
+        "B": "Gets the categories wrong in both directions. A prescribed procedure is know-how rather than an integration, and per-call authorization is an enforcement property of a governed server rather than documentation an agent follows.",
+        "C": "Fails (b) — a Skill cannot enforce per-call authorization or produce audit logging; those are server-side controls — and mischaracterises (c), where the state is in the app's own memory and a Skill's instructions would have nothing to read.",
+        "D": "Fails (a) — exact wording that must be followed is squarely what a Skill is for, and code enforcement would only apply if the wording had to be guaranteed. The (b) and (c) mappings in this option are correct, which is what makes it tempting."
+      },
+      "difficulty": 2,
+      "mindset": "Match the mechanism to the property: know-how is a Skill, governed access others share is an MCP server, in-process state is a custom tool.",
+      "tags": [
+        "capability-ladder",
+        "skills",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/writing-tools-for-agents",
+        "https://modelcontextprotocol.io/docs/learn/architecture"
+      ]
+    },
+    {
+      "id": "v-d8-z5-011",
+      "taskStatementId": "8.1",
+      "scenario": "Wrenmoor's triage assistant has a `book_appointment` tool. One response contained two `tool_use` blocks for the same patient and the same slot. Wrenmoor ran them concurrently, the second overwrote the first, and the audit log now shows two bookings where one was intended.",
+      "stem": "What MUST the harness do, and what does that imply for the tool design?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The harness must decide whether concurrent execution is safe, because the API does not prescribe an execution order — calls may run concurrently, sequentially in the order they appear, or any combination that suits the tools. The implication runs the other way from the usual advice: independent read-only calls parallelise for latency, but side-effecting calls that contend for the same entity need sequencing or an explicit conflict rule. So `book_appointment` needs an idempotency key the booking system honours, or the harness needs to serialise writes, and the tool description should say which regime it expects."
+        },
+        {
+          "id": "B",
+          "text": "The harness must execute every tool call in the same response in the order the blocks appear. The model's ordering is the only safe interpretation of intent."
+        },
+        {
+          "id": "C",
+          "text": "Nothing in the harness needs to change. Two `tool_use` blocks mean the model intended two separate bookings, so the harness executed exactly what was asked."
+        },
+        {
+          "id": "D",
+          "text": "The harness must return both results as `is_error: true` and ask the model to retry one at a time, since the protocol has no representation for two writes to one entity."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The execution policy is explicitly yours: when a response carries several `tool_use` blocks, the API does not prescribe an order and you may run them concurrently, sequentially in the order they appear, or any combination that suits your tools. What it does require is the response shape — one `tool_result` per `tool_use`, matched by `tool_use_id`, all in the next user message with every `tool_result` before any text, and an `is_error: true` result with a brief explanation for any call you chose not to run. So concurrency is a design decision, and for `book_appointment` the right decision is not concurrency. Independent read-only operations are usually safe in parallel for lower latency; side-effecting calls with shared state or ordering requirements are better run sequentially, and here two writes contending for the same patient and slot produced a silent overwrite. The robust fix is at the tool and backend level — an idempotency key the booking system honours — with the description telling the model which regime the tool expects, since the model is the only party that can decide whether two calls are genuinely independent.",
+      "whyWrong": {
+        "B": "Order in the response is not a contract, and following it blindly would not have prevented the overwrite anyway — the two calls were for the same slot, so sequence does not resolve the conflict.",
+        "C": "Assumes the model intended two bookings. The tool description, not the presence of two blocks, determines what the model believed it was doing, which is why descriptions have to say whether concurrent writes are safe.",
+        "D": "The protocol has no problem representing two calls — it returned two `tool_use` blocks and expects two `tool_result` blocks. Turning both into errors discards work and hides the conflict rather than resolving it."
+      },
+      "difficulty": 3,
+      "mindset": "Concurrency policy is yours, and it differs by tool: parallel for independent reads, serialised or idempotent for contending writes.",
+      "tags": [
+        "tool-use",
+        "parallelism",
+        "idempotency"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/parallel-tool-use",
+        "https://www.anthropic.com/engineering/writing-tools-for-agents"
+      ]
+    },
+    {
+      "id": "v-d8-z5-012",
+      "taskStatementId": "8.1",
+      "scenario": "Wrenmoor's `lookup_patient` tool receives a bad argument and returns the text 'Error: invalid request'. The model calls it again with byte-identical arguments, twice, and the loop ends at `max_turns` with nothing booked and a vague final message.",
+      "stem": "What is the most effective change?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Make the error result actionable and mark it as an error. A result of plain text beginning 'Error' is ambiguous — it looks like data, so the model has nothing specific to change and repeats the call. Return an `is_error: true` result whose content names the offending field, states what was received, states what the tool expected — the valid formats for `mrn` and `dob`, say — and says what to do instead. The general rule from tool-writing guidance is that errors should be model-readable: they should tell the model what went wrong and how to fix it, not merely that something went wrong."
+        },
+        {
+          "id": "B",
+          "text": "Add a `strict: true` schema so arguments can never be invalid, which removes the need for error handling on this path."
+        },
+        {
+          "id": "C",
+          "text": "Raise `max_turns` so the model has more attempts before the loop ends."
+        },
+        {
+          "id": "D",
+          "text": "Add an instruction to the system prompt: 'If a tool returns an error, do not call it again with the same arguments.' That removes the retry loop without changing the tool."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The retry loop is a symptom of an unhelpful error, and the fix belongs in the error content. A plain-text 'Error: invalid request' is indistinguishable from data at the point the model reads it, so the model has no specific thing to change and repeats the identical call. An `is_error: true` result whose content names the field, gives what was received, gives the expected formats and says what to do instead gives the model something actionable — which is what the tool-writing guidance means by errors being readable by the model. The other options each address a different layer and miss this one. `strict: true` constrains tool arguments against the schema, which is worth having, but it cannot make an error message useful and does not cover failures like a downstream timeout. More turns simply lengthens a loop that will never succeed. And a prompt instruction is guidance with a non-zero failure rate against a tool whose output actively invites a retry.",
+      "whyWrong": {
+        "B": "Strict schemas are about argument shape at the API boundary, not about what happens when the tool fails for another reason. The loop here is caused by uninformative error content, which strict mode does not change.",
+        "C": "Turns a short failure into a longer one. The model will not succeed on a fourth attempt with the same arguments any more than on the second.",
+        "D": "A prompt-level rule against a behaviour the tool's own output invites is the wrong layer. Fixing the error content removes the incentive to retry; an instruction only asks the model to resist it."
+      },
+      "difficulty": 2,
+      "mindset": "If a tool's errors make the model retry identically, the error content is the bug — name the field, the expectation and the alternative.",
+      "tags": [
+        "tool-errors",
+        "tool-design",
+        "agent-loop"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/writing-tools-for-agents",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls"
+      ]
+    },
+    {
+      "id": "v-d8-z5-013",
+      "taskStatementId": "8.1",
+      "scenario": "Wrenmoor's `search_records` tool takes three parameters: `q`, `dt` and `n`. It works correctly when called by a human, and the backend logs show the model filling them wrongly — `dt` receives a patient name, `n` receives a date range — roughly one call in four.",
+      "stem": "What does tool-writing guidance say the fix is?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Rename and document the parameters so they are self-describing. The guidance is that tool names and parameter names should be clear and unambiguous to the model, and that parameters need plain-language descriptions with types and constraints — the model fills them from the schema, not from a human's intuition, and abbreviations give it nothing to disambiguate. So `query`, `date_from` and `date_to`, each described with its format, removes the ambiguity rather than papering over it. Optional parameters are the related lesson here: they are a common source of unreliable tool behaviour, so a narrow, unambiguous parameter list is the goal rather than a wide one with a filtering flag."
+        },
+        {
+          "id": "B",
+          "text": "Add a `strict: true` schema so the model's arguments can never be malformed. Strict mode constrains shape, so wrong-but-well-formed values will still reach the backend."
+        },
+        {
+          "id": "C",
+          "text": "Validate the arguments inside the tool and return an error listing the expected format. The model will correct itself on the next turn."
+        },
+        {
+          "id": "D",
+          "text": "Rename nothing and instead make the tool's description spell out which parameter is which, since the model reads the description before it reads the schema."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The defect is legibility, and the guidance's remedy is at the same layer. Tool-writing guidance is explicit that names and descriptions are how the model understands a tool: parameter names should be clear and unambiguous, descriptions should say what a parameter is for, and formats and constraints belong in the schema so the model fills them from the description rather than from inference. `q`, `dt` and `n` give it three abbreviations to disambiguate from context, which is why one call in four misplaces them, and why the same tool works for a human reading a form. The related point is about the parameter list as a whole — optional parameters are a documented source of unreliable tool behaviour, so the goal is a narrow, unambiguous set rather than a broad one plus a filtering flag. The other options address different failures: `strict: true` constrains the grammar over the shape, so a well-formed wrong value passes straight through; validating inside the tool turns a design problem into a retry loop and costs a turn per mistake; and putting the mapping in the prose description fixes the same problem less reliably than fixing the names, since the parameter schema is what the model fills from.",
+      "whyWrong": {
+        "B": "Attaches a shape guarantee to a semantics problem. The arguments are well-formed and wrong, which is exactly the case strict mode cannot see.",
+        "C": "Converts a design defect into a cost. The model retries against an unchanged schema, so the same confusion recurs and every attempt is a billed turn.",
+        "D": "Relies on prose to fix a naming problem. The description is worth writing well, but the parameter names and their descriptions are what the model fills the arguments from, so renaming is the direct fix."
+      },
+      "difficulty": 2,
+      "visualId": "tool-design",
+      "mindset": "The model fills parameters from their names and descriptions — make them unambiguous, keep the list narrow, and treat strict mode as unrelated to value correctness.",
+      "tags": [
+        "tool-design",
+        "schemas",
+        "tool-selection"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/writing-tools-for-agents",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools"
+      ]
+    },
+    {
+      "id": "v-d8-z5-014",
+      "taskStatementId": "8.2",
+      "scenario": "Wrenmoor's MCP server exposes a set of reusable prompt templates — 'draft discharge summary', 'summarise visit note', 'format referral letter'. The team expects these to appear alongside the built-in slash commands in every Claude Code session.",
+      "stem": "Which statement about MCP prompts in Claude Code is correct?",
+      "options": [
+        {
+          "id": "A",
+          "text": "MCP servers can expose prompts that become available as commands in Claude Code, so the templates appear without any client configuration. One name is reserved: prompts from a server named `anthropic-skills` do not appear, because Claude Code reserves that name — which matters for Wrenmoor because it means a name collision silently removes the templates rather than surfacing an error."
+        },
+        {
+          "id": "B",
+          "text": "MCP prompts are only available through the API and never surface as commands, so the team needs to duplicate each template as a skill."
+        },
+        {
+          "id": "C",
+          "text": "MCP prompts appear as commands but are namespaced by server, so the three templates would be typed as `/records:draft-discharge-summary` and similar, and two servers exposing the same prompt name collide."
+        },
+        {
+          "id": "D",
+          "text": "MCP prompts appear as commands only in Claude Code sessions launched with `--strict-mcp-config`, since they are part of the explicitly passed server configuration."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Prompts are the third MCP primitive and they surface as commands, which is the behaviour Wrenmoor is expecting. One documented exception matters more than it looks: prompts from a server named `anthropic-skills` do not appear, because Claude Code reserves that name. The practical consequence is that a naming collision removes the templates silently rather than raising an error — so a server that must not be called that should be checked for in deployment rather than discovered by users. What the templates are not is a substitute for skills or tools. A prompt is a reusable prompt template that the user invokes; it does not add tools, it does not appear on its own in the model's context, and it cannot be discovered and applied automatically the way a skill's description can. So the choice between exposing them as MCP prompts and writing them as skills is a choice about who invokes them — a user choosing a template from a list versus Claude recognising a task and loading the procedure.",
+      "whyWrong": {
+        "B": "Contradicts the documented behaviour. MCP servers can expose prompts that become available as commands in Claude Code, with no client configuration required.",
+        "C": "Attributes plugin-style namespacing to MCP prompts. The documented exception for MCP prompts is the reserved `anthropic-skills` server name, not namespacing or collision handling.",
+        "D": "Invents a flag dependency. Prompts from a connected server surface as commands in ordinary sessions — `--strict-mcp-config` governs which servers are loaded, not whether their prompts appear."
+      },
+      "difficulty": 2,
+      "visualId": "mcp-architecture",
+      "mindset": "MCP prompts surface as slash commands with no client setup — and the reserved `anthropic-skills` server name makes them vanish silently.",
+      "tags": [
+        "mcp",
+        "prompts",
+        "commands"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-06-18/server/resources",
+        "https://code.claude.com/docs/en/mcp"
+      ]
+    },
+    {
+      "id": "v-d8-z5-015",
+      "taskStatementId": "8.1",
+      "scenario": "Wrenmoor's assistant wraps a third-party scheduling API. The API key must be available to the tool and must not appear anywhere the model can see — not in the description, not in the schema, not in a prompt, and not in an error message.",
+      "stem": "Where should it live, and what is the related discipline?",
+      "options": [
+        {
+          "id": "A",
+          "text": "In the harness, in server-side configuration or an environment variable, never in the tool definition the model sees. The related discipline is what happens on the way out as well as in: when a tool returns an error, the harness should not pass the raw upstream payload through, because upstream messages routinely contain the request URL with a query-string key or a connection string. That is why tool-writing guidance says errors should be readable by the model — a distilled message about what was wrong and what to do, not a stack trace."
+        },
+        {
+          "id": "B",
+          "text": "In the tool's JSON schema, marked as a parameter the model should never fill, since that keeps it out of the prompt while making it available to the tool."
+        },
+        {
+          "id": "C",
+          "text": "In the system prompt, in a clearly labelled configuration block, since the prompt is not stored with the tool definition and is therefore less likely to be committed to the repository."
+        },
+        {
+          "id": "D",
+          "text": "In the tool description, because a description is only sent to the model and never returned to the application's users, so it cannot leak into a transcript."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Anything in the tool definition — name, description, schema — is model-visible by construction, so the credential cannot live there under any labelling. The documented shape is that the tool's implementation holds the key, sourced from server-side configuration or the environment, and the model only ever sees the tool's name, description and parameters. The second half is the part teams skip: a key in the definition is a solved problem, but a key in an error message is a live one. Upstream payloads — a 401 body, a connection string, a URL with a query-string token — flow straight through a naive wrapper and land in the model's context, which then flows into transcripts, logs and summaries. So the discipline pairs with the tool-writing guidance that errors should be readable by the model: a distilled, actionable message, not the raw upstream payload. Both directions matter, in and out.",
+      "whyWrong": {
+        "B": "A schema parameter is sent to the model as part of the tool definition, so a credential placed there is model-visible — which is exactly what the requirement forbids.",
+        "C": "The system prompt is the most model-visible text there is. It also tends to be committed, shared and logged, so it is the worst of the available locations rather than a safe one.",
+        "D": "The description is sent to the model on every request that includes the tool. That is the definition of model-visible, and it is also the text most likely to be pasted into an issue."
+      },
+      "difficulty": 2,
+      "mindset": "Credentials belong to the tool's implementation, never to anything the model sees — and the same discipline applies to raw upstream error payloads on the way back.",
+      "tags": [
+        "tool-design",
+        "credentials",
+        "tool-errors"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/writing-tools-for-agents",
+        "https://code.claude.com/docs/en/agent-sdk/permissions"
+      ]
+    },
+    {
+      "id": "v-d8-z5-016",
+      "taskStatementId": "8.2",
+      "scenario": "Wrenmoor runs the same internal integration through three transports in three places: a locally launched server for developer testing, an internal service reached by several Claude applications, and one vendor endpoint that pushes alerts to connected clients without being asked.",
+      "stem": "Which mapping of deployment to transport is correct, and on what grounds?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Developer testing: stdio — the client launches the server as a subprocess and exchanges newline-delimited JSON-RPC on stdin and stdout, with the server writing only valid MCP messages to stdout and optional logs to stderr. Shared internal service: Streamable HTTP — an independent process serving a single endpoint path with both POST and GET, where the server must validate `Origin`, should bind locally where relevant and should authenticate, and where HTTP's support for OAuth and the `--transport` flag is the deciding factor."
+        },
+        {
+          "id": "B",
+          "text": "Developer testing: stdio. Shared internal service: Streamable HTTP. Vendor push endpoint: WebSocket — the transport that suits a server pushing events to Claude unprompted, with header-only authentication and no support for `claude mcp add --transport`, which is the documented reason to prefer HTTP when the server only responds to requests. A `ws` entry is accepted with `claude mcp add-json` and takes the same `url`, `headers`, `headersHelper`, `timeout` and `alwaysLoad` fields as `http`."
+        },
+        {
+          "id": "C",
+          "text": "All three should use Streamable HTTP, since stdio exists only for servers distributed outside Claude Code and WebSocket is deprecated."
+        },
+        {
+          "id": "D",
+          "text": "Developer testing: WebSocket, so developers see the same transport as production. Shared internal service: stdio, so the server runs under the client rather than as a network service."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Both are accurate, and each rests on a documented property of the transport rather than on preference. stdio for developer testing: the client launches the server as a subprocess, JSON-RPC messages are newline-delimited on stdin and stdout, and the rule that matters is that the server must not write anything to stdout that is not a valid MCP message — which is why a stray `print()` breaks the connection, while stderr is the documented place for logs. Streamable HTTP for the shared service: the server is an independent process handling multiple clients behind one endpoint path supporting POST and GET, and it carries the three security requirements — validate `Origin` to prevent DNS rebinding, bind localhost when running locally, authenticate — with HTTP's OAuth support and `--transport` flag as the practical reason it is preferred. WebSocket for the vendor push endpoint: the docs name this case directly, servers pushing events to Claude unprompted, and they also give the counter-case — HTTP when the server only responds to requests — with authentication header-only and no `--transport` acceptance as the trade. Note WebSocket servers do not appear in `claude mcp list`, so `claude mcp get` or the `/mcp` panel is how you check one.",
+      "whyWrong": {
+        "C": "Gets both ends wrong. stdio is not limited to externally distributed servers, and WebSocket is a current documented transport type rather than a deprecated one — the docs describe adding one with `claude mcp add-json`.",
+        "D": "Inverts both choices and would defeat the purpose. Running a developer-local server under stdio while production runs in a network service means the tested path is not the deployed path, which is the opposite of the reproducibility the team needs."
+      },
+      "difficulty": 3,
+      "visualId": "mcp-architecture",
+      "mindset": "stdio is a subprocess with a stdout-only-MCP rule, HTTP is multi-client with Origin and auth requirements, WebSocket is for unprompted push — and HTTP's OAuth support decides close calls.",
+      "tags": [
+        "mcp",
+        "transport",
+        "deployment"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-06-18/basic/transports",
+        "https://code.claude.com/docs/en/mcp"
+      ]
+    },
+    {
+      "id": "v-d8-z5-017",
+      "taskStatementId": "8.2",
+      "scenario": "Wrenmoor's MCP server needs to read files from whichever project directory the user is working in, and today it hard-codes `/Users/wrenmoor/projects/clinical-trials`. When a user works elsewhere, the server reads the wrong tree or fails.",
+      "stem": "What is the documented mechanism for this, and what is it not?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Roots. The client tells the server which directories it may work with, using `roots/list`, and Claude Code sends `notifications/roots/list_changed` when that set changes — which it does when you add a directory with `--add-dir`, `/add-dir` or the `additionalDirectories` setting. The server also receives `CLAUDE_PROJECT_DIR` in its environment, and Claude Code points at the added working directory. What roots are not is a sandbox: they are an advisory boundary the server should stay within, with clients responsible for validating requests, so a server that reads outside them is a bug in the server rather than something the protocol prevents."
+        },
+        {
+          "id": "B",
+          "text": "Resources. The client registers each project directory as a resource, and the server reads them through the resource interface."
+        },
+        {
+          "id": "C",
+          "text": "Sampling. The client tells the server which model to use, and the server derives the working directory from the model's context."
+        },
+        {
+          "id": "D",
+          "text": "There is no such mechanism. A server must be configured with its working directories at launch, because the directory set cannot change during a session."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Roots are the mechanism for exactly this, and the second half of the answer is the part that matters operationally. The client declares which directories the server may work with via `roots/list`, and Claude Code updates that set — sending `notifications/roots/list_changed` — when working directories change, including when a directory is added with `--add-dir`, `/add-dir` or the `additionalDirectories` setting. The server additionally gets `CLAUDE_PROJECT_DIR` in its environment, with the working-directory env vars available for `${VAR}` expansion in project-scoped `.mcp.json` entries when a default such as `${CLAUDE_PROJECT_DIR:-.}` is supplied. What roots are not is enforcement: they are an advisory boundary, servers should stay within them, and clients must validate requests — so a server that reads `~/secrets` despite the declared roots is a bug in that server. That distinction is why Wrenmoor should fix the hard-coded path rather than assume the protocol already confines the server.",
+      "whyWrong": {
+        "B": "Resources are content the server exposes to the client, not paths the client grants the server. They run in the opposite direction.",
+        "C": "Sampling is about requesting an LLM generation from the client's model. It carries no filesystem semantics at all.",
+        "D": "Contradicts the documented behaviour: the root set can change during a session, and Claude Code notifies the server when it does."
+      },
+      "difficulty": 1,
+      "mindset": "Roots tell a server where it may work and can change mid-session — but they are advisory, so a server reading outside them is a server bug.",
+      "tags": [
+        "mcp",
+        "roots",
+        "isolation"
+      ],
+      "sourceRefs": [
+        "https://modelcontextprotocol.io/specification/2025-06-18/client/roots",
+        "https://code.claude.com/docs/en/mcp"
+      ]
+    },
+    {
+      "id": "v-d8-z5-018",
+      "taskStatementId": "8.3",
+      "scenario": "An architecture review at Wrenmoor produced four claims about how Claude Code's mechanisms relate to one another, ahead of a decision about what to build for a new clinical data capability.",
+      "stem": "Which TWO claims are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "A plugin is a packaging and distribution unit, not a new kind of capability. Skills, subagents, hooks and MCP servers all work standalone — a skill in `~/.claude/skills/` is available in every project on the machine — and a plugin is what you reach for when you want several of them as one installable, updatable unit from a marketplace."
+        },
+        {
+          "id": "B",
+          "text": "A skill and a subagent differ in context, not in capability. A skill's instructions are added to your conversation when it runs and stay there across later turns, while a subagent works in its own context window and returns only its final message — which is why a skill fits know-how you want applied inline and a subagent fits exploration whose output you would not otherwise reference."
+        },
+        {
+          "id": "C",
+          "text": "A plugin's skills and commands are namespaced, so `/my-plugin:review-pr` can never collide with a repository skill called `/review-pr`."
+        },
+        {
+          "id": "D",
+          "text": "An MCP server is a plugin component that requires the plugin marketplace to be installed, so a server cannot be used without one."
+        },
+        {
+          "id": "E",
+          "text": "Hooks can grant a tool permission that the model's own permission settings deny, because hooks run before the permission check."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Two are accurate and both come from documented behaviour. Plugins are packaging and distribution: the standalone components work on their own — a skill saved in `~/.claude/skills/` is available in every project on that machine — and the reason to reach for a plugin is to deliver several skills, agents, hooks or MCP servers as one unit that installs with one command and updates from its marketplace. And the skill/subagent distinction is genuinely about context, which is the practical dividing line: a skill's rendered content enters the conversation as a single message and persists across later turns, while a subagent works in its own context window and returns only its final message, keeping noisy exploration out of the main conversation. The three wrong claims each overstate a mechanism. Namespacing reduces collision risk but does not make it impossible, and priority rules still apply. MCP servers are configurable independently of plugins — project scope lives in `.mcp.json`, user and local scope in `~/.claude.json`. And hooks cannot grant what permissions deny — they can deny, ask, allow or defer, and the most restrictive decision wins.",
+      "whyWrong": {
+        "C": "Namespacing makes plugin components distinguishable rather than collision-proof. The documented priority order still decides when names overlap, and a plugin skill can still be referred to by other names.",
+        "D": "MCP servers are configured independently — `.mcp.json` at project scope, `~/.claude.json` for user and local scope — and a plugin can carry one, but nothing requires a plugin or a marketplace.",
+        "E": "Inverts hook authority. A `PreToolUse` hook can return allow, deny, ask or defer, but deny rules still apply and the most restrictive decision wins when several hooks apply; a hook is not a privilege escalation path."
+      },
+      "difficulty": 3,
+      "visualId": "capability-ladder",
+      "mindset": "Plugin is packaging, not capability; skill versus subagent is inline context versus isolated context — and hooks constrain permissions, never escalate them.",
+      "tags": [
+        "capability-ladder",
+        "plugins",
+        "skills"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/plugins/overview",
+        "https://code.claude.com/docs/en/skills"
+      ]
+    }
+  ]
+}

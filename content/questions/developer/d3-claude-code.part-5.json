@@ -1,0 +1,1277 @@
+{
+  "certId": "developer",
+  "domainId": "d3-claude-code",
+  "questions": [
+    {
+      "id": "v-d3-y5b-001",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian's CI runs `claude -p` review jobs on pull requests. A newly added `Setup` hook is supposed to seed a scratch database before any session starts, and it works for developers interactively but has never fired in CI.",
+      "stem": "What is the correct invocation for Meridian's job, and what does the flag set actually do?",
+      "options": [
+        {
+          "id": "A",
+          "text": "`Setup` hooks run before the session, but only for the `init` or `maintenance` matchers and only when the matching flag is passed: `claude -p --init \"query\"` runs Setup hooks with the `init` matcher, `claude -p --maintenance \"query\"` runs those with `maintenance`, and `claude --init-only` runs Setup and `SessionStart` hooks then exits without starting a conversation. That is the gate Meridian's job is missing."
+        },
+        {
+          "id": "B",
+          "text": "`Setup` hooks always run at the start of every session in every mode, so the fact that CI never fired one means the hook's script is failing silently rather than that the flag is missing."
+        },
+        {
+          "id": "C",
+          "text": "`Setup` is a `SessionStart` alias: once a hook is registered under `SessionStart` it also runs as `Setup`, so moving the hook to the `Setup` event changes nothing about whether print mode reaches it."
+        },
+        {
+          "id": "D",
+          "text": "`Setup` hooks never run in print mode at all. To seed state from CI you have to move the logic into the first user message of the prompt."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "`Setup` is a pre-session event that print mode reaches only when you ask for it by matcher. The documented surface is three flags, all print-mode-only: `--init` runs Setup hooks with the `init` matcher before the session, `--maintenance` runs those with the `maintenance` matcher, and `--init-only` runs Setup and `SessionStart` hooks and then exits without starting a conversation — which makes it a useful preflight check in a pipeline. So Meridian's job needs `claude -p --init \"review the diff\"`, and the split between `init` and `maintenance` lets a repository separate one-time bootstrapping from periodic upkeep. This is different from the hook events that always fire: `SessionStart` and `Setup` events are always included in the output stream and do not need `--include-hook-events`, whereas events like `Notification` never produce a `hook_started` event at all.",
+      "whyWrong": {
+        "B": "It removes the gate that explains the symptom. Setup hooks are opt-in per matcher in print mode, so a CI job that omits the flag never reaches the hook — which is a different problem from a script failing silently.",
+        "C": "It invents an aliasing relationship between the two events. They are distinct events with distinct triggers, and nothing about registering a `SessionStart` hook makes it run as `Setup`.",
+        "D": "It claims the opposite of the documented behaviour. Setup hooks do run in print mode — with `--init`, `--maintenance` or `--init-only` — so the fix belongs on the command line rather than in the prompt."
+      },
+      "difficulty": 2,
+      "visualId": "hooks-lifecycle",
+      "mindset": "In print mode, pre-session hooks are opt-in per matcher: `--init`, `--maintenance` or `--init-only` is what makes a Setup hook reachable from CI.",
+      "tags": [
+        "hooks",
+        "headless",
+        "ci",
+        "setup"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/hooks",
+        "https://code.claude.com/docs/en/cli-reference"
+      ]
+    },
+    {
+      "id": "v-d3-y5b-002",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian wants its CI to archive a complete audit trail of every hook that ran during a review job, so a security review can prove which guards actually executed. The team adds `--include-hook-events` and finds no `hook_started` entries for the `PreCompact` or `Notification` hooks it installed.",
+      "stem": "What is the documented explanation, and what should the team conclude about the audit trail?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The flag only covers command hooks. Hooks implemented as in-process handlers produce no stream events at all, so the team should convert them to command hooks if it wants them in the log."
+        },
+        {
+          "id": "B",
+          "text": "The flag works, and this is the documented shape of the stream. `--include-hook-events` includes hook lifecycle events and requires `--output-format stream-json`; `SessionStart` and `Setup` events are always included and need no flag. But some events — `Notification`, `SessionEnd`, `PreCompact` and `PostCompact` — never produce a `hook_started` event even with the flag. For those, Claude Code still emits `hook_progress` while a command hook running longer than a second produces output, and emits `hook_response` only when a hook running in the background finishes. Absence of `hook_started` for those events is expected, not a bug."
+        },
+        {
+          "id": "C",
+          "text": "The flag requires `--verbose` as well as `--output-format stream-json`, and without both it falls back to emitting a single result object at the end, which is why the job log has no events."
+        },
+        {
+          "id": "D",
+          "text": "Those four events fire only in interactive sessions, so a headless job would never see them. The team should move the `PreCompact` and `Notification` logic into a `Stop` hook, which does run headless."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Hook events in the stream are not uniform, and the exception list is documented. `--include-hook-events` adds hook lifecycle events to the output stream and requires `--output-format stream-json`. `SessionStart` and `Setup` hook events are always included and do not need the flag. Some events never produce a `hook_started` event even with the flag: `Notification`, `SessionEnd`, `PreCompact` and `PostCompact`. For those the stream still carries something — `hook_progress` while a command hook that runs for more than a second produces output, and `hook_response` only when a hook running in the background finishes. The practical lesson for an audit trail is that the stream is a good record of what a guard did but a poor way to prove a hook fired at all, so pair it with something that records the event itself rather than inferring execution from a lifecycle record.",
+      "whyWrong": {
+        "A": "It invents an in-process versus command-hook distinction in the stream. The documented reason those four events lack a `hook_started` record is the event list itself, not how the hook is implemented.",
+        "C": "It attaches a `--verbose` requirement the flag does not have and then asserts a fallback to a single object, which is not documented behaviour. The stream simply has no `hook_started` for those four events.",
+        "D": "It misattributes the gap to interactivity. Those events are named on the list regardless of session type; the absence of `hook_started` is a property of the event, so moving the logic elsewhere would trade one undocumented record for another."
+      },
+      "difficulty": 2,
+      "visualId": "hooks-lifecycle",
+      "mindset": "Four events never emit `hook_started`, so a stream is evidence of what a hook did, not proof that it fired.",
+      "tags": [
+        "hooks",
+        "headless",
+        "observability",
+        "ci"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/hooks",
+        "https://code.claude.com/docs/en/cli-reference"
+      ]
+    },
+    {
+      "id": "v-d3-y5b-003",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian's review job delegates dependency auditing and schema review to subagents. After a hallucinated finding ships, the team wants to reconstruct exactly what each subagent said from the CI artifacts, and finds only the parent session's messages in the stream.",
+      "stem": "What does the job need, and what are the documented limits?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Nothing more: a foreground subagent's output is returned to the parent as a tool result, so its text is already in the parent stream and can be attributed by reading the `Agent` tool result."
+        },
+        {
+          "id": "B",
+          "text": "`--forward-subagent-text` alongside `--print` and `--output-format stream-json`. It emits subagent text and thinking blocks in the output stream as `assistant` and `user` messages with `parent_tool_use_id` set, so you can reconstruct each subagent's transcript; without it Claude Code omits the text and thinking blocks of a subagent that runs in the foreground. Messages from nested subagents are forwarded too, with `parent_tool_use_id` set to the id of the Agent or Skill call that started each one. The flags are required together — the feature does nothing without print mode and the stream format."
+        },
+        {
+          "id": "C",
+          "text": "Raise the subagent's `maxTurns`. Subagent text is omitted from the stream because it exceeded a per-subagent token budget, and raising the ceiling makes Claude Code emit it."
+        },
+        {
+          "id": "D",
+          "text": "Add `--include-hook-events`. Subagent transcripts are surfaced as hook events, with `parent_tool_use_id` recorded on each."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "There is a dedicated flag for this and its requirements are specific. `--forward-subagent-text` emits subagent text and thinking blocks in the output stream as `assistant` and `user` messages with `parent_tool_use_id` set, so a consumer can reconstruct each subagent's transcript; without the flag Claude Code omits the text and thinking blocks of a subagent that runs in the foreground, which is exactly the gap Meridian hit. The corresponding environment variable is `CLAUDE_CODE_FORWARD_SUBAGENT_TEXT`. Two constraints are worth holding: it requires `--print` and `--output-format stream-json`, so it is a print-mode capability rather than something you can switch on in a terminal session; and the `parent_tool_use_id` field is what lets you nest the reconstruction — it names the Agent or Skill tool call that started each subagent, including nested ones, so a tree of delegations can be rebuilt rather than a flat list.",
+      "whyWrong": {
+        "A": "It assumes the subagent's text is already available and dismisses the real problem. The parent receives a result, but the omission the team observed is specifically that a foreground subagent's text and thinking blocks are left out of the stream.",
+        "C": "It attributes a deliberate omission to a budget. The text is excluded by default as a stream-shaping decision; a turn ceiling has nothing to do with whether blocks are emitted.",
+        "D": "It confuses the hook-event stream with the message stream. `parent_tool_use_id` is a field on forwarded assistant and user messages, and `--include-hook-events` is about hook lifecycle records."
+      },
+      "difficulty": 3,
+      "visualId": "claude-code-config",
+      "mindset": "Subagent transcripts are omitted from the stream by default; `--forward-subagent-text` with print mode and stream-json reconstructs them via `parent_tool_use_id`.",
+      "tags": [
+        "sub-agents",
+        "headless",
+        "observability",
+        "ci"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/cli-reference",
+        "https://code.claude.com/docs/en/sub-agents"
+      ]
+    },
+    {
+      "id": "v-d3-y5b-004",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian's CI job spawns subagents that review changed files, and the team wants every subagent — including nested ones — to append a house rule about citing file paths. Someone proposes `--append-system-prompt` instead.",
+      "stem": "Which flag is correct, and which TWO statements about it are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "`--append-subagent-system-prompt` is the right flag. `--append-system-prompt` appends to the default system prompt, which the subagent does not use: a subagent runs the system prompt from its own definition file rather than Claude Code's."
+        },
+        {
+          "id": "B",
+          "text": "The flag appends custom text to the end of every subagent's system prompt, nested subagents included. The exception is a forked subagent, which reuses the conversation's own prompt, so it is unaffected."
+        },
+        {
+          "id": "C",
+          "text": "It applies in any mode, so the same flag works for a terminal session that spawns subagents."
+        },
+        {
+          "id": "D",
+          "text": "`--append-subagent-system-prompt-file` loads the text from a file and is an alternative for text too long to pass on the command line. The two flags cannot be combined."
+        }
+      ],
+      "correct": [
+        "B",
+        "D"
+      ],
+      "explanation": "The flag exists because a subagent's system prompt is its own definition file, not Claude Code's — so appending to the default prompt reaches the parent and not the workers. `--append-subagent-system-prompt` appends custom text to the end of every subagent's system prompt, nested subagents included, with one documented exception: a forked subagent reuses the conversation's own prompt and is therefore unaffected. There is a file form, `--append-subagent-system-prompt-file`, for text too long to pass on the command line, and the two cannot be combined — pick one. The scope limit that catches most teams is that this only applies in non-interactive mode with `-p`, so it is a CI and scripting instrument rather than something that changes a terminal session. For interactive sessions the documented alternative for persistent personas is output styles, and for project conventions it is CLAUDE.md.",
+      "whyWrong": {
+        "A": "It recommends the flag that reaches the wrong system prompt. Appending to the default prompt affects the main conversation; a subagent runs its own definition file's prompt, so the house rule never reaches the workers.",
+        "C": "It drops the documented mode restriction. The flag applies only in non-interactive mode with `-p`, so it has no effect in a terminal session and a team relying on it interactively would see nothing happen."
+      },
+      "difficulty": 2,
+      "mindset": "A subagent runs its own system prompt, so per-worker instructions need the subagent flag — and that flag is print-mode only.",
+      "tags": [
+        "sub-agents",
+        "headless",
+        "system-prompt",
+        "ci"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/cli-reference",
+        "https://code.claude.com/docs/en/sub-agents"
+      ]
+    },
+    {
+      "id": "v-d3-y5b-005",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian's release-notes job occasionally runs far longer than expected and finance wants a hard ceiling on a single `claude -p` invocation. The team adds `--max-budget-usd 5.00` and then finds one job stopped while its log shows well under five dollars of usage on the request log.",
+      "stem": "What explains the discrepancy, and what else does the flag's behaviour imply?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Claude Code checks the cap against its client-side cost estimate, which can differ from your bill, so the stop is an estimate overrun rather than a billing overrun. Spend from subagents counts toward the cap; once spend reaches it, spawning another subagent fails with `Budget limit reached` and Claude Code stops background subagents that are still running. And totals restored from earlier runs when you return with `--continue` or `--resume` do not count toward it."
+        },
+        {
+          "id": "B",
+          "text": "The flag is a server-side ceiling enforced by the API, so the request log cannot show the whole picture because the cap is applied before usage is attributed to the workspace."
+        },
+        {
+          "id": "C",
+          "text": "Subagent spend is billed separately and does not count toward the cap, which is why the job stopped early relative to what the parent session logged."
+        },
+        {
+          "id": "D",
+          "text": "The cap is evaluated against the previous session's total when `--continue` is used, so a resumed conversation starts from zero and stops at an unpredictable point relative to this run."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The cap is a client-side guard and it is documented as an estimate, which is the whole reason the log and the stop disagree. `--max-budget-usd` sets a maximum dollar amount to spend on API calls before stopping, and Claude Code checks it against its client-side cost estimate, which can differ from your bill — so treat it as a runaway guard rather than a billing control, and reconcile against actual usage separately. Three behaviours follow from the same flag and matter operationally. Spend from subagents counts toward the cap, so a fan-out of workers is inside the budget rather than beside it. The cap-enforcement behaviours are specific: once spend reaches it, spawning another subagent fails with `Budget limit reached` and Claude Code stops background subagents that are still running. And totals restored from earlier runs when you return to a conversation with `--continue` or `--resume` do not count toward it, so a long-running scripted conversation can exceed the nominal ceiling across iterations. It is print-mode only.",
+      "whyWrong": {
+        "B": "It relocates enforcement to the server, which contradicts the documented client-side estimate. The API has no knowledge of this flag, which is exactly why a discrepancy with the request log is possible.",
+        "C": "It inverts the subagent rule. Subagent spend counts toward the cap, which is the more restrictive behaviour and the reason a fan-out job can hit the ceiling before the parent session's own usage looks large.",
+        "D": "It describes the opposite of the documented interaction with resumed sessions. Totals restored from earlier runs do not count toward the cap, so each resumed run is measured from its own start rather than from the cumulative history."
+      },
+      "difficulty": 2,
+      "mindset": "`--max-budget-usd` is a client-side runaway guard measured against an estimate, and it deliberately excludes resumed totals while including subagent spend.",
+      "tags": [
+        "headless",
+        "cost",
+        "budget",
+        "ci"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/cli-reference",
+        "https://code.claude.com/docs/en/agent-sdk/cost-tracking"
+      ]
+    },
+    {
+      "id": "v-d3-y5b-006",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian's fix-verification script feeds a queue of prompts to one `claude -p` process over stdin using `--input-format stream-json` with `--max-turns 3`. When the third turn ends, the job exits with an error — and the two prompts still sitting in the queue are silently dropped.",
+      "stem": "What is the documented behaviour, and what should the script do?",
+      "options": [
+        {
+          "id": "A",
+          "text": "`--max-turns` limits the number of agentic turns and exits with an error when the limit is reached, with no limit by default. With `--input-format stream-json`, a message still queued when the limit ends a turn stays queued and starts a new turn with its own limit. So the queue is not lost by the documented mechanism — the script's error exit is discarding it. Handle the limit-exit as a checkpoint, then start a fresh process against the remaining queue, or run without a turn cap and bound the work in the prompt."
+        },
+        {
+          "id": "B",
+          "text": "`--max-turns` is a per-request limit, so a three-turn conversation makes three separate API requests that each get three turns. Queued messages therefore always survive."
+        },
+        {
+          "id": "C",
+          "text": "`--max-turns` cannot be combined with `--input-format stream-json`; Claude Code rejects the flag combination at startup, which is why the job exits immediately rather than after three turns."
+        },
+        {
+          "id": "D",
+          "text": "Queued messages are always delivered before the limit is enforced, so a correct script would have processed both remaining prompts. The drops must come from the stdin framing rather than from `--max-turns`."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "`--max-turns` limits the number of agentic turns, exits with an error when the limit is reached, and has no limit by default. The detail that makes this scenario interesting is the interaction with a queued stream: with `--input-format stream-json`, a message still queued when the limit ends a turn stays queued and starts a new turn with its own limit. So the design intent is that the queue is preserved across the boundary and a following turn picks it up — which means a script that treats the error exit as fatal-and-discard is throwing away work the mechanism was designed to keep. The right shape for a bounded verification loop is therefore to treat the limit exit as a checkpoint: capture what is still queued, hand it to the next invocation, and keep the cap per process rather than per conversation. Note also that the cap counts turns, not API calls, so it does not line up with a request budget.",
+      "whyWrong": {
+        "B": "It invents per-request scoping. `--max-turns` limits agentic turns in the session and there is no per-request interpretation of it.",
+        "C": "It claims the flags are incompatible, which the documented interaction for `--input-format stream-json` contradicts. The combination is specifically described as the case with its own turn-limit behaviour.",
+        "D": "It contradicts the documented queue semantics and reassigns the fault to stdin framing. The stated behaviour is that a message still queued when the limit ends a turn stays queued."
+      },
+      "difficulty": 3,
+      "visualId": "claude-code-config",
+      "mindset": "`--max-turns` caps agentic turns and exits with an error; with a queued input stream the pending message is preserved, so treat the exit as a checkpoint.",
+      "tags": [
+        "headless",
+        "max-turns",
+        "input-format",
+        "streaming"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/cli-reference",
+        "https://code.claude.com/docs/en/headless"
+      ]
+    },
+    {
+      "id": "v-d3-y5b-007",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian's CI review job must have a human approve one specific class of tool call through an internal approval service, while every other unapproved call should simply be denied. The team wants to use an MCP tool for the approvals.",
+      "stem": "Which TWO statements about routing permission prompts out of a headless run are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "`--permission-prompt-tool` names an MCP tool to handle permission prompts in non-interactive mode, and Claude Code waits for that tool's MCP server to connect before running the first turn, up to the `MCP_TIMEOUT` startup timeout, 30 seconds by default. With the default `--permission-prompts host` setting, prompts go to the Agent SDK host or to this tool."
+        },
+        {
+          "id": "B",
+          "text": "The prompt tool cannot approve an MCP tool that is marked as requiring user interaction: Claude Code converts an `allow` result for one to a deny. So a service-based approver must respect that restriction rather than assuming it can green-light every call."
+        },
+        {
+          "id": "C",
+          "text": "An MCP tool marked as requiring user interaction can be approved by the prompt tool as long as the tool's own implementation prompts the operator, because the marker only affects interactive sessions."
+        },
+        {
+          "id": "D",
+          "text": "When nobody can answer, `--permission-prompts none` makes Claude Code ask the approval service anyway and then apply whatever it decides, so a single flag covers both cases."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "There are two documented ways to route permission prompts in a non-interactive run and one hard limit. `--permission-prompt-tool` specifies an MCP tool to handle permission prompts in non-interactive mode; Claude Code waits for that tool's MCP server to connect before running the first turn, up to the `MCP_TIMEOUT` startup timeout, 30 seconds by default. With the default `--permission-prompts host`, prompts go to the Agent SDK host or to the tool you named. The limit is on what the approver can grant: the prompt tool can't approve an MCP tool marked as requiring user interaction, and Claude Code converts an `allow` result for one to a deny. That matters for Meridian because it means an approval service cannot be a universal escape hatch — a tool flagged as requiring a human stays denied no matter what the service returns. Where no human exists at all, `--permission-prompts none` is the honest setting: Claude Code denies the prompts rather than inventing an approver.",
+      "whyWrong": {
+        "C": "It proposes a workaround for a restriction that is deliberate and unconditional in non-interactive mode. The conversion from allow to deny applies to the prompt tool's result, so implementing a prompt inside the MCP tool does not change it.",
+        "D": "It conflates two different flags with opposite purposes. `none` means nobody can answer, so Claude Code denies; routing prompts to an approval service is what `--permission-prompt-tool` is for."
+      },
+      "difficulty": 2,
+      "visualId": "claude-code-config",
+      "mindset": "A headless approver is real but bounded: `--permission-prompt-tool` routes prompts, and a tool marked as requiring user interaction still converts an allow into a deny.",
+      "tags": [
+        "headless",
+        "permissions",
+        "mcp",
+        "ci"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/cli-reference",
+        "https://code.claude.com/docs/en/headless"
+      ]
+    },
+    {
+      "id": "v-d3-y5b-008",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian runs a CI job over pull requests from untrusted forks and handles claims that contain personal data. Legal asks that nothing from those sessions be written to disk on the runner, and that nothing be resumable afterwards.",
+      "stem": "Which mechanism meets the requirement, and what are its limits?",
+      "options": [
+        {
+          "id": "A",
+          "text": "`--no-session-persistence` in print mode: sessions are not saved to disk and cannot be resumed. The `CLAUDE_CODE_SKIP_PROMPT_HISTORY` environment variable does the same in any mode. Note that neither removes in-flight data, and transcript-shaped artefacts that your own hooks or scripts write are outside their reach."
+        },
+        {
+          "id": "B",
+          "text": "`claude purge` after the job finishes. It deletes all local Claude Code state for a project and is the documented way to leave nothing behind."
+        },
+        {
+          "id": "C",
+          "text": "`--bare`. It skips auto-discovery of every customization, which is what stops transcripts from being written on a runner."
+        },
+        {
+          "id": "D",
+          "text": "`--safe-mode`. It disables all customizations including hooks and plugins, so nothing can write a transcript during the run."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Session persistence has its own switch and its own environment-variable equivalent. `--no-session-persistence` disables session persistence so sessions are not saved to disk and cannot be resumed, and it is print mode only; `CLAUDE_CODE_SKIP_PROMPT_HISTORY` does the same in any mode, which is the variant to reach for if a non-print invocation also needs it. Being precise about the boundary matters for a compliance ask like this: the flag governs Claude Code's own session storage, not everything a run can leave behind. Anything your own hooks, skills with `!` command lines, or shell commands write is outside its reach, so a review job that wants a genuinely clean runner has to pair it with its own artifact discipline. It is also different from `claude purge`, which is a local cleanup command for state that already exists on a machine rather than a per-run control.",
+      "whyWrong": {
+        "B": "It confuses a per-run control with a local cleanup command. `claude purge` deletes existing local state for a project — transcripts, task lists, debug logs, file-edit history, prompt history and the project's entry in `~/.claude.json` — which is a different job from preventing a run from persisting anything.",
+        "C": "Bare mode is about startup speed and reproducibility. It skips auto-discovery of hooks, skills, commands, subagents, plugins, MCP servers, auto memory and CLAUDE.md; session storage is a separate concern with a separate flag.",
+        "D": "Safe mode disables customizations in order to isolate which one is misbehaving. It says nothing about whether a session is written to disk, so it cannot satisfy a data-residency requirement."
+      },
+      "difficulty": 1,
+      "visualId": "claude-code-config",
+      "mindset": "Not persisting a session is its own switch — `--no-session-persistence`, or `CLAUDE_CODE_SKIP_PROMPT_HISTORY` in any mode — and it does not cover what your own hooks write.",
+      "tags": [
+        "headless",
+        "sessions",
+        "security",
+        "ci"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/cli-reference",
+        "https://code.claude.com/docs/en/sessions"
+      ]
+    },
+    {
+      "id": "v-d3-y5b-009",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian runs the same scripted classification prompt from a fleet of runners, each on behalf of a different service account with its own auto-memory location. Finance sees a cache write on every request and no cache reads, and the team concludes caching cannot work in a scripted workload.",
+      "stem": "What is the documented explanation, and what is the correct response?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The conclusion is right: per-user context in the system prompt makes every account's prompt prefix distinct, so a fleet of accounts cannot share a cache. The only fix is to run all requests under one account."
+        },
+        {
+          "id": "B",
+          "text": "`--exclude-dynamic-system-prompt-sections` moves per-user context, such as the auto memory location, out of the system prompt and into the first user message, which improves prompt-cache reuse across different users and machines running the same task. The docs suggest it with `-p` for scripted, multi-user workloads. It applies only with the default system prompt and is ignored when `--system-prompt` or `--system-prompt-file` is set."
+        },
+        {
+          "id": "C",
+          "text": "Nothing in the prompt can be responsible. A per-user memory path is identical across machines because it is derived from the repository, so the cache miss must come from a different model on some runners."
+        },
+        {
+          "id": "D",
+          "text": "Prompt caching cannot be used with `-p` at all; cache reads require an interactive session that keeps a stable conversation prefix."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "The cache is prefix-based, so anything that varies early in the prompt destroys prefix identity — and per-user context in the system prompt is exactly that. `--exclude-dynamic-system-prompt-sections` moves per-user context, such as the auto memory location, out of the system prompt and into the first user message, improving prompt-cache reuse across different users and machines running the same task, and the docs recommend it with `-p` for scripted, multi-user workloads. Two conditions shape where it can be used: it applies only with the default system prompt, and it is ignored when `--system-prompt` or `--system-prompt-file` is set — so a team that has already replaced the prompt wholesale cannot reach it this way. This is the same underlying rule as the `__SYSTEM_PROMPT_DYNAMIC_BOUNDARY__` marker in the replacement-prompt case: keep the invariant text above the breakpoint and put everything that varies below it.",
+      "whyWrong": {
+        "A": "It treats a solvable layout problem as a limitation. The variation is a matter of where the per-user text sits in the prompt, and the flag exists specifically to move it behind the cacheable prefix.",
+        "C": "It claims the memory path is repository-derived, which contradicts the premise: the path is per user or per machine, which is what makes each runner's prefix distinct.",
+        "D": "It rules out caching in scripted runs for no reason. Caching depends on prefix stability, not on interactivity, and the docs explicitly pair this flag with `-p` for multi-user scripted workloads."
+      },
+      "difficulty": 2,
+      "mindset": "Anything that varies early in the prompt breaks the cache: move per-user context behind the breakpoint, and note the flag needs the default system prompt.",
+      "tags": [
+        "prompt-caching",
+        "headless",
+        "system-prompt",
+        "cost"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/cli-reference",
+        "https://code.claude.com/docs/en/agent-sdk/modifying-system-prompts"
+      ]
+    },
+    {
+      "id": "v-d3-y5b-010",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian's triage agent should be more thorough on hard tickets without changing model. A platform engineer runs `claude --effort high` for an afternoon and finds the next day every session has reverted to the default effort level.",
+      "stem": "What is the documented behaviour of `--effort`, and how should the team make the change stick?",
+      "options": [
+        {
+          "id": "A",
+          "text": "`--effort` sets the effort level for the current session with options `low`, `medium`, `high`, `xhigh`, `max` or `ultracode`; available levels depend on the model. It overrides the `modelSettings` and `effortLevel` settings for that session and does not persist — which is why the next day reverted. To make it stick, set `effortLevel` (or the per-model `modelSettings` entries) in settings, or use `/effort` in the session and let Claude Code save it as your default for the model you are using."
+        },
+        {
+          "id": "B",
+          "text": "`--effort` sets the effort level and writes it to `~/.claude/settings.json`, which is why the change appeared to persist for the rest of the day and then reverted once a teammate's `/model` selection overwrote the key."
+        },
+        {
+          "id": "C",
+          "text": "The available levels are fixed at `low`, `medium` and `high`. `xhigh`, `max` and `ultracode` are not valid values, so the session silently ran at `high` because nothing closer was available."
+        },
+        {
+          "id": "D",
+          "text": "The flag requires the `claude-api` skill's `cost-optimize` subcommand to take effect, which rewrites the request to request a specific effort level."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "`--effort` is explicitly a session-scoped override, and the docs pair it with `/effort` for the persistent form. The flag sets the effort level for the current session, accepting `low`, `medium`, `high`, `xhigh`, `max` or `ultracode`, with available levels depending on the model; `ultracode` requests `xhigh` effort with `ultracode` turned on. It overrides the `modelSettings` and `effortLevel` settings for the session and does not persist. Two related mid-session levers are worth naming: the `effort` field in skill frontmatter shapes the turn that invokes the skill and resolves from the effort resolution order when omitted; and `/effort` is the in-session route that changes effort on a running session, with the docs distinguishing which selections Claude Code saves as your default for the model you are using and which apply to the current session only. So the fix is a settings key or `/effort`, not the flag.",
+      "whyWrong": {
+        "B": "It claims the flag writes a settings key. The flag is documented as a per-session override that does not persist, which is precisely why the next day's sessions reverted to the default.",
+        "C": "It truncates the documented option list. `xhigh`, `max` and `ultracode` are valid values, subject to which levels the chosen model supports.",
+        "D": "It invents a dependency on a skill subcommand. Effort is requested through the request parameters, and the cost-optimize subcommand profiles spend and proposes changes rather than implementing this flag."
+      },
+      "difficulty": 2,
+      "mindset": "`--effort` is a session override that never writes a file; to persist it use `effortLevel`/`modelSettings` or `/effort`.",
+      "tags": [
+        "model-config",
+        "cli-flags",
+        "sessions",
+        "effort"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/cli-reference",
+        "https://code.claude.com/docs/en/model-config"
+      ]
+    },
+    {
+      "id": "v-d3-y5b-011",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian's long-running migration sessions keep auto-compacting earlier than the team wants, and an engineer asks whether compaction timing can be adjusted for one afternoon without changing anyone's saved settings.",
+      "stem": "What does `--autocompact` do, and what is the correct usage?",
+      "options": [
+        {
+          "id": "A",
+          "text": "`--autocompact <auto|tokens>` sets the auto-compact window for that session without changing saved settings, and accepts the same values as `/autocompact`. `--autocompact 500k` raises the threshold for one session; it is the session-scoped form of a durable setting, so nothing in any settings file is written."
+        },
+        {
+          "id": "B",
+          "text": "`--autocompact` disables automatic compaction for the session, which is how you keep a conversation verbatim. Omitting the value turns it off."
+        },
+        {
+          "id": "C",
+          "text": "`--autocompact` writes the new threshold to the user settings file so future sessions inherit it. The flag is the durable form and `/autocompact` is the temporary one."
+        },
+        {
+          "id": "D",
+          "text": "`--autocompact` is a prompt-caching control. It tells Claude Code how much of the cached prefix to retain between turns, so raising it reduces cache writes."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "`--autocompact` sets the auto-compact window for the session without changing your saved settings, and accepts the same values as `/autocompact` — with `--autocompact 500k` given as the documented example. It is worth holding onto a related behaviour while compaction is in view, because the two interact: when the conversation is summarised, Claude Code re-attaches the most recent invocation of each skill, keeping the first 5,000 tokens of each with a combined budget of 25,000 tokens filled starting from the most recently invoked skill. That is why a long skill's opening instructions survive a compaction and its later ones do not. A second compaction-related lever is `--system-prompt-snapshot off`, which is about the system prompt being recorded once rather than about conversation history. Neither flag writes to a settings file, so the session-only property is consistent across both.",
+      "whyWrong": {
+        "B": "It collapses the value into an on/off switch and loses the threshold. The flag takes an `auto` value or a token count, so the useful operation here is moving the threshold, not disabling the behaviour.",
+        "C": "It reverses the persistence relationship. The flag is documented as changing the window for the session without changing saved settings, which is what makes it safe for a one-off experiment.",
+        "D": "It confuses conversation compaction with prompt caching. Compaction replaces older history with a summary in the same conversation; caching is a separate mechanism about reusing a stable input prefix."
+      },
+      "difficulty": 1,
+      "visualId": "context-window",
+      "mindset": "`--autocompact` moves the compaction threshold for one session only — and remember compaction re-attaches each skill's first 5,000 tokens, so put the important part first.",
+      "tags": [
+        "compaction",
+        "cli-flags",
+        "context-window",
+        "sessions"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/cli-reference",
+        "https://code.claude.com/docs/en/context-window"
+      ]
+    },
+    {
+      "id": "v-d3-y5b-012",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian's fix-loop job sends a stream of follow-up prompts to one long-lived `claude -p` process over stdin. The job cannot tell which queued prompt the response it just read corresponds to, and has started correlating by arrival time — which breaks as soon as two prompts are in flight.",
+      "stem": "What is the documented mechanism for this, and what does it not give you?",
+      "options": [
+        {
+          "id": "A",
+          "text": "`--replay-user-messages` re-emits user messages from stdin back on stdout for acknowledgment, which requires both `--input-format stream-json` and `--output-format stream-json`. It gives you an explicit per-message acknowledgment so correlation stops depending on timing. What it does not give you is identity beyond the message you sent: for correlating to a specific Claude Code session, the stream and the `parent_tool_use_id` field on forwarded subagent messages are the tools, and `${CLAUDE_SESSION_ID}` is what a skill uses to label its own artefacts."
+        },
+        {
+          "id": "B",
+          "text": "Add `--output-format json` instead of `stream-json`. The single result object carries the whole conversation, so each queued prompt can be matched by position."
+        },
+        {
+          "id": "C",
+          "text": "Use `--session-id` with a UUID you generate per prompt. Claude Code then keys the response by that id, so positional correlation becomes exact."
+        },
+        {
+          "id": "D",
+          "text": "Include the prompt index in the prompt text itself, for example `PROMPT 7: ...`, and parse it out of the response. This is the documented correlation mechanism for streamed input."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The documented mechanism is an explicit acknowledgment, and it needs both stream formats. `--replay-user-messages` re-emits user messages from stdin back on stdout for acknowledgment, and it requires `--input-format stream-json` and `--output-format stream-json`. That turns an implicit timing guess into an observed event per message, which is the right fix for Meridian's correlation problem. Being clear about what it is not, matters as much as what it is: it acknowledges the message you sent, it does not attach a durable conversation identity to the response. For that, the relevant surfaces are the stream itself, `parent_tool_use_id` on forwarded subagent messages for attributing work to the tool call that started it, and `${CLAUDE_SESSION_ID}`, which skills substitute so their own logs and session-specific files can be correlated with the session that produced them. The general principle for any such pipeline is to make the correlation explicit in the protocol rather than inferring it from interleaving.",
+      "whyWrong": {
+        "B": "It trades away the streaming the job needs to correlate incrementally, and it does not answer the question: a single result object describes the whole conversation, not which input produced which output.",
+        "C": "It misreads `--session-id`, which sets the id of the conversation and must be a valid UUID. It does not key individual responses within a session, and one process serves one conversation.",
+        "D": "It proposes prompt-side workarounds as a documented mechanism. Inlining an index is a reasonable application convention but is not how Claude Code correlates streamed input, and it relies on the model echoing the marker back."
+      },
+      "difficulty": 3,
+      "visualId": "deployment-topology",
+      "mindset": "Make correlation explicit in the protocol: `--replay-user-messages` acknowledges each input; durable identity comes from the session, not the message.",
+      "tags": [
+        "headless",
+        "streaming",
+        "input-format",
+        "observability"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/cli-reference",
+        "https://code.claude.com/docs/en/headless"
+      ]
+    },
+    {
+      "id": "v-d3-y5b-013",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian's monorepo has a nested `.claude/skills/` under `packages/checkout/`. Sessions started at the repository root do not list that skill in the `/` menu at all, and an engineer cannot invoke it until Claude happens to read a file in that package.",
+      "stem": "What is the documented behaviour, and what is the supported way to load it earlier?",
+      "options": [
+        {
+          "id": "A",
+          "text": "A `.claude/skills/` directory below where you started does not load at startup. It loads the first time Claude reads or edits a file in that subdirectory and stays available for the rest of the session; until then it does not appear in the `/` menu and you cannot invoke it by name. To load it sooner, run `/add-dir` with the subdirectory's path. You can also address it directly as `/packages/checkout:<skill-name>`, which is the nested-skill invocation form when the directory name clashes with another skill's."
+        },
+        {
+          "id": "B",
+          "text": "Claude Code only scans the directory you started in and never walks up to the repository root, so the root-level skills are what is missing and the nested ones are fine."
+        },
+        {
+          "id": "C",
+          "text": "Nested skill directories must be listed in the repository's `.claude/settings.json` under an `extraKnownMarketplaces` entry before Claude Code will load them."
+        },
+        {
+          "id": "D",
+          "text": "The nested skill has to be run once with `/reload-skills` before it appears in the `/` menu, because subdirectory skills are only registered on demand."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Nested skill discovery is deliberately lazy, and the behaviour is documented with an explicit escape hatch. Skills in a `.claude/skills/` directory below where you started don't load at startup — they load the first time Claude reads or edits a file in that subdirectory and stay available for the rest of the session, and until then they do not appear in the `/` menu and cannot be invoked by name. To load them sooner, run `/add-dir` with the subdirectory's path. The wider shape is worth holding: project skills load from `.claude/skills/` in the directory where you start and in every parent directory up to the repository root, so starting in `packages/frontend/` still picks up root-level skills; and where a nested skill's directory name matches another skill's name, both stay available, with the root one as `/name` and the nested one addressable as `/apps/web:deploy`.",
+      "whyWrong": {
+        "B": "It reverses the direction of the walk. Claude Code does walk up from the starting directory to the repository root, which is why root-level skills are the ones that load reliably.",
+        "C": "It invents a settings-based requirement. Nested skills load because Claude touched a file in that directory, not because a marketplace entry declares them.",
+        "D": "It confuses `/reload-skills` with subdirectory discovery. `/reload-skills` is for a top-level skills directory created after the session started; it does not register subdirectory skills that the walk has not reached."
+      },
+      "difficulty": 1,
+      "visualId": "claude-code-config",
+      "mindset": "Nested `.claude/skills/` directories are lazy: they load when Claude touches a file there, and `/add-dir` makes that happen sooner.",
+      "tags": [
+        "skills",
+        "monorepo",
+        "add-dir",
+        "discovery"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/skills"
+      ]
+    },
+    {
+      "id": "v-d3-y5b-014",
+      "taskStatementId": "3.1",
+      "scenario": "Vireo Labs is migrating its `.claude/commands/` files to skills. Half the migration is done, so the same command name exists both as `deploy.md` and as `skills/deploy/SKILL.md`. Some command files also carry a `name:` field they were told is ignored, and one team wants supporting files bundled alongside a command.",
+      "stem": "Which TWO statements about command files versus skills are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Where a skill and a file in `.claude/commands/` share a name, the skill runs. Existing command files keep working — the formats have been merged — but the skill is the one that takes the short name."
+        },
+        {
+          "id": "B",
+          "text": "A command file supports the same frontmatter as a skill except `name` and `paths`. Those two fields are what a command file cannot do, which is why the docs recommend a skill for new work: skills also support supporting files, a directory for the extra material, and the ability for Claude to load them automatically when relevant."
+        },
+        {
+          "id": "C",
+          "text": "The command file wins, because `.claude/commands/` is the location Claude Code has always scanned and skills are layered on top. Migrating to a skill is therefore a behaviour change to schedule, not a silent improvement."
+        },
+        {
+          "id": "D",
+          "text": "Both load and Claude picks between them at invocation time based on which files it has read this session, so the half-migrated repository will behave inconsistently until the migration is finished."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Custom commands have been merged into skills, so the two formats coexist rather than competing on equal terms. A file at `.claude/commands/deploy.md` and a skill at `.claude/skills/deploy/SKILL.md` both create `/deploy` and work the same way, existing command files keep working, and where a skill and a command file share a name the skill runs — which is exactly the half-migrated state Vireo Labs is in. The frontmatter difference is the practical reason to finish the migration: a command file supports the same fields except `name` and `paths`, and skills add a directory for supporting files, control over whether you or Claude invokes them, and automatic loading when relevant. The name derivation also differs, which matters for anything already relying on invocation strings: for a file in a subdirectory of `.claude/commands/` the command is the subdirectory path relative to `commands/` with each `/` replaced by `:`, then the file name without extension, so `frontend/component.md` is `/frontend:component`.",
+      "whyWrong": {
+        "C": "It has the priority backwards. The resolution table says a skill wins over a command file of the same name, so migrating a command file to a skill is a silent improvement rather than a scheduled behaviour change.",
+        "D": "It invents runtime selection between two definitions of the same command. Name resolution is static — the skill takes the short name — so a half-migrated repository is consistent, just not the way the team may have assumed."
+      },
+      "difficulty": 2,
+      "visualId": "claude-code-config",
+      "mindset": "Commands and skills both make `/name`; a skill wins a clash, and `name`/`paths` plus supporting files are what you get by finishing the migration.",
+      "tags": [
+        "slash-commands",
+        "skills",
+        "migration",
+        "frontmatter"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/skills"
+      ]
+    },
+    {
+      "id": "v-d3-y5b-015",
+      "taskStatementId": "3.1",
+      "scenario": "Vireo Labs' `/release` skill is set to `disable-model-invocation: true` so only a human triggers a deploy. The team is happy with that — until a scheduled task configured with `/release` as its prompt fires and does nothing, and a delegated subagent reports it never received the skill.",
+      "stem": "What is the documented explanation, and what should the team do?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Both are documented consequences of the same field. `disable-model-invocation: true` prevents Claude from automatically loading the skill, and it also prevents the skill from being preloaded into subagents and prevents the skill from running when a scheduled task fires with the skill as its prompt. So the field is right for a workflow a human must trigger — but a scheduled task that names the skill as its prompt, and any delegation expecting the skill to be preloaded, both need a different route."
+        },
+        {
+          "id": "B",
+          "text": "Neither is connected to that field. Scheduled tasks and subagent preloading ignore skill frontmatter entirely and resolve skills by name at invocation time, so the two symptoms have a common cause elsewhere."
+        },
+        {
+          "id": "C",
+          "text": "`disable-model-invocation` only affects model-driven selection within a conversation. Scheduled tasks and subagent preloading are separate systems that the field does not reach, so both should work and the failure is elsewhere."
+        },
+        {
+          "id": "D",
+          "text": "The field is spelled wrong and has been silently ignored, which is why scheduled tasks and subagents behave unexpectedly. Claude Code ignores unrecognised frontmatter fields without reporting an error, so a typo disables nothing."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "One field, two documented side effects, and both symptoms follow from it. `disable-model-invocation: true` prevents Claude from automatically loading the skill — the documented setting for workflows you want to trigger manually with `/name` — and it also prevents the skill from being preloaded into subagents and prevents the skill from running when a scheduled task fires with the skill as its prompt. So for Vireo Labs the field is correct in intent and wrong in expectation for the two paths that need a different mechanism: a scheduled task that names a skill as its prompt should name the procedure in the prompt itself or invoke a command that carries the instructions, and a delegation that relies on preloading needs the instruction restated in the delegation prompt. The neighbouring field worth remembering is `user-invocable`, which hides a skill from the `/` menu without stopping Claude from invoking it — the opposite trade.",
+      "whyWrong": {
+        "B": "It denies that frontmatter reaches these paths, which the docs contradict. Preloading into subagents and running from a scheduled task are both explicitly called out as things this field prevents.",
+        "C": "It narrows the field's effect to in-conversation model selection, which misses both documented side effects. The failures Vireo Labs saw are exactly the two the field is documented to cause.",
+        "D": "It proposes a spelling error without evidence. The field name is correct as written, and a genuinely unrecognised field would also not produce these specific, opposite behaviours."
+      },
+      "difficulty": 2,
+      "mindset": "`disable-model-invocation: true` also blocks subagent preloading and scheduled tasks that name the skill — plan those paths separately.",
+      "tags": [
+        "skills",
+        "frontmatter",
+        "sub-agents",
+        "workflow"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/skills",
+        "https://code.claude.com/docs/en/sub-agents"
+      ]
+    },
+    {
+      "id": "v-d3-y5b-016",
+      "taskStatementId": "3.1",
+      "scenario": "Vireo Labs' `nightly-batch` skill declares `disallowed-tools: AskUserQuestion` so an unattended batch cannot stop to ask a human. The skill finishes, the engineer sends the next prompt, and `AskUserQuestion` is available again — which the team finds correct. They also tried adding `EndConversation` to the same list and noticed it had no effect.",
+      "stem": "Which TWO statements about a skill's `disallowed-tools` field are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "`disallowed-tools` removes tools from Claude's available pool while the skill is active, and the restriction clears when you send your next message. It accepts a space- or comma-separated string or a YAML list. That is the right shape for an autonomous skill that must never call a tool, such as `AskUserQuestion` for a background loop."
+        },
+        {
+          "id": "B",
+          "text": "Like deny rules, the field can't remove `EndConversation` while any other tool remains — so listing it alongside other tools does nothing, which is what Vireo Labs observed. `EndConversation` is removable only when nothing else is available."
+        },
+        {
+          "id": "C",
+          "text": "The restriction persists for the rest of the session, which is what makes it a security control rather than a scoping hint. A skill that must never ask a human should stay unable to for the whole conversation."
+        },
+        {
+          "id": "D",
+          "text": "Entries are evaluated per call, so `Bash(git push *)` denies only pushes and the rest of Bash remains usable. That is what lets a skill block one dangerous command without giving up the shell."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "The field is turn-scoped and it removes rather than denies, which is what makes it appropriate for an autonomous skill. `disallowed-tools` removes tools from Claude's available pool while the skill is active, accepts a space- or comma-separated string or a YAML list, and the restriction clears when you send your next message. The docs position it for autonomous skills that should never call certain tools — `AskUserQuestion` for a background loop is the given example — which is exactly Vireo Labs' use. The `EndConversation` limit is the same one that applies to deny rules and to `--disallowedTools`: it cannot be removed while any other tool remains, so naming it alongside other tools has no effect. The distinction from a subagent's `disallowedTools` is worth keeping straight, because the failure mode there is well known and different: for subagents, an entry carrying a specifier such as `Bash(git push *)` still removes the whole tool, so denying one command that way costs you Bash entirely.",
+      "whyWrong": {
+        "C": "It contradicts the documented lifecycle. The restriction clears when you send your next message, so it is turn-scoped scoping rather than a session-wide control — for a session-wide guarantee, use a permission deny rule instead.",
+        "D": "It applies per-call semantics that belong to a different field. For a subagent's `disallowedTools`, an entry carrying a specifier such as `Bash(git push *)` still removes the whole tool, so denying one command that way costs you Bash entirely."
+      },
+      "difficulty": 2,
+      "mindset": "A skill's `disallowed-tools` is turn-scoped and removes tools from the pool; `EndConversation` is exempt while any other tool remains.",
+      "tags": [
+        "skills",
+        "frontmatter",
+        "tools",
+        "permissions"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/skills",
+        "https://code.claude.com/docs/en/cli-reference"
+      ]
+    },
+    {
+      "id": "v-d3-y5b-017",
+      "taskStatementId": "3.1",
+      "scenario": "Vireo Labs ships a plugin whose skill bundles `scripts/render.sh`, a shared `lib/` directory used by two of its skills, and a `data/` directory that must survive plugin updates. The `render-report` skill references `${CLAUDE_SKILL_DIR}/scripts/render.sh` and it resolves to the plugin root instead of the skill directory.",
+      "stem": "Which of the four path variables resolves what, and which two statements about them are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "`${CLAUDE_SKILL_DIR}` is the directory containing the skill's `SKILL.md`. For a plugin skill it is the skill's subdirectory within the plugin, not the plugin root — so a reference that resolves to the plugin root is not using this variable correctly."
+        },
+        {
+          "id": "B",
+          "text": "`${CLAUDE_PLUGIN_ROOT}` is the plugin's installation directory and is substituted only in plugin skills, for referencing scripts or files bundled anywhere in the plugin including resources shared between its skills. `${CLAUDE_PLUGIN_DATA}` is the plugin's persistent data directory, which survives plugin updates, and is also substituted only in plugin skills — which is what makes it the right home for generated or cached artefacts."
+        },
+        {
+          "id": "C",
+          "text": "All four path and session variables are substituted in any skill, plugin or not. `${CLAUDE_PROJECT_DIR}` gives the project root and `${CLAUDE_SESSION_ID}` the current session id, and Claude Code substitutes them uniformly."
+        },
+        {
+          "id": "D",
+          "text": "`${CLAUDE_SKILL_DIR}` points at the plugin root for plugin skills so that skills in one plugin can reach a shared `lib/` directory, and `${CLAUDE_PLUGIN_ROOT}` is the shared `lib/` directory itself rather than the installation directory."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "There are four path-ish variables plus session and effort variables, and they are not interchangeable. `${CLAUDE_SKILL_DIR}` is the directory containing the skill's `SKILL.md`; for a plugin skill it is the skill's subdirectory within the plugin, not the plugin root, and the docs recommend it for bash injection commands that reference bundled scripts or files regardless of the current working directory. `${CLAUDE_PLUGIN_ROOT}` is the plugin's installation directory, substituted only in plugin skills, and is for referencing files bundled anywhere in the plugin including resources shared between its skills — that is the shared `lib/` case. `${CLAUDE_PLUGIN_DATA}` is the plugin's persistent data directory, which survives plugin updates, also plugin-only, which makes it the right home for generated files or caches that must outlive an upgrade. `${CLAUDE_PROJECT_DIR}` is the project root directory — the same path hooks and MCP servers receive — and `${CLAUDE_SESSION_ID}` and `${CLAUDE_EFFORT}` cover session and effort respectively. Claude Code also substitutes `${CLAUDE_SKILL_DIR}` and `${CLAUDE_PROJECT_DIR}` inside Bash rules in a skill's `allowed-tools`, which is what makes such a rule match the command the body asks for.",
+      "whyWrong": {
+        "C": "It drops the plugin-only restriction. The plugin variables are substituted only in plugin skills; treating them as universal would mean a local skill's body silently receives literal text instead of a path.",
+        "D": "It inverts the two plugin variables and misdefines one. `${CLAUDE_SKILL_DIR}` is the skill's own subdirectory, and `${CLAUDE_PLUGIN_ROOT}` is the installation directory rather than a shared-library path within it."
+      },
+      "difficulty": 3,
+      "mindset": "Know which variable means what: skill subdirectory, plugin root, plugin data that survives updates, project root — two of them are plugin-only.",
+      "tags": [
+        "skills",
+        "plugins",
+        "path-variables",
+        "structure"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/skills",
+        "https://code.claude.com/docs/en/plugins/manifest-reference"
+      ]
+    },
+    {
+      "id": "v-d3-y5b-018",
+      "taskStatementId": "3.1",
+      "scenario": "A Vireo Labs engineer's machine keeps picking up skills from their claude.ai account that they never wrote and cannot find on disk. The team wants the affected engineer to keep their local skills but stop the downloads, and wants the already-downloaded copies recoverable rather than destroyed.",
+      "stem": "Which statement accurately describes the documented mechanism?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Set `syncClaudeAiSkills` to `false` in user settings. Claude Code stops downloading, and the next time it starts it moves the skills it already synced to `~/.claude/skills/.trash/` and no longer loads them — so the copies are recoverable rather than deleted. An organization can turn syncing off for everyone by turning off Skills on claude.ai, or by setting the same key in managed settings. To see what synced, run `/skills`, which lists them under `claude.ai sync`."
+        },
+        {
+          "id": "B",
+          "text": "Delete `~/.claude/skills/synced/` by hand. Claude Code then leaves the directory alone, and local skills are unaffected."
+        },
+        {
+          "id": "C",
+          "text": "Sign out of the claude.ai account and switch the session to an API key. Syncing stops for that session, but the already-synced skills remain loaded in every later session signed in to the same account, and only the settings key removes them."
+        },
+        {
+          "id": "D",
+          "text": "Synced skills are downloaded into the project `.claude/skills/` directory, so committing that directory is what distributes them to the team. Clearing `.claude/skills/` stops them."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Claude Code downloads synced skills rather than uploading them, and the opt-out is a settings key with a deliberate two-step shutdown. Setting `syncClaudeAiSkills` to `false` in user settings makes Claude Code stop downloading; the next time it starts, it moves the skills it already synced to `~/.claude/skills/.trash/` and no longer loads them. The trash location is the recoverable part, which matters because a sync can overwrite or remove a locally edited file — if you or Claude edit a file under `~/.claude/skills/synced/`, the change is not saved to your claude.ai account and a later sync can overwrite it, so the right way to change a synced skill is to update it on claude.ai and let the next sync download the new version. Administrators have the same lever at scale: managed settings, or turning off Skills on claude.ai for the organization.",
+      "whyWrong": {
+        "B": "It recommends manual deletion against explicit guidance. If you delete the directory by hand instead, the next sync downloads it again while the skill stays enabled on claude.ai.",
+        "C": "It gets the switching detail right but the conclusion wrong in a confusing way. Syncing does not run in a session that authenticates with an API key, or one using `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN` or an `apiKeyHelper` — but skills an earlier session synced stay on disk and load in later sessions signed in to the same account, which is why the settings key is the reliable switch.",
+        "D": "It puts synced skills in the wrong directory. They are downloaded into `~/.claude/skills/synced/` on your machine, never written into the project's `.claude/skills/`, and Claude Code downloads them and never uploads them."
+      },
+      "difficulty": 2,
+      "mindset": "Synced skills are downloaded into `~/.claude/skills/synced/`; `syncClaudeAiSkills: false` stops fetching and moves existing copies to `.trash/` rather than deleting them.",
+      "tags": [
+        "skills",
+        "claude-ai-sync",
+        "settings",
+        "claude-directory"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/skills",
+        "https://code.claude.com/docs/en/settings-reference"
+      ]
+    },
+    {
+      "id": "v-d3-y5b-019",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian's headless triage job prompts `claude -p \"triage this ticket\"`. The job depends on a skill enabled on the team's claude.ai account, and intermittently Claude reports it could not find it. The docs note that Claude waits for a skill's download only when it invokes that skill.",
+      "stem": "What explains the intermittency, and what is the documented fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "A short non-interactive run can finish before a newly added skill downloads, in which case a later session downloads it — which is why the symptom is intermittent. To make a non-interactive run download the skills and wait for the list before it answers the prompt, set `CLAUDE_CODE_SYNC_SKILLS` to `1`."
+        },
+        {
+          "id": "B",
+          "text": "Non-interactive sessions never sync account skills at all, so the job must commit the skill to the repository's `.claude/skills/` instead. The environment variable only affects interactive sessions."
+        },
+        {
+          "id": "C",
+          "text": "The skill exists but its command name differs: account skills are invoked as `/anthropic-skills:<name>`, so `/triage` can never resolve to it even after it downloads."
+        },
+        {
+          "id": "D",
+          "text": "Syncing requires the session to fetch feature flags, and the CI runner sets `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`, which disables it. Removing that variable is the fix, and it affects interactive and non-interactive sessions equally."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The race is a consequence of an explicit design choice: syncing never delays startup. When the session starts, Claude Code downloads account skills into `~/.claude/skills/synced/` in the background and then checks claude.ai for changes about every ten minutes while the session runs, adding, updating or removing skills in the running session without a restart. Because the sync never delays startup, Claude waits for a skill's download only when it invokes that skill — so a short non-interactive run can finish before a newly added skill downloads, and a later session downloads it. That is precisely the intermittency Meridian is seeing, and the documented fix is to set `CLAUDE_CODE_SYNC_SKILLS` to `1`, which makes a non-interactive run download the skills and wait for the list before it answers the prompt. The durable alternative, which does not depend on a race at all, is to commit the skill to the repository's `.claude/skills/`.",
+      "whyWrong": {
+        "B": "It overstates the exclusion. Non-interactive sessions do sync account skills; what they do not do by default is wait for them, which is the actual defect here.",
+        "C": "It invents a naming barrier. A synced skill can be invoked by its short name `/triage` while no other command uses that name; it moves to `/anthropic-skills:<name>` only when the short name is taken.",
+        "D": "It identifies a real condition but the wrong condition for these symptoms. Disabling feature-flag fetching does stop syncing, but the pattern described — a newly added skill missing on short runs and present later — is the documented download race, and the fix for it is the wait flag."
+      },
+      "difficulty": 2,
+      "mindset": "Syncing is background work by design, so a short `-p` run can outrun it; `CLAUDE_CODE_SYNC_SKILLS=1` makes the run wait for the list.",
+      "tags": [
+        "skills",
+        "headless",
+        "claude-ai-sync",
+        "ci"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/skills",
+        "https://code.claude.com/docs/en/env-vars"
+      ]
+    },
+    {
+      "id": "v-d3-y5b-020",
+      "taskStatementId": "3.1",
+      "scenario": "Vireo Labs runs three `claude -w` worktree sessions concurrently in one repository. The team expected each worktree to see the repository's project skills. One session sees none of them, and the personal settings grants from `settings.local.json` are missing in all three.",
+      "stem": "Which TWO statements about worktrees and configuration are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "In a session running in a linked git worktree, Claude Code searches parent directories only up to the worktree root — it does not walk past it into the main checkout. On recent versions, when the worktree checkout has no `.claude/skills` directory at its root, Claude Code loads the main checkout's project skills instead, which is what rescues a worktree created before skills were committed."
+        },
+        {
+          "id": "B",
+          "text": "For `settings.local.json`, a worktree uses the file at the main checkout's root. So the personal allow grants an engineer approved once in the main checkout do follow them into worktree sessions, which is the behaviour teams rely on when they move work into a worktree."
+        },
+        {
+          "id": "C",
+          "text": "Both surfaces use the worktree's own root. Skills are discovered from the worktree checkout only, and `settings.local.json` is written inside the worktree, so a worktree is fully independent of the main checkout."
+        },
+        {
+          "id": "D",
+          "text": "Neither surface applies. Configuration is bound to the directory the session started in, and a worktree session starts in the worktree, so the main checkout's skills and grants are both invisible until the engineer runs `/cd` out."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Two configuration surfaces resolve differently in a worktree, and the difference explains both symptoms. Skills are the surprising one: in a session running in a linked git worktree, Claude Code searches parent directories only up to the worktree root, so it does not walk past the boundary into the main checkout. The documented rescue is version-dependent and worth knowing — on recent versions, when the worktree checkout has no `.claude/skills` directory at its root, Claude Code loads the main checkout's project skills instead. That is why one worktree sees the repository's skills and another, whose branch happens to carry a `.claude/skills` directory, sees its own. `settings.local.json` goes the other way: in a worktree Claude Code uses the file at the main checkout's root, so personal grants follow the engineer in. The flip side of that is the trust nuance — a worktree's file is still the main checkout's, so a tracked personal file there is subject to the same trust rules as anywhere else.",
+      "whyWrong": {
+        "C": "It claims a symmetric isolation that does not exist. Skill discovery is bounded by the worktree root with a documented fallback to the main checkout, and `settings.local.json` explicitly uses the main checkout's file rather than a per-worktree copy.",
+        "D": "It describes behaviour from a model where nothing follows the session across checkouts. Skills stop at the worktree root, `settings.local.json` comes from the main checkout, and neither requires a `/cd` to appear."
+      },
+      "difficulty": 3,
+      "visualId": "claude-code-config",
+      "mindset": "Worktrees bound skill discovery at the worktree root; personal grants come from the main checkout's `settings.local.json`.",
+      "tags": [
+        "worktrees",
+        "skills",
+        "settings",
+        "sessions"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/skills",
+        "https://code.claude.com/docs/en/settings"
+      ]
+    },
+    {
+      "id": "v-d3-y5b-021",
+      "taskStatementId": "3.1",
+      "scenario": "Vireo Labs engineers run `claude -w` to get an isolated checkout per feature, and one engineer wants the session in a tmux pane so it survives closing the terminal. Another starts from a GitHub pull request instead of a branch name.",
+      "stem": "What are the documented behaviours of the relevant flags?",
+      "options": [
+        {
+          "id": "A",
+          "text": "`--worktree`/`-w` starts Claude Code in an isolated git worktree at `<repo>/.claude/worktrees/<name>`, generating a name if you do not give one, so concurrent sessions get their own checkout instead of colliding in one working tree. `--tmux` creates a tmux session for the worktree and requires `--worktree`; it uses iTerm2 native panes when available, and `--tmux=classic` gives old-style tmux. Passing `#<number>`, a GitHub pull request URL or a GitLab merge request URL in place of the name fetches that PR or MR from `origin` and branches the worktree from it."
+        },
+        {
+          "id": "B",
+          "text": "`--tmux` is independent of `--worktree` and can be used with any session to get a tmux pane. It also creates the worktree automatically if one does not exist."
+        },
+        {
+          "id": "C",
+          "text": "A worktree is a copy of the repository in a temp directory outside it, so the main checkout is never touched and no branch is created until you commit."
+        },
+        {
+          "id": "D",
+          "text": "`-w` snapshots the working tree with `git stash`, runs the session against the snapshot, and restores it when the session ends, which is why two concurrent sessions never collide."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Worktree isolation is a real git worktree at a documented location, not a copy or a stash. `--worktree`/`-w` starts Claude Code in an isolated git worktree at `<repo>/.claude/worktrees/<name>`, generating a name if you do not give one, so concurrent sessions each get their own checkout rather than fighting over one working tree. `--tmux` creates a tmux session for the worktree and requires `--worktree`; it uses iTerm2 native panes when available, with `--tmux=classic` selecting old-style tmux. And the name position is flexible: passing `#<number>`, a GitHub pull request URL or a GitLab merge request URL fetches that PR or MR from `origin` and branches the worktree from it. The worktree is also a configuration boundary worth planning around, since skill discovery stops at the worktree root and personal grants come from the main checkout.",
+      "whyWrong": {
+        "B": "It contradicts the stated dependency. `--tmux` creates a tmux session for a worktree and requires `--worktree`; it does not create one for you.",
+        "C": "It describes a copy rather than a worktree. The isolation comes from git's own worktree mechanism at `<repo>/.claude/worktrees/`, which is what makes a branch per session possible.",
+        "D": "It describes a stash-based isolation scheme that Claude Code does not use. Nothing is stashed or restored; the session works in its own checkout for the life of the worktree."
+      },
+      "difficulty": 1,
+      "mindset": "`-w` is a real git worktree under `.claude/worktrees/`; `--tmux` requires it, and a PR URL or `#number` in the name position branches from that PR.",
+      "tags": [
+        "worktrees",
+        "cli-flags",
+        "sessions",
+        "workflow"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/cli-reference",
+        "https://code.claude.com/docs/en/worktrees"
+      ]
+    },
+    {
+      "id": "v-d3-y5b-022",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian's engineer sees a settings dialog at the start of an interactive session offering to fix a broken file with Claude's help, exit, or continue without it. A colleague on CI saw no dialog at all and simply ran with the rest of the file. Both need to understand what they are looking at.",
+      "stem": "Which statement about the two diagnostic surfaces is accurate?",
+      "options": [
+        {
+          "id": "A",
+          "text": "They are two different tools with different powers. `claude doctor` prints read-only installation and settings diagnostics from the terminal without starting a session, including install health, settings-file validation errors and Remote Control eligibility. `/doctor` is the in-session setup checkup that can also apply fixes, and it is the one whose `prompt-audit` subcommand reports outdated instructions, references to files that don't exist, and instructions that contradict each other across CLAUDE.md, rules, skills, commands and subagents. Separately, `/status` inside a session shows which settings sources are active via its `Setting sources` line — but it confirms which files were read, not which file supplied each key."
+        },
+        {
+          "id": "B",
+          "text": "They are the same diagnostic at two verbosity levels, and `/status` additionally shows which file supplied each key. Anything `claude doctor` reports is also visible in the interactive session."
+        },
+        {
+          "id": "C",
+          "text": "`claude doctor` is the older command and `/doctor` is the newer name for it, so a machine on a recent version supports only `/doctor` and the terminal form has been removed."
+        },
+        {
+          "id": "D",
+          "text": "Both only inspect installation health. Settings-file validation errors are reported by the settings dialog alone and never appear in either diagnostic."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Three surfaces with three jobs, and pairing them wrongly is what slows configuration debugging down. `claude doctor` prints read-only installation and settings diagnostics from the terminal without starting a session, including install health, settings-file validation errors and Remote Control eligibility — which is exactly the right tool in the CI case, because a `-p` run shows no dialog and therefore skips the broken file or values silently. `/doctor` is the in-session setup checkup that can also apply fixes, and it is where `prompt-audit` lives, reporting outdated instructions, references to files that don't exist and instructions that contradict each other across CLAUDE.md, rules, skills, commands and subagents. `/status` is the third: run it after saving a settings file to confirm it loaded, and read its `Setting sources` line to see which sources are active — with the documented limit that it confirms which files Claude Code read and does not show which file supplied each key. When a `-p` run ignores a setting, the documented instruction is to run `claude doctor` to see what it dropped.",
+      "whyWrong": {
+        "B": "It conflates the tools and over-promises `/status`. `/status` confirms which files were loaded, not which file supplied each key, and `claude doctor` is the one that enumerates rejected entries.",
+        "C": "It invents a rename. The two coexist with different capabilities: the terminal command is read-only and works without a session, while the in-session version can apply fixes and hosts `prompt-audit`.",
+        "D": "It narrows both diagnostics to installation. Settings-file validation errors are explicitly part of what `claude doctor` prints, which is the documented answer for a headless run that dropped a value."
+      },
+      "difficulty": 3,
+      "mindset": "`claude doctor` reads diagnostics without a session, `/doctor` can fix and hosts `prompt-audit`, and `/status` shows which files loaded — never which file set a key.",
+      "tags": [
+        "troubleshooting",
+        "settings",
+        "observability",
+        "doctor"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/cli-reference",
+        "https://code.claude.com/docs/en/settings"
+      ]
+    },
+    {
+      "id": "v-d3-y5b-023",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian pins Claude Code to a specific version per team so a config change does not break half the company. After a version rollout, some engineers report a skill behaving differently, and a platform engineer argues the binary is the variable nobody controlled.",
+      "stem": "Which TWO statements about controlling version and config together are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "`claude install` installs or reinstalls the native binary and accepts a version like `2.1.118` as well as `stable` and `latest`, while `claude update` moves to the latest version. So a team can pin and roll forward deliberately, and `claude --version` reports which build is running."
+        },
+        {
+          "id": "B",
+          "text": "Config is versionable alongside the binary: `.claude/settings.json` is committed and reviewed like code, personal overrides live in the untracked `settings.local.json`, and organization policy goes in managed settings — so a rollback is a revert of the config commit rather than an exercise in unwinding each machine. Managed settings can also carry `requiredMinimumVersion`, an admin-side key, so a rollout can be gated from the policy side; note that it is one of the keys that waits for a session restart."
+        },
+        {
+          "id": "C",
+          "text": "There is no supported way to pin the binary. `claude update` is the only version control available, so a rollout has to be scheduled as a fleet-wide update and a rollback means reinstalling on every machine."
+        },
+        {
+          "id": "D",
+          "text": "Configuration cannot be versioned independently of the binary, because a settings key that works on one version may not on the next. The only safe practice is to keep configuration minimal and accept that a rollback is always a reinstall."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Both halves of the drift problem are addressable, which is why a version incident does not have to be diagnosed machine by machine. On the binary: `claude install` installs or reinstalls the native binary and accepts a version like `2.1.118` or `stable` and `latest`, `claude update` moves to the latest version, and `claude --version` reports what is running — so pinning is a decision rather than an accident. On config: the scopes already give each audience a home, so the committed `.claude/settings.json` is reviewed in a pull request, the untracked `settings.local.json` holds personal exceptions, and managed settings carry organization policy that nothing local overrides. Rolling back a bad configuration change is therefore a revert, not a fleet-wide manual repair. The policy-side lever worth knowing is `requiredMinimumVersion`: it is an admin-side managed key, and it is on the list of keys that wait for a session restart rather than hot-reloading.",
+      "whyWrong": {
+        "C": "It denies a documented pinning mechanism. `claude install` accepts an explicit version as well as `stable` and `latest`, so a team can hold a build and move it forward deliberately instead of only ever tracking latest.",
+        "D": "It argues for treating the binary as the only variable when configuration has its own version control. A committed `.claude/settings.json` is reviewed in a pull request, so a bad change is a revert rather than a fleet-wide repair."
+      },
+      "difficulty": 2,
+      "mindset": "Version the binary and version the config: `claude install <version>` plus a committed project settings file turns a rollout into a reviewable diff and a revert.",
+      "tags": [
+        "settings",
+        "cli-flags",
+        "team",
+        "rollout"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/cli-reference",
+        "https://code.claude.com/docs/en/managed-settings"
+      ]
+    },
+    {
+      "id": "v-d3-y5b-024",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian commits `permissions.deny` with entries like `Read(./config/**)` and `Edit(/srv/deploy/app/**)`. From the repository root the rules behave as the team expects. From a subdirectory session the first one now blocks a different set of files than the team reviewed, and the second one no longer matches anything.",
+      "stem": "What is the documented rule about where paths in a permission rule anchor?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Paths in the file do not anchor at the repository root. A permission rule that starts with `/` or a relative sandbox path anchors at the session's primary working directory instead. So the same committed rule covers a different file set depending on where the session was started — which is exactly the drift Meridian is seeing, and the fix is to write rules whose meaning does not depend on the starting directory, or to standardise the starting directory for sessions that run these rules."
+        },
+        {
+          "id": "B",
+          "text": "All permission paths anchor at the repository root, always. A leading `./` and a leading `/` are equivalent spellings and neither depends on the session's working directory."
+        },
+        {
+          "id": "C",
+          "text": "Permission paths anchor at the filesystem root, so `./config/**` is interpreted as a path relative to `/` and simply never matches anything inside a repository."
+        },
+        {
+          "id": "D",
+          "text": "The anchoring follows the working directory, but only for `Read`. `Edit`, `Write` and the other file tools always resolve against the repository root, so editing rules are stable even though read rules are not."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "This is the rule that makes committed path rules fragile, and it is stated as a caveat rather than buried. Paths in the file do not anchor at the repository root: a permission rule that starts with `/` or a relative sandbox path anchors at the session's primary working directory instead. Two consequences follow, and Meridian has hit both. A rule written as `./config/**` covers a different file set when the session starts in a subdirectory, which is the first symptom. And a rule written as `/srv/deploy/app/**`, having no `./` prefix, is now resolved against the session's primary working directory rather than the filesystem root, so it stops matching the absolute path it was reviewed against — the second symptom. The mitigation is not a syntax trick but a discipline: either write rules whose meaning is independent of the starting directory, or make the primary working directory a fixed part of how the team runs sessions that depend on them. Note this is a separate mechanism from trust, which gates whether committed `allow` rules apply at all.",
+      "whyWrong": {
+        "B": "It states the opposite of the documented caveat and, more importantly, denies the dependency that is actually producing the drift. The primary working directory is the anchor, so the same rule means different things in different sessions.",
+        "C": "It conflates the leading `/` with a filesystem-root anchor. A `/`-prefixed rule anchors at the session's primary working directory, which is a different thing entirely and is why the deployed-path rule stopped matching.",
+        "D": "It invents a per-tool distinction. The caveat is about permission rules in general, not about `Read` versus `Edit`, so all file tools follow the same anchoring rule."
+      },
+      "difficulty": 3,
+      "visualId": "claude-code-config",
+      "mindset": "A permission path starting with `/` or `./` anchors at the session's primary working directory, not the repo root — so path rules must not depend on where the session started.",
+      "tags": [
+        "permissions",
+        "settings",
+        "working-directories",
+        "monorepo"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/settings",
+        "https://code.claude.com/docs/en/permissions"
+      ]
+    },
+    {
+      "id": "v-d3-y5b-025",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian's engineer starts Claude Code at the repository root, then uses `/cd` to move the session into `packages/ledger-core` to focus on the migration. Afterwards the `permissions.allow` rules from the committed settings file stop applying and she is prompted for `Bash(git log *)` again.",
+      "stem": "What is the documented behaviour, and what should she expect?",
+      "options": [
+        {
+          "id": "A",
+          "text": "After you move the session with `/cd`, Claude Code reads both project files from the new directory instead — the shared `.claude/settings.json` and the local file, with the local file placed by the same root rules as before. So the session's project configuration follows the directory it is in, not the one it started in. Reading them from the directory you moved to requires a recent enough version, which is worth confirming before drawing conclusions. Two related behaviours complete the picture: Claude Code reads the shared file from the session's primary working directory, so to use a file committed at the repository root you start there; and on recent versions `/cd` also adds the new directory's project skills."
+        },
+        {
+          "id": "B",
+          "text": "`/cd` changes only the shell working directory. Claude Code's configuration is bound to the directory the session started in, so permissions and skills never change."
+        },
+        {
+          "id": "C",
+          "text": "`/cd` re-reads the project files from the new directory but deliberately keeps the permission rules that were in force at startup, so the prompts are a bug in that version."
+        },
+        {
+          "id": "D",
+          "text": "`/cd` moves the session and merges the new directory's settings over the old ones, so the effective allow list is the union of both. The prompting must therefore come from a deny or ask rule."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Moving a session changes which project files apply, and that is documented behaviour rather than a quirk of one version. After you move the session with `/cd`, Claude Code reads both project files from the new directory instead, placing the local file by the same rules as elsewhere. Three related facts make the behaviour predictable rather than surprising. Claude Code reads the shared `.claude/settings.json` from the session's primary working directory, so to use a file committed at the repository root you start there. Reading the files from the directory you moved to requires a recent enough version, so an older client would show the older behaviour and that is worth ruling out. And on recent versions `/cd` also adds the new directory's project skills — which lines up with how nested `.claude/skills/` discovery works. Combined with the path-anchoring caveat, the practical lesson is that a session's effective configuration is a function of its primary working directory, which is why teams that depend on committed path rules standardise where sessions start.",
+      "whyWrong": {
+        "B": "It claims configuration is frozen at the starting directory, which the documented behaviour contradicts. Both project files are re-read from the directory the session moved to.",
+        "C": "It asserts the old rules are pinned deliberately and calls the observed prompting a bug. The change is the feature: the session now resolves project configuration from where it actually is.",
+        "D": "It invents a merge. Project files are read from the new directory, not unioned with the previous directory's, so the root's allow rules are simply no longer the ones in force."
+      },
+      "difficulty": 2,
+      "mindset": "`/cd` moves which project files apply, so a session's configuration follows its primary working directory — start where the committed config lives.",
+      "tags": [
+        "settings",
+        "permissions",
+        "working-directories",
+        "sessions"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/settings",
+        "https://code.claude.com/docs/en/permissions"
+      ]
+    },
+    {
+      "id": "v-d3-y5b-026",
+      "taskStatementId": "3.1",
+      "scenario": "Vireo Labs is standardising on Claude Code and a third of the team arrived from another coding agent with their own rules file and command set. A platform engineer wants to see what would be imported before anything lands.",
+      "stem": "What is the documented migration path, and what should the engineer know before running it?",
+      "options": [
+        {
+          "id": "A",
+          "text": "`claude import [source]` starts an interactive session that runs `/import` to bring configuration from other coding agents into Claude Code, and accepts the same `--dry-run` and `--yes` options as the command — so the dry run is the right first step for a team that wants to review before committing. Two availability caveats: it is not available on Amazon Bedrock, Google Cloud's Agent Platform, Microsoft Foundry or Claude Platform on AWS, and it is unavailable when you turn off feature-flag fetching."
+        },
+        {
+          "id": "B",
+          "text": "`claude import` is a headless conversion that rewrites another agent's configuration into Claude Code's formats and exits. `--dry-run` prints the resulting CLAUDE.md without opening a session."
+        },
+        {
+          "id": "C",
+          "text": "There is no import mechanism. Migration is manual: copy the other agent's rules file to the repository root as `CLAUDE.md` and recreate each command as a file in `.claude/commands/`."
+        },
+        {
+          "id": "D",
+          "text": "`/import` copies configuration from a Claude Code session into another coding agent. The direction is the reverse of what the platform team assumed."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "There is a first-class migration path and it is interactive by design. `claude import [source]` starts an interactive session that runs `/import` to bring configuration from other coding agents into Claude Code, and it accepts the same `--dry-run` and `--yes` options as the command — so a team that wants to see the shape of the conversion before committing anything has a documented first step rather than a guess. The availability caveats matter for a fleet rollout because they are not universal: the command is not available on Amazon Bedrock, Google Cloud's Agent Platform, Microsoft Foundry or Claude Platform on AWS, and it is unavailable when you turn off feature-flag fetching. Vireo Labs' manual alternative is coherent as a fallback, but it loses the review step, and it is worth remembering what the destination formats actually accept — CLAUDE.md is standing context, while a procedure belongs in a skill, and a command file cannot use the `name` or `paths` frontmatter fields.",
+      "whyWrong": {
+        "B": "It describes a non-interactive converter that does not exist. `claude import` opens an interactive session running `/import`, and there is no headless rewrite-and-exit form.",
+        "C": "It denies the mechanism. Import exists, and the manual copy it describes also loses the distinction between standing instructions and on-demand procedures, which is the part that decides where each piece belongs.",
+        "D": "It reverses the direction. `/import` brings configuration into Claude Code from other coding agents, not out of Claude Code into another tool."
+      },
+      "difficulty": 2,
+      "mindset": "`claude import` / `/import` migrates other agents' configuration into Claude Code — interactive, with `--dry-run` first, and unavailable on some model platforms.",
+      "tags": [
+        "migration",
+        "claude-md",
+        "configuration-scope",
+        "cli-flags"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/cli-reference",
+        "https://code.claude.com/docs/en/memory"
+      ]
+    },
+    {
+      "id": "v-d3-y5b-027",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian's CI bootstrap script needs to confirm how a runner is authenticating and which configuration directory it is using, before it decides whether to export a key or ask a human to sign in. The script wants machine-readable output.",
+      "stem": "What is the documented command, and what does its output actually contain?",
+      "options": [
+        {
+          "id": "A",
+          "text": "`claude auth status` shows authentication status as JSON, with `--text` for human-readable output, exiting 0 when logged in and 1 when not. The JSON includes a `configDirectory` field naming the configuration directory the CLI uses — that field requires Claude Code v2.1.268 or later — and its `authMethod` field is one of `none`, `claude.ai`, `oauth_token`, `api_key`, `api_key_helper` or `third_party`. That is the information a bootstrap needs: `api_key_helper` and `third_party` in particular tell the script a credential is being supplied from outside the environment."
+        },
+        {
+          "id": "B",
+          "text": "`claude auth status --json` prints the account email, the organisation id and the workspace id, so the bootstrap can select the right billing workspace without an extra API call."
+        },
+        {
+          "id": "C",
+          "text": "`claude doctor` reports the authenticated account and the configuration directory as part of its read-only diagnostics, which is why the bootstrap should shell out to that instead."
+        },
+        {
+          "id": "D",
+          "text": "There is no non-interactive way to inspect authentication. The bootstrap must attempt a trivial API call and infer the credential from whether it succeeds."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "`claude auth status` is the documented non-interactive inspection point. It shows authentication status as JSON, with `--text` for human-readable output, and exits with code 0 if logged in and 1 if not. Two fields are directly useful to a bootstrap: `configDirectory` names the configuration directory the CLI uses — which is the field that tells a script whether it is about to read the settings it thinks it is, and it requires Claude Code v2.1.268 or later — and `authMethod` is one of `none`, `claude.ai`, `oauth_token`, `api_key`, `api_key_helper` or `third_party`. The `authMethod` values matter because they distinguish the cases a bootstrap handles differently: an `api_key` is in the environment, an `api_key_helper` is a script the CLI calls, and `third_party` is a different vendor's credential entirely. JSON output is already the default, so there is no `--json` flag to add; and `claude doctor` is the read-only diagnostics command for installation and settings health rather than for credential identity.",
+      "whyWrong": {
+        "B": "It invents a flag and a richer payload than the command provides. The JSON status carries the `configDirectory` and `authMethod` fields described, not account and workspace identifiers.",
+        "C": "It reassigns the command's purpose. `claude doctor` covers install health, settings-file validation errors and Remote Control eligibility; authentication identity is what `claude auth status` reports.",
+        "D": "It denies a documented interface. The command exists precisely so a script can inspect credential state without making an API call."
+      },
+      "difficulty": 1,
+      "mindset": "`claude auth status` prints JSON with exit codes 0/1; read `authMethod` and `configDirectory` before deciding how a runner authenticates.",
+      "tags": [
+        "authentication",
+        "cli-flags",
+        "headless",
+        "ci"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/cli-reference",
+        "https://code.claude.com/docs/en/env-vars"
+      ]
+    },
+    {
+      "id": "v-d3-y5b-028",
+      "taskStatementId": "3.1",
+      "scenario": "Meridian's CI review job behaves unlike every developer's session: some project-scoped servers load without the approval dialog an engineer sees, prompts it cannot answer are denied, and a personal skill the reviewer relies on does not exist for the job at all.",
+      "stem": "Which TWO statements about making the headless configuration deliberate are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Two of the three differences are prompt-related and have documented flags. Claude Code prompts for project-scoped MCP servers in interactive sessions, while in `claude -p` runs, Agent SDK sessions and cloud sessions it cannot show the prompt and so loads them without asking — to keep one out, block it with `disabledMcpjsonServers`, exclude project settings with `--setting-sources`, or run with `--strict-mcp-config`. And where nobody can answer, `--permission-prompts none` makes Claude Code deny rather than leave a prompt outstanding, which is the honest setting for an unattended run."
+        },
+        {
+          "id": "B",
+          "text": "The third difference is not a prompt at all — it is which sources load. Personal skills live in `~/.claude/skills/` on the engineer's machine, and neither Cowork nor cloud sessions read that directory, while cloud sessions additionally load project skills committed to the cloned repository's `.claude/skills/`. So a skill that only exists on one developer's laptop is simply absent from the job, and the fix is either committing it to the repository or enabling it for the account — not anything to do with approval dialogs. Which files load is controlled with `--setting-sources`, whose list is inherited by sessions started from this one."
+        },
+        {
+          "id": "C",
+          "text": "All three differences reduce to the same cause: the job runs with fewer settings sources. MCP approval, prompt handling and skill visibility are all symptoms of `--setting-sources` being narrowed, so widening the list to `user,project,local` resolves all three."
+        },
+        {
+          "id": "D",
+          "text": "None of this is a real difference. Claude Code presents an identical configuration to interactive and headless sessions; the job's behaviour differs only because it authenticates with an API key instead of signing in to claude.ai."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "The useful move is to stop treating headless as 'interactive minus the dialogs' and enumerate the differences, because each has a flag or a documented behaviour. On MCP: Claude Code prompts for project-scoped servers in interactive sessions, and in `claude -p` runs, Agent SDK sessions and cloud sessions it cannot show the prompt, so it loads them without asking — which is why the job sees a server the engineer had to approve. To keep it out, block it with `disabledMcpjsonServers`, exclude project settings with `--setting-sources`, or run with `--strict-mcp-config`. On permissions: with `--permission-prompts host` the default, prompts go to the Agent SDK host or a `--permission-prompt-tool`; with `none`, nobody can answer and Claude Code denies. On skills and settings generally: personal skills under `~/.claude/skills/` are not read by Cowork or cloud sessions, while cloud sessions do load project skills committed to the repository's `.claude/skills/` — so the missing skill is a source problem, and `--setting-sources` is the lever that decides which settings files load.",
+      "whyWrong": {
+        "C": "It collapses three independent mechanisms into one. Narrowing `--setting-sources` changes which settings files load; it does not restore an interactive MCP approval dialog, nor change who answers permission prompts — those are separate from the skill-visibility question.",
+        "D": "It denies the documented differences and substitutes an unrelated variable. Authentication method affects whether account skills sync; it is not what makes a project-scoped server load without approval in a headless run."
+      },
+      "difficulty": 3,
+      "visualId": "deployment-topology",
+      "mindset": "Headless is not interactive minus dialogs: MCP approval, unanswerable prompts and personal-skill visibility each have a different documented mechanism.",
+      "tags": [
+        "headless",
+        "mcp",
+        "permissions",
+        "ci"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/mcp",
+        "https://code.claude.com/docs/en/headless"
+      ]
+    }
+  ]
+}

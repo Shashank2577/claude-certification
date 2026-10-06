@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, type KeyboardEvent, type ReactNode } from "react";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
+import { useHydratedReducedMotion } from "@/lib/use-reduced-motion";
 import { ChevronLeft, ChevronRight, RotateCcw } from "lucide-react";
 import clsx from "clsx";
 
@@ -236,7 +237,7 @@ function rove(e: KeyboardEvent<HTMLDivElement>, count: number, index: number, go
 }
 
 function PipelineView() {
-  const reduce = !!useReducedMotion();
+  const reduce = !!useHydratedReducedMotion();
   const [strategy, setStrategy] = useState<Strategy>("swallow");
   const [phase, setPhase] = useState(0);
   const last = 4;
@@ -389,7 +390,7 @@ function Diagram({ L, pts, className, phase, strategy, reduce, crashed, label }:
 }
 
 function ClassifyView() {
-  const reduce = useReducedMotion();
+  const reduce = useHydratedReducedMotion();
   const [sel, setSel] = useState("timeout");
   const idx = Math.max(0, ERRORS.findIndex((x) => x.id === sel));
   const e = ERRORS[idx];

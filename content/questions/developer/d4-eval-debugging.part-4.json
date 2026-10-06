@@ -1,0 +1,1230 @@
+{
+  "certId": "developer",
+  "domainId": "d4-eval-debugging",
+  "questions": [
+    {
+      "id": "v-d4-y4-001",
+      "taskStatementId": "4.1",
+      "scenario": "Ironbridge Logistics enabled extended thinking on its claims-triage agent so Claude would reason before summarising. Two weeks later every request that uses a tool fails with HTTP 400 and the message `messages.1.content.0: thinking or redacted_thinking blocks in the latest assistant message cannot be modified`. The team has not changed the model or the prompt.",
+      "stem": "What is the most likely defect in Ironbridge's integration, and what is the correct fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Ironbridge is reconstructing the assistant turn before resending it — editing, reordering, filtering or rebuilding content blocks. If the most recent assistant message contains `thinking` or `redacted_thinking` blocks that were altered in any of those ways, the request returns a 400 `invalid_request_error` whose message names the offending block's position. Every `thinking` and `redacted_thinking` block from the assistant turn must be passed back exactly as received, including blocks whose `thinking` field is empty, so any filter that drops content blocks by type must include both of those types rather than keeping only text and tool_use."
+        },
+        {
+          "id": "B",
+          "text": "Thinking blocks become read-only after a tool call, so any multi-turn tool loop with thinking enabled is unsupported. The fix is to disable thinking whenever the agent uses tools."
+        },
+        {
+          "id": "C",
+          "text": "The history has grown past the context window and the API is reporting the overflow as a block-level error. Reducing `max_tokens` on the previous turn will fix it."
+        },
+        {
+          "id": "D",
+          "text": "The API requires thinking blocks to be re-signed on every resend, and Ironbridge is not doing so. Adding the `thinking-binding-controls-2026-08-01` beta header makes the resend legal."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The error names the block position, which is the clue: this is about the integrity of the assistant turn you are resending, not capacity. If the most recent assistant message contains `thinking` or `redacted_thinking` blocks that were edited, reordered, filtered out or reconstructed before being sent back, the request returns a 400 `invalid_request_error` and the message starts with the position of the offending block. With tool use, every `thinking` and `redacted_thinking` block from the assistant turn must be passed back exactly as received, including blocks whose `thinking` field is empty — so the common culprit is an application that filters content blocks by type before resending and keeps only the types it cares about. The defensive habit worth adopting follows from this: treat the assistant turn as an opaque envelope you replay rather than a structure you project, because any reconstruction is a candidate for this error. It also explains why the failure appeared when thinking was enabled: before that, the filtered-out block types simply did not exist.",
+      "whyWrong": {
+        "B": "It converts a replay rule into a feature restriction. Multi-turn tool loops with thinking are supported; the constraint is on what you do to the blocks between turns, not on combining thinking with tools.",
+        "C": "It reads a block-level integrity error as a capacity problem. A context-window overflow is reported differently, and the message here names a specific block position rather than the request size.",
+        "D": "It misattributes the error to signature re-signing. That is a distinct failure about a block being bound to a different conversation; this message is about the block having been modified, and a beta header does not license rewriting history."
+      },
+      "difficulty": 2,
+      "mindset": "Replay the assistant turn verbatim — editing, reordering or filtering `thinking` and `redacted_thinking` blocks is a deterministic 400, not a flaky one.",
+      "tags": [
+        "thinking",
+        "error-identification",
+        "integration-layer",
+        "tool-use"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://platform.claude.com/docs/en/build-with-claude/extended-thinking"
+      ]
+    },
+    {
+      "id": "v-d4-y4-002",
+      "taskStatementId": "4.1",
+      "scenario": "Ironbridge runs a support agent on a model with preserved thinking. A new feature lets a user edit an earlier message and continue the conversation. Every subsequent request fails with `messages.2.content.0: Invalid signature in thinking block. The block is bound to a different conversation. Remove the block, or set thinking.block_binding.prefix_mismatch_behavior to \"drop_block\"`.",
+      "stem": "Which TWO statements about this failure are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "On the models that support it, the API accepts a replayed thinking block only while the `system` prompt, `tools` and messages that preceded it are unchanged. For new accounts created on or after the documented date, and for any request that sets `thinking.block_binding.prefix_mismatch_behavior` to `\"error\"`, a replayed block whose earlier history changed is rejected with a 400 — and the message names the position of the first failing block."
+        },
+        {
+          "id": "B",
+          "text": "There are two documented responses. Keep the conversation history append-only, or send the beta header with `prefix_mismatch_behavior: \"drop_block\"`, which drops the block and the request succeeds. The alternative of re-signing is not available to a client."
+        },
+        {
+          "id": "C",
+          "text": "The block is cryptographically bound to the prefix, so any earlier edit invalidates it regardless of settings. Dropping the block requires administrator approval and is not available to an application."
+        },
+        {
+          "id": "D",
+          "text": "The fix is to remove every `thinking` block from stored history before resending. That is always safe, because the API only requires thinking blocks for the most recent assistant message."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "This is a different failure from modification, and the distinction is worth holding precisely. On the models that support block binding, the API accepts a replayed thinking block only while the `system` prompt, `tools` and messages that preceded it are unchanged; when they have changed, the block is bound to a different conversation. The strictness is configurable in a way that matters operationally: for new accounts created on or after the documented date, and for any request that sets `thinking.block_binding.prefix_mismatch_behavior` to `\"error\"`, the replayed block is rejected with a 400 whose message starts at the position of the first failing block; with `\"drop_block\"` the API drops the block and the request succeeds. So the two documented responses are to keep conversation history append-only, which is the better product decision when the feature allows editing, or to send the beta header with `drop_block` and continue without the block. Note the mechanics around the header: sending `thinking.block_binding` without the `thinking-binding-controls-2026-08-01` beta header returns a 400 about extra inputs not permitted, and on one model `block_binding` works only with adaptive thinking.",
+      "whyWrong": {
+        "C": "It turns a documented application-level option into an administrator action. `drop_block` is set in the request by the application, and the documented alternatives are append-only history or that flag.",
+        "D": "It proposes a blanket deletion rule that is both wrong and unnecessary. Thinking blocks from earlier turns must be passed back as received; the problem is a changed prefix, not the presence of older blocks, and the error names the first failing position precisely so you can see which one broke."
+      },
+      "difficulty": 3,
+      "visualId": "error-recovery",
+      "mindset": "A preserved thinking block is bound to the prefix before it: edit earlier history and the replay 400s — go append-only, or drop the block explicitly.",
+      "tags": [
+        "thinking",
+        "error-identification",
+        "integration-layer",
+        "statefulness"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://platform.claude.com/docs/en/build-with-claude/preserved-thinking"
+      ]
+    },
+    {
+      "id": "v-d4-y4-003",
+      "taskStatementId": "4.1",
+      "scenario": "Ironbridge's classifier has always prefilled the assistant turn to force a specific output shape: it sends `{\"role\":\"assistant\",\"content\":\"Classification: \"}` as the last message. After a model upgrade the pipeline returns HTTP 400 with `This model does not support assistant message prefill. The conversation must end with a user message.`",
+      "stem": "What is the documented situation, and what should Ironbridge change?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Prefilling is a documented 400 on these models, and the same request that previously relied on it needs a different mechanism. The error names the cause, and the fix is one of the alternatives the docs give for output shaping: structured outputs on models that support it, system prompt instructions, or `output_config.format`."
+        },
+        {
+          "id": "B",
+          "text": "This is a rate-limit condition wearing a validation error's clothes. The correct response is exponential backoff with jitter, after which the prefill will be accepted."
+        },
+        {
+          "id": "C",
+          "text": "Prefill is still supported but only when the prefilled text is shorter than some length, so trimming the prefix resolves it without changing the design."
+        },
+        {
+          "id": "D",
+          "text": "Retry against the previous model version, which is the only way to keep prefill. Structured outputs and `output_config.format` change the response schema and are therefore not substitutes for a prefix."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "This is one of the documented validation errors rather than a transient condition, and the message tells you what to do. Prefill is not supported by these models, so sending a prefilled last assistant message returns a 400 `invalid_request_error` whose message says the conversation must end with a user message. The docs name the substitutes explicitly, and the choice is a design decision rather than a search-and-replace. Structured outputs are the strongest option when you need a guaranteed schema. `output_config.format` is the per-request way to ask for a fixed output shape, and it is worth weighing alongside the cache and latency costs that come with it. System prompt instructions are the weakest of the three because they make the format a request rather than a guarantee — which is the property Ironbridge's prefix was presumably chosen for.",
+      "whyWrong": {
+        "B": "It misclassifies a deterministic validation error as a transient capacity signal. Retrying the identical request produces the identical 400, and backoff only adds latency to a defect that needs a code change.",
+        "C": "It invents a length threshold that does not exist in the documented behaviour. The restriction is on prefill as a mechanism, not on how much you prefill.",
+        "D": "It treats the alternatives as inadequate. Structured outputs and `output_config.format` give a firmer shape guarantee than a prefix did, which is the opposite of a downgrade — and pinning an older model is how you avoid learning that."
+      },
+      "difficulty": 1,
+      "visualId": "structured-output",
+      "mindset": "A prefill 400 is a capability change, not a fault: move the shape requirement into structured outputs or `output_config.format`, not into a retry.",
+      "tags": [
+        "structured-output",
+        "error-identification",
+        "validation",
+        "migration"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs"
+      ]
+    },
+    {
+      "id": "v-d4-y4-004",
+      "taskStatementId": "4.1",
+      "scenario": "Ironbridge's routing layer sets `tool_choice: {\"type\": \"tool\", \"name\": \"lookup_shipment\"}` whenever it needs a specific tool. After a model upgrade every such request returns HTTP 400: `tool_choice: type \"tool\" and \"any\" are not supported for this model.`",
+      "stem": "What is the documented behaviour, and what should Ironbridge use instead?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Forced tool use is not supported on these models: sending `tool_choice: {\"type\": \"any\"}` or `{\"type\": \"tool\", \"name\": \"...\"}` returns a 400 `invalid_request_error`, including on the token counting endpoint. `auto` — the default — and `none` are accepted. The documented replacements are `auto` with strict tool use to keep tool inputs schema-valid, or structured outputs when it is the response itself that needs a fixed JSON shape."
+        },
+        {
+          "id": "B",
+          "text": "`{\"type\": \"any\"}` is accepted but `{\"type\": \"tool\", \"name\": \"...\"}` is not, because naming a tool requires a tool the model can see. Omitting the `name` is therefore a complete workaround."
+        },
+        {
+          "id": "C",
+          "text": "The flag is still valid but has moved: the same behaviour is now requested through `output_config.tool_choice`. Sending the old field is treated as an unrecognised input rather than an unsupported model feature."
+        },
+        {
+          "id": "D",
+          "text": "Retrying the identical request succeeds on the second attempt, because the rejection is applied to the first request against a newly initialised endpoint."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "This is a documented capability boundary with named substitutes, which makes the fix mechanical once you recognise it. Forced tool use is not supported on the affected models: `tool_choice` of type `any` or `tool` returns a 400 `invalid_request_error`, and the same applies on the token counting endpoint, so a preflight validation call will not warn you. `auto`, which is the default, and `none` are accepted. That leaves two documented routes, and choosing between them is the real decision. `auto` with strict tool use is the right answer when what you need is a schema-valid tool input — that is what strict tool use guarantees. Structured outputs is the right answer when what you need is the response in a fixed JSON shape. Forcing a specific tool was always a weaker guarantee than either, because it constrained the shape of the call rather than validating it, so the migration is a net improvement rather than a compromise.",
+      "whyWrong": {
+        "B": "It splits a rule the docs state as covering both forms. Both `any` and a named `tool` return the same 400, so there is no variant of forced tool use that survives.",
+        "C": "It invents a relocated parameter. The field has not moved; it is unsupported on these models, and `output_config` addresses output format rather than tool choice.",
+        "D": "It treats a deterministic capability rejection as flaky. The identical request returns the identical 400, and a validation error is fixed in code or in the model choice, never by repetition."
+      },
+      "difficulty": 2,
+      "mindset": "A `tool_choice` 400 is a capability boundary: use `auto` plus strict tool use for schema-valid inputs, or structured outputs for a fixed response shape.",
+      "tags": [
+        "tool-use",
+        "error-identification",
+        "structured-output",
+        "validation"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/strict-tool-use"
+      ]
+    },
+    {
+      "id": "v-d4-y4-005",
+      "taskStatementId": "4.1",
+      "scenario": "Ironbridge's reasoning pipeline sends `thinking: {\"type\": \"enabled\", \"budget_tokens\": 8000}` and now receives `\"thinking.type.enabled\" is not supported for this model. Use \"thinking.type.adaptive\" and \"output_config.effort\" to control thinking behavior.` Separately, a second service receives `adaptive thinking is not supported on this model`.",
+      "stem": "Which TWO statements about reasoning configuration are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Both messages are deterministic 400 `invalid_request_error` responses about which thinking parameter the model accepts, and each names the parameter to use instead. The first points at adaptive thinking with `output_config.effort`; the second points at `thinking: {\"type\": \"enabled\", \"budget_tokens\": N}` for the older models that only support extended thinking. Omitting the `thinking` parameter entirely runs in adaptive thinking."
+        },
+        {
+          "id": "B",
+          "text": "These are different requests needing different repairs, and neither is a retry candidate. A model that has removed extended thinking wants adaptive thinking controlled by `output_config.effort`; a model that only supports extended thinking wants `enabled` with a `budget_tokens` value. Trying the other form on either model produces the other message."
+        },
+        {
+          "id": "C",
+          "text": "The right migration in both directions is to set `thinking: {\"type\": \"disabled\"}`, which every current model accepts and which makes the reasoning behaviour consistent across the fleet."
+        },
+        {
+          "id": "D",
+          "text": "Both messages are documentation placeholders. The parameter is accepted and the value is ignored, so the pipeline should be instrumented to measure whether reasoning is actually taking effect rather than changing the request."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "The reasoning surface has moved in two directions, and both messages are deterministic rather than transient. Extended thinking has been removed on the newer models, so sending `thinking: {\"type\": \"enabled\"}` returns a 400 naming adaptive thinking and `output_config.effort` as the replacement; conversely, models that support only extended thinking reject `adaptive` with a 400 pointing at `enabled` with `budget_tokens`. Each model family wants the opposite form of the other, which is why these failures show up as a pair during a fleet migration. Two adjacent rules from the same section are worth holding because they change what a blanket fix looks like. Thinking cannot be turned off on some models at all — sending `thinking: {\"type\": \"disabled\"}` is itself a 400 there — so the universal `disabled` escape hatch is not available. And on one model the lowest setting is `between_tools`, which turns off up-front thinking while leaving short in-between updates, with its own restrictions at the highest effort levels.",
+      "whyWrong": {
+        "C": "It proposes a value the docs explicitly reject on some models. `thinking: {\"type\": \"disabled\"}` is a 400 on the models where thinking is always on, so it cannot be the fleet-wide repair.",
+        "D": "It treats a parameter rejection as a silent no-op. A 400 `invalid_request_error` means the request never ran; the parameter is not accepted and then ignored."
+      },
+      "difficulty": 3,
+      "mindset": "Each reasoning model family accepts one `thinking.type` and rejects the other with a named 400 — and `disabled` is not a universal escape hatch.",
+      "tags": [
+        "thinking",
+        "error-identification",
+        "validation",
+        "migration"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://platform.claude.com/docs/en/build-with-claude/extended-thinking"
+      ]
+    },
+    {
+      "id": "v-d4-y4-006",
+      "taskStatementId": "4.1",
+      "scenario": "Ironbridge's triage service sees three new statuses after a procurement change: a 402 on the nightly run, a 403 on one specific claims tool but not the others, and a 409 when two adjudicators touch the same claim. None of the three is currently classified in the retry matrix.",
+      "stem": "Which classification of these three is correct?",
+      "options": [
+        {
+          "id": "A",
+          "text": "All three are 4xx and therefore deterministic rather than transient. `billing_error` is an issue with billing or payment information to fix in the console; `permission_error` means the key lacks permission for the resource, which here is a per-tool authorisation or workspace setting rather than anything the model did; and `conflict_error` is the one the docs explicitly say to resolve and then retry, because it reports that the resource was modified concurrently or that a unique value is already in use. So: stop and fix for the first two, resolve-and-retry for the third."
+        },
+        {
+          "id": "B",
+          "text": "All three should retry with exponential backoff, because every 4xx other than 429 indicates a transient server condition that resolves once the request is repeated."
+        },
+        {
+          "id": "C",
+          "text": "402 and 403 are terminal, but 409 is also terminal because a concurrent modification means the client's view of the resource is stale and cannot be repaired without re-reading the whole record."
+        },
+        {
+          "id": "D",
+          "text": "403 is a rate-limit signal on these endpoints and should be handled like a 429, honouring `retry-after`. 402 and 409 are both permanent."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The general rule holds — a 4xx other than 429 is a deterministic client-side condition, so retrying it repeats the failure and hides the defect — and the interesting part is that the three statuses want different *non-retry* responses. `billing_error` is a billing or payment problem to fix in the console, and there is no client action that clears it. `permission_error` means the API key does not have permission for the specified resource, to be checked against organisation and workspace settings; when it appears on one tool and not others it is a scope problem on that tool, which is a configuration fix and definitely not something the model caused. `conflict_error` is the documented exception within the 4xx family: the request conflicts with the current state of a resource — modified concurrently, or a value that must be unique already in use — and the instruction is to resolve the conflict and then retry. So 'never retry 4xx' is right as a default and wrong as a rule if it swallows 409.",
+      "whyWrong": {
+        "B": "It applies the transient classification to the entire non-429 4xx family. Retrying a billing or permission failure only converts a clear error into a slow one, and the defect stays where it is.",
+        "C": "It extends the never-retry rule to 409, which the docs specifically carve out. Resolve the conflict — re-read the current state, or let the uniqueness constraint tell you it already happened — and then retry.",
+        "D": "It misreads 403 as a rate limit. Rate limiting is 429 `rate_limit_error`, the only member of the family that carries `retry-after` in the ordinary case; `permission_error` is an authorisation decision."
+      },
+      "difficulty": 2,
+      "visualId": "error-recovery",
+      "mindset": "4xx other than 429 is deterministic: 402 and 403 need a fix outside the request, and 409 is the documented exception where you resolve, then retry.",
+      "tags": [
+        "error-identification",
+        "http-status",
+        "retry-strategy",
+        "permissions"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors"
+      ]
+    },
+    {
+      "id": "v-d4-y4-007",
+      "taskStatementId": "4.1",
+      "scenario": "Ironbridge's classifier switches exhaustively on the error body's `type` field: `not_found_error`, `rate_limit_error`, `overloaded_error`, `api_error`, `timeout_error`. A colleague points out that the error response also carries a `message`, and asks whether the `type` field is safe to treat as a closed set.",
+      "stem": "What is the documented position, and what does it mean for Ironbridge's design?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Errors always arrive as JSON with a top-level `error` object carrying `type` and `message`, plus a `request_id` — and in accordance with the versioning policy the values within these objects may expand, with `type` values growing over time. So an exhaustive switch with no default is a latent outage: the correct shape is to classify on the HTTP status and whether the class is retryable, treat `type` and `message` as diagnostic detail to log, and give the handler an explicit fallback that reports rather than guesses."
+        },
+        {
+          "id": "B",
+          "text": "The `type` field is a closed enumeration and is safe to switch on exhaustively. Adding a new value would be a breaking change under the versioning policy, so the current code is correct as written."
+        },
+        {
+          "id": "C",
+          "text": "`type` is stable but `message` is not. Ironbridge should switch on `type` and log `message`, because only the human-readable field is documented as subject to change."
+        },
+        {
+          "id": "D",
+          "text": "Neither field is contractual. The only reliable signal is the HTTP status code, so `type` and `message` should both be discarded and retained only for human debugging outside the code."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The versioning statement is short and it changes how an error classifier should be written. Errors always return JSON with a top-level `error` object that always includes a `type` and a `message`, and the response includes `request_id`. But the docs also state that in accordance with the versioning policy, the values within these objects may expand and it is possible that the `type` values will grow over time. So `type` is a good primary discriminator and a bad exhaustive enumeration. The robust design derives its *decision* from something you can rely on — the HTTP status, and whether the resulting class is retryable, idempotent or terminal — and uses `type` and `message` for classification detail, logging and human triage. The fallback branch is what turns a new value from an outage into a logged unknown, which is the difference between a classifier that degrades and one that crashes in the handler chain.",
+      "whyWrong": {
+        "B": "It inverts the versioning policy. The policy says these values may expand, which is precisely why an exhaustive switch without a default is unsafe.",
+        "C": "It singles out `message` as the unstable field. Both `type` and `message` live inside the object the policy covers, and `message` is documented as human-facing text that you should not parse at all.",
+        "D": "It throws away the useful discriminator. The HTTP status is the reliable decision input, but `type` is what tells a 429 tier spend cap from a 429 with `retry-after`, so discarding it costs the classifier real information."
+      },
+      "difficulty": 2,
+      "mindset": "`error.type` is a discriminator, not a closed enum — decide on status plus retryability, log the type, and always have a fallback branch.",
+      "tags": [
+        "error-identification",
+        "observability",
+        "error-taxonomy",
+        "versioning"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://platform.claude.com/docs/en/api/versioning"
+      ]
+    },
+    {
+      "id": "v-d4-y4-008",
+      "taskStatementId": "4.1",
+      "scenario": "Ironbridge set a workspace spend limit as a cost control. Their monitor reports that overnight failures split into two groups: some are HTTP 429 with no `retry-after` header, and some are HTTP 400 `invalid_request_error` with a message about the spend limit. The on-call engineer wants one handler for both.",
+      "stem": "What is the documented distinction, and can one handler cover both?",
+      "options": [
+        {
+          "id": "A",
+          "text": "They are different shapes for the same underlying condition, and the difference is where the limit lives. The API returns a 400 when usage reaches an organization or workspace spend limit you set — except limits on a Claude Code workspace, which can return a 429 instead. And a 429 `rate_limit_error` arises from an organisation rate limit, a usage tier's monthly spend cap, or a Claude Code workspace spend limit, where a tier spend-cap 429 has no `retry-after` and keeps failing until access resumes. So one handler can cover them only if it keys off the condition rather than the status: neither is retryable, both should stop immediately and alert."
+        },
+        {
+          "id": "B",
+          "text": "The 429 is a rate limit and the 400 is a validation error, so they need separate handlers on principle. The 429 retries with backoff and the 400 fails fast."
+        },
+        {
+          "id": "C",
+          "text": "They are the same condition with the same behaviour, and the status difference is an inconsistency in the API. Retrying both with backoff is safe because a spend limit does not bill you."
+        },
+        {
+          "id": "D",
+          "text": "Only the 400 case applies to a self-imposed limit. Claude Code workspace spend limits always surface as 429, so Ironbridge will only ever see the 400 shape and should build for that."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "This is a documented wrinkle in the status mapping and it changes how you write the handler. The 400 `invalid_request_error` entry notes that the API also returns a 400 when usage reaches an organisation or workspace spend limit you set, with the exception of limits on the Claude Code workspace, which can return a 429 instead. The 429 `rate_limit_error` entry then lists three sources: an organisation rate limit, the usage tier's monthly spend cap, and a Claude Code workspace spend limit — and states that a tier spend-cap 429 has no `retry-after` header and keeps failing until access resumes. So the same business condition can arrive as either status, which means keying the response off the status alone will send you down the wrong branch. What both shapes share is the answer: this is not transient, so stop retrying, alert the owner and resolve the limit. The 429 branch is additionally easy to mis-handle by trusting the absence of `retry-after` as licence to retry immediately — the absence means the opposite.",
+      "whyWrong": {
+        "B": "It classifies by status alone, which is exactly what the documented exception breaks. A spend limit can surface as a 400 or as a 429, so a status-keyed handler sends one of the two down a backoff path that can never succeed.",
+        "C": "It asserts an API inconsistency and draws an unsafe conclusion from it. The two shapes are documented, and the fact that a spend limit is self-imposed does not make repeated attempts succeed.",
+        "D": "It half-inverts the exception. Claude Code workspace spend limits are the case that can return a 429; organisation and workspace spend limits set through the API return a 400, so building only for the 400 would miss the workspace case entirely."
+      },
+      "difficulty": 2,
+      "visualId": "error-recovery",
+      "mindset": "A self-imposed spend limit can arrive as 400 or 429 depending on whose limit it is — key the handler off the condition, and treat both as alert, not retry.",
+      "tags": [
+        "error-identification",
+        "rate-limits",
+        "http-status",
+        "cost"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://platform.claude.com/docs/en/api/rate-limits"
+      ]
+    },
+    {
+      "id": "v-d4-y4-009",
+      "taskStatementId": "4.1",
+      "scenario": "Ironbridge's shared API wrapper is used by nine services. It begins with `except APIError: retry_with_backoff()` and then a series of narrow handlers beneath it. Reviewers have separately complained that the wrapper matches on substrings of the error message.",
+      "stem": "Which assessment of the wrapper is correct?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Both problems are real and they compound. The SDKs raise typed exceptions rather than returning raw JSON — a 404 surfaces as the SDK's not-found class, and the guidance is to catch the typed classes rather than string-matching messages, handling the most specific classes first. With a broad base-class handler above the narrow ones, the specific handlers are unreachable and every status gets the base class's behaviour, so a 400 or a 404 is silently retried. The right structure is one classification function — status plus a retryable judgement — used by every service, with handlers ordered most-specific-first and an explicit final branch that reports an unrecognised failure rather than retrying it."
+        },
+        {
+          "id": "B",
+          "text": "Only the handler order is wrong. Substring matching on the message is acceptable because the SDK documents the message text as part of its contract, so a base-class handler above specific handlers is the sole defect."
+        },
+        {
+          "id": "C",
+          "text": "Only the substring matching is wrong. Handler order is irrelevant in Python because the most specific matching handler wins regardless of declaration order."
+        },
+        {
+          "id": "D",
+          "text": "Neither is a defect, because the SDK's base exception class already excludes the deterministic statuses and re-raises them. The wrapper is therefore correct and the review comments are mistaken."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Two independent correctness problems that happen to reinforce each other, which is why the wrapper's behaviour is so confusing in production. The SDKs raise typed exceptions instead of returning raw JSON — a 404 surfaces as the not-found class, and the documented guidance is to catch the typed classes rather than string-matching error messages, handling the most specific classes first. Handler order is therefore load-bearing: a broad base-class handler above the narrow ones makes every specific handler unreachable, and the wrapper's behaviour collapses to whatever the base branch does. If that base branch retries, a deterministic 400, 401, 403 or 404 is retried like a transient one, which adds latency and hides the defect. The structural fix is to separate classification from handling: one function that decides retryable versus terminal, shared across all nine services so the decision cannot drift between them, handlers ordered most-specific-first, and a final branch that reports an unrecognised failure rather than optimistically retrying it.",
+      "whyWrong": {
+        "B": "It clears the message matching, which is the second half of the problem. Error message text is human-facing and not a contract, so substring matching there is brittle even if the handler order were correct.",
+        "C": "It gets the semantics of exception handling backwards. A handler that matches first wins; a broad class placed above a narrow one shadows it, so ordering is exactly what determines reachability.",
+        "D": "It assumes the base class filters statuses for you. The base class is a supertype covering the whole hierarchy, so the broad handler catches everything and the wrapper decides the behaviour for every status."
+      },
+      "difficulty": 2,
+      "mindset": "Order exception handlers most-specific-first, classify once in a shared place on status plus retryability, and never string-match error messages.",
+      "tags": [
+        "error-taxonomy",
+        "observability",
+        "integration-layer",
+        "retry-strategy"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://platform.claude.com/docs/en/cli-sdks-libraries/sdks/python"
+      ]
+    },
+    {
+      "id": "v-d4-y4-010",
+      "taskStatementId": "4.1",
+      "scenario": "Ironbridge's compliance team must be able to trace a specific adjudication back to the exact API call that produced it. The pipeline currently logs the claims table row and the model name, and the support team says Anthropic cannot help without a request id.",
+      "stem": "Which fields and accessors are documented, and what does that mean for the pipeline's trace?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Every API response includes a unique `request-id` header, and the same identifier appears as the `request_id` field in error response bodies. The Python and TypeScript SDKs expose it as a `_request_id` property on top-level response objects; the other languages go through raw-response accessors, with Ruby using middleware. In every SDK except Ruby, `with_raw_response` — `.withResponse()` in TypeScript — reads any other response header, such as the organisation and workspace ids. So the trace needs the request id captured from successful responses as well as errors, which is what the pipeline currently omits."
+        },
+        {
+          "id": "B",
+          "text": "Only the `request-id` header carries the identifier; the `request_id` field in the body is a different, internal value and should be ignored when logging."
+        },
+        {
+          "id": "C",
+          "text": "Request ids are available only on error responses. A 200 carries no identifier, so a trace of successful calls has to rely on your own correlation id."
+        },
+        {
+          "id": "D",
+          "text": "The identifier is exposed identically in every SDK, so the pipeline can read it the same way in its Python and TypeScript services and needs no language-specific handling."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The request id is the connective tissue between a stored business record and a provider-side investigation, and it is available in two places that are the same value. Every API response includes a unique `request-id` header, and the same identifier appears as the `request_id` field in error response bodies; when contacting support about a specific request, that is the ID to include. The access path differs by language, which is the detail Ironbridge's two-language estate has to handle: the Python and TypeScript SDKs expose it as a `_request_id` property on top-level response objects, the C#, Go, Java and PHP SDKs expose it through raw-response accessors, and Ruby through middleware. In every SDK except Ruby, `with_raw_response` reads any other response header you need, such as the organisation and workspace ids. The pipeline's gap is the one the compliance team identified: it logs business data but not the request id, and a request id is only useful if it was captured at the time — it cannot be recovered later.",
+      "whyWrong": {
+        "B": "It treats the header and the body field as different values. The docs are explicit that the same identifier appears in both, which is what makes either surface sufficient for support.",
+        "C": "It denies successful responses an identifier. The request-id header is on every response, so a 200 carries one and the trace should be capturing it.",
+        "D": "It erases the language differences that determine the implementation. Python and TypeScript expose a property; the others require raw-response accessors and Ruby middleware, so a shared wrapper has to abstract this."
+      },
+      "difficulty": 1,
+      "visualId": "eval-loop",
+      "mindset": "Capture the request id on every response, not just errors — header and body carry the same value, and the accessor differs by SDK language.",
+      "tags": [
+        "observability",
+        "tracing",
+        "request-id",
+        "sdk"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://platform.claude.com/docs/en/cli-sdks-libraries/sdks/typescript"
+      ]
+    },
+    {
+      "id": "v-d4-y4-011",
+      "taskStatementId": "4.1",
+      "scenario": "Ironbridge's nightly load writes claims keyed by an external reference. When two workers race, the second write returns HTTP 409 `conflict_error`. The team's retry matrix lists 409 alongside 400 and 401 as 'never retry', on the reasoning that all 4xx are deterministic.",
+      "stem": "What is the documented guidance for 409, and what should the matrix say?",
+      "options": [
+        {
+          "id": "A",
+          "text": "409 is the case where 'all 4xx are deterministic' is the wrong generalisation. `conflict_error` means the request conflicts with the current state of a resource — for example the resource was modified concurrently, or a value that must be unique is already in use — and the documented instruction is to resolve the conflict and then retry the request. For a load keyed by an external reference, resolution is usually a read-then-decide: either the row is already there from the other worker, in which case the write should be recognised as a no-op, or it is not and the retry proceeds."
+        },
+        {
+          "id": "B",
+          "text": "409 is a transient server condition and should be retried with exponential backoff like a 5xx, because a concurrent modification always clears on its own."
+        },
+        {
+          "id": "C",
+          "text": "The matrix is right. Every 4xx other than 429 fails identically on retry, so 409 belongs with 400 and 401 and the race should be fixed by serialising the workers."
+        },
+        {
+          "id": "D",
+          "text": "409 is a rate limit on the storage layer and should be treated like a 429 with `retry-after`. Ironbridge should raise the write concurrency ceiling so the collisions stop."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The general heuristic that non-429 4xx responses are deterministic is right often enough to be dangerous, and 409 is the documented exception that proves it. `conflict_error` reports that the request conflicts with the current state of a resource — the resource was modified concurrently, or a value that must be unique is already in use — and the documented response is to resolve the conflict and then retry. That is a different instruction from both 'retry with backoff' and 'never retry', because the retry is only correct after the conflict has been *resolved*. For a write keyed by an external reference, resolution is a read: if the row already exists the write was a duplicate and the right outcome is to recognise it as a no-op rather than overwrite; if it does not, the retry can proceed. This is also the shape that makes the write idempotent in the sense the recovery design actually needs — the second worker learns from the conflict instead of blindly re-issuing.",
+      "whyWrong": {
+        "B": "It files 409 with the transient server class, which loses the resolution step. A concurrent modification does not clear on its own, and a blind backoff retry re-runs the same collision.",
+        "C": "It generalises the never-retry rule past its documented boundary. 409 asks you to resolve and then retry, and serialising the workers avoids the collision rather than handling it — which is a throughput decision, not a correctness one.",
+        "D": "It misidentifies 409 as throttling. Rate limiting is 429; a conflict is a uniqueness or concurrency condition, and raising the concurrency ceiling would increase collisions rather than reduce them."
+      },
+      "difficulty": 2,
+      "mindset": "409 is resolve-then-retry, not retry or give up: read the current state, treat a duplicate as a no-op, and make the write idempotent.",
+      "tags": [
+        "error-identification",
+        "idempotency",
+        "http-status",
+        "retry-strategy"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors"
+      ]
+    },
+    {
+      "id": "v-d4-y4-012",
+      "taskStatementId": "4.1",
+      "scenario": "Ironbridge's SSE consumer is 400 lines of hand-written event handling. It has produced three incidents in a year, all traceable to deltas the team forgot to handle. The SDK offers a stream helper that returns the complete message, and a colleague proposes deleting the consumer.",
+      "stem": "Which assessment of that proposal is correct?",
+      "options": [
+        {
+          "id": "A",
+          "text": "For most request-response work it is the right call, and the trade-off should be named rather than debated. If you don't need to process events incrementally, the SDK can consume the stream for you and return the complete `Message` object, identical to a non-streaming call — `stream.get_final_message()` in Python, `.finalMessage()` in TypeScript, with accumulators in the other SDKs. That removes the entire class of incremental-parse defects. What you give up is token-level visibility: you cannot render partial text, you cannot act on a tool call before the block completes, and mid-stream `error` events surface as SDK exceptions rather than as events you choose how to handle. Keep the manual consumer only where incremental behaviour is a requirement."
+        },
+        {
+          "id": "B",
+          "text": "Delete it unconditionally. The SDK's stream helper surfaces every event in the same order and shape, so nothing is lost by switching, including token-level partial output for the UI."
+        },
+        {
+          "id": "C",
+          "text": "Keep the manual consumer, because mid-stream `error` events can only be handled by an application that reads the raw event stream. Wrapping the SDK helper would make those errors invisible."
+        },
+        {
+          "id": "D",
+          "text": "Switch, but only after fixing the consumer first, since the SDK helper is documented as experimental for non-streaming parity and the two are not interchangeable on tool_use blocks."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "This is a design trade-off that is often decided by habit, so the deciding question is what the consumer is actually for. If you do not need to process events incrementally, the SDK can consume the stream for you and return the complete `Message` object, identical to what a non-streaming call returns — `stream.get_final_message()` in Python and `.finalMessage()` in TypeScript, with message accumulators in the C#, Java, Go and PHP SDKs. That is a large reduction in surface area, and it eliminates a category of bug that only appears under streaming: partial tool arguments being executed before `content_block_stop`, a stream ending mid-`tool_use`, and mid-stream error events being mistaken for content. What you give up is incremental behaviour — token-level rendering, acting on a tool call as soon as it completes, and choosing how to react to an `error` event that arrives after a 200. So the rule is that a complete-message consumer should be the default, and a hand-written one should exist only where something must happen mid-stream.",
+      "whyWrong": {
+        "B": "It claims the helper is lossless for incremental use, which is the whole point of the difference. Accumulating to a final message means no partial text is available until the end, so a token-by-token UI cannot be built on it.",
+        "C": "It asserts mid-stream errors are invisible through the helper. They surface as SDK exceptions, which is a different and arguably better handling path — not a hidden failure — while the incremental capability is what is actually lost.",
+        "D": "It invents an experimental status and a non-interchangeability that the docs do not describe. The helper returns a message identical to a non-streaming call, so the trade-off is about incrementality, not about tool_use blocks."
+      },
+      "difficulty": 3,
+      "visualId": "structured-output",
+      "mindset": "Default to the SDK's stream accumulator and get a complete message; hand-write SSE parsing only when something must happen mid-stream.",
+      "tags": [
+        "streaming",
+        "sdk",
+        "debugging-discipline",
+        "tool-use"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://platform.claude.com/docs/en/build-with-claude/streaming"
+      ]
+    },
+    {
+      "id": "v-d4-y4-013",
+      "taskStatementId": "4.1",
+      "scenario": "Ironbridge's support agent retrieves policy documents, calls a claims database, and then writes an answer. Roughly 1 in 60 answers contains a claim the policy does not support. The team knows which layer is at fault in theory but cannot demonstrate it, because each layer only logs its own name and outcome.",
+      "stem": "Which TWO changes to instrumentation actually let you bisect the failure? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Log the exact content handed to the model at each boundary, not the name and status of the call. The decisive comparison is the model's output against the precise `tool_result` and document text you sent: if the model faithfully reported a wrong total that is present in the text you supplied, the origin is upstream of the model and prompt or schema changes cannot help; if the text you sent was correct and the answer is not, the divergence is at the model. Name-only logging cannot support that comparison in either direction."
+        },
+        {
+          "id": "B",
+          "text": "Bisect by freezing one variable at a time rather than changing several together. Replay the captured request against the same model and the same prompt to establish a baseline, then change exactly one of model, prompt, tool set or retrieved content per experiment and compare on the same cases. A run that changes the model and the retrieval step at once cannot attribute the movement, which is how a team ends up 'fixing' the wrong layer and losing the signal."
+        },
+        {
+          "id": "C",
+          "text": "Add a retry to each layer and see which layer's retry eliminates the failure. A layer that stops producing the bad answer when retried is the layer at fault."
+        },
+        {
+          "id": "D",
+          "text": "Compare against a larger, more capable model on the same tickets. If the larger model never produces the unsupported claim, the fault is the smaller model's capability rather than any layer's output."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Both changes are about making attribution possible rather than about a new tool, and they compound. The instrumentation that matters is content-level logging at each boundary — the exact `tool_result` payload and the exact document text — because the isolating comparison is between what the model was given and what it produced. Agreement isolates the defect upstream; disagreement isolates it in the model. A log that records only `fetch_policy: ok` cannot support that comparison, which is exactly why Ironbridge cannot currently demonstrate what it knows in theory. The experimental discipline is the second half. A failure that appears in roughly 1 in 60 requests will not resolve itself, so capture the request and replay it, holding the model and prompt fixed to get a baseline, then vary exactly one of model, prompt, tool set or retrieved content per run over the same cases. Changing two at once is the most common way a bisect produces a confident conclusion that does not survive contact with the next experiment.",
+      "whyWrong": {
+        "C": "It uses a retry as a probe for causation, which confounds the variable under test. A retry changes the request's identity — different sampling, possibly different retrieved content — so it cannot tell you which layer produced the original defect.",
+        "D": "It substitutes a capability comparison for an origin comparison. A larger model being more reliable tells you something about the current configuration, not about which layer of the pipeline handed it bad input."
+      },
+      "difficulty": 3,
+      "visualId": "rag-pipeline",
+      "mindset": "To bisect layers, log the exact content at each boundary and change one variable per replay — name-and-status logs cannot attribute anything.",
+      "tags": [
+        "origin-isolation",
+        "observability",
+        "tracing",
+        "debugging-discipline"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://code.claude.com/docs/en/agent-sdk/observability"
+      ]
+    },
+    {
+      "id": "v-d4-y4-014",
+      "taskStatementId": "4.1",
+      "scenario": "Ironbridge's support agent produces a correct answer when an engineer tests it locally and a wrong answer on the same ticket in production. The engineer's first instinct is to start rewriting the prompt and changing the model in the same afternoon.",
+      "stem": "What is the correct first move, and why?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Freeze both variables before changing either. Replay the captured production request verbatim — same model, same parameters, same messages array — outside the application, repeatedly. If the misbehaviour reproduces in isolation, the request is well-formed and the origin is the model output, so prompt or model work is justified. If it does not reproduce, the production-only occurrence points at the integration layer or the environment, and changing the prompt would be changing a variable that was never the cause. The point is that a two-variable change cannot be attributed afterwards, even if it happens to work."
+        },
+        {
+          "id": "B",
+          "text": "Change the model first, then the prompt if needed. Model changes have a larger effect surface, so starting there converges faster and rules the model in or out in one step."
+        },
+        {
+          "id": "C",
+          "text": "Change the prompt first, because prompt fixes are reversible in git while model changes may require a rollout. The cheapest-to-revert variable should be tried first."
+        },
+        {
+          "id": "D",
+          "text": "Do not change anything yet. Wait for a second occurrence so the failure can be characterised, because one sample is not enough to justify any change."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The situation describes an origin-isolation problem, and the correct move is the one that makes the answer attributable. Capture the production request and replay it verbatim — the same model, the same parameters, the same messages array — outside the application, repeatedly. Reproduction in isolation points to model output; production-only occurrence points to the integration layer or the environment. Only after that does changing a variable mean anything. The reason to be strict about freezing both model and prompt is that this failure is intermittent, and an intermittent failure plus two simultaneous changes produces an uninterpretable result: if the symptom stops you cannot tell which change did it, and if it persists you have learned nothing. There is also a specific trap in local reproduction, which is why the replay has to be of the *captured* request rather than a hand-built one — environment variables and settings precedence are decided per key pair rather than by level, so a hand-built harness can silently be running a different model than production. And one sample is not a reason to wait, because the capture is available now.",
+      "whyWrong": {
+        "B": "It changes a variable before establishing a baseline, so a later improvement cannot be attributed. Ordering by effect size is not a substitute for holding the other variable constant.",
+        "C": "It substitutes ease of reversal for diagnostic value. A reversible change is still an unattributable one, and the local-versus-production divergence says the cause may not be in the prompt at all.",
+        "D": "It treats sample size as the blocker when the artefact is the blocker. The captured request and a replay script give you unlimited samples of a single input today, so waiting for a second production occurrence adds nothing."
+      },
+      "difficulty": 2,
+      "mindset": "Freeze the model and the prompt, replay the captured request verbatim, then change exactly one variable — attribution is the whole point.",
+      "tags": [
+        "origin-isolation",
+        "reproducibility",
+        "debugging-discipline",
+        "trace-analysis"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://code.claude.com/docs/en/settings"
+      ]
+    },
+    {
+      "id": "v-d4-y4-015",
+      "taskStatementId": "4.1",
+      "scenario": "Ironbridge's classifier fails roughly once in sixty. It has never reproduced in a test harness, the failing inputs look unremarkable, and two engineers have independently labelled the failure 'flaky'. The team wants to close the ticket.",
+      "stem": "What is the correct assessment of calling it flaky, and what should happen instead?",
+      "options": [
+        {
+          "id": "A",
+          "text": "'Flaky' is not a diagnosis — it is a description of the fact that you cannot reproduce it, and treating it as a cause is what closes tickets prematurely. From one-in-sixty with no reproduction, the only honest conclusions are that it is nondeterministic or that something about production differs from the harness, and both are actionable. So keep it open, capture the failing requests as they occur, and build the isolation from captured input: the same request replayed repeatedly either reproduces, which makes it a model-output question you can grade, or it does not, which sends you to the integration layer and the environment. The eval that ends this is one case per captured failure, not a monitoring dashboard."
+        },
+        {
+          "id": "B",
+          "text": "It is a fair label. Nondeterminism is expected from a language model, the rate is low, and the correct response is to accept it and alert when the rate crosses a threshold."
+        },
+        {
+          "id": "C",
+          "text": "It is a fair label only if the team can bound the rate precisely, which requires a controlled experiment. Until then the ticket should be closed as 'insufficient information', because no code change is justified."
+        },
+        {
+          "id": "D",
+          "text": "It is the wrong label, and the correct label is 'model limitation'. Adding few-shot examples of correct classifications should resolve it, since the model simply has not seen enough of the pattern."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The word does the work here rather than the diagnosis. 'Flaky' names the fact that the failure is not reproducible in the harness; it is not a cause, and it is not a class of bug with a known owner. What you actually know is that the failure is real, is low-frequency, and does not appear outside production — which narrows the space to two live hypotheses, both of them real work: the output is nondeterministic, or the production environment differs from the harness in a way that matters. Both are answerable from captured input, which is why the right move is to keep capturing failing requests and replay each one verbatim. A replay that reproduces turns the problem into a graded model-output question; a replay that does not sends you to the integration layer, to configuration and environment, and to the request-construction differences that a local harness silently papers over. That is also why the closure condition is an artefact — a permanent case per captured failure — rather than a rate threshold: a threshold tells you when to be worried, not what is wrong.",
+      "whyWrong": {
+        "B": "It accepts nondeterminism as an explanation and closes the question. Low rate plus no reproduction is precisely the combination that most often turns out to be a configuration or state difference, and the cost of accepting it is a defect nobody owns.",
+        "C": "It gets the framing right but picks the wrong closure. Closing as insufficient information abandons a case the team can pursue immediately, because the captured request is available and replaying it is cheap and repeatable.",
+        "D": "It jumps from 'not reproducible' to 'model limitation', which is the conclusion the replay is supposed to test rather than a starting assumption. Few-shot examples also cost input tokens on every request regardless of whether they address this failure."
+      },
+      "difficulty": 3,
+      "visualId": "eval-loop",
+      "mindset": "'Flaky' is a description, not a diagnosis: replay each captured failure verbatim — reproduction points at the model, non-reproduction at the integration layer.",
+      "tags": [
+        "origin-isolation",
+        "reproducibility",
+        "debugging-discipline",
+        "evals"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents"
+      ]
+    },
+    {
+      "id": "v-d4-y4-016",
+      "taskStatementId": "4.1",
+      "scenario": "During a provider incident, Ironbridge's per-request retry storm turned a 30-second degradation into a twelve-minute one, and the volume of retries pushed the account into acceleration-limit 429s on top of the original 529s.",
+      "stem": "Which TWO statements about the retry dynamics are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "The layers multiply before they add. The official SDK automatically retries transient failures — connection errors, rate limits and 5xx server errors — with exponential backoff, twice by default, honouring the `retry-after` header when present. An application-level loop on top of that multiplies attempts per call rather than replacing them, so the effective attempt count is the product of the layers and the concurrent request count multiplies it again."
+        },
+        {
+          "id": "B",
+          "text": "The control that matters is a budget over both attempts and total elapsed time, plus jitter so retries do not re-arrive as a synchronised wave. A sharp increase in usage can surface as 429 rather than 529 because of acceleration limits, so a retry storm can convert a transient 529 into a rate-limit failure it did not have before — which is why the documented guidance to ramp traffic gradually and keep usage patterns consistent matters as much for retries as for new traffic."
+        },
+        {
+          "id": "C",
+          "text": "Retries are free in this situation. A failed attempt produces no tokens and no bill, so the only real cost of a retry storm is latency, and the appropriate response is to shorten the backoff so requests recover faster."
+        },
+        {
+          "id": "D",
+          "text": "The fix is to raise `max_retries` so each call survives the incident on its own. A higher ceiling per request is the most direct way to stop requests from failing during a transient provider event."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "A retry storm is not merely wasted effort; it changes the failure mode of the system it is protecting. On the multiplication: the SDKs already retry transient failures — connection errors, rate limits and 5xx — with exponential backoff, twice by default, honouring `retry-after` when present, and `max_retries` configures or disables it. An application loop does not stand down when it detects one; the two layers multiply, and with N concurrent requests the effective request count is the product. On the escalation: a sharp increase in usage can surface as 429 rather than 529 because of acceleration limits, so retries that are individually rational collectively convert a transient capacity condition into a rate-limit condition the client then has to handle separately. The controls that address both are a single named retry owner, a budget bounded by attempt count *and* total elapsed time rather than attempts alone, jitter so retries desynchronise instead of arriving as a wave, and honouring `retry-after` when it is present.",
+      "whyWrong": {
+        "C": "It assumes failed attempts are free, which is only half true and the wrong half to reason from. The account-level effect of a surge is what matters: the added request volume is itself the trigger for acceleration limits, so the storm manufactures a new failure class.",
+        "D": "It treats per-call persistence as the remedy for a fleet-wide surge. Raising `max_retries` multiplies the very request volume that caused the acceleration limit, so it amplifies the incident it is meant to survive."
+      },
+      "difficulty": 2,
+      "mindset": "Nested retries multiply and concurrent retries re-hit in waves — one named owner, a budget over attempts *and* elapsed time, and jitter.",
+      "tags": [
+        "retry-strategy",
+        "rate-limits",
+        "circuit-breaker",
+        "cost"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://platform.claude.com/docs/en/api/rate-limits"
+      ]
+    },
+    {
+      "id": "v-d4-y4-017",
+      "taskStatementId": "4.1",
+      "scenario": "Ironbridge's pipeline retried a failed extraction and got HTTP 200 with a well-formed extraction object. The pipeline marked the record done. Two days later finance found the retry had silently dropped the tax line the first failure had been about.",
+      "stem": "What is the failure class here, and what does the retry standard need in order to catch it?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The retry fixed the transport and nothing else, and the pipeline conflated 'the request succeeded' with 'the record is correct'. A 200 with a schema-valid object is exactly the case schema guarantees do not cover: strictness constrains shape, not content, so a retried request can return a structurally perfect extraction that is missing the field the original failure was about. The standard therefore needs a content assertion in the acceptance path — a required non-empty check per field that the business cares about, so a retry that returns an empty or partial object fails acceptance and goes to the dead-letter path instead of being recorded as success. Attempt-level records matter too: the retry count, the original error class and the acceptance result belong in the trace, because 'it succeeded on retry' is not evidence that the record is right."
+        },
+        {
+          "id": "B",
+          "text": "The pipeline is behaving correctly. HTTP 200 is the API's success signal, and re-validating the content after a successful retry would reject legitimate extractions that are genuinely sparse."
+        },
+        {
+          "id": "C",
+          "text": "The correct fix is to stop retrying schema-valid extractions and instead raise the retry threshold, so a partially correct result is not mistaken for a recovery."
+        },
+        {
+          "id": "D",
+          "text": "The issue is that the retry was issued with the same prompt. Retrying with an explicit instruction to include all line items would have produced the complete extraction the first time."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "This is the class of bug that a status-code-centric retry policy cannot see, and it is worth naming precisely. A retry addresses the failure that triggered it — transport, capacity, truncation — and says nothing about content. The response that came back is schema-valid, and schema validity is a statement about shape: strict tool use and structured outputs guarantee the structure of the output and the validity of enum membership, not that the values are complete or correct. So 'HTTP 200 with a parseable object' is not an acceptance criterion for an extraction pipeline; it is a syntax check. The fix is an application-level acceptance assertion per field the business depends on — non-empty where non-empty is required, with an explicit representation for genuine absence rather than an empty string — applied after every attempt including retries, plus attempt-level tracing so a record's history shows how many attempts it took and what the original error was. Without that, 'it succeeded on retry' silently launders a defect into a stored result.",
+      "whyWrong": {
+        "B": "It accepts the status code as the acceptance test. Sparse is different from absent: a document that genuinely has no tax line should produce the explicit representation of absence, not an empty field that passes a shape check and fails a business one.",
+        "C": "It proposes a retry-count change, which does nothing to detection. Raising the threshold would have changed which records retry, not whether a wrong record is recorded as correct.",
+        "D": "It changes the prompt instead of the acceptance test. The problem is that success is being decided by shape; a prompt tweak is another unverified variable layered on top of an undetected defect."
+      },
+      "difficulty": 3,
+      "mindset": "A retry fixes the transport, not the content: schema validity is not acceptance — assert the fields the business depends on after every attempt.",
+      "tags": [
+        "retry-strategy",
+        "output-validation",
+        "structured-output",
+        "observability"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/strict-tool-use"
+      ]
+    },
+    {
+      "id": "v-d4-y4-018",
+      "taskStatementId": "4.1",
+      "scenario": "In one assistant turn, Ironbridge's agent emits three `tool_use` blocks: `fetch_claim`, then `compute_refund` whose argument depends on `fetch_claim`'s output, then `post_erp`. `fetch_claim` times out. The harness runs `compute_refund` anyway with a null amount, and then omits a `tool_result` for it.",
+      "stem": "Which TWO statements about the correct harness behaviour are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Every `tool_use` needs a `tool_result`, and the API does not prescribe an execution order — you may run them concurrently, sequentially in order, or any combination suits your tools. What it does require is one `tool_result` per `tool_use`, all in the next user message, each matched by `tool_use_id`, with every `tool_result` before any text. So the omitted result is a message-construction defect, and the harness must return a result for `compute_refund` even though it never ran."
+        },
+        {
+          "id": "B",
+          "text": "The dependent call must not be executed, but it still gets a result. Return a `tool_result` with `is_error: true` explaining that its dependency failed, so the model learns why rather than seeing a gap. The design consequence is that concurrency is a harness decision: independent reads can go in parallel, side-effecting calls that contend for the same entity need sequencing or conflict detection, and an error result has to say what to do differently or the model will re-issue the same call."
+        },
+        {
+          "id": "C",
+          "text": "The harness must run every `tool_use` it received regardless of dependencies, because the model decided the ordering and the harness has no standing to second-guess it. A skipped call is a lost opportunity the model cannot recover from."
+        },
+        {
+          "id": "D",
+          "text": "Omit the result for the call that was not run, and let the next turn reconcile. The model sees the successful results and the missing one and will re-request whatever it needed."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Two obligations meet in this scenario and they are easy to conflate. The structural one: the API does not prescribe an execution order — run them concurrently, sequentially in order, or any combination suits your tools — but it does require one `tool_result` per `tool_use`, all in the next user message, each matched by `tool_use_id`, with every `tool_result` before any text, and a `tool_result` even for a call you chose not to run. So a partial turn is a malformed message sequence, and the missing result for `compute_refund` is a bug independent of the timeout. The semantic one: execution is where the harness applies its own knowledge, and here the knowledge is that `compute_refund` consumes `fetch_claim`'s output. Running it with a null amount does not fail — it produces a wrong number and then a wrong posting, which is worse than a visible error. Return an `is_error: true` result naming the failed dependency instead, so the model has something actionable; and note the standing consequence, that a generic error message leaves re-sending the same call as the model's only available move.",
+      "whyWrong": {
+        "C": "It hands sequencing authority to the model and calls a skip a lost opportunity. Executing a call whose input does not exist does not recover an opportunity — it fabricates the value the calculation depends on and propagates it into a real posting.",
+        "D": "It proposes exactly the malformed message the API rejects. One `tool_result` per `tool_use` is required, so omitting one makes the next request invalid rather than inviting the model to reconcile."
+      },
+      "difficulty": 3,
+      "mindset": "One `tool_result` per `tool_use` always; skip a dependent call you must not run, but say why with `is_error` rather than leaving a gap or a silent null.",
+      "tags": [
+        "tool-errors",
+        "agent-loop",
+        "partial-failure",
+        "tool-use"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/parallel-tool-use"
+      ]
+    },
+    {
+      "id": "v-d4-y4-019",
+      "taskStatementId": "4.1",
+      "scenario": "Ironbridge routes failed records to a dead-letter table with the payload, the `request_id` and the stop reason. A support engineer runs the replay script and it processes the backlog in table order, oldest first.",
+      "stem": "Which TWO properties should the replay path have, beyond just re-running the payloads? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Replay must be per-record and idempotent, not per-batch. Make each unit of work independently retryable, key the per-record outcome by its business id, and gate re-posting on that record or on an idempotency key so a repeat is a no-op rather than an overwrite. A batch failure should resume from the checkpoint, not restart from zero — the same principle applies when reading a Message Batches results file, where you re-submit only the `errored` and `expired` entries rather than the whole batch."
+        },
+        {
+          "id": "B",
+          "text": "Replay must be ordered and observable. Re-processing failures in ascending age without a record of why each one failed, and without a count of what the replay actually fixed, produces a backlog that looks the same before and after. Each replay entry should carry the original failure class and the outcome of the retry attempt, so 'the retry worked' is a checkable claim rather than an assumption — and so a class that keeps failing becomes visible as a class."
+        },
+        {
+          "id": "C",
+          "text": "Replay in batches so that throughput is high, and rely on the payload alone. Since the full request is stored, the failure class and the attempt outcome can be re-derived from the API responses during the replay."
+        },
+        {
+          "id": "D",
+          "text": "Replay newest-first, so recently failed records are unblocked while older ones age out of the queue. Age-based ordering only matters for records whose staleness has no business meaning."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "A dead-letter path is only useful if it is a controlled re-entry, and both properties matter for different reasons. Per-record idempotency is a correctness property: make each unit of work independently retryable, key the outcome by its business id, and gate re-posting on that record or on an idempotency key, so a repeat is a no-op rather than a second posting. Restarting from zero is what turns a small failure into an incident, and the Message Batches equivalent is the pattern to copy — read the results file and re-submit only the `errored` and `expired` entries. Ordering and observability are the properties that make the backlog tractable: replaying oldest-first without recording the original failure class or the retry outcome means the queue looks identical before and after a replay, and a failure class that will never succeed on retry sits there indefinitely looking like fresh bad luck. Recording the class and the attempt outcome per entry is what turns a replay into a measurement of whether the fix actually worked.",
+      "whyWrong": {
+        "C": "It treats throughput as free and assumes the failure class can be recovered after the fact. A successful replay response carries no record of why the original attempt failed, so the classification has to be captured at failure time or it is lost.",
+        "D": "It optimizes an ordering that carries no domain meaning. Record staleness here is not business-meaningful — a tax line is not more valuable because it failed yesterday — and newest-first leaves the long tail of records nobody ever revisits."
+      },
+      "difficulty": 2,
+      "mindset": "Dead-letter replay is per-record and idempotent, and it must record the original failure class plus the retry outcome — otherwise you cannot tell a fix from a shuffle.",
+      "tags": [
+        "partial-failure",
+        "idempotency",
+        "observability",
+        "message-batches"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://platform.claude.com/docs/en/build-with-claude/batch-processing"
+      ]
+    },
+    {
+      "id": "v-d4-y4-020",
+      "taskStatementId": "4.1",
+      "scenario": "Ironbridge has hit a failure class its runbook does not cover: responses returning 200 whose content is an empty text block with `stop_reason: end_turn`. The on-call engineer's first question is what the entry needs to contain.",
+      "stem": "Which statement about writing the runbook entry is most accurate?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The entry needs four things, and the detection signal comes first because it is what makes the class visible at all. Detection: the specific observable — here a 200 whose content yields no usable text with `stop_reason: end_turn` — read from `stop_reason` and the content blocks rather than from HTTP status. Classification: what kind of failure it is, here a content failure rather than a transport one, and specifically not a retry candidate. Response: the action, which is to record it as an explicit failure with the `request_id` and route the record to the dead-letter path, never to record it as a successful empty answer. Verification: how you will know the change helped, which means a named check and a threshold rather than 'no more reports'."
+        },
+        {
+          "id": "B",
+          "text": "The entry needs the HTTP status, the error message and the remediation steps, since that is what every existing entry in the runbook contains and consistency matters more than completeness."
+        },
+        {
+          "id": "C",
+          "text": "The entry should start with the cause, because knowing why it happens tells the on-call engineer what to do. The detection signal and the verification step are documentation nice-to-haves."
+        },
+        {
+          "id": "D",
+          "text": "No entry is needed. A 200 with `end_turn` is a successful response by definition, so recording it as a failure would pollute the error rate and mislead the dashboards."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "A runbook earns its keep at 3am, so an entry has to answer four questions in the order an on-call engineer needs them. Detection: what exactly do I look at to know this happened — and for this class that means `stop_reason` and the content blocks, because a 200 is not the signal and `end_turn` alone is not either, it is the pairing of `end_turn` with no usable text. Classification: is this retryable, and the answer here is no, which is the decision that matters most and the one most often omitted. Response: the concrete action, here recording an explicit failure with the `request_id` and the stop reason attached and routing the record to the dead-letter path, so it never becomes a stored empty answer. Verification: the named check and threshold that will later tell you whether the change worked. The last field is what separates a runbook from a postmortem, because it is the only part that makes the entry falsifiable.",
+      "whyWrong": {
+        "B": "It proposes matching existing entries rather than fitting the failure. An HTTP status and a message are useless for a class whose defining property is that the status is 200 and there is no error message.",
+        "C": "It puts cause first and demotes detection. Knowing a plausible cause without an observable signal produces an entry nobody can apply, since the on-call engineer still has to decide whether they are looking at this failure.",
+        "D": "It treats HTTP success as content success, which is the exact bug the runbook exists to prevent. A 200 with an empty answer is the classic case where recording success creates a confidently wrong downstream record."
+      },
+      "difficulty": 2,
+      "visualId": "error-recovery",
+      "mindset": "A runbook entry is detection, classification, response, verification — and for a 200-shaped failure the signal has to be `stop_reason` plus content, not status.",
+      "tags": [
+        "runbook",
+        "error-taxonomy",
+        "observability",
+        "stop-reasons"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons"
+      ]
+    },
+    {
+      "id": "v-d4-y4-021",
+      "taskStatementId": "4.1",
+      "scenario": "Ironbridge is investigating intermittent 429s. The team increases logging, adds a replay harness, and runs both against the same workspace for two days. The 429 rate roughly triples, and the on-call engineer concludes the pipeline is 'more rate-limited than usual'.",
+      "stem": "What is the most likely explanation, and what does it suggest about the investigation?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The investigation is consuming the budget it is measuring. Every replay is a real request against the same organisation or workspace limits, so a debugging harness that fires captured requests at volume competes with production traffic — which is why the documented guidance to ramp traffic gradually and keep usage patterns consistent applies to your own diagnostics, not only to new integrations. The right response is to bound the harness: run replay against a small fixed sample, serialise it, respect `retry-after`, and prefer isolating the question offline — replaying the captured request through your own code path as far as request construction, and reading the captured response — before spending tokens on it. And a debugging harness that changes the metric it is studying is a harness that can never produce a clean baseline."
+        },
+        {
+          "id": "B",
+          "text": "The 429s are unrelated to the harness. Rate limits are enforced per organisation and the harness traffic is negligible compared with production, so the coincidence is not worth pursuing."
+        },
+        {
+          "id": "C",
+          "text": "The right response is to raise the rate limit ceiling for the workspace so investigation traffic is not throttled, then continue at the same harness volume."
+        },
+        {
+          "id": "D",
+          "text": "The 429s indicate the pipeline genuinely exceeds its limit, which is a real finding. The team should treat the tripled rate as the true steady-state figure and size capacity against it."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "This is the failure mode where the instrument changes the reading, and it is easy to mistake for a finding. Rate limits are enforced per organisation and per workspace, so a replay harness firing captured requests at volume is competing for exactly the same budget as production. The documented consequence is that a sharp increase in usage can surface as 429 rather than 529 because of acceleration limits — so a burst of diagnostic traffic can produce the symptom you were trying to observe, and a tripled 429 rate is at least as likely to be the harness as the pipeline. The discipline that fixes it has two parts. Bound the harness: a small fixed sample, serialised, respecting `retry-after`. And push the question offline before spending tokens on it — most origin-isolation questions are settled by replaying a captured request through your own construction path and comparing against the captured response, without calling the API at all. A debugging harness that perturbs the metric it is measuring cannot produce a baseline, which makes it worse than no harness.",
+      "whyWrong": {
+        "B": "It dismisses the correlation on the grounds that harness traffic is negligible, which is precisely the assumption under test. Doubling diagnostic traffic is not negligible against an acceleration limit, and the coincidence is the first thing to rule out.",
+        "C": "It treats the symptom as a capacity problem to buy out of. Raising a ceiling does not make the measurement valid, because the harness would still be perturbing the rate it is trying to characterise.",
+        "D": "It accepts the perturbed number as ground truth. A baseline established while the measuring instrument is loading the system is not a baseline, and sizing capacity against it would bake in the distortion."
+      },
+      "difficulty": 2,
+      "visualId": "deployment-topology",
+      "mindset": "A replay harness competes for the same rate-limit budget as production — bound it, settle questions offline from captured data, and never baseline an instrument that loads the system.",
+      "tags": [
+        "rate-limits",
+        "debugging-discipline",
+        "reproducibility",
+        "observability"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/rate-limits",
+        "https://platform.claude.com/docs/en/api/errors"
+      ]
+    },
+    {
+      "id": "v-d4-y4-022",
+      "taskStatementId": "4.1",
+      "scenario": "Ironbridge's extraction service starts returning HTTP 500 `api_error` on a small fraction of calls. The retry helper already backs off and honours `retry-after`, and after five attempts the errors persist.",
+      "stem": "What does the documentation direct you to do at that point, and what does it say the error means?",
+      "options": [
+        {
+          "id": "A",
+          "text": "500 `api_error` is an unexpected error internal to Anthropic's systems, and the documented response is to retry with exponential backoff — and if the error persists, contact support with the request ID. So five failed attempts is the documented threshold for escalation rather than a signal to keep raising the attempt cap. The escalation has to carry the `request_id`, which is the whole reason it is captured on every response rather than reconstructed after the fact, and support cannot help with a percentage and a symptom alone."
+        },
+        {
+          "id": "B",
+          "text": "500 `api_error` is a capacity condition equivalent to 529, so the correct response is longer backoff and a higher attempt cap. Escalating to support is only appropriate for 4xx."
+        },
+        {
+          "id": "C",
+          "text": "The documented response is to fail over to a fallback model, since a 500 is an internal fault that another model will not share."
+        },
+        {
+          "id": "D",
+          "text": "Nothing needs to change. A persistent 500 is an internal condition and the pipeline's behaviour — retry, then give up — already matches the documented guidance exactly."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The 500 entry is short and specific, and it names the escalation path rather than leaving it to judgement. `api_error` at 500 is an unexpected error that has occurred internal to Anthropic's systems; the documented response is to retry the request with exponential backoff, and if the error persists, contact support with the request ID. That makes a bounded retry budget followed by escalation the complete documented handling, and it explains why the escalation payload matters: support works from the request id, which is why it has to be logged on every response rather than reconstructed afterwards. Two distinctions keep this from being conflated with its neighbours in the 5xx family. 529 `overloaded_error` is temporary capacity pressure, which time genuinely resolves. And 504 `timeout_error` is a processing timeout where the guidance is to use streaming or batching for long-running work rather than to retry harder. 500 is the one where persistence is itself the signal that human involvement is the next step.",
+      "whyWrong": {
+        "B": "It merges 500 with 529 and misdirects the escalation. Overloaded capacity clears with time, whereas the documented response to a persistent `api_error` is to contact support with the request id.",
+        "C": "It invents a model-specific remedy for a platform fault. Switching models does not address an internal error, and it would also change the behaviour of every other request in the pipeline for no stated reason.",
+        "D": "It concludes nothing needs changing while omitting half the documented instruction. Retry-then-give-up is the first half; contacting support with the request id is the second, and it is the part that resolves the incident."
+      },
+      "difficulty": 1,
+      "mindset": "500 `api_error` is retry-with-backoff then escalate with the request id — persistence is the signal, not a reason for a bigger attempt cap.",
+      "tags": [
+        "error-identification",
+        "http-status",
+        "escalation",
+        "retry-strategy"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors"
+      ]
+    },
+    {
+      "id": "v-d4-y4-023",
+      "taskStatementId": "4.1",
+      "scenario": "Ironbridge's summariser occasionally returns HTTP 200 with `stop_reason: end_turn` and a content array containing a single text block whose text is an empty string. The pipeline stores the empty string as the summary and moves on.",
+      "stem": "What is the correct reading of this response, and what should the pipeline do?",
+      "options": [
+        {
+          "id": "A",
+          "text": "This is a successful HTTP call whose result is unusable, and the two facts need to be handled separately. Branch on `stop_reason` before consuming content, and then validate the content itself: `end_turn` means the model finished, not that it produced anything. An empty text block is therefore a content failure — treat it as an explicit failure, record it with the `request_id`, and route the record to the dead-letter path rather than storing an empty summary. The habit to build is the two-stage check: reason first, then content, because either can be wrong independently and the second is invisible to a status check."
+        },
+        {
+          "id": "B",
+          "text": "Nothing is wrong. `end_turn` with an empty text block is the documented representation for 'the model chose not to respond', and storing the empty string is the correct handling."
+        },
+        {
+          "id": "C",
+          "text": "Retry the identical request up to three times. An empty completion is a nondeterministic outcome, so repetition is the documented recovery."
+        },
+        {
+          "id": "D",
+          "text": "Treat it as truncation and resend with a higher `max_tokens`. An empty text block is how a model signals that it ran out of output budget."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Two independent checks, and pipelines that only do the first miss this class entirely. `stop_reason` tells you how generation ended, and it is genuinely informative — `tool_use` means there are tool calls to run, `max_tokens` and `model_context_window_exceeded` mean the output is truncated, `refusal` means you have a 200 with a refusal rather than an empty answer. But `end_turn` means the model finished normally, which says nothing about whether it said anything. An empty text block with `end_turn` is a content failure, and its danger is that every status-based check passes it: the call was 200, nothing threw, the JSON parsed. Storing it converts a content failure into a confidently wrong downstream record, which is why the correct handling is an explicit failure record with the `request_id` and a dead-letter route rather than an empty value. Truncation is the diagnosis to rule out, but it announces itself as `max_tokens`, not as silence.",
+      "whyWrong": {
+        "B": "It treats `end_turn` as an explanation for empty content. `end_turn` records that generation finished normally; it is not a statement about what was produced, and there is no documented representation for a deliberate non-response.",
+        "C": "It prescribes repetition for a deterministic-looking failure. If the same request and inputs produce an empty answer consistently, retrying three times costs three times as much and returns the same emptiness.",
+        "D": "It misreads the stop reason. Truncation is reported as `max_tokens`; an `end_turn` with no text is not a budget problem, so raising the limit changes nothing about the outcome."
+      },
+      "difficulty": 1,
+      "mindset": "Two checks, in order: `stop_reason` tells you how generation ended, content validation tells you whether it produced anything — a 200 with `end_turn` and no text is a failure.",
+      "tags": [
+        "stop-reasons",
+        "output-validation",
+        "error-handling",
+        "observability"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons",
+        "https://platform.claude.com/docs/en/api/errors"
+      ]
+    },
+    {
+      "id": "v-d4-y4-024",
+      "taskStatementId": "4.1",
+      "scenario": "Ironbridge's support agent is accused of using a document that was never sent. The pipeline's trace shows a successful call and a `fetch_document` tool result with plausible content. The engineer cannot verify that the logged content is what the model actually received.",
+      "stem": "What is the most likely gap, and what does it take to close it?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The trace records the wrapper's view, not the request's contents. Tool results pass through transformation on the way into the messages array — truncated, filtered, re-serialised, stripped of fields — and a log written at the wrapper boundary can diverge from the bytes sent. The gap closes by recording the actual request as assembled: the complete `messages` array with every `tool_use` id and matching `tool_result`, alongside the model, `max_tokens` and effort settings, and the response's `stop_reason`, full content blocks and `usage` breakdown including cache read, cache creation and output tokens. That is the set that makes a failure reproducible verbatim months later."
+        },
+        {
+          "id": "B",
+          "text": "The gap is that the trace lacks a duration field per call. Adding wall-clock latency per request would establish whether the document fetch had time to complete."
+        },
+        {
+          "id": "C",
+          "text": "The gap is that the response content is not stored. Storing the full response text is sufficient, because anything the model saw must have come from the response."
+        },
+        {
+          "id": "D",
+          "text": "There is no gap. If the wrapper logged the tool result, that is the content the model received, because the wrapper is the component that assembles the request."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The distinction is between logging an intent and logging the artefact, and only one of them is evidence. The wrapper is where a tool result is handled, so a log at that point records what the wrapper held — which is not necessarily what ended up in the `messages` array, because content can be truncated, filtered, re-serialised or stripped in between, and any content-block filtering is exactly what breaks thinking-block replay as well. The trace that supports an investigation has to be the request as assembled: the complete `messages` array including every `tool_use` id and matching `tool_result`, plus the model, `max_tokens` and the temperature and effort settings; and on the response side the `stop_reason`, the full `content` blocks and the `usage` breakdown with cache read, cache creation and output tokens. Add the `request_id` and it is reproducible verbatim, which is the standard the compliance and support cases actually need. Duration and response-only logging are both real signals, but neither answers the question that was asked here.",
+      "whyWrong": {
+        "B": "It proposes a plausible metric that cannot answer the question. Latency tells you whether a call was slow; it cannot tell you whether the content in the request was what the wrapper logged.",
+        "C": "It stores the wrong side of the exchange. The allegation is about what was sent, so the request is the artefact that has to be recorded; the response alone cannot show what the model was given.",
+        "D": "It assumes no transformation occurs between the wrapper and the request. Content-block handling is where thinking-block replay breaks, which is direct evidence that this stage is not a pass-through."
+      },
+      "difficulty": 2,
+      "mindset": "Evidence is the request as assembled — full `messages`, model, parameters, plus `stop_reason`, content and `usage` — because the wrapper's view can diverge from the bytes sent.",
+      "tags": [
+        "trace-analysis",
+        "observability",
+        "tracing",
+        "integration-layer"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://code.claude.com/docs/en/agent-sdk/observability"
+      ]
+    },
+    {
+      "id": "v-d4-y4-025",
+      "taskStatementId": "4.1",
+      "scenario": "Ironbridge's extraction loop uses structured outputs with `output_config.format`. Three records come back with `stop_reason: max_tokens`, three with `stop_reason: refusal`, and three valid objects whose every field is an empty string. Only the middle group is being retried.",
+      "stem": "Which TWO statements about handling these three groups are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "The two `max_tokens` cases need a clean resend: with `stop_reason: \"max_tokens\"` the output may be incomplete and simply not match your schema, so retry with a higher `max_tokens` — resending the original request cleanly with a fresh message history, or using the documented continuation approach, so you never accumulate two candidate extractions in one conversation."
+        },
+        {
+          "id": "B",
+          "text": "The empty-but-valid objects are a content problem that no amount of schema work addresses. Structured outputs guarantee the shape of the response, not that its values are populated, so an object whose every field is an empty string is schema-valid and semantically useless. It needs an application-level acceptance check — a per-field non-empty requirement for fields the business depends on, with an explicit nullable or sentinel representation for genuine absence so that 'the document did not contain it' is expressible rather than being indistinguishable from a failed extraction."
+        },
+        {
+          "id": "C",
+          "text": "The refusal cases should be retried identically, because a refusal is a safety condition that resolves on a subsequent attempt once the model's sampling has moved on."
+        },
+        {
+          "id": "D",
+          "text": "All three groups are schema failures and one fix covers them: raise `max_tokens` so no response is truncated, and add an explicit prompt instruction telling the model never to refuse and never to return empty fields."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Grouping these three together is the mistake, because they need three different responses and only one of them is a schema problem. Truncation: with `stop_reason: \"max_tokens\"` the output may be incomplete and simply not match your schema; the fix is a higher `max_tokens`, resent cleanly with a fresh message history or via the documented continuation approach, so you never end up with two candidate extractions in one conversation. Refusal: a 200 with `stop_reason: \"refusal\"` may not match your schema at all, because the refusal message takes precedence over schema constraints — that one needs the request adjusted or a fallback model, never an identical retry, which is why retrying the middle group as written is wrong. Emptiness: the guarantee is about shape, so a fully-populated object with empty values passes every schema check and still carries no information. That is an acceptance problem, and the durable fix is to make absence representable — nullable or an explicit sentinel — so that a document genuinely lacking a field and a failed extraction stop looking the same.",
+      "whyWrong": {
+        "C": "It treats a refusal as transient. A refusal is a deliberate condition that takes precedence over schema constraints, so an identical retry re-reads the same request and is at best a source of spend.",
+        "D": "It applies one remedy to three different causes. Only the truncated cases respond to a higher limit; a prompt instruction cannot make absence representable, and promising the model never to refuse simply relocates the failure outside your visibility."
+      },
+      "difficulty": 3,
+      "mindset": "Truncation gets a clean resend, refusal gets an adjusted request, and a valid-but-empty object gets an acceptance check — only one of the three is a schema failure.",
+      "tags": [
+        "structured-output",
+        "stop-reasons",
+        "output-validation",
+        "retry-strategy"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs",
+        "https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons"
+      ]
+    },
+    {
+      "id": "v-d4-y4-026",
+      "taskStatementId": "4.1",
+      "scenario": "Ironbridge's adjudicator has a 30-second end-to-end latency budget per claim. During a 529 incident the retry helper runs five attempts with exponential backoff, and the p99 climbs to four minutes while only a handful of claims succeed.",
+      "stem": "What is the wrong parameterisation, and what should bound the retries instead?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Attempt count is the wrong bound because it says nothing about wall-clock. Bounding retries by both an attempt cap and a total time budget lets the run terminate with a recorded reason, and jitter keeps the surviving retries from re-arriveing as a wave. With a 30-second budget, the correct behaviour is to stop early, record the attempt count, elapsed time and the last error class, and route the claim to a queued or dead-letter path so the latency SLO holds and the work is not lost. The distinction from a circuit breaker is scope: a breaker stops sending entirely after a threshold and admits probe requests after a cooldown, which is the right tool when every request in the fleet is being hit, whereas a per-request time budget is right when the pipeline must keep answering inside its own SLO."
+        },
+        {
+          "id": "B",
+          "text": "Attempt count is exactly the right bound. Reducing it to two attempts brings the p99 inside the 30-second budget without needing any concept of elapsed time."
+        },
+        {
+          "id": "C",
+          "text": "Retries should be removed entirely during a 529 and every claim failed over to a fallback model, because a degraded-model answer is preferable to a slow one."
+        },
+        {
+          "id": "D",
+          "text": "The latency budget is the wrong instrument. Report the 529s and let the upstream gateway handle retries, since it can be configured with a deadline."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Two budgets were being confused. An attempt cap bounds work per call; a total time budget bounds what the caller experiences, and only the second one can protect a 30-second SLO — five attempts at growing intervals can occupy four minutes while still being 'only five'. The documented discipline is to bound both attempts and total elapsed time, with exponential backoff and jitter so the attempts do not synchronise into a wave, and to make an exhausted budget a distinct recorded outcome rather than a generic failure — so the runbook can tell a budget stop from a network fault. What happens then is a design choice with a cost: route the claim to a queued or dead-letter path rather than dropping it, which is what keeps the SLO intact without losing work. The adjacent tool is a circuit breaker, and it operates at a different scope — after a threshold of consecutive failures it opens and fails fast without touching the network, returning a distinguishable provider-unavailable signal, and after a cooldown it admits limited probe requests. That is the right answer when the whole fleet is being hit; a per-request time budget is right when your own SLO is the binding constraint.",
+      "whyWrong": {
+        "B": "It treats attempts as a latency control. Two attempts at long intervals can still exceed the budget, and capping attempts alone says nothing about how long a single attempt is permitted to take.",
+        "C": "It trades correctness of record for latency without being asked to. Degrading to a fallback model changes the answer for every claim in the incident, which is a decision that belongs in the recovery matrix rather than in an incident response.",
+        "D": "It externalises a constraint you already own. Relying on a gateway deadline gives up the ability to record the attempt count, elapsed time and last error class that make the budget stop diagnosable."
+      },
+      "difficulty": 2,
+      "visualId": "deployment-topology",
+      "mindset": "Bound retries by attempts *and* elapsed time, record which budget stopped the run, and queue rather than drop — a breaker is a fleet-scope tool, not an SLO tool.",
+      "tags": [
+        "retry-strategy",
+        "circuit-breaker",
+        "deployment",
+        "observability"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://code.claude.com/docs/en/agent-sdk/hosting"
+      ]
+    },
+    {
+      "id": "v-d4-y4-027",
+      "taskStatementId": "4.1",
+      "scenario": "Ironbridge fixed an integration defect that dropped older turns from the `messages` array. The team wants a permanent guard, and a proposal is on the table: add the captured failing case to the suite and have an LLM judge score whether the response is correct.",
+      "stem": "Which assessment of that proposal is correct?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The grader is the problem. A regression test for a message-construction defect has an unambiguous expected outcome — the response must be based on the history that was sent — so it belongs with a deterministic grader that asserts a property of the request or the output, and it runs on every change. Model graders earn their place where there is no ground truth, and you earn the right to use one by calibrating it against human labels and measuring its run-to-run variance, so that a small movement can be told from noise. Add the deterministic assertion as the guard; keep an LLM judge, if you have one, for the qualities it can actually see."
+        },
+        {
+          "id": "B",
+          "text": "The proposal is sound. An LLM judge is the most sensitive detector of a dropped-turn defect, because it can recognise that an answer ignores earlier context even when no exact string assertion would."
+        },
+        {
+          "id": "C",
+          "text": "The proposal is sound but should be graded by a different model family than the one under test, so the grader does not share blind spots with the system."
+        },
+        {
+          "id": "D",
+          "text": "Neither a deterministic assertion nor a judge is reliable here. The only trustworthy guard is a production monitor, since the defect was invisible until it happened in production."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The right question is what kind of success this case has, and a dropped-turn defect has the simplest possible one: the request either contains the prior turns or it does not. That is a property of the request, checkable by an assertion, deterministic, and cheap enough to run on every change — which is exactly what a regression guard has to be. Handing it to an LLM judge makes it strictly weaker and strictly noisier, because the judge brings its own run-to-run variance on top of the signal, and you then have to calibrate it against human labels and measure that variance before a small movement means anything. The docs' stated best practice reinforces the split: grade with a different model from the one generating the output, since a same-family grader shares blind spots with the system under test. That is an argument for using a judge well — on qualities with no ground truth — not an argument for choosing a judge where a ground truth exists. And a production monitor is not a substitute: it detects the recurrence after it has shipped, which is the thing the guard was supposed to prevent.",
+      "whyWrong": {
+        "B": "It argues for the least sensitive detector. A deterministic assertion on the request catches the defect on every run, while a judge adds variance to a signal that was already exactly checkable.",
+        "C": "It keeps the grader as a judge and only swaps the family. Cross-family grading is good practice for judging, but it does not remove the noise or the fact that this case had a deterministic expected outcome available.",
+        "D": "It abandons pre-ship detection. A monitor tells you the defect returned after deployment; a deterministic case in the suite tells you before it does, which is the entire value of turning an incident into an eval case."
+      },
+      "difficulty": 2,
+      "visualId": "eval-loop",
+      "mindset": "Grade with a model only where there is no ground truth; a dropped-turn defect has an exact expected outcome and belongs to a deterministic assertion.",
+      "tags": [
+        "evals",
+        "grading",
+        "regression-prevention",
+        "llm-judge"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/define-success",
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests"
+      ]
+    }
+  ]
+}

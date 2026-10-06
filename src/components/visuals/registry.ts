@@ -102,6 +102,46 @@ export const VISUALS: Record<string, VisualEntry> = {
     description: "An elimination funnel for long scenario questions.",
     load: () => import("./exam-strategy"),
   },
+  "model-selection": {
+    title: "Choosing a model",
+    description: "Score one task across Haiku, Sonnet and Opus, then see why the cheap model fails on the hard one.",
+    load: () => import("./model-selection"),
+  },
+  "identity-and-pii": {
+    title: "Identity, access and PII",
+    description: "A request walked through classification, least privilege, redaction and injection defence, with what actually reaches the model.",
+    load: () => import("./identity-and-pii"),
+  },
+  "deployment-topology": {
+    title: "Deployment topology",
+    description: "Self-hosted, managed and hybrid agent deployments, and where the sandbox boundary and the credentials sit in each.",
+    load: () => import("./deployment-topology"),
+  },
+  "cost-model": {
+    title: "Cost and latency model",
+    description: "Turn request volume, token counts, cache hit rate and model tier into per-request cost and p50/p95 latency, then move the levers.",
+    load: () => import("./cost-model"),
+  },
+  "capability-ladder": {
+    title: "Capability ladder",
+    description: "Prompt, Skill, built-in tool, custom tool, MCP server or subagent, and how an overloaded toolset degrades tool selection.",
+    load: () => import("./capability-ladder"),
+  },
+  "requirements-traceability": {
+    title: "Requirements traceability",
+    description: "Turn a vague business ask into testable requirements, each traced to the eval case that proves it, and spot the ones with no proof.",
+    load: () => import("./requirements-traceability"),
+  },
+  "bias-and-fairness": {
+    title: "Bias and fairness",
+    description: "Per-group pass rates when an overall accuracy bar hides a failing subgroup, plus what actually moves the numbers.",
+    load: () => import("./bias-and-fairness"),
+  },
+  "stakeholder-tradeoff": {
+    title: "Stakeholder trade-offs",
+    description: "One architectural decision recorded properly, then reframed for an engineering manager, compliance and an executive.",
+    load: () => import("./stakeholder-tradeoff"),
+  },
 };
 
 export function visualInfo(id: string): VisualEntry | undefined {

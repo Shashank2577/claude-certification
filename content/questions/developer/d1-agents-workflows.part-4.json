@@ -1,0 +1,903 @@
+{
+  "certId": "developer",
+  "domainId": "d1-agents-workflows",
+  "questions": [
+    {
+      "id": "v-d1-b4-001",
+      "taskStatementId": "1.1",
+      "scenario": "Kestrel Logistics must process every inbound shipment through exactly four steps, in order, every time: normalise the carrier payload, validate the delivery window against the contract database, calculate the surcharge, and write the booking. Compliance forbids skipping a step, and the sequence has not changed in four years.",
+      "stem": "Should this be built as a workflow or as an agent, and why?",
+      "options": [
+        {
+          "id": "A",
+          "text": "A workflow. The steps, their order and their preconditions are all known in advance, so the control flow belongs in ordinary code and each step's output becomes the next step's typed input. An agent adds nondeterminism and cost to a path that has no decisions to make."
+        },
+        {
+          "id": "B",
+          "text": "An agent, because Claude handles the carrier payload formats better than hand-written parsers."
+        },
+        {
+          "id": "C",
+          "text": "An agent with a `maxTurns` cap, so the four steps run as a tool-use loop that compliance can audit."
+        },
+        {
+          "id": "D",
+          "text": "A workflow, but with one agent call per step so each step's reasoning is inspectable."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The decision criterion is whether the path can be determined ahead of time. Here every step, its order and its preconditions are fixed and auditable, which is the definition of a workflow — Anthropic's framing is \"predefined code paths\" versus agents where \"Claude dynamically directs the process and tool usage\". A workflow gives you four typed boundaries, deterministic failure handling per step, and a compliance story. Where a model genuinely helps — normalising messy carrier payloads, say — put a single model call *inside* one step of the workflow, rather than replacing the pipeline with a loop.",
+      "whyWrong": {
+        "B": "Model strength at one sub-task does not justify replacing known control flow. Keep the model where the uncertainty is, inside a step.",
+        "C": "A tool-use loop does not make an arbitrary sequence auditable — it makes it *possible* to deviate from one. `maxTurns` bounds cost, not compliance.",
+        "D": "This describes a hybrid that is often right, but as stated it adds a model call to every step including the deterministic ones. The better hybrid puts the model only where judgement is needed."
+      },
+      "difficulty": 1,
+      "visualId": "workflow-patterns",
+      "mindset": "If you can draw the whole path on paper before running it, it is a workflow — put the model inside a step, not in place of the flow.",
+      "tags": [
+        "workflow-vs-agent",
+        "decision-criteria",
+        "orchestration"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/overview"
+      ]
+    },
+    {
+      "id": "v-d1-b4-002",
+      "taskStatementId": "1.1",
+      "scenario": "A Kestrel engineer proposes turning the surcharge calculation into \"an agent that figures it out from the contract PDFs\", replacing 300 lines of deterministic pricing code. The rules are fully specified in a 40-page tariff and have not changed since January.",
+      "stem": "What is the most accurate assessment?",
+      "options": [
+        {
+          "id": "A",
+          "text": "This trades a verifiable calculation for an unverifiable one. The rules are documented and fixed, so they belong in code where a test can prove the output — and the contract PDFs are reference material for the code's authors, not an input the runtime needs to re-read."
+        },
+        {
+          "id": "B",
+          "text": "This is a good fit: the task requires reading long documents and applying conditional rules, which is exactly what models are good at."
+        },
+        {
+          "id": "C",
+          "text": "This is acceptable if the agent is given an evaluator that re-checks each surcharge against the tariff before returning it."
+        },
+        {
+          "id": "D",
+          "text": "This is acceptable provided the agent is given the full 40-page tariff in every prompt so it cannot miss a clause."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "\"Can be broken into predictable steps\" is one of the workflow criteria, and this task meets every part of it: the inputs are known, the rules are written down, and the output has a single correct answer. Replacing it with an agent removes the property that makes it trustworthy — a unit test can assert the surcharge for a given tariff band, and no prompt can do that. Anthropic's guidance is explicit that simpler solutions should be preferred and that a deterministic step should not become an LLM call. Documents are for the humans and agents who *write* the rules; the runtime needs the rules in a form it can execute.",
+      "whyWrong": {
+        "B": "Long-document reading is not the hard part of this task — the hard part is provable correctness on a fixed rule set. That points away from a model, not toward one.",
+        "C": "An evaluator that re-checks against the tariff is a second, less-tested implementation of the same rules. It doubles the surface without adding a guarantee.",
+        "D": "Including the whole tariff raises cost and latency and still cannot give you a test. It also creates a stale-copy problem the moment the January tariff is superseded."
+      },
+      "difficulty": 1,
+      "mindset": "When a rule is written down and the answer is objectively checkable, implement the rule — a model cannot be unit-tested.",
+      "tags": [
+        "workflow-vs-agent",
+        "simplicity",
+        "decision-criteria"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "v-d1-b4-003",
+      "taskStatementId": "1.1",
+      "scenario": "Kestrel's research assistant spawns a subagent per question. The lead's justification is that \"subagents get their own context and their own tool permissions, so we can hand each one a narrow job and keep the main window clean\".",
+      "stem": "Which TWO properties does delegation genuinely buy here? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Context isolation: the subagent starts with a fresh context window, so the thousands of tokens of raw material it reads never enter the main conversation. Only its final result does."
+        },
+        {
+          "id": "B",
+          "text": "A scoped tool set: a subagent definition can restrict which tools the subagent can use, so a read-only worker genuinely cannot edit files or run shell commands."
+        },
+        {
+          "id": "C",
+          "text": "Lower cost, because a subagent's context window starts empty and therefore costs less per call."
+        },
+        {
+          "id": "D",
+          "text": "Higher accuracy on hard reasoning, because a fresh context window removes the distractions of the main conversation."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Two properties are structural and two are folk myths. Isolation is real: a subagent gets a fresh context window and \"doesn't see your conversation history, the skills you've already invoked, or the files Claude has already read\" — only its result flows back, so raw intermediate output stays out of the main window. Tool scoping is real and enforced: `tools` and `disallowedTools` in the definition determine what the subagent can reach, and an agent defined with only Read and Grep cannot edit. Cost is not: a subagent makes its own model calls over its own history, so it usually costs *more*, and paying for context isolation means paying twice for anything both sides need. Accuracy is not a subagent property — it is whatever the prompt and model give you.",
+      "whyWrong": {
+        "C": "Isolation costs money: the subagent re-reads whatever it needs in its own context, in addition to everything the main conversation already spent on it.",
+        "D": "A clean context window does not make a model more accurate. If anything, a subagent starts with *less* context than the main conversation, including decisions already made."
+      },
+      "difficulty": 2,
+      "visualId": "orchestrator-subagents",
+      "mindset": "Delegate for context isolation and scoped permissions — not to save tokens, and not because a fresh window reasons better.",
+      "tags": [
+        "subagents",
+        "context-isolation",
+        "least-privilege"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/subagents",
+        "https://www.anthropic.com/engineering/multi-agent-research-system"
+      ]
+    },
+    {
+      "id": "v-d1-b4-004",
+      "taskStatementId": "1.1",
+      "scenario": "Kestrel's support lead agent has full tool access — including `issue_refund` — and delegates to workers whenever it judges a ticket \"non-trivial\". In review, three of the last twenty escalations were delegated when a single retrieval call would have answered the question, and one worker issued a refund the lead should have approved.",
+      "stem": "What is the strongest architectural fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Gate delegation before the loop rather than inside it: route the request with a cheap classification step, and only enter the agent loop when it is genuinely open-ended. Then remove `issue_refund` from the lead's tools and give it to a narrow, approval-gated worker, so delegation is about isolation and parallelism, not capability."
+        },
+        {
+          "id": "B",
+          "text": "Tighten the lead's description so it delegates less often, and rely on `maxTurns` to cap any runaway."
+        },
+        {
+          "id": "C",
+          "text": "Give the lead a cheaper model and keep the same tools, so over-delegation costs less."
+        },
+        {
+          "id": "D",
+          "text": "Have the lead read every worker's full transcript before responding, so it can catch a mistaken refund."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "This is a routing problem wearing an agent costume. Three quarters of tickets are answerable by one retrieval call, so they should never reach a loop that can decide to delegate — a deterministic routing step in front of the agent is cheaper, faster and auditable, which is exactly the routing pattern for \"prompts that need dividing into different categories\". The refund is a separate, deeper problem: the coordinator holds every tool by inheritance, so a mis-delegation becomes a side effect. The fix is least privilege — the lead plans and delegates, a narrowly scoped worker acts, and approval is a gate rather than an instruction.",
+      "whyWrong": {
+        "B": "Prompting the lead to delegate less is exactly the kind of probabilistic control that already failed. And a delegation mistake is not a runaway, so `maxTurns` is not the relevant lever.",
+        "C": "A cheaper model reduces the cost of the mistake; it does not remove the mistake, and it says nothing about why the lead reached for delegation at all.",
+        "D": "Reading full transcripts re-pollutes the lead's context with the very material isolation was supposed to remove, and it reviews side effects after they have happened."
+      },
+      "difficulty": 3,
+      "visualId": "orchestrator-subagents",
+      "mindset": "Route deterministically before the loop, and never let the coordinator hold the tools that cause side effects.",
+      "tags": [
+        "orchestration",
+        "routing",
+        "least-privilege",
+        "supervisor"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents",
+        "https://code.claude.com/docs/en/agent-sdk/subagents"
+      ]
+    },
+    {
+      "id": "v-d1-b4-005",
+      "taskStatementId": "1.1",
+      "scenario": "Kestrel's triage coordinator delegates to four worker agents. It inherits the full tool set by default, including `close_account`, which only the billing worker should ever call. Security review also notes the coordinator's own prompt tells it to \"never close accounts directly\".",
+      "stem": "Which TWO changes close the gap? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Restrict the coordinator's tool set in its definition so `close_account` is not available to it at all, leaving it with read and delegation tools."
+        },
+        {
+          "id": "B",
+          "text": "Keep the \"never close accounts directly\" line in the coordinator's prompt, since a clear instruction plus a review checklist is how most teams enforce this."
+        },
+        {
+          "id": "C",
+          "text": "Add a deny rule for `close_account` in the permission settings, so any call from the coordinator is refused deterministically."
+        },
+        {
+          "id": "D",
+          "text": "Have the coordinator ask the user for confirmation before any account-closing action, as an extra safety step."
+        }
+      ],
+      "correct": [
+        "A",
+        "C"
+      ],
+      "explanation": "Least privilege is the primary control, and it is enforced by configuration rather than by goodwill. A subagent definition's `tools` field determines what the agent can reach, so removing `close_account` from the coordinator means the capability is absent rather than merely discouraged — there is no tool to call, no prompt to ignore, no classifier to fool. A `close_account` deny rule in permission settings is the complementary belt: it holds in every permission mode, including for tools the definition would otherwise inherit. Instruction plus review is the weakest of the four here, because \"never do X\" in a prompt has a non-zero failure rate and produces no record when it fails.",
+      "whyWrong": {
+        "B": "A prompt is context, not enforcement. It has a non-zero failure rate and gives you no signal when it fails — which is the whole point of removing the tool.",
+        "D": "A confirmation step still requires the capability to be present in the coordinator, and it adds a human to the path for every action. Removing the tool is strictly stronger."
+      },
+      "difficulty": 2,
+      "mindset": "Remove the capability from the coordinator rather than instructing it not to use the capability.",
+      "tags": [
+        "supervisor",
+        "least-privilege",
+        "permissions",
+        "tools"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/subagents",
+        "https://code.claude.com/docs/en/agent-sdk/permissions"
+      ]
+    },
+    {
+      "id": "v-d1-b4-006",
+      "taskStatementId": "1.1",
+      "scenario": "Kestrel's refactoring of the billing module uses a two-level hierarchy: a lead agent, three team leads, and each team lead supervising four workers. Workers return prose findings; team leads summarise them; the lead synthesises the summaries into a single plan. The final plan has twice omitted a migration constraint that appeared in a worker's output.",
+      "stem": "What explains the omissions, and what is the right change?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Each level re-serialises through prose, so detail is lost at every hop and the top level never sees what the workers actually said. Define a structured return contract at each level — required fields, bounded text, and pointers to artifacts on disk — and keep the chain to one level of supervision where you can. The lead should be able to open the source artifact rather than trusting a summary of a summary."
+        },
+        {
+          "id": "B",
+          "text": "The hierarchy is too shallow. Add a fourth level so each team lead has fewer workers and can attend to more detail per worker."
+        },
+        {
+          "id": "C",
+          "text": "Increase the summarisation temperature so team leads produce more varied, more informative summaries."
+        },
+        {
+          "id": "D",
+          "text": "Have workers write their findings to shared files and have the lead read all files directly, skipping the intermediate summaries."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Loss at a summarisation boundary is a compression problem, and prose summarisation is the worst possible encoding for it — there is no schema to violate, so nothing detects what was dropped. Anthropic's guidance on multi-agent systems is to return a concise, structured summary from each subagent and to have the lead treat those summaries as the authoritative record; with more hierarchy you get more hops and more loss, which is why depth is a cost rather than a scaling strategy. A structured contract makes the shape checkable, and keeping bulky output on disk with a pointer means the top level can verify rather than trust. Option D is the same instinct without the contract, and re-reading every file at the top re-pollutes the context isolation bought you.",
+      "whyWrong": {
+        "B": "Depth adds hops, and each hop is another opportunity to drop a constraint. Four levels would lose more, not less.",
+        "C": "Temperature changes wording variety, not information retention. The omissions are a structural consequence of unconstrained summarisation.",
+        "D": "Reading every worker's file at the top restores the content but reinstates the coordinator bloat that delegation was meant to avoid — and it still provides no schema to check against."
+      },
+      "difficulty": 2,
+      "mindset": "Every hierarchy level compresses; make the return contract structured and keep artifacts reachable so the top can verify.",
+      "tags": [
+        "orchestration",
+        "supervisor",
+        "context-management",
+        "multi-agent"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/multi-agent-research-system",
+        "https://code.claude.com/docs/en/agent-sdk/subagents"
+      ]
+    },
+    {
+      "id": "v-d1-b4-007",
+      "taskStatementId": "1.1",
+      "scenario": "Kestrel runs four parallel agents that each add a feature to the same repository. Twice, two agents edited the same file and one change silently overwrote the other. Once, an agent's test run picked up another agent's half-finished file and failed in a way nobody could reproduce afterwards.",
+      "stem": "What is the root cause and the correct fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The agents share mutable state, so there is no isolation boundary and no ordering between them. Give each agent its own copy of the repository — a git worktree or a distinct working directory per agent — and either partition file ownership so no two agents target the same paths, or merge through a controlled step. In the Agent SDK, one session maps to one subprocess with its own working directory, so `cwd` per agent is the isolation primitive."
+        },
+        {
+          "id": "B",
+          "text": "The agents are running at the wrong effort level; lower it so they make smaller, less destructive edits."
+        },
+        {
+          "id": "C",
+          "text": "Add a retry loop so the second writer re-reads the file and merges correctly on the next attempt."
+        },
+        {
+          "id": "D",
+          "text": "Serialise the agents — run them one after another instead of in parallel — which removes the race entirely."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "This is a concurrency bug wearing an agent costume, and it has nothing to do with the model. Two writers on one mutable working tree will race; no amount of prompting prevents last-write-wins. The fix is real isolation, and Claude Code gives you two: `isolation: \"worktree\"` on a subagent definition, which branches an isolated git worktree and cleans it up if no changes were made, and a distinct `cwd` per agent session, which is exactly what the multi-agent container guidance recommends — \"give each agent its own working directory so they do not overwrite each other's files\". Worktree isolation also fixes the second symptom: with separate checkouts, one agent's test run cannot see another's half-finished file.",
+      "whyWrong": {
+        "B": "Effort level changes how much reasoning an agent spends, not whether two processes write the same file. The race is structural.",
+        "C": "A retry re-reads and can merge correctly only by luck — nothing in the agent knows the other writer's intent, and the lost write is already gone.",
+        "D": "Serialising removes the race but throws away the reason you ran four agents in parallel. Isolation and file-ownership partitioning preserve both the parallelism and correctness."
+      },
+      "difficulty": 3,
+      "mindset": "Parallel agents need separate working copies and disjoint file ownership — that is a concurrency problem, not a prompting problem.",
+      "tags": [
+        "orchestration",
+        "parallelization",
+        "isolation",
+        "worktrees"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/hosting",
+        "https://code.claude.com/docs/en/sub-agents"
+      ]
+    },
+    {
+      "id": "v-d1-b4-008",
+      "taskStatementId": "1.2",
+      "scenario": "Kestrel's compliance rule is that every file write performed by an agent must be recorded in an immutable audit log with the tool name, the path and a content hash — and it must be impossible for the agent to skip, reorder, or forge an entry.",
+      "stem": "Which mechanism should enforce this?",
+      "options": [
+        {
+          "id": "A",
+          "text": "A `PostToolUse` hook with a matcher on `Edit|Write` (and the equivalent for every other write tool). Hooks are host-executed shell commands that fire on every matching tool call regardless of what Claude decides, and hooks from settings files also run inside subagents."
+        },
+        {
+          "id": "B",
+          "text": "An instruction in the system prompt requiring the agent to write an audit entry after each edit."
+        },
+        {
+          "id": "C",
+          "text": "A `UserPromptSubmit` hook that appends the user's request to the audit log."
+        },
+        {
+          "id": "D",
+          "text": "A `Stop` hook that inspects the working tree once the turn finishes and writes a summary of what changed."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Hooks are the deterministic mechanism inside an agent loop, and the lifecycle table is what makes the right event obvious: `PreToolUse` and `PostToolUse` fire \"on every tool call inside the agentic loop\", and hooks defined in settings files \"also run inside subagents\", with the input carrying `agent_id` and `agent_type`. That gives you per-write, in-order, unskippable records with an exit code or JSON decision as the control channel. The alternatives are all wrong granularity or wrong guarantee: a system-prompt instruction is probabilistic and forgeable, `UserPromptSubmit` runs once per user turn rather than per write, and `Stop` gives you a single after-the-fact summary that cannot prove ordering or completeness.",
+      "whyWrong": {
+        "B": "An instruction in the system prompt is context the model may follow, ignore, or satisfy superficially. It cannot guarantee an entry exists, let alone that its hash is right.",
+        "C": "`UserPromptSubmit` fires when a prompt is submitted, before Claude processes it. One prompt can produce many writes, so per-write coverage is impossible from there.",
+        "D": "`Stop` fires when Claude finishes responding. A summary at the end cannot establish that every write was captured, or in what order."
+      },
+      "difficulty": 1,
+      "mindset": "Deterministic guarantees inside a loop come from hooks on the tool events, not from instructions to the model.",
+      "tags": [
+        "hooks",
+        "audit",
+        "agent-sdk"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/hooks",
+        "https://code.claude.com/docs/en/hooks"
+      ]
+    },
+    {
+      "id": "v-d1-b4-009",
+      "taskStatementId": "1.2",
+      "scenario": "Kestrel's hosted agent must load per-tenant configuration before its first turn: the tenant's feature flags, the enabled tool list, and a short system-prompt addendum. Today each of these is appended inside the first user message by the host.",
+      "stem": "What should change?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Register a `SessionStart` hook. It fires when a session begins or resumes — ahead of the first turn — and its matchers cover how the session started (`startup`, `resume`, `clear`, `compact`, `fork`), so the same code can behave differently for a fresh session than for one resuming after compaction."
+        },
+        {
+          "id": "B",
+          "text": "Keep appending to the first user message; it is the only place the host has write access before the first turn."
+        },
+        {
+          "id": "C",
+          "text": "Use a `Setup` hook, which exists specifically for one-time preparation before the session starts."
+        },
+        {
+          "id": "D",
+          "text": "Use a `PreToolUse` hook on `Read` so configuration is injected the first time the agent touches a file."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "`SessionStart` is the per-session cadence event: it fires \"when a session begins or resumes\", before any turn runs, which is exactly the window in which tenant configuration must exist. Its matcher values are the useful part — `startup`, `resume`, `clear`, `compact`, `fork` — so you can load full tenant config on a cold start and something cheaper on a resume, and you get deterministic behaviour after a `/clear` or a compaction rather than relying on the host to notice. One practical note: `SessionStart` at launch fires before the session's MCP servers are available to hooks, so a `mcp_tool` hook there is skipped; use `type: \"command\"` for anything needed at launch.",
+      "whyWrong": {
+        "B": "The host can set system-prompt content before the first turn — that is what `--append-system-prompt` and the SDK options are for. Appending to a user message also puts configuration in a role where it competes with user content.",
+        "C": "`Setup` is narrower than it sounds: it fires only with `--init-only`, or with `--init` / `--maintenance` in `-p` mode — \"for one-time preparation in CI or scripts\". It does not fire on an ordinary interactive session.",
+        "D": "`PreToolUse` on `Read` injects configuration lazily and unpredictably — after the first turn has already started reasoning without it."
+      },
+      "difficulty": 2,
+      "mindset": "Per-session setup belongs on `SessionStart`, where you can branch on startup versus resume.",
+      "tags": [
+        "hooks",
+        "session-management",
+        "agent-sdk"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/hooks",
+        "https://code.claude.com/docs/en/hooks#sessionstart"
+      ]
+    },
+    {
+      "id": "v-d1-b4-010",
+      "taskStatementId": "1.2",
+      "scenario": "Kestrel wants a rule that holds even while Claude is exploring read-only: \"never open a file under `vendor/`\" must be true in plan mode, in an explore-only subagent, and inside a forked skill — not just in the main editing loop.",
+      "stem": "What is the appropriate mechanism?",
+      "options": [
+        {
+          "id": "A",
+          "text": "A `PreToolUse` hook with a matcher on `Read` that denies the call, optionally narrowed with `if: \"Read(**/vendor/**)\"`. Hooks fire on every matching tool call regardless of permission mode, and settings-file hooks run inside subagents and forked skills too."
+        },
+        {
+          "id": "B",
+          "text": "A line in the root CLAUDE.md saying `Never read files under vendor/`, since CLAUDE.md applies everywhere."
+        },
+        {
+          "id": "C",
+          "text": "A `permissions.deny` rule for `Read(vendor/**)` in managed settings, which the client enforces independently of the model."
+        },
+        {
+          "id": "D",
+          "text": "Run every session permanently in plan mode, since plan mode is read-only exploration."
+        }
+      ],
+      "correct": [
+        "A",
+        "C"
+      ],
+      "explanation": "When a rule must hold everywhere, including read-only exploration, enforce it in the client rather than in context. Two mechanisms qualify. A `PreToolUse` hook with a `Read` matcher fires on every matching tool call in every mode, and hooks from settings files also run inside subagents — so a forked skill or an explore agent cannot route around it; the `if` field can narrow it with `\"Read(**/vendor/**)\"` so the hook only spawns for the paths you care about. A `permissions.deny` rule is the stronger sibling: it applies in every permission mode including bypass, and deny rules hold regardless of what Claude decides. Both are configuration. A CLAUDE.md line is context with a non-zero failure rate, and plan mode is a working style, not a security boundary.",
+      "whyWrong": {
+        "B": "CLAUDE.md is context, not enforcement: \"there's no guarantee of strict compliance, especially for vague or conflicting instructions.\" It also has no effect on what tools are permitted.",
+        "D": "Plan mode blocks edits but is a permission mode for exploration, not a permanent safety control — approved plans still execute, and a mode change is one keystroke away."
+      },
+      "difficulty": 2,
+      "mindset": "A rule that must hold in every mode is a hook or a deny rule — never a line of context.",
+      "tags": [
+        "hooks",
+        "permissions",
+        "guardrails"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/hooks",
+        "https://code.claude.com/docs/en/permissions"
+      ]
+    },
+    {
+      "id": "v-d1-b4-011",
+      "taskStatementId": "1.2",
+      "scenario": "Kestrel's hosted agent has no top-level session timeout. Two incidents in a week ended with a job \"eventually killed by the orchestrator\" after burning hours of tokens on a loop that was making no progress.",
+      "stem": "Which TWO statements about bounding an Agent SDK session are correct? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "A session does not time out on its own. Set `maxTurns` in TypeScript or `max_turns` in Python to bound how many tool-use round trips the agent takes before stopping."
+        },
+        {
+          "id": "B",
+          "text": "There is no per-subagent wall-clock deadline either. Cap each subagent with `maxTurns` in its `AgentDefinition`; `CLAUDE_ASYNC_AGENT_STALL_TIMEOUT_MS` is a stall watchdog that fires when a subagent stops producing output, not a total-runtime deadline."
+        },
+        {
+          "id": "C",
+          "text": "Setting a `timeout` option on the `query()` call terminates the session cleanly after the given number of seconds."
+        },
+        {
+          "id": "D",
+          "text": "Setting `--max-budget-usd` causes Claude Code to stop background subagents that are still running once the cap is reached."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Both limits are real and neither is what people expect. The hosting guidance lists the limitation bluntly: \"No top-level session timeout — a session does not time out on its own. Set `maxTurns` in TypeScript or `max_turns` in Python to bound how many tool-use round trips the agent takes before stopping.\" And the same table adds: \"No per-subagent wall-clock deadline — cap each subagent with `maxTurns` in its `AgentDefinition`. `CLAUDE_ASYNC_AGENT_STALL_TIMEOUT_MS` sets a stall watchdog that fires when a subagent stops producing output; it isn't a total-runtime deadline.\" So the bounds you have are turn counts at two levels, plus a stall detector. Neither is a wall clock, which is why a genuinely slow-but-progressing agent can still run long.",
+      "whyWrong": {
+        "C": "There is no session-level wall-clock `timeout` on `query()`. The documented bounds are turn counts, not elapsed time.",
+        "D": "That describes the CLI's `--max-budget-usd`, not an Agent SDK option, and it is not a timeout mechanism — a spend cap stops work on cost grounds, which is a different control from bounding runtime."
+      },
+      "difficulty": 2,
+      "visualId": "deployment-topology",
+      "mindset": "The SDK bounds work in turns, at session and subagent level — there is no wall-clock timeout to configure.",
+      "tags": [
+        "agent-sdk",
+        "limits",
+        "max-turns",
+        "hosting"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/hosting",
+        "https://code.claude.com/docs/en/agent-sdk/overview"
+      ]
+    },
+    {
+      "id": "v-d1-b4-012",
+      "taskStatementId": "1.2",
+      "scenario": "One Kestrel service issues a wide fan-out: a coordinator spawns 60 subagents in a single dispatch to scan 60 warehouses. Twice a week the batch dies with 429s partway through, and the coordinator treats the whole fan-out as failed.",
+      "stem": "What does the guidance say, and what is the right fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Large parallel-subagent fanouts can hit rate limits — the documented mitigation is to break the work into smaller batches rather than one wide dispatch. Batch the 60 into groups, checkpoint each group's results, and treat rate limits as a transient condition with bounded backoff so a throttled batch is retried rather than the run being abandoned."
+        },
+        {
+          "id": "B",
+          "text": "Raise the API tier. The fan-out is within the documented limits, so 429s indicate the account is misconfigured."
+        },
+        {
+          "id": "C",
+          "text": "Spawn the subagents sequentially instead. That eliminates rate limits and simplifies the coordinator's logic."
+        },
+        {
+          "id": "D",
+          "text": "Add the subagents to `exclude_tools` so their tool calls are skipped and the scan completes instantly."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "This is a named limitation with a named mitigation: \"Large parallel-subagent fanouts can hit rate limits — break work into smaller batches rather than issuing one wide dispatch.\" Batching also gives you something a single dispatch never had: partial progress. If group three is throttled, groups one and two are already checkpointed, so you resume rather than restart — and the coordinator's window holds structured group results rather than sixty interleaved transcripts. Sequential execution would remove the throttling but forfeit the parallelism that made the fan-out worthwhile, and there is nothing in the tool configuration that makes the work disappear.",
+      "whyWrong": {
+        "B": "The documented behaviour is that wide fanouts hit rate limits. That is a shape problem in the dispatch, not a misconfiguration.",
+        "C": "Serialising does avoid the burst, but it converts a throughput design into a latency problem and still leaves one failure losing all progress.",
+        "D": "`exclude_tools` names tools whose results context editing must not clear. It has nothing to do with skipping tool calls, and skipping the scan defeats the purpose."
+      },
+      "difficulty": 3,
+      "visualId": "deployment-topology",
+      "mindset": "Batch wide fan-outs and checkpoint each batch — a throttled group should cost you that group, not the run.",
+      "tags": [
+        "subagents",
+        "rate-limits",
+        "parallelization",
+        "deployment"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/hosting",
+        "https://code.claude.com/docs/en/agent-sdk/subagents"
+      ]
+    },
+    {
+      "id": "v-d1-b4-013",
+      "taskStatementId": "1.2",
+      "scenario": "Kestrel runs its Agent SDK service on serverless, where no human will ever answer a permission prompt. The service pre-approves `Read`, `Grep` and one scoped test command, and the remaining calls are left to the normal permission flow.",
+      "stem": "Which change is correct?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Pre-approve a minimal tool set and make anything unapproved deny deterministically rather than wait: `--permission-prompts none` (or the `dontAsk` mode). With that flag the run does not consult a host or wait, anything that would prompt is denied unless a `PermissionRequest` hook allows it, and Claude is told nobody can approve and not to retry — so the run continues instead of hanging."
+        },
+        {
+          "id": "B",
+          "text": "Add a `canUseTool` callback that approves every request, since the service is trusted and any tool is acceptable in this environment."
+        },
+        {
+          "id": "C",
+          "text": "Add more entries to `allowed_tools` until no request can ever need approval, which removes the problem."
+        },
+        {
+          "id": "D",
+          "text": "Run the service with `bypassPermissions` and rely on container isolation to contain any damage."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "An unattended run has no approver, so anything left in the prompt path is a hang, not a decision. The documented pattern is to pre-approve a minimal set and then state explicitly that nobody can answer: with `--permission-prompts none`, \"your run doesn't consult the host or wait on it. Anything that would prompt is denied unless a `PermissionRequest` hook allows it, Claude is told that nobody can approve the request and not to retry it, and the run continues.\" Under `stream-json` the denials appear as `permission_denied` system messages and the final result lists them in `permission_denials`, so the run stays auditable. The `dontAsk` permission mode is the settings-level equivalent: it auto-denies what would prompt while read-only actions and your allow rules still run.",
+      "whyWrong": {
+        "B": "Approving everything removes the control without reducing the risk. The tools you have not thought about are exactly the ones that should not run unattended.",
+        "C": "That is how you end up with a broad allow list nobody reviewed — and it still leaves any request outside it waiting on a host that does not exist.",
+        "D": "`bypassPermissions` abandons least privilege. It is documented as appropriate for isolated containers, but here there is a better answer that keeps the tool surface small."
+      },
+      "difficulty": 2,
+      "visualId": "deployment-topology",
+      "mindset": "Unattended runs need pre-approved minimal tools plus an explicit deny-the-rest, not an approver that will never arrive.",
+      "tags": [
+        "agent-sdk",
+        "permissions",
+        "hosting",
+        "least-privilege"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/headless",
+        "https://code.claude.com/docs/en/agent-sdk/permissions"
+      ]
+    },
+    {
+      "id": "v-d1-b4-014",
+      "taskStatementId": "1.2",
+      "scenario": "Kestrel's deployment notes state that the Agent SDK \"spawns a separate `claude` CLI process per session and talks to it over stdio\", and the team is now sizing hosts and noticing memory growth on long-lived sessions.",
+      "stem": "Which TWO consequences follow directly from the subprocess model? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "One session maps to one subprocess with its own process tree and transcript file, so N concurrent sessions means N subprocesses. Concurrency per host is bounded by how many subprocesses its RAM can hold — roughly (host RAM − overhead) / per-session RAM ceiling."
+        },
+        {
+          "id": "B",
+          "text": "Three kinds of agent state live on the container filesystem by default and none of them survive a container restart, a scale-down, or a move to a different node. Long-running deployments must externalise that state with a `SessionStore` or plan for loss."
+        },
+        {
+          "id": "C",
+          "text": "Because each session is a subprocess, the SDK can pool them transparently, so memory is bounded by the number of sessions rather than by process count."
+        },
+        {
+          "id": "D",
+          "text": "Long-running sessions leak memory, which the SDK reclaims automatically once a session's turn budget is exhausted."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Both follow from the same sentence in the hosting guide: \"Every hosting decision on this page follows from how the SDK runs the agent. When your code calls `query()`, the SDK spawns a separate `claude` CLI process and talks to it over stdio. That subprocess owns the shell, the working directory, and the JSONL session transcripts on local disk.\" So capacity planning is process planning — the guide even gives the sizing formula and says to measure peak RSS from a representative session, because the 1 GiB starting point is \"a floor, not the ceiling\". And because that state is on local disk, \"none of them survive a container restart, a scale-down, or a move to a different node\", which is what makes a `SessionStore` a requirement for the hybrid pattern rather than an optimisation.",
+      "whyWrong": {
+        "C": "There is no pooling. Each session owns a subprocess, so process count tracks session count and memory scales with it.",
+        "D": "Memory growth is a listed limitation you manage yourself — \"cap session length or recycle subprocesses periodically\" — not something the SDK reclaims on turn exhaustion."
+      },
+      "difficulty": 3,
+      "mindset": "One session is one subprocess on local disk — capacity is RAM-bound and session state does not survive the box.",
+      "tags": [
+        "hosting",
+        "deployment",
+        "scaling",
+        "session-storage"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/hosting"
+      ]
+    },
+    {
+      "id": "v-d1-b4-015",
+      "taskStatementId": "1.3",
+      "scenario": "A Kestrel team is comparing agent frameworks for a multi-stage claims workflow that must survive process restarts mid-run and be inspectable step by step while it is developing.",
+      "stem": "Which framework characteristic fits that requirement, and which framework is it associated with?",
+      "options": [
+        {
+          "id": "A",
+          "text": "An explicit state graph — named nodes connected by edges, with the state persisted at each step so execution can checkpoint and resume. This is LangGraph's model, and it is the reason to choose it over a bare loop."
+        },
+        {
+          "id": "B",
+          "text": "Type-hinted output models validated by the framework before they reach your code. This is PydanticAI's model, and it is what makes an agent's return value a checked Python object rather than text."
+        },
+        {
+          "id": "C",
+          "text": "MCP-first tool discovery with native AWS service integrations. This is Strands' model, and it is what makes an agent usable inside an existing AWS account."
+        },
+        {
+          "id": "D",
+          "text": "The same agent loop, tools and context management that power Claude Code, exposed as a library. This is the Agent SDK, and it means a framework adds a translation layer rather than removing one."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Match the requirement to the abstraction. \"Must survive process restarts mid-run and be inspectable step by step\" is a demand for explicit, persisted state — a graph whose nodes and edges are named, and whose state is checkpointed between steps, which is LangGraph's design. The other options answer questions the team did not ask: PydanticAI is about typed, validated outputs; Strands is about AWS-native MCP tool discovery; and the Agent SDK is worth knowing as a baseline — it gives you \"the same tools, agent loop, and context management that power Claude Code\", so adopting a third-party framework is a deliberate trade for its ecosystem, not a step up in capability.",
+      "whyWrong": {
+        "B": "Typed validated outputs are a real and valuable property, but they do not give you resumable, inspectable multi-step execution.",
+        "C": "AWS-native MCP discovery is about where the tools come from, not about checkpointing a workflow across restarts.",
+        "D": "Accurate as a statement about the Agent SDK, and useful context — but the requirement here is about explicit persisted state, which is the framework's contribution, not the SDK's."
+      },
+      "difficulty": 1,
+      "mindset": "Pick the framework for the abstraction you need: persisted state graphs, typed outputs, or AWS-native tooling — not for a better loop.",
+      "tags": [
+        "frameworks",
+        "langgraph",
+        "agent-patterns"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/overview",
+        "https://www.anthropic.com/engineering/building-effective-agents"
+      ]
+    },
+    {
+      "id": "v-d1-b4-016",
+      "taskStatementId": "1.3",
+      "scenario": "Kestrel's Python team writes agents whose outputs feed directly into typed domain objects, and their biggest recurring bug class is an agent returning a plausible string where the code expected a validated structure.",
+      "stem": "Which framework choice addresses this most directly, and why?",
+      "options": [
+        {
+          "id": "A",
+          "text": "PydanticAI, because its core abstraction is a typed output model: you declare the result as a Python type and the framework validates the agent's output against it, so an invalid result fails at the boundary instead of propagating as a string into your domain logic. Dependency injection also makes the agent testable without a live model."
+        },
+        {
+          "id": "B",
+          "text": "LangGraph, because its state graph validates every node's output against the declared state schema."
+        },
+        {
+          "id": "C",
+          "text": "Strands, because it validates tool inputs against JSON Schema before dispatching them."
+        },
+        {
+          "id": "D",
+          "text": "None of them — validation is the application's job and should not be delegated to a framework, because frameworks change their validation semantics between versions."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "PydanticAI's design centres on typed, validated agent outputs: you describe the result as a type and the framework's job is to make the agent's answer conform, which removes exactly the \"plausible string where a structure was expected\" class. Type safety and dependency injection go together — a typed result is what makes the dependency-injected model client a genuine seam for testing. The contrast with the neighbours is instructive: LangGraph's contribution is explicit persisted state across steps, and Strands' is AWS-native MCP tool discovery. Framework upgrades are a real risk, so pin versions and keep the validation boundary thin — but treating that as a reason to hand-validate every boundary is throwing away the abstraction you adopted the framework for.",
+      "whyWrong": {
+        "B": "LangGraph's graph and checkpointing are about control flow and durability across steps, not about validating an agent's return value into your domain type.",
+        "C": "Strands is oriented at AWS-native services and MCP tool discovery. Tool input validation is not its headline abstraction.",
+        "D": "Version drift is a real operational concern, handled by pinning and by keeping the framework boundary thin. It is not an argument against having a validated boundary at all."
+      },
+      "difficulty": 1,
+      "mindset": "If untyped agent output is your recurring bug class, choose the framework whose core abstraction is a validated return type.",
+      "tags": [
+        "frameworks",
+        "pydanticai",
+        "structured-output"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs",
+        "https://code.claude.com/docs/en/agent-sdk/overview"
+      ]
+    },
+    {
+      "id": "v-d1-b4-017",
+      "taskStatementId": "1.3",
+      "scenario": "Kestrel adopted an agent framework for its graph tooling. Two Claude capabilities they depend on — strict tool use so tool arguments always match the schema, and structured outputs via `output_config` — are unavailable through the framework's request builder, so the team has hand-rolled workarounds.",
+      "stem": "Which TWO questions should the team answer before committing further? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Which Claude features the framework can express at all. A framework that builds requests itself is a translation layer: anything it does not expose — `strict: true` on a tool, `output_config.format`, context editing, adaptive thinking — needs a raw-SDK escape hatch, and every gap is a place where your guarantees quietly stop holding."
+        },
+        {
+          "id": "B",
+          "text": "What the escape hatch costs. A framework that cannot reach a capability forces you to bypass it for those calls, which means two request paths, two sets of defaults, and two places where a prompt caching prefix or a retry policy can diverge."
+        },
+        {
+          "id": "C",
+          "text": "Whether the framework's default message history keeps the cached prefix stable, since it is what determines whether prompt caching works at all."
+        },
+        {
+          "id": "D",
+          "text": "How many stars the framework has, as a proxy for how likely it is to add the missing features."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Adopting a framework is adopting a translation layer over the API, and the diligence question is what that layer can express. Two things decide the answer. First, coverage: Claude's guarantees are opt-in features — `strict: true` on a tool definition, `output_config.format` with a `json_schema`, context editing, adaptive thinking — and a framework that constructs the request for you simply cannot offer what it does not model. Every gap is a place where you lose a guarantee and may not notice. Second, the cost of the workaround: bypassing the framework for some calls means two request paths with two sets of defaults, which is exactly where cache prefixes, retries and parameter drift quietly diverge. Option C is a real concern but it is one instance of A, and D is not evidence about capability coverage.",
+      "whyWrong": {
+        "C": "Prefix stability matters, and it is true that a framework's default history can break caching — but that is a symptom of the general question about what the framework can express, not a separate decision.",
+        "D": "Popularity is not a capability matrix. It tells you nothing about whether the request builder exposes the specific guarantees you need."
+      },
+      "difficulty": 2,
+      "mindset": "A framework is a translation layer — audit what it can express, then price the escape hatch you will need.",
+      "tags": [
+        "frameworks",
+        "tradeoffs",
+        "strict-tool-use",
+        "structured-output"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/strict-tool-use",
+        "https://code.claude.com/docs/en/agent-sdk/overview"
+      ]
+    },
+    {
+      "id": "v-d1-b4-018",
+      "taskStatementId": "1.3",
+      "scenario": "Kestrel's framework retries failed tool calls, the Claude SDK auto-retries connection errors, 429s and 5xx twice by default, and the application code has its own exponential-backoff loop. During a platform incident, one `post_to_erp` call reached the ERP four times.",
+      "stem": "What is the correct response?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Inventory the retry layers and make the side effect idempotent. Retries are correct for transient failures, but a retried execution cannot know the real-world action already happened: give `post_to_erp` a stable deduplication key derived from the invoice id so a repeat is recognised and skipped. Then decide deliberately which single layer owns retries and turn the others off, so attempts are bounded and predictable."
+        },
+        {
+          "id": "B",
+          "text": "Remove the application-level retry loop, since it is the outermost layer and therefore the most wasteful."
+        },
+        {
+          "id": "C",
+          "text": "Disable the SDK's automatic retries by setting `max_retries = 0`, so exactly one attempt is made for every failure."
+        },
+        {
+          "id": "D",
+          "text": "Add a short random sleep before each retry so the layers stop colliding with each other."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Two problems are tangled here and only one of them is about attempts. The duplicate ERP write is an idempotency failure: however many retries you keep, a repeated call cannot tell that the first one succeeded, so the durable fix is a stable key derived from the business identifier that lets the tool detect and skip a repeat. Multiplied attempts are the second problem, and it is worth being precise about who retries: the official SDKs \"automatically retry transient failures (such as connection errors, rate limits, and 5xx server errors) with exponential backoff, twice by default, honoring the `retry-after` header\", so an outer loop in your code multiplies that. Pick one owner for retries deliberately. Removing retries, or jittering them, does nothing for the write that already happened twice.",
+      "whyWrong": {
+        "B": "Removing your loop leaves the framework and SDK retrying, so duplicates remain possible — and it does nothing for the calls that genuinely need a retry.",
+        "C": "Setting `max_retries = 0` gives up resilience for every failure type to protect one write, and it still does not stop a duplicate if the framework or your code retries.",
+        "D": "Jitter reduces the chance of two layers colliding on the same instant; it has no bearing on whether a side effect that already succeeded gets repeated."
+      },
+      "difficulty": 3,
+      "visualId": "agentic-loop",
+      "mindset": "Retry what is transient, but make the side effect idempotent — and know which single layer owns the retry loop.",
+      "tags": [
+        "frameworks",
+        "retry-strategy",
+        "idempotency",
+        "side-effects"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls"
+      ]
+    },
+    {
+      "id": "v-d1-b4-019",
+      "taskStatementId": "1.3",
+      "scenario": "Kestrel's most capable agent loop can, left alone, keep refining a migration plan indefinitely at real cost, and on one occasion began making outward-facing changes without a human present.",
+      "stem": "Which bounds belong where, and what is the escalation trigger based on?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Three distinct controls: an iteration cap on the loop itself (`maxTurns` / `max_turns`), a spend cap so runaway cost is bounded independently of turn count (`--max-budget-usd`, which also counts subagent spend), and an escalation trigger based on verifiable conditions — an action that touches production data, a tool error the model cannot resolve after N attempts, or a confidence signal that has not been calibrated. Human-in-the-loop belongs on the irreversible actions, not on every turn."
+        },
+        {
+          "id": "B",
+          "text": "One control is enough: cap iterations. Cost is a function of iterations, and every outward-facing action should require approval, so the loop simply pauses for a human each time it wants to act."
+        },
+        {
+          "id": "C",
+          "text": "Escalate on the model's stated confidence. Ask it to report a confidence percentage and route anything below 90% to a human."
+        },
+        {
+          "id": "D",
+          "text": "Use the effort level as the safety control: run high-effort sessions for risky work so the model is more careful, and rely on the framework's default iteration cap for the rest."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Each bound limits a different failure mode, so collapsing them leaves gaps. Turn count bounds *duration* — and the hosting guide is explicit that a session has no top-level timeout, so without it you have no runtime bound at all. Spend bounds *cost* independently: `--max-budget-usd` caps spend \"before stopping\", counts spend from subagents toward the cap, and stops background subagents still running once reached — a turn cap alone does not bound cost, because one turn can be expensive. Escalation should trigger on things you can verify — an action touching production data, an unresolved tool error after N attempts, an uncalibrated confidence signal — because a model's self-reported confidence is not a calibrated probability and thresholding on it produces a control that looks rigorous and is not.",
+      "whyWrong": {
+        "B": "A turn cap does not bound cost, and pausing for approval on every action turns the agent into a form-filler rather than a guard on the irreversible steps.",
+        "C": "Self-reported confidence is uncalibrated. Thresholding on it produces false assurance — the escalation fires on easy cases and misses hard ones.",
+        "D": "Effort changes how much reasoning a model spends, not what it is permitted to do, and the framework's default cap is not a safety control."
+      },
+      "difficulty": 3,
+      "visualId": "agentic-loop",
+      "mindset": "Bound duration with turn caps, cost with a spend cap, and escalate on verifiable conditions — not on the model's own confidence.",
+      "tags": [
+        "agent-patterns",
+        "limits",
+        "escalation",
+        "cost"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/hosting",
+        "https://code.claude.com/docs/en/agent-sdk/cost-tracking"
+      ]
+    },
+    {
+      "id": "v-d1-b4-020",
+      "taskStatementId": "1.3",
+      "scenario": "A Kestrel engineer argues that adopting LangGraph is strictly better than writing an agent loop directly against the Claude Agent SDK, because \"the SDK is just a thin wrapper and the framework gives you more\". A colleague notes the SDK provides the same tools, agent loop and context management that power Claude Code itself.",
+      "stem": "Which assessment is most accurate?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The SDK is a baseline, not a limitation: it gives you \"the same tools, agent loop, and context management that power Claude Code\". A framework is worth its translation layer when you need something the SDK does not offer — explicit persisted state, checkpoint/resume, a particular ecosystem. Choose it for that, not as an upgrade, and keep the framework boundary thin enough that swapping back stays cheap."
+        },
+        {
+          "id": "B",
+          "text": "Correct — the SDK is a thin wrapper and any serious production agent needs a framework's graph machinery to be maintainable."
+        },
+        {
+          "id": "C",
+          "text": "Incorrect in the other direction: never adopt a third-party framework, because it will lag Claude's API releases and your agent will silently miss new capabilities."
+        },
+        {
+          "id": "D",
+          "text": "Both are equivalent in capability, so the only real difference is maintenance cost, and it should be decided case by case with no default."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The capability comparison the engineer is missing is stated plainly in the SDK overview: it provides \"the same tools, agent loop, and context management that power Claude Code\". That is a strong baseline — you inherit the same permission system, hooks, subagents and context handling, and you are not reimplementing a tool-use loop. What a framework adds is *specific* things the SDK does not provide: an explicit persisted state graph, checkpoint-and-resume, and its ecosystem. So the decision is not SDK-versus-framework in the abstract; it is whether you need graph machinery, and if you do, whether you accept a layer that may not expose every new Claude capability. Whichever you choose, keep the boundary thin so the decision stays reversible.",
+      "whyWrong": {
+        "B": "It is not a thin wrapper you must escape. It is the same loop and tool surface that power Claude Code, and it is a legitimate production choice.",
+        "C": "Framework lag is a real cost to weigh, not a disqualifier. Many teams run frameworks in production successfully by pinning versions and keeping escape hatches.",
+        "D": "There is a meaningful capability difference in both directions — persisted graphs and ecosystem versus guaranteed parity with Claude's newest features — so \"no default\" oversells the equivalence."
+      },
+      "difficulty": 2,
+      "mindset": "The Agent SDK is the parity baseline; adopt a framework for graph persistence or ecosystem, not as a general upgrade.",
+      "tags": [
+        "frameworks",
+        "agent-sdk",
+        "tradeoffs"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/overview",
+        "https://code.claude.com/docs/en/agent-sdk/hosting"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,943 @@
+{
+  "certId": "developer",
+  "domainId": "d5-model-optimization",
+  "questions": [
+    {
+      "id": "v-d5-g5-001",
+      "taskStatementId": "5.1",
+      "scenario": "Halden Freight runs a document-classification service. Their middleware assembles each request as a 12,000-token system prompt, then a per-request block containing the current timestamp and the shipment manifest, then the driver's note. Following the newest docs, they simplified to a single top-level `cache_control` field on the request body and deleted all the explicit breakpoints. Requests succeed, but `cache_read_input_tokens` is 0 on every call and the bill has not moved.",
+      "stem": "What is actually happening, and what is the minimal correct change?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The top-level field only caches the system prompt, and their system prompt is too short for the model's minimum cacheable length, so nothing is written."
+        },
+        {
+          "id": "B",
+          "text": "Automatic caching needs a beta header, so without one the API accepts the field and quietly ignores it."
+        },
+        {
+          "id": "C",
+          "text": "Automatic caching places the breakpoint on the last cacheable block, which here is the per-request manifest block. Its prefix hash changes every request, so every call pays a fresh cache write and never a read. Put an explicit breakpoint on the last stable block of the system prompt instead."
+        },
+        {
+          "id": "D",
+          "text": "Top-level caching only works for streaming requests, and their client sends non-streaming calls, so no entry is ever created."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Automatic caching is a convenience wrapper, not a smarter cache. The system puts the breakpoint on the **last cacheable block** in the request and moves it forward as a conversation grows. The moment your suffix varies per request - a timestamp, the current document, the incoming message - the breakpoint sits on the block that changes, its cumulative prefix hash changes, and the request writes a cache entry it can never read again.\n\nWrites only happen at breakpoints, and reads only find entries that **earlier requests wrote**. So a backward lookback cannot rescue a per-request suffix. The fix is the pattern the docs recommend for a varying suffix: one `cache_control` marker on the last block that stays identical across the requests you want to share a cache, with the volatile content after it. The top-level field consumes one of the four breakpoint slots, so it composes with an explicit marker - it just cannot do this job here.",
+      "whyWrong": {
+        "A": "The minimum-length rule is real, but it is not what is happening: those counters read 0 for any length in this shape, and a 12,000-token system prompt is far above every model's minimum. Automatic caching would have cached it if the breakpoint had landed on it.",
+        "B": "Automatic caching is available on the Claude API without a beta header. No beta flag is required.",
+        "D": "Caching is independent of streaming. Streamed requests create and read cache entries exactly the same way."
+      },
+      "difficulty": 3,
+      "visualId": "prompt-caching",
+      "mindset": "Automatic caching breaks on a varying suffix - breakpoint the stable prefix yourself.",
+      "tags": [
+        "prompt-caching",
+        "automatic-caching",
+        "cache-breakpoint",
+        "cache-invalidation"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching"
+      ]
+    },
+    {
+      "id": "v-d5-g5-002",
+      "taskStatementId": "5.1",
+      "scenario": "A research agent at Vantage Labs runs a long tool loop: each turn reads many files in sequence, writes notes into a scratch file, and calls several tools one after another - roughly 30 distinct content blocks per turn, mostly text interleaved with `tool_use` and `tool_result` blocks. They set one `cache_control` breakpoint on the final block of each request, reasoning that each turn's write will be found by the next turn's lookup. Cache reads land on early turns and then collapse toward zero once a session gets long.",
+      "stem": "Why do the reads collapse, and what is the documented fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The conversation has outgrown the model's context window, so the tail is being served from some overflow path that cannot be cached."
+        },
+        {
+          "id": "B",
+          "text": "A breakpoint's lookback checks at most 20 block positions for a prior write. Once a turn adds more than about 20 positions, the previous turn's write falls outside that window and the read misses. Add an intermediate breakpoint roughly every 15 positions inside long turns, or keep a marker within 20 positions of the previous turn's last cached block."
+        },
+        {
+          "id": "C",
+          "text": "The API permits only four breakpoints, so the fifth tool call in a turn has no breakpoint and every later turn restarts from scratch."
+        },
+        {
+          "id": "D",
+          "text": "Only prefixes that were written by a byte-identical request can be read, so any turn containing tool output can never be served from cache."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Each breakpoint starts a **bounded search**: the system checks at most 20 block positions, counting the breakpoint itself as the first, walking backward for an entry that some earlier request wrote. The API collapses a run of consecutive `tool_use` blocks into one position, and a run of `tool_result` blocks into one, so a turn of parallel tool calls does not burn the window - but a turn that adds more than about 20 positions of ordinary content does. At that point the previous write is simply outside the window, and the request processes everything fresh despite byte-identical payloads.\n\nThe fix is the documented one: place an intermediate breakpoint about every 15 positions in long turns, or keep a marker within 20 positions of where the previous turn last wrote. This failure looks identical to a broken prefix in the usage fields - reads fall toward zero with no error - which is why it is worth having both mechanisms in your head.",
+      "whyWrong": {
+        "A": "An over-window request fails loudly with a context error rather than quietly losing its cache. Nothing in this description puts the session near any window limit.",
+        "C": "The four-breakpoint cap is real, but it applies per request, not per session. This agent sends one breakpoint per request and is not exhausting slots - it is missing the lookback window.",
+        "D": "Tool use and tool results are cacheable content; the docs explicitly list tool use and tool result blocks among the blocks that can be cached."
+      },
+      "difficulty": 3,
+      "visualId": "prompt-caching",
+      "mindset": "A breakpoint only searches 20 blocks back, so long turns need intermediate markers.",
+      "tags": [
+        "prompt-caching",
+        "lookback-window",
+        "cache-breakpoint",
+        "long-conversations"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching"
+      ]
+    },
+    {
+      "id": "v-d5-g5-003",
+      "taskStatementId": "5.1",
+      "scenario": "Perch Analytics builds a chart-generation assistant on the top tier of the Claude lineup. It already streams, and the demo felt instant. Because a customer complained about a four-minute wait for a long narrative summary, an engineer enabled fast mode across the whole service by adding `speed: \"fast\"` and the fast-mode beta header to the shared request wrapper.",
+      "stem": "Which TWO statements about that change are correct? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Fast mode raises output tokens per second rather than time to first token, so it does little for the first half-second a user stares at a blank screen."
+        },
+        {
+          "id": "B",
+          "text": "Fast mode is a separate, smaller model optimised for throughput, so its output quality can differ from the standard model."
+        },
+        {
+          "id": "C",
+          "text": "Fast and standard requests do not share cached prefixes, so switching invalidates the system and message caches and any client-side fallback to standard speed costs a full cache miss."
+        },
+        {
+          "id": "D",
+          "text": "Fast mode is billed at a multiple of standard rates, but the prompt-caching multipliers are suspended while it is active because the two features cannot be combined."
+        },
+        {
+          "id": "E",
+          "text": "Fast mode is supported on every current Claude model, so enabling it needs no model-capability check."
+        }
+      ],
+      "correct": [
+        "A",
+        "C"
+      ],
+      "explanation": "Fast mode is an **inference configuration on the same model weights** - the docs are explicit that there is no change to intelligence or capabilities. What it changes is output generation rate, and the docs state the benefit is focused on **output tokens per second, not TTFT**. That is exactly why it helps a four-minute generation and does nothing for the blank first half-second.\n\nThe cost side matters just as much here. Because the speed setting is rendered into the request, **switching between fast and standard invalidates the system and message caches**, and the documented fallback pattern - catch the fast-mode rate-limit error and retry without `speed` - lands on a cold prefix every time. A team that enables it globally can watch its prompt-cache savings disappear while its bill climbs.",
+      "whyWrong": {
+        "B": "It is the same model with a faster inference configuration, not a different or smaller model. Quality is unchanged by design, which is why this is a latency lever and not an accuracy trade.",
+        "D": "Backwards on stacking: the docs say the prompt-caching multipliers apply **on top of** fast-mode pricing, and caching multipliers are not suspended. The decisive point for this scenario is different anyway - changing speed invalidates the cache, so there is usually little left to multiply.",
+        "E": "Support is model-specific. Fast mode is a research preview on the Claude API for a short list of Opus models, is unavailable on the Batch API and on Priority Tier, and requests to some models either error or silently run at standard speed. The response's `usage.speed` field is how you tell which happened."
+      },
+      "difficulty": 2,
+      "visualId": "batch-vs-realtime",
+      "mindset": "Fast mode buys tokens per second, not time to first token - and it breaks your cache.",
+      "tags": [
+        "fast-mode",
+        "latency",
+        "prompt-caching",
+        "pricing"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/fast-mode",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching"
+      ]
+    },
+    {
+      "id": "v-d5-g5-004",
+      "taskStatementId": "5.1",
+      "scenario": "Ridgeway Legal drafts contract clause summaries. Each response should stop at the marker line the team appends to the prompt: `END OF CLAUSE SUMMARY`. Summaries occasionally run on into invented commentary, and the team wants a hard, repeatable stop rather than a request to be brief.",
+      "stem": "What is the right parameter, and what will the response report?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Set `stop_sequences` to that marker string. When generated text reaches it, generation halts at that point and the message carries `stop_reason: \"stop_sequence\"`."
+        },
+        {
+          "id": "B",
+          "text": "Lower `max_tokens` to a value that happens to cut the summary short, and treat the resulting `stop_reason` as confirmation that the summary finished cleanly."
+        },
+        {
+          "id": "C",
+          "text": "Set `temperature` to 0, which makes generation stop deterministically at the first sentence that reads as complete."
+        },
+        {
+          "id": "D",
+          "text": "Put the marker in the system prompt as an instruction not to continue past it, since prompt instructions and stop sequences enforce the same boundary."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "`stop_sequences` does this job: give the model one or more literal strings and generation halts the moment one appears in the output, with `stop_reason: \"stop_sequence\"` reported on the message. That is a **mechanical** boundary, reproducible run to run, and it holds regardless of how the model feels about brevity.\n\nThe distinction from `max_tokens` is worth internalising, because both look like 'the output got cut off'. `stop_sequence` means the model reached your delimiter. `max_tokens` means it ran out of budget mid-thought and the text is **truncated, not finished** - which is how pipelines end up shipping half a JSON object and treating it as success.",
+      "whyWrong": {
+        "B": "`max_tokens` truncation leaves the output unfinished and reports `stop_reason: \"max_tokens\"`. It caps length without knowing anything about where a summary should logically end.",
+        "C": "Temperature shapes the sampling distribution. It does not detect completeness, and the docs are explicit that sampling settings do not make outputs reproducible.",
+        "D": "An instruction is a request, not a boundary. The model may honour it, ignore it, or emit the marker text itself. Only `stop_sequences` stops generation in the harness."
+      },
+      "difficulty": 1,
+      "mindset": "If you need a guaranteed cut-off point, use stop_sequences; max_tokens only truncates.",
+      "tags": [
+        "stop-sequences",
+        "stop-reason",
+        "max-tokens",
+        "generation-control"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons",
+        "https://platform.claude.com/docs/en/api/messages"
+      ]
+    },
+    {
+      "id": "v-d5-g5-005",
+      "taskStatementId": "5.1",
+      "scenario": "Northgate Support's assistant measures time to first token at p95: it is 3.8 seconds. The input is stable, but every request carries a 40,000-token policy handbook plus 20 tool definitions, and the whole prefix is sent fresh each time. Output generation rate is fine once the model starts.",
+      "stem": "Which TWO changes attack time to first token on this route? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Mark the stable handbook and tool definitions with a cache breakpoint, so the model does not reprocess that prefix from scratch on every call."
+        },
+        {
+          "id": "B",
+          "text": "Enable fast mode, which is the option designed to reduce the delay before the first token appears."
+        },
+        {
+          "id": "C",
+          "text": "Retrieve only the handbook sections relevant to each question, so the prefix the model must process before it can generate is smaller."
+        },
+        {
+          "id": "D",
+          "text": "Raise `max_tokens` on these requests so the model has more room to answer and can begin sooner."
+        },
+        {
+          "id": "E",
+          "text": "Set `temperature` to 0 so the model stops deliberating over its first token and commits to one."
+        }
+      ],
+      "correct": [
+        "A",
+        "C"
+      ],
+      "explanation": "Because the model generates **one token at a time, conditioned on everything before it**, time to first token is dominated by the work of processing the whole prompt. Two levers attack exactly that work: cache the prefix so it is not reprocessed, and stop shipping prefix you do not need by retrieving the relevant handbook sections instead of all 40,000 tokens every call.\n\nNotice what is *not* on the list. Fast mode is explicitly about output tokens per second, not TTFT. `max_tokens` is a ceiling on answer length, not a licence to start sooner - and with a large prefix, a generous ceiling mainly buys you `stop_reason: \"max_tokens\"` instead of an answer. Temperature affects which token gets sampled, not how quickly the first one arrives.",
+      "whyWrong": {
+        "B": "The docs state that the fast-mode benefit is focused on output tokens per second rather than time to first token. It helps the four-minute summary in the previous item and does nothing for the 3.8-second wait here.",
+        "D": "`max_tokens` bounds total output. It cannot make the model begin generating earlier, and a generous ceiling paired with a large prompt is a good way to convert a latency problem into a truncation problem.",
+        "E": "Temperature reshapes the sampling distribution. There is no documented mechanism by which it reduces pre-generation latency."
+      },
+      "difficulty": 2,
+      "visualId": "context-window",
+      "mindset": "TTFT is prompt-processing time - shrink or cache the prefix, not the sampler.",
+      "tags": [
+        "latency",
+        "time-to-first-token",
+        "prompt-caching",
+        "retrieval"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/fast-mode",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-latency"
+      ]
+    },
+    {
+      "id": "v-d5-g5-006",
+      "taskStatementId": "5.2",
+      "scenario": "A developer is porting a shell-scripted internal tool to Python with `requests` instead of the official SDK, calling `POST /v1/messages` directly. Their first attempt returns HTTP 400 `invalid_request_error` with a message about a missing version header.",
+      "stem": "What does a correct minimal request to the Messages endpoint need?",
+      "options": [
+        {
+          "id": "A",
+          "text": "A JSON body containing `model`, `max_tokens` and `messages`, plus the `x-api-key` credential header and an `anthropic-version` header (currently `2023-06-01`)."
+        },
+        {
+          "id": "B",
+          "text": "Only a bearer token in the `Authorization` header, since the current endpoints authenticate with OAuth rather than API keys."
+        },
+        {
+          "id": "C",
+          "text": "A WebSocket upgrade, because the Messages endpoint accepts only WebSocket connections and rejects plain HTTP POST."
+        },
+        {
+          "id": "D",
+          "text": "A `tools` array is mandatory on every request, since the endpoint requires at least one tool definition before it will produce a response."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The Messages API is an HTTPS POST to `/v1/messages` with a JSON body of `model`, `max_tokens` and `messages`, authenticated with `x-api-key` and versioned with the `anthropic-version` header. Those two headers are what this 400 is about. `tools` is optional - plenty of requests are just a model, a token ceiling and a conversation.\n\nWhy this question earns its place: the official SDKs are thin wrappers over exactly this REST surface. Choosing them buys typed parameters, correct header handling, streaming helpers and sensible retry defaults. Rolling your own client is entirely legitimate - but then you own all of it, which is what the next few questions are about.",
+      "whyWrong": {
+        "B": "The Claude API authenticates with an API key in the `x-api-key` header. OAuth bearer flows are a different mechanism, used by some MCP servers, not by the Messages endpoint.",
+        "C": "The Messages API is plain HTTPS POST. Streaming is Server-Sent Events over the same endpoint, not WebSockets - there is no WebSocket endpoint on the Claude API.",
+        "D": "`tools` is optional. Omitting it gives a plain text response, which is the normal case for many applications."
+      },
+      "difficulty": 1,
+      "mindset": "The SDKs wrap the REST surface: model, max_tokens, messages, x-api-key, anthropic-version.",
+      "tags": [
+        "api-mechanics",
+        "rest",
+        "headers",
+        "sdk"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/messages",
+        "https://platform.claude.com/docs/en/api/client-sdks"
+      ]
+    },
+    {
+      "id": "v-d5-g5-007",
+      "taskStatementId": "5.2",
+      "scenario": "Beacon Retail's enrichment service fires thousands of concurrent HTTP calls from a single Node process, each consumer parsing a queue with unbounded `Promise.all`. Under load it starts returning HTTP 429 `rate_limit_error` with a `retry-after` header. An engineer proposes rotating requests across several extra API keys created in the same organisation, to spread the load.",
+      "stem": "Which TWO changes address this properly? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Bound client-side concurrency with a queue or semaphore sized to the organisation's tier, so in-flight requests never exceed the limit."
+        },
+        {
+          "id": "B",
+          "text": "Retry 429s with capped exponential backoff and jitter, honoring the `retry-after` header the API returns."
+        },
+        {
+          "id": "C",
+          "text": "Create additional API keys in the same organisation and round-robin across them, because each key carries an independent limit."
+        },
+        {
+          "id": "D",
+          "text": "Raise the retry count very high and remove all delay between attempts, so the queue drains as fast as the server will accept work."
+        },
+        {
+          "id": "E",
+          "text": "Disable prompt caching during the burst so more of each request counts as uncached input, spreading the load across separate limits."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Two separate fixes, and in practice you need both. **Bound concurrency** so you stop generating more in-flight work than the tier allows - an unbounded `Promise.all` over a queue is a self-inflicted thundering herd regardless of how the server behaves. **Back off correctly**: 429s carry `retry-after`, and the official SDKs retry connection errors, 429 and 5xx with capped exponential backoff honoring that header, while never retrying other 4xx client errors.\n\nAdding keys does not help. Rate limits are a property of the **organisation and workspace**, not of an individual key, so four keys in one organisation share one budget and one ceiling. They also multiply your credential exposure for no benefit.",
+      "whyWrong": {
+        "C": "Rate limits are scoped to the organisation and workspace. More keys in the same organisation means more credentials to leak against the same ceiling.",
+        "D": "An immediate-retry storm makes a rate limit worse and invites harder throttling. Backoff with jitter is the mechanism, not more attempts at zero delay.",
+        "E": "Cache reads are largely excluded from input-tokens-per-minute accounting, so caching *relieves* rate-limit pressure. Turning it off adds load to the very limit being breached."
+      },
+      "difficulty": 2,
+      "mindset": "Rate limits are organisational - bound your concurrency and back off; do not add keys.",
+      "tags": [
+        "rate-limits",
+        "concurrency",
+        "retries",
+        "backoff"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/rate-limits",
+        "https://platform.claude.com/docs/en/api/errors"
+      ]
+    },
+    {
+      "id": "v-d5-g5-008",
+      "taskStatementId": "5.2",
+      "scenario": "Clearmount's payments agent calls a tool that charges a saved card. A timeout fires while the charge is in flight, and the SDK's automatic retry re-sends it - so the customer is charged twice. The team wants to keep automatic retries for transient API failures but stop them duplicating side effects.",
+      "stem": "What is the correct engineering response?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Disable retries entirely with `max_retries: 0`. Transient 5xx failures then reach the user, but nothing is ever executed twice."
+        },
+        {
+          "id": "B",
+          "text": "Attach an idempotency key to each charge so the downstream system can deduplicate replays, and keep capped backoff for transient errors."
+        },
+        {
+          "id": "C",
+          "text": "Raise `max_tokens` so responses finish faster and the timeout window is never reached in the first place."
+        },
+        {
+          "id": "D",
+          "text": "Move the charge call to the Message Batches API, where each request is processed exactly once and independently of the others."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Retry safety and side-effect safety are two different properties, and only one of them is the SDK's job. Retrying a **read** is safe. Retrying a **write** needs the receiver to be able to recognise a replay, which is exactly what an idempotency key gives the payments service: the second delivery of the same logical charge collapses into the first, and the retry becomes harmless.\n\nThis is why the SDK can retry safely by default for model calls and be dangerous for tool calls. A model call is a pure function of the request; your tool call is not. Making the tool idempotent is the durable fix - it survives timeouts, client retries and future refactors, whereas a retry policy is a setting someone will eventually change.",
+      "whyWrong": {
+        "A": "Right about the symptom, wrong about the trade. Turning retries off globally turns every transient 5xx or rate limit into a user-visible failure, and the duplicate-charge risk returns the moment someone re-enables retries.",
+        "C": "`max_tokens` bounds output length. It has no bearing on network timeouts, and it certainly does not stop a write being executed twice.",
+        "D": "Batches serve latency-tolerant bulk work, not interactive tool calls, and they do not provide exactly-once semantics for your downstream side effects. A retried submission is still a second submission."
+      },
+      "difficulty": 3,
+      "mindset": "Retries are safe on pure reads; side effects need idempotency keys, not fewer retries.",
+      "tags": [
+        "retries",
+        "idempotency",
+        "tool-use",
+        "error-handling"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls"
+      ]
+    },
+    {
+      "id": "v-d5-g5-009",
+      "taskStatementId": "5.2",
+      "scenario": "Sunfold Media submits a nightly batch of tens of thousands of product-description jobs through the Message Batches API, giving each request a `custom_id` derived from its SKU. Their results processor zips the returned results file against the array of SKUs they submitted, in order, to write descriptions back to the catalogue. A small percentage of rows end up with the wrong description, and the catalogue team has noticed.",
+      "stem": "What is the bug, and what is the correct handling?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Batch results are documented as possibly returning in any order, so index-based zipping mis-associates rows. Key every write on the `custom_id` returned with each result instead of on position."
+        },
+        {
+          "id": "B",
+          "text": "The results file is JSONL and must be parsed as one JSON array; the current parser is dropping or shifting everything from the third line onward."
+        },
+        {
+          "id": "C",
+          "text": "Only `succeeded` results are retrievable, so the missing rows are requests that errored and must be resubmitted individually."
+        },
+        {
+          "id": "D",
+          "text": "The batch was created in a different order than the processor assumes, so the fix is to sort both the submission list and the results file consistently."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The docs call this out explicitly: **batch results may not match input order**, because each request is processed independently and concurrently. The only stable join key is the `custom_id` you supplied (`^[a-zA-Z0-9_-]{1,64}$`), which comes back on every result - `succeeded`, `errored`, `canceled` or `expired`.\n\nThis is a nice example of an integration bug that looks like a model-quality problem. The descriptions are fine; the association between description and SKU is not. When a data-quality complaint looks like an LLM failure, check the plumbing before you start shopping for a different model.",
+      "whyWrong": {
+        "B": "The results file is streamed as JSONL - one valid JSON object per line - which is exactly what line-oriented parsers expect. Nothing about the format shifts rows.",
+        "C": "All four result types come back in the same stream, with `errored`, `canceled` and `expired` results explicitly marked and not billed. Missing successful results is a different problem.",
+        "D": "Order is not preserved even when submission and reading are both sorted the same way, which is precisely why the docs tell you to match on `custom_id` and never on position."
+      },
+      "difficulty": 2,
+      "mindset": "In a batch, custom_id is the only join key - position is never a guarantee.",
+      "tags": [
+        "batch-api",
+        "custom-id",
+        "data-integrity",
+        "integration"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/batch-processing"
+      ]
+    },
+    {
+      "id": "v-d5-g5-010",
+      "taskStatementId": "5.2",
+      "scenario": "Foldspace's first Message Batches submission was accepted with HTTP 200 and `processing_status: \"in_progress\"`. Twenty minutes later the results file showed dozens of `errored` results whose error was `invalid_request_error`, all from a batch whose requests had each passed validation during integration testing. A colleague also wanted to add `speed: \"fast\"` to the batch so overnight results felt fresher.",
+      "stem": "What does the API's behaviour tell the team, and what should they change?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Per-request validation happens asynchronously, so a 200 at submit time says nothing about the individual requests. Validate each request shape against the Messages API before batching. Separately, `speed` is unsupported in batch requests, as are `stream: true` and `max_tokens: 0`."
+        },
+        {
+          "id": "B",
+          "text": "The batch was accepted but malformed, so the fix is to split it into submissions of at most a few thousand requests each and resubmit."
+        },
+        {
+          "id": "C",
+          "text": "`invalid_request_error` inside a batch is a transient condition; resubmitting the identical batch once clears it, exactly as it does for 529s."
+        },
+        {
+          "id": "D",
+          "text": "`speed: \"fast\"` is supported in batches and is the recommended way to make overnight results available sooner."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Two documented behaviours collide here. First, **validation of the `params` object for each request is performed asynchronously**, and validation errors surface when processing ends - which is why the docs suggest verifying request shapes against the Messages API before batching. Their passing integration tests validated each request in isolation; the batch exercised the same shapes and still errored, so the correct response is to trust the per-request error, not the submission status.\n\nSecond, three parameters are rejected in batch requests: `stream: true` (results come back as a file, not a stream), `speed` (fast mode tunes synchronous latency, which does not apply to asynchronous processing), and `max_tokens: 0` (a cache pre-warm entry would expire before the follow-up request ran). And `invalid_request_error` is a 4xx client error in every context - replaying an identical invalid request fails identically.",
+      "whyWrong": {
+        "B": "There is no small per-batch request cap to discover this way. The documented limits are 100,000 requests or 256 MB per batch, and batch size does not produce per-request validation errors.",
+        "C": "`invalid_request_error` is a 4xx client error. The documented retry guidance covers connection errors, 429 and 5xx; replaying a malformed request just fails the same way again.",
+        "D": "The docs list `speed` as unsupported in batch requests alongside `stream: true` and `max_tokens: 0`. Using it returns a validation error rather than making results arrive sooner."
+      },
+      "difficulty": 3,
+      "mindset": "A 200 on batch create says nothing about the requests inside - validate first.",
+      "tags": [
+        "batch-api",
+        "validation",
+        "fast-mode",
+        "error-handling"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/batch-processing"
+      ]
+    },
+    {
+      "id": "v-d5-g5-011",
+      "taskStatementId": "5.3",
+      "scenario": "Tessellate is standardising on a single Claude model family for a new internal platform. A staff engineer proposes the rule: start from the model Anthropic documents as the balanced default for general workloads, and only step down to a smaller, cheaper model for a workload once that workload's own eval set passes on it. Engineering leadership wants the rule written down before the first service ships.",
+      "stem": "Which rule should they write?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Start on the balanced default; for each workload, step down only where its own eval set passes on a smaller tier, and step up where evals show a real quality gap."
+        },
+        {
+          "id": "B",
+          "text": "Standardise on the most capable tier everywhere, so nobody has to reason about which workload is sensitive to capability, and revisit cost only if the bill becomes uncomfortable."
+        },
+        {
+          "id": "C",
+          "text": "Standardise on the cheapest tier everywhere and add a system-prompt instruction telling it to be more careful, since model choice should never limit quality."
+        },
+        {
+          "id": "D",
+          "text": "Assign tiers from published benchmark leaderboards, since a public ranking is a more reliable guide to production quality than a team's own labelled data."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Model choice is an empirical question about **your** workload, and the honest version of the rule is bidirectional: start from a sensible documented default, then let each workload's own eval set move you down or up.\n\nThe two failure modes are symmetrical. Standardising on the top tier everywhere is a real budget decision, not a neutral one - defensible for hard reasoning, indefensible for bulk tagging. Standardising on the bottom tier everywhere is a correctness risk dressed as a saving, and prompt wording does not add capability. Published benchmarks are useful context and a poor substitute for labelled data drawn from your own traffic.",
+      "whyWrong": {
+        "B": "Capability is priced per token. For high-volume, well-specified work, paying top-tier prices across the board is a budget decision that should be argued from evals and cost per completed task, not inherited by default.",
+        "C": "Instruction wording cannot substitute for capability on tasks the smaller model genuinely cannot do. That gap is exactly what the eval set exists to measure.",
+        "D": "General-purpose leaderboards rank broad capability, not performance on your prompts, document types and edge cases. Anthropic's own model documentation suggests tiers for classes of work, but production decisions should still be gated on your labelled data."
+      },
+      "difficulty": 1,
+      "visualId": "model-selection",
+      "mindset": "Default to the documented middle, then let your own eval set move each workload up or down.",
+      "tags": [
+        "model-selection",
+        "evals",
+        "cost-quality-tradeoff",
+        "standards"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/about-claude/models/choosing-a-model",
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests"
+      ]
+    },
+    {
+      "id": "v-d5-g5-012",
+      "taskStatementId": "5.3",
+      "scenario": "Kestrel Bank has a customer-service assistant whose p95 time to first token is 9 seconds against a 3-second target. It runs on a current mid-tier model at the API default effort, which is `high` on most current models. Evals show 94% answer accuracy, comfortably above the 90% bar. A change to a larger, more capable model is being proposed as the fix.",
+      "stem": "What is the better first move?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Run an effort sweep on the current model - low, then medium - against both the eval set and the latency measurement. Effort is documented as the primary control for trading intelligence, latency and cost on a single model, and it is cheap to test."
+        },
+        {
+          "id": "B",
+          "text": "Move to the most capable tier immediately. Only the strongest model can be tuned down to meet a latency target."
+        },
+        {
+          "id": "C",
+          "text": "Set `max_tokens` to a small value so responses complete inside the latency budget, and accept `stop_reason: \"max_tokens\"` responses as usable answers."
+        },
+        {
+          "id": "D",
+          "text": "Move the whole service to the Message Batches API, where requests are processed at roughly half price and typically complete within about an hour."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Effort is the documented primary control for trading intelligence, latency and cost **on a single model**, and most current models default to `high`. A sweep on the current model is one afternoon of work, keeps the model constant so the eval comparison stays interpretable, and often recovers seconds of latency for a fraction of the cost of a tier change.\n\nTwo caveats worth holding. Effort applies to **all output tokens** - text, tool calls, thinking - and it is a behavioural signal rather than a strict budget, so lower effort does not guarantee a shorter answer; verify against evals and latency measurements rather than assuming. And because the effort value is rendered into the prompt, changing top-level effort invalidates message-level cache blocks, so treat it as a deliberate, measured release rather than a live toggle.",
+      "whyWrong": {
+        "B": "This inverts the economics. Larger models cost more per token and are not obviously faster. A latency problem on a mid-tier model is usually an effort or context-size problem before it is a tier problem.",
+        "C": "A small `max_tokens` truncates the answer and reports `stop_reason: \"max_tokens\"`. Treating truncated output as acceptable trades a visible latency win for invisible quality loss.",
+        "D": "Batch processing is asynchronous; results arrive when the batch ends, minutes to about an hour, and the API explicitly excludes streaming from it. A 3-second interactive target cannot be built on batches."
+      },
+      "difficulty": 2,
+      "visualId": "model-selection",
+      "mindset": "Before changing model, sweep effort on the current one - same model, clean comparison.",
+      "tags": [
+        "effort",
+        "latency",
+        "model-selection",
+        "evals"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/effort",
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-latency"
+      ]
+    },
+    {
+      "id": "v-d5-g5-013",
+      "taskStatementId": "5.3",
+      "scenario": "Meridian Extract processes about 900,000 supplier invoices a month into a fixed JSON schema. Each request is small and highly structured, the team already validates every response in code, and their eval set shows identical field-level accuracy on a small tier and a mid tier. The business case for the small tier is a large per-request price reduction.",
+      "stem": "What makes the small tier defensible here, and what should the team do next?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The schema constrains output shape, so the remaining risk is field accuracy, which the eval set measures directly. Ship the small tier, keep the eval suite as a release gate for prompt or model changes, and keep sampling production traffic rather than assuming the pilot holds."
+        },
+        {
+          "id": "B",
+          "text": "Schema-constrained output means the values are guaranteed correct, so the small tier can ship with no eval gate at all."
+        },
+        {
+          "id": "C",
+          "text": "The smaller model produces shorter outputs and therefore costs less, which is the only thing that matters on a high-volume route."
+        },
+        {
+          "id": "D",
+          "text": "Use the most capable tier during business hours and the small tier overnight, so quality-sensitive days are covered without changing the code path."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Structured output removes exactly one failure - shape - and only that one. It does **not** guarantee the values are right. So the honest justification for a cheaper tier is: the task is small and well-specified, the eval set shows no quality gap, and code validates the output regardless. Under those conditions the price difference is close to free money.\n\nWhat makes it defensible rather than reckless is the gate. Keep the eval suite as a release gate so a prompt edit, a model change or a new supplier form layout has to prove it did not regress field accuracy. And sample production traffic on a cadence, because a pilot measures the world as it looked during the pilot.",
+      "whyWrong": {
+        "B": "This is the classic structured-output misconception. Schema enforcement guarantees the response conforms to the shape, not that the values mean anything - a perfectly formed wrong invoice date is still wrong.",
+        "C": "Output length is not the cost driver worth optimising here; per-token price and per-task success rate are. And response length is a weak lever next to the fact that these fields barely need output tokens at all.",
+        "D": "Silent per-tier switching by time of day makes behaviour unexplainable when an invoice goes wrong. You will not be able to say which configuration produced the bad output, and neither will an auditor."
+      },
+      "difficulty": 2,
+      "visualId": "model-selection",
+      "mindset": "Schema guarantees shape, never meaning - justify the cheap tier with eval-gated field accuracy.",
+      "tags": [
+        "model-selection",
+        "structured-outputs",
+        "cost-quality-tradeoff",
+        "evals"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs",
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests"
+      ]
+    },
+    {
+      "id": "v-d5-g5-014",
+      "taskStatementId": "5.3",
+      "scenario": "Aureus Health migrated four services from an earlier Opus generation to the current one. The migration guide said nothing about `output_config.effort`, and the code omits it entirely. Afterwards the services got measurably slower and more expensive, with no change to prompts, tools or traffic. Checking the docs, the default effort is `high` on most current models and `medium` on the newest one.",
+      "stem": "What explains the regression, and what is the right response?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Defaults are model-specific, so omitting `effort` means a migration silently inherits whatever the new model defaults to. Run a fresh effort sweep on your own evals rather than carrying settings - or the absence of settings - across a migration."
+        },
+        {
+          "id": "B",
+          "text": "Omitting `effort` pins the request to the lowest supported level, so the new model is reasoning less than the old one and the slowdown must come from a provider incident."
+        },
+        {
+          "id": "C",
+          "text": "The newer model is inherently slower, and the only available lever is enabling fast mode to recover the lost time to first token."
+        },
+        {
+          "id": "D",
+          "text": "Setting `effort` explicitly to the model's default produces different behaviour from omitting it, so the fix is to set it explicitly everywhere to remove the ambiguity."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Omitting `effort` is not a neutral choice - it delegates to the model's default, and **those defaults differ across models**. The docs are blunt about the consequence for migrations: run an effort sweep on your own evals rather than carrying settings over from an earlier model.\n\nThe related trap sits in option D. Setting `effort` explicitly to the model's default value is explicitly **equivalent to omitting it** and produces exactly the same behaviour. So the fix is not to pin the default; it is to choose a level deliberately and measure it. Worth holding alongside that: because the effort value is rendered into the prompt, changing top-level effort between requests invalidates message-level cache blocks, so pick a level per workload and hold it steady inside a cached conversation.",
+      "whyWrong": {
+        "B": "Omitting the parameter does not select the lowest level. It selects the model's default, documented as `high` on most current models and `medium` on the newest one.",
+        "C": "Fast mode is about output tokens per second and is not available on every model. The regression here is a reasoning-volume change, which effort addresses directly and measurably.",
+        "D": "The docs state that setting `effort` to the model's default produces exactly the same behaviour as omitting it. The ambiguity is resolved by choosing a different level and measuring, not by restating the default."
+      },
+      "difficulty": 3,
+      "mindset": "Omitted effort means the model default - sweep it on migration, never inherit it.",
+      "tags": [
+        "effort",
+        "model-migration",
+        "breaking-changes",
+        "latency"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/effort",
+        "https://platform.claude.com/docs/en/about-claude/model-deprecations"
+      ]
+    },
+    {
+      "id": "v-d5-g5-015",
+      "taskStatementId": "5.3",
+      "scenario": "Loop Analytics runs a long-horizon coding agent on a current top-tier model with adaptive thinking always on. Their team wants a shared mental model of the effort parameter before tuning anything, and has drafted four statements for the runbook.",
+      "stem": "Which TWO statements about `output_config.effort` are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "It applies to every output token in the response - text responses and explanations, tool calls and function arguments, and thinking when active - and it works whether or not thinking is enabled."
+        },
+        {
+          "id": "B",
+          "text": "It is a hard token budget: setting `low` guarantees the response will not exceed a given token count, and an overrun is a configuration error."
+        },
+        {
+          "id": "C",
+          "text": "Its default is `medium` on every current model, so services must set it explicitly to avoid surprises."
+        },
+        {
+          "id": "D",
+          "text": "It is a behavioural signal rather than a strict budget: at a lower level Claude still thinks on sufficiently difficult problems, just less than it would at a higher level for the same problem."
+        },
+        {
+          "id": "E",
+          "text": "It only takes effect when extended thinking is explicitly enabled, so it is inert on a model whose adaptive thinking is always on."
+        }
+      ],
+      "correct": [
+        "A",
+        "D"
+      ],
+      "explanation": "Two facts do the most work here. First, **effort is broad**: the docs list text responses and explanations, tool calls and function arguments, and thinking - it applies to all of them, and it works whether or not thinking is enabled. That is why effort moves latency and cost on an agentic loop even when you never touch the thinking configuration.\n\nSecond, **effort is a steering signal, not a cap**. At lower levels Claude still thinks on sufficiently difficult problems, just less than it would at higher levels. So you cannot derive a cost ceiling from it. For a ceiling across a whole agentic loop, the documented mechanism is a task budget; for a ceiling on one response, it is `max_tokens`.",
+      "whyWrong": {
+        "B": "This inverts the mechanism. No guaranteed token count is attached to an effort level, which is exactly why the docs describe it as a behavioural signal rather than a budget.",
+        "C": "Defaults are model-specific - `high` on most current models, `medium` on the newest one - and setting the default explicitly is equivalent to omitting the parameter entirely.",
+        "E": "Effort and thinking are separate controls and effort works without thinking. On a model where adaptive thinking is always on, effort is if anything the primary control for how much the model reasons."
+      },
+      "difficulty": 2,
+      "visualId": "cost-model",
+      "mindset": "Effort steers every output token; it is a signal, not a budget.",
+      "tags": [
+        "effort",
+        "thinking",
+        "agentic",
+        "cost-control"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/effort",
+        "https://platform.claude.com/docs/en/build-with-claude/extended-thinking"
+      ]
+    },
+    {
+      "id": "v-d5-g5-016",
+      "taskStatementId": "5.3",
+      "scenario": "Cobalt Grid is standardising effort values in a config file shared by 40 services so any service can be retargeted at a newer model by editing one line. They have settled on `xhigh` for their long-horizon coding agent. The platform team wants to understand how much risk that creates when the model behind those strings changes.",
+      "stem": "What should the platform team know before standardising on `xhigh`?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Effort-level availability is model-specific - the docs note that not every model supporting `max` supports `xhigh`, and levels are recalibrated between versions - so a level valid today can be rejected or behave differently tomorrow. Centralise the value, and validate it against the target model's documented levels in CI or at startup."
+        },
+        {
+          "id": "B",
+          "text": "Nothing to worry about: every current model accepts every effort level, so a single shared constant is always safe."
+        },
+        {
+          "id": "C",
+          "text": "Effort levels are advisory strings that any model accepts and ignores when unsupported, so an unavailable level degrades gracefully to the default."
+        },
+        {
+          "id": "D",
+          "text": "Only `low` is guaranteed across models; every higher level is model-specific and must be re-verified before each release."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The effort-level table is explicitly model-scoped. The docs list which models reach `max`, which reach `xhigh`, and state that **not every model that supports `max` supports `xhigh`**. They also warn that levels are recalibrated between versions - a given level does not produce the same amount of thinking on a newer model as it did on an older one.\n\nThat makes a single shared constant a real but manageable risk. Centralising the value is the right instinct: one place to change, one place to validate. Add a startup or CI check that the configured level is in the documented set for the model being deployed, so an unsupported value is caught at release rather than as a production error.",
+      "whyWrong": {
+        "B": "Level availability differs across models, and the docs call this out specifically. Treating the set as universal is how a routine config change becomes an outage.",
+        "C": "Unsupported values are not universally ignored. Per-message effort on a model without support returns a 400 saying the model does not support per-turn effort, so validation failures are real.",
+        "D": "Overcorrects. `high` and `medium` are broadly supported; the point is that availability is a documented per-model list to check, not that only the lowest level is safe."
+      },
+      "difficulty": 2,
+      "mindset": "Effort levels are per-model capabilities - centralise the value, validate the set.",
+      "tags": [
+        "effort",
+        "model-migration",
+        "configuration",
+        "breaking-changes"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/effort"
+      ]
+    },
+    {
+      "id": "v-d5-g5-017",
+      "taskStatementId": "5.4",
+      "scenario": "Orrery Health has a 9,000-token system prompt shared by every call to its clinical-notes assistant, and roughly 60 requests a second. Finance wants to add caching and is modelling the trade-off: writes bill above base input price, reads bill far below it, and the same prefix is reused constantly.",
+      "stem": "Which TWO statements about the economics are correct? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Cache breakpoints themselves are free - you pay only for content written, content read, and uncached input - so adding breakpoints to fence a stable section adds no charge of its own."
+        },
+        {
+          "id": "B",
+          "text": "Caching pays off only once the same prefix is read again after the write, so the break-even depends on reuse frequency and on the write premium, not on prefix length alone."
+        },
+        {
+          "id": "C",
+          "text": "Cache writes are billed below base input price because storing tokens is cheaper than processing them, so a first request through a new prefix already saves money."
+        },
+        {
+          "id": "D",
+          "text": "Caching also reduces the output tokens billed for the generated response, since the model does less work overall."
+        },
+        {
+          "id": "E",
+          "text": "Caching removes tokens from the context window, so a larger cached prefix lets the team fit more material into each request than the window would otherwise allow."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "The multipliers are what they are: cache **writes** bill at a premium over base input (higher for the one-hour TTL), cache **reads** bill at a small fraction of base input, and every hit refreshes the TTL at no extra charge. Two consequences follow.\n\nFirst, breakpoints are pure control surface. The docs are explicit that adding `cache_control` markers does not increase your costs - you are billed for what is actually cached and read, so fencing a stable section costs nothing beyond that section's own write. Second, the arithmetic is a break-even problem: a write-heavy or write-once prefix can cost *more* than it saves. At 60 requests a second over a shared 9,000-token prompt, reads dominate and caching is clearly right - but the reasoning is reuse frequency times read discount versus write premium, not prefix size.",
+      "whyWrong": {
+        "C": "Exactly backwards. Writes bill **above** base input, which is precisely why a prefix that is written once and never read again makes caching a loss rather than a saving.",
+        "D": "Caching applies to the input prefix only. Output tokens are always billed at the full output price, which matters enormously for output-heavy routes like note drafting.",
+        "E": "This is the misconception worth killing early. Cached tokens still occupy the context window; caching lowers price and processing time, not window arithmetic."
+      },
+      "difficulty": 1,
+      "visualId": "cost-model",
+      "mindset": "Caching is a break-even calculation on reuse - breakpoints are free, writes are not.",
+      "tags": [
+        "prompt-caching",
+        "cost-modeling",
+        "cache-economics",
+        "cost-optimization"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
+        "https://platform.claude.com/docs/en/about-claude/pricing"
+      ]
+    },
+    {
+      "id": "v-d5-g5-018",
+      "taskStatementId": "5.4",
+      "scenario": "Fieldstone Robotics runs a long-horizon repair agent that may take 40 tool-using turns to diagnose a machine. Costs are unpredictable: some runs finish in four turns, others grind past thirty, and the tail runs are eating the department's monthly budget. An engineer proposes setting a strict token ceiling per request so no single run can overspend.",
+      "stem": "Why is that the wrong instrument, and what should they use instead?",
+      "options": [
+        {
+          "id": "A",
+          "text": "A per-request `max_tokens` ceiling caps one response, not a loop, and a truncated run just fails partway through having already paid for everything it generated. Use a task budget - the documented advisory token budget for a full agentic loop - so the model sees a running countdown and winds down gracefully, and pair it with a turn limit."
+        },
+        {
+          "id": "B",
+          "text": "A per-request ceiling is the right instrument, but it must be raised for difficult machines and lowered for easy ones so the budget follows difficulty."
+        },
+        {
+          "id": "C",
+          "text": "Loop cost should be controlled by lowering `effort`, because effort is a hard cap on total token spend across a loop."
+        },
+        {
+          "id": "D",
+          "text": "The right fix is to move the loop to the Message Batches API, where all usage is billed at half the standard rate and the run is processed asynchronously."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Two different units are being conflated. `max_tokens` is a hard limit on **one response** - thinking plus visible output - and on a tool loop every turn is its own request. A ceiling low enough to bound a 40-turn run truncates turn one into uselessness, and a ceiling high enough to let the hard runs finish does nothing to the tail.\n\nThe documented mechanism for loop-level spend is a **task budget**: an advisory token budget for the full agentic loop, which the model sees as a running countdown across thinking, tool calls, tool results and final output, so as it depletes the model prioritises and finishes gracefully instead of being cut off mid-action. It complements `effort`, which controls depth per step rather than aggregate spend. Pair it with a turn limit and you have both axes.",
+      "whyWrong": {
+        "B": "This concedes the premise. `max_tokens` cannot be varied per machine in a useful way here - lowering it makes the hard runs fail rather than cheaper, and the expensive runs are exactly the ones needing more tokens.",
+        "C": "Effort controls how thoroughly the model reasons per step. It is documented as a behavioural signal, not a cap on aggregate spend, so it cannot guarantee a loop-level ceiling.",
+        "D": "Batches price at a discount but process asynchronously with no completion guarantee, which makes them wrong for an interactive repair agent that needs to answer a technician now."
+      },
+      "difficulty": 3,
+      "visualId": "cost-model",
+      "mindset": "Loop spend needs a task budget; max_tokens only bounds a single response.",
+      "tags": [
+        "task-budgets",
+        "token-budgeting",
+        "agentic",
+        "cost-control"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/task-budgets",
+        "https://platform.claude.com/docs/en/build-with-claude/effort"
+      ]
+    },
+    {
+      "id": "v-d5-g5-019",
+      "taskStatementId": "5.4",
+      "scenario": "Halcyon Media writes long investigative summaries on a current top-tier model at `high` effort, with `max_tokens` left at the 8,000 value sized for their earlier, non-thinking configuration. Since enabling reasoning, about one response in twelve now ends mid-sentence with `stop_reason: \"max_tokens\"`, and editors are trimming the missing text by hand.",
+      "stem": "What is happening, and what should they change?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Thinking tokens are part of `max_tokens` - they are generated even when they are not returned - so reasoning now consumes the output budget. Size `max_tokens` generously at higher effort levels, and separately prompt for the length and structure of the article so typical outputs stay within it."
+        },
+        {
+          "id": "B",
+          "text": "Thinking tokens count toward the context window but are excluded from `max_tokens`, so the output budget is untouched and the truncation must come from rate limiting."
+        },
+        {
+          "id": "C",
+          "text": "The model is refusing long requests at high effort, so the fix is to rephrase the instructions and retry any truncated generation."
+        },
+        {
+          "id": "D",
+          "text": "Set `max_tokens` to the model's maximum so no response can ever be truncated, and accept whatever the bill does."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Thinking tokens are billed as output **and counted against `max_tokens`**, even when the thinking content is not returned to you. So turning on reasoning does not add capacity - it spends the budget you already had. That is why a limit sized for the old configuration starts producing `stop_reason: \"max_tokens\"` the moment reasoning is enabled, and why the docs recommend a large `max_tokens` at high and above.\n\nThe second half matters as much: a ceiling is a safety net, not a target. On some models and prompt versions, changing effort does not reliably shorten the visible response, so the way to control length is to prompt for it - a fixed section structure with per-section limits and an instruction not to restate the source material. Raise the ceiling so truncation stops happening, then shape length in the prompt so the ceiling is rarely approached.",
+      "whyWrong": {
+        "B": "The accounting is wrong in both directions here. Thinking counts toward `max_tokens`, and a truncated response reports `stop_reason: \"max_tokens\"` rather than an HTTP error - this is a budget problem, not rate limiting.",
+        "C": "Refusal is reported as `stop_reason: \"refusal\"`. `max_tokens` truncation is a distinct, distinguishable outcome, and rephrasing the instructions does not raise a hard ceiling.",
+        "D": "Maximising `max_tokens` removes truncation but does nothing about cost, and it invites exactly the failure the team is trying to avoid: paying for reasoning-heavy responses that never needed the headroom. Bound the typical case in the prompt first."
+      },
+      "difficulty": 2,
+      "mindset": "Thinking spends your output budget - raise max_tokens for reasoning, then prompt for length.",
+      "tags": [
+        "max-tokens",
+        "thinking",
+        "effort",
+        "cost-modeling"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/effort",
+        "https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons"
+      ]
+    },
+    {
+      "id": "v-d5-g5-020",
+      "taskStatementId": "5.4",
+      "scenario": "Greywolf Archives moved its 300,000-document re-indexing job to the Message Batches API and expected the shared 40,000-token rubric to be read from cache on almost every request. Instead `cache_read_input_tokens` is low and `cache_creation_input_tokens` is high. Each batched request carries its own `cache_control` block, but the batches are submitted in bursts hours apart and the job now takes most of a day.",
+      "stem": "What explains this, and which TWO changes improve reuse? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Cache hits in batches are best-effort because requests are processed concurrently and asynchronously - the docs report typical hit rates from 30% to 98% depending on traffic patterns. Include identical `cache_control` blocks in every request in the batch, and structure the batch so the shared content is byte-identical and appears in the same position."
+        },
+        {
+          "id": "B",
+          "text": "Use the one-hour cache duration for the shared rubric, since batch processing can easily run past the default five-minute lifetime between a write and later reads."
+        },
+        {
+          "id": "C",
+          "text": "Split the rubric into a separate cache breakpoint for every section, so a partial hit in one section can rescue a miss in another."
+        },
+        {
+          "id": "D",
+          "text": "Pre-warm the cache inside the batch with a `max_tokens: 0` request at the start, so the first real request finds an entry."
+        },
+        {
+          "id": "E",
+          "text": "Turn off prompt caching for the batch, so writes and reads stop competing with the discounted batch rate and the accounting becomes simpler."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Two things stack here, and both matter. First, the docs are explicit that **cache hits in batch processing are best-effort** - requests are handled independently and concurrently, so typical hit rates run from 30% to 98% depending on traffic shape. The levers they list: put identical `cache_control` blocks in every request in the batch, keep a steady stream of requests so entries do not expire, and structure requests to share as much cached content as possible. A burst submitted hours apart does none of that.\n\nSecond, **batch processing routinely outlasts the default five-minute lifetime**, so the one-hour cache duration is the recommended choice for shared context in batches. And the discounts stack - batching halves usage pricing and caching multipliers apply on top - so the two are complements, not alternatives.",
+      "whyWrong": {
+        "C": "Breakpoints do not create independent partial-match opportunities. A cache read can only land on a position some earlier request actually wrote, and scattering markers across sections multiplies writes rather than guaranteeing a hit.",
+        "D": "`max_tokens: 0` is explicitly unsupported in batch requests - the docs call this out because an ephemeral entry written during batch processing would likely expire before the follow-up request ran.",
+        "E": "The discounts are complementary, not competing: batching prices at 50% and caching multipliers stack on top. Disabling caching would remove a saving and make the bill worse, not simpler."
+      },
+      "difficulty": 2,
+      "visualId": "batch-vs-realtime",
+      "mindset": "Batch cache hits are best-effort - identical blocks plus a long TTL is the combination.",
+      "tags": [
+        "prompt-caching",
+        "batch-api",
+        "cache-ttl",
+        "stacking-discounts"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
+        "https://platform.claude.com/docs/en/build-with-claude/batch-processing"
+      ]
+    }
+  ]
+}

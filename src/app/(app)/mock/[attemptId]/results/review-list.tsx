@@ -5,6 +5,8 @@ import { clsx } from "clsx";
 import { Check, ChevronDown, Compass, Flag, Minus, X } from "lucide-react";
 import type { PublicQuestion } from "@/lib/content-types";
 import { Markdown } from "@/components/ui/markdown";
+import { Visual } from "@/components/visuals/visual";
+import { ListenButton } from "@/components/listen-button";
 
 export interface ReviewItem {
   n: number;
@@ -15,6 +17,7 @@ export interface ReviewItem {
   explanation: string;
   whyWrong: Record<string, string>;
   mindset: string;
+  visualId?: string;
   flagged: boolean;
   ms: number;
   domainName: string;
@@ -249,8 +252,11 @@ function ReviewDetail({ id, item: x }: { id: string; item: ReviewItem }) {
               ? `You skipped this. The answer is ${listIds(x.correctIds)}.`
               : `Not quite. The answer is ${listIds(x.correctIds)}.`}
         </p>
-        <div className="mt-2 text-[0.95rem] text-ink-2">
-          <Markdown>{x.explanation}</Markdown>
+        <div className="mt-2 flex items-start gap-2">
+          <div className="min-w-0 flex-1 text-[0.95rem] text-ink-2">
+            <Markdown>{x.explanation}</Markdown>
+          </div>
+          <ListenButton text={x.explanation} label="the explanation" id={`${x.question.id}:review`} markdown />
         </div>
         {x.mindset ? (
           <p className="mt-3 flex items-start gap-2.5 rounded-xl bg-accent-soft/60 px-3.5 py-2.5 text-sm">
@@ -260,6 +266,11 @@ function ReviewDetail({ id, item: x }: { id: string; item: ReviewItem }) {
               {x.mindset}
             </span>
           </p>
+        ) : null}
+        {x.visualId ? (
+          <div className="mt-4 min-w-0 overflow-x-auto">
+            <Visual id={x.visualId} compact />
+          </div>
         ) : null}
       </div>
     </div>

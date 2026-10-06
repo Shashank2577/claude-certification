@@ -1,0 +1,1279 @@
+{
+  "certId": "developer",
+  "domainId": "d4-eval-debugging",
+  "questions": [
+    {
+      "id": "v-d4-y4b-001",
+      "taskStatementId": "4.1",
+      "scenario": "Harrowgate Health's clinical-note summariser has two distinct truncation complaints. On long notes the response stops mid-sentence with `stop_reason: \"max_tokens\"`. On a small number of notes the response stops almost immediately with `stop_reason: \"model_context_window_exceeded\"`. The team has raised `max_tokens` twice for both.",
+      "stem": "What is the correct diagnosis and response for the two cases?",
+      "options": [
+        {
+          "id": "A",
+          "text": "They are different failures with opposite fixes, which is why raising `max_tokens` fixed neither. `max_tokens` is the output budget: the input fitted and generation ran out of room, so the response is incomplete and does not match a schema — the fix is a higher limit, resent cleanly rather than appended to. `model_context_window_exceeded` means the request did not fit the model's context at all, so raising the output budget cannot help; the fix is to reduce what you send, by trimming or summarising the input, chunking the note, or moving the material to the Files API and referencing it. Branch on the stop reason before deciding which of the two you are looking at."
+        },
+        {
+          "id": "B",
+          "text": "Both are the same failure and `max_tokens` is the correct lever in both cases. A higher output budget gives the model room either way, so the summariser should be run with the maximum the model allows."
+        },
+        {
+          "id": "C",
+          "text": "Both are transport failures. The request is being dropped in the network before the model sees it, so the fix is to move to streaming and to set TCP keep-alive on the client socket."
+        },
+        {
+          "id": "D",
+          "text": "Neither is worth handling separately. Resend the original request with a higher `max_tokens` and append the response to the same conversation so the partial summary is completed rather than discarded."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Reading `stop_reason` before choosing a response is what keeps these apart, and here the two cases point in opposite directions. `max_tokens` is the generation budget: the request was accepted, the input fitted, and the model ran out of room while producing output. The response is incomplete, so it will not match a schema, and the recovery is a higher `max_tokens` sent cleanly — resending the original request with a fresh message history, or using the documented continuation approach, so you never accumulate two candidate summaries in one conversation. `model_context_window_exceeded` is a different failure: the request did not fit the context window, so no output budget can rescue it, and the fix is on the input side — trim, summarise, chunk across turns, or move the material to the Files API and reference it. Treating them as one failure is what produced two fruitless changes here.",
+      "whyWrong": {
+        "B": "It collapses two failures with opposite remedies into one knob. The output budget has no bearing on whether the request fits the context window, which is why raising it did nothing for the second group.",
+        "C": "It reclassifies both as network failures. A stop reason is reported by a completed call, so the request reached the model; and the documented long-request remedies — streaming or Message Batches — address idle-connection behaviour, not these two conditions.",
+        "D": "It prescribes appending to the same conversation, which is the specific pattern the truncation guidance warns against, because it leaves two candidate summaries in one history. It also cannot help the context-window case at all."
+      },
+      "difficulty": 1,
+      "visualId": "context-window",
+      "mindset": "`max_tokens` is an output budget and `model_context_window_exceeded` is an input problem — read the stop reason before choosing which knob to turn.",
+      "tags": [
+        "stop-reasons",
+        "max-tokens",
+        "truncation",
+        "error-identification"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons",
+        "https://platform.claude.com/docs/en/build-with-claude/context-windows"
+      ]
+    },
+    {
+      "id": "v-d4-y4b-002",
+      "taskStatementId": "4.1",
+      "scenario": "Harrowgate Health's overnight benefits-reconciliation job calls the API non-streaming for each member, with `max_tokens` set high. About four members a night return HTTP 504 `timeout_error`. The team has raised its own client timeout twice without effect.",
+      "stem": "What does the documentation direct you to do, and why has raising the client timeout not helped?",
+      "options": [
+        {
+          "id": "A",
+          "text": "504 `timeout_error` is a processing timeout, and the documented response is to consider the streaming Messages API for long-running requests — or the Message Batches API. Raising the client timeout is the wrong lever twice over: the SDKs validate that non-streaming Messages API requests are not expected to exceed a 10-minute timeout, and they set a socket option for TCP keep-alive precisely because some networks drop idle connections after a variable period, causing a request to fail or time out without ever receiving a response from Anthropic. A longer client patience cannot fix a connection the network has already abandoned."
+        },
+        {
+          "id": "B",
+          "text": "504 is transient, so exponential backoff with jitter and a higher attempt cap is the documented response. Streaming is a latency optimisation and does not change reliability on long requests."
+        },
+        {
+          "id": "C",
+          "text": "504 means the request exceeded the context window. The fix is to reduce the input size by summarising each member's history before sending it."
+        },
+        {
+          "id": "D",
+          "text": "504 is a rate limit in disguise and should be treated like a 429, honouring `retry-after`. The four members a night are simply the members that happened to exceed the per-minute ceiling."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The 504 entry is short, and the long-requests guidance explains why the obvious fix does not work. `timeout_error` at 504 is the request timing out while processing, and the documented response is to consider the streaming Messages API for long-running requests. The reasoning matters for a non-streaming caller: the SDKs validate that non-streaming Messages API requests are not expected to exceed a 10-minute timeout, and they set TCP socket keep-alive — while noting that some networks drop idle connections after a variable period, which can cause a request to fail or time out without receiving a response at all. So a client that waits longer is waiting on a connection that may already be gone. Streaming keeps the connection active and lets you observe progress; the Message Batches API removes the uninterrupted-connection requirement entirely, because you poll for results rather than holding a socket open. Both are the documented answers for long-running work, and both are structural rather than timeout tuning.",
+      "whyWrong": {
+        "B": "It proposes the wrong tool and denies streaming's reliability role. For a long-running non-streaming call, idle-connection loss is a documented failure mode, and streaming is the recommended remedy for exactly this.",
+        "C": "It maps a processing timeout onto a context-window limit. A request that does not fit the context window is rejected as a validation error rather than timing out while processing.",
+        "D": "It reclassifies 504 as throttling. Rate limiting is 429 and is the status that carries `retry-after`; treating a processing timeout as a rate limit sends you into a backoff loop that cannot shorten the request."
+      },
+      "difficulty": 1,
+      "visualId": "deployment-topology",
+      "mindset": "504 on a long non-streaming call is usually an abandoned connection, not patience — stream it, batch it, or poll for it, and stop raising client timeouts.",
+      "tags": [
+        "error-identification",
+        "timeout",
+        "streaming",
+        "long-requests"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://platform.claude.com/docs/en/build-with-claude/streaming"
+      ]
+    },
+    {
+      "id": "v-d4-y4b-003",
+      "taskStatementId": "4.1",
+      "scenario": "Harrowgate Health's finance team asks why one member's summary cost forty times another's when both used the same model and a similar prompt. The pipeline logs only latency. Someone proposes logging the full `usage` block for every call.",
+      "stem": "Which fields matter, and what will they actually tell the team?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The `usage` block carries `input_tokens`, `output_tokens`, `cache_creation_input_tokens` and `cache_read_input_tokens`. Those four separate the plausible explanations: a large input on one member, a long output, a cache write where a read was expected, or a long conversation that grew. Latency alone cannot distinguish them, and the two cache fields are the ones teams most often omit — a request paying full base input price on every turn because the prefix keeps changing looks exactly like a request with a big input unless you log `cache_read_input_tokens` separately. The related question to ask alongside is where the varying content sits relative to the cache breakpoint."
+        },
+        {
+          "id": "B",
+          "text": "Only `input_tokens` and `output_tokens` are needed. The cache fields are a billing detail maintained by the platform and do not appear in the response."
+        },
+        {
+          "id": "C",
+          "text": "The `usage` block is not where cost attribution comes from — cost is determined by the model and the token counts the platform computes at the end of the month. Log the model name and the member id instead."
+        },
+        {
+          "id": "D",
+          "text": "The four fields are sufficient on their own. Once you can see input and output tokens you can always attribute a cost spike to a specific cause without reference to how the prompt is structured."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The `usage` block is the cheapest diagnostic in the whole stack and it distinguishes causes that look identical from the outside. It carries `input_tokens`, `output_tokens`, `cache_creation_input_tokens` and `cache_read_input_tokens`, and those four fields separate explanations that latency alone cannot: a genuinely large input, a long generation, a cache write where a read was expected, or a conversation that grew over turns. The cache fields are the ones most often left out, and they are the ones that catch the most expensive mistake — a request paying full base input price on every turn because something early in the prefix keeps changing produces a usage profile indistinguishable from a large input until you separate reads from writes. This is also why the trace needs the surrounding fields: the usage numbers only become interpretable next to the request as assembled and the `stop_reason`, so log all three together. Prompt caching acts on input tokens, with reads at a fraction of base input price and writes costing more than base input, which is what makes the read/write split the highest-value signal in the block.",
+      "whyWrong": {
+        "B": "It drops the two fields that carry most of the diagnostic value. Cache creation and cache reads are returned in the response and are exactly what separates a well-cached workload from one paying full input price on every call.",
+        "C": "It relocates cost attribution to the monthly invoice, which is far too late to explain a forty-fold difference between two members processed on the same night with the same model.",
+        "D": "It claims the four numbers are self-interpreting. They describe what happened but not why — distinguishing a cache miss from a large input requires the request structure, and separating a bad prompt from a bad generation requires the `stop_reason`."
+      },
+      "difficulty": 1,
+      "mindset": "The `usage` block's four fields separate causes that look identical from outside; cache reads versus writes are the highest-value signal.",
+      "tags": [
+        "trace-analysis",
+        "usage-fields",
+        "cost-debugging",
+        "prompt-caching"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
+        "https://platform.claude.com/docs/en/api/errors"
+      ]
+    },
+    {
+      "id": "v-d4-y4b-004",
+      "taskStatementId": "4.1",
+      "scenario": "Harrowgate Health's member support bot returns `stop_reason: refusal` on about 2% of conversations, all of which are plainly benign benefit questions. The pipeline records each one as a successful empty answer, so the metric looks clean and members receive nothing.",
+      "stem": "What is the correct handling, and what does the 2% figure actually tell you?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Branch on the refusal: read the stop details, adjust the request or route to a fallback model, and never record a refusal as a successful empty answer — that recording is the defect, because it converts a 200 with no useful output into a success the metrics will defend. The 2% is a model-and-prompt signal rather than an error rate, so the useful measurement is refusal rate broken down by prompt category and by which member of the fallback chain produced it; an aggregate number over all categories will hide the categories that are actually failing. And the retry policy is the wrong tool here: an identical resend re-reads the same request."
+        },
+        {
+          "id": "B",
+          "text": "Resend the identical request up to five times. Refusals are a transient safety condition that resolves once the model's sampling has moved on."
+        },
+        {
+          "id": "C",
+          "text": "Raise the refusal threshold or disable the safety layer for this route, since the questions are demonstrably benign and members are being denied service."
+        },
+        {
+          "id": "D",
+          "text": "Accept the refusals as the correct outcome and close the loop. A refusal is the model declining to answer, which is a valid response to a benign question and needs no remediation."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Two separate mistakes are visible and they compound. The first is the recording: a refusal returns 200, is billed, and may contain little or no text, so treating it as a successful empty answer is what lets 2% of members receive nothing while the dashboard stays green — and it destroys the signal you would need to find the cause. The second is the diagnosis: the 2% is a property of a model-and-prompt pair over a distribution of questions, not an error rate, so the measurement that actually locates the problem is refusal rate per prompt category and per model in the chain. An aggregate across all categories averages the failing categories away. The response follows from the documentation: read the stop details, adjust the request or route to a fallback model. What does not follow is retrying — an identical resend re-reads the same request against the same conditions, so the spend buys nothing — and overriding the safety decision, which converts a recoverable routing problem into a compliance incident.",
+      "whyWrong": {
+        "B": "It treats a refusal as transient. A refusal is a decision about the request as written, so an identical resend is the same request and the same outcome, repeated at cost.",
+        "C": "It proposes disabling the mechanism rather than diagnosing the input. The refusals are concentrated somewhere in the prompt or the request shape, and disabling the check removes the last signal you have about where.",
+        "D": "It accepts the recording of refusal as success while rejecting the refusals themselves. Those two positions are inconsistent: if the refusals are correct outcomes then members receiving nothing is acceptable, and if they are not then the metric is wrong. The correct position rejects the recording and investigates the rate."
+      },
+      "difficulty": 1,
+      "mindset": "A refusal is a 200 with no usable output: never record it as success, never retry it identically, and measure the rate per category rather than in aggregate.",
+      "tags": [
+        "stop-reasons",
+        "refusal",
+        "error-handling",
+        "observability"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons",
+        "https://platform.claude.com/docs/en/api/errors"
+      ]
+    },
+    {
+      "id": "v-d4-y4b-005",
+      "taskStatementId": "4.1",
+      "scenario": "Harrowgate Health's `submit_claims` tool processes five claims and returns `Submitted 5 claims.` even though two were rejected upstream and only three rows exist. The model reports success and the pipeline's counts reconcile, because the tool's contract offers no way to express partial success.",
+      "stem": "Which TWO changes address the root cause? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Make the partial state representable rather than flattening it. Return a structured result naming what succeeded, what failed and why each failure occurred, so the model has something it can act on and the pipeline's counts can be reconciled per claim. This follows from the general rule for tool errors: surface the failure to the model with enough context — what failed and what was attempted — and keep an access failure distinguishable from a genuinely empty result."
+        },
+        {
+          "id": "B",
+          "text": "Return an `is_error: true` result for the whole call whenever any item failed. That is the honest signal, because the model's next move should be to investigate rather than to report success — and it removes the possibility of a silent partial application reaching the database."
+        },
+        {
+          "id": "C",
+          "text": "Keep the summary string but append the failure count, for example `Submitted 3 of 5 claims; 2 rejected upstream.` It conveys the same information in the same shape the model already parses, so no contract change is needed."
+        },
+        {
+          "id": "D",
+          "text": "Raise the tool's retry budget and add a small delay between submissions. Two rejections out of five is a transient upstream condition that a retry usually resolves."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "The bug is in the tool's contract, not in its retry settings. A tool that collapses partial success into a flat success string destroys information irreversibly: the model reads 'Submitted 5 claims', the pipeline's counts match its own log, and two missing rows propagate into reconciliation. So the first change is representational — return what succeeded, what failed and why, per claim. The second is the deliberate choice about the failure signal, and it is a real trade-off rather than an obvious improvement. An `is_error: true` result for the whole call is honest and prevents the model reporting success, at the cost of making a call where most of the work landed look entirely failed, which invites a full re-submission and duplicate work. The practical resolution is usually both: signal the partial failure in the error result *and* enumerate the per-claim outcomes inside it, so the model knows both that something went wrong and exactly what did land. The unversioned summary string is the worst option because it looks like a partial answer to a reader who already trusts it.",
+      "whyWrong": {
+        "C": "It keeps the flattening and decorates it with a count. The count does not say which claims failed or why, so neither the model nor the pipeline can act on it — and a numeric suffix on a success string is still read as success by anything matching on wording.",
+        "D": "It treats a rejection as transient and reaches for retries. Upstream rejections on two of five claims are more likely a data or authorisation condition that a retry reproduces exactly, and re-sending risks duplicate rows for the three that landed."
+      },
+      "difficulty": 2,
+      "visualId": "error-recovery",
+      "mindset": "A tool must be able to express partial success per item; flattening it into a success string is a data-loss bug no retry setting can fix.",
+      "tags": [
+        "tool-errors",
+        "partial-failure",
+        "is-error",
+        "tool-design"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls",
+        "https://code.claude.com/docs/en/agent-sdk/agent-loop"
+      ]
+    },
+    {
+      "id": "v-d4-y4b-006",
+      "taskStatementId": "4.1",
+      "scenario": "Harrowgate Health has six services calling the Claude API. Two retry every 4xx, one retries nothing, and the rest differ on `max_retries`. Each service classifies errors in its own handler. An audit finds the same defect fixed three times in three codebases.",
+      "stem": "What is the structural problem, and what should the shared standard say?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Classification is duplicated, so it drifts, and the drift is invisible until it causes an incident. The shared standard should own the decision rather than the handling: one classification that maps a failure to a category — transient and retryable, transient but bounded, deterministic and not retryable, or a 200-shaped failure needing content handling — plus the observable for each category, so that status plus stop reason plus error type is interpreted in one place. Services then implement the response for a category without re-deciding the category. Two things belong alongside it: catch the SDK's typed exception classes rather than string-matching messages, handling the most specific classes first, because a broad handler placed above the narrow ones makes them unreachable; and give the classifier an explicit fallback for an unrecognised failure, because the error objects' values may expand over time."
+        },
+        {
+          "id": "B",
+          "text": "The problem is that the services set different `max_retries`. Standardise every service on the SDK default of two retries and the inconsistency disappears."
+        },
+        {
+          "id": "C",
+          "text": "The problem is duplicated code. Extract a single retry helper and have all six services import it; the classification will follow because there will only be one copy of it."
+        },
+        {
+          "id": "D",
+          "text": "There is no structural problem. Different services having different retry behaviour is appropriate, since each has different latency tolerance and side-effect risk, and the duplication is a reasonable consequence."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The tell in the scenario is the same defect fixed three times in three codebases: the decision is duplicated, so it drifts, and drift is silent until an incident. What needs to be shared is not the retry loop but the classification. One function should map a failure to a category — transient and retryable, transient but bounded, deterministic and never retryable, or a 200-shaped failure that needs content handling — using the observable for that category: HTTP status, plus `stop_reason` for the 200-shaped cases, plus the error object's `type` as diagnostic detail rather than as an exhaustive enumeration, since the versioning policy allows those values to grow. Services then implement the response for a category without re-deciding which category it is. Two implementation rules are what keep the shared piece from becoming the next source of drift. Catch the SDK's typed exception classes rather than string-matching messages, and order handlers most-specific-first, because a broad base-class handler above the narrow ones shadows them. And name a single retry owner, since the SDKs already retry transient failures with exponential backoff by default and an application loop on top multiplies rather than replaces.",
+      "whyWrong": {
+        "B": "It reduces the problem to one configuration value. `max_retries` is the ceiling, not the decision; two services retrying every 4xx and one retrying nothing are making different classifications, and no shared ceiling resolves that.",
+        "C": "It assumes sharing code implies sharing a decision. A shared retry helper whose callers decide what to retry simply centralises the loop and leaves the classification duplicated — which is the defect that caused the triple fix.",
+        "D": "It defends the duplication as appropriate. Different latency tolerances are real, but they are expressed as different *responses* to a category, not as six independent decisions about which category a failure belongs to."
+      },
+      "difficulty": 2,
+      "mindset": "Share the classification, not the retry loop: one function maps a failure to a category, services implement the response, and every classifier needs a fallback.",
+      "tags": [
+        "error-taxonomy",
+        "retry-strategy",
+        "integration-layer",
+        "observability"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://code.claude.com/docs/en/agent-sdk/permissions"
+      ]
+    },
+    {
+      "id": "v-d4-y4b-007",
+      "taskStatementId": "4.1",
+      "scenario": "Harrowgate Health's triage agent misroutes about 2% of referrals. The team builds a reproduction script that replays captured requests, and three weeks later the script no longer reproduces because the routing rules the agent depends on have changed in the upstream service.",
+      "stem": "What does this tell you about the reproduction, and what should the team do?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The reproduction captured the request but not its dependencies, so it has a shelf life bounded by the things it did not record. A captured request fixes the model, the parameters and the `messages` array — which is what makes a replay a valid experiment — but tool results and retrieved content are the part most likely to drift. So the discipline is to capture the dependencies alongside the request, or to freeze them: the captured tool outputs and retrieved chunks, plus the model identifier in full. Then version the fixture, and re-record deliberately when a dependency changes rather than discovering the drift as a mysteriously passing test. The second half is standing: turn the case into a permanent eval entry so the regression guard lives in CI rather than on someone's laptop."
+        },
+        {
+          "id": "B",
+          "text": "The script is fine and the upstream change is irrelevant. A replay sends the same messages, so whatever the upstream service would have returned is irrelevant to the result."
+        },
+        {
+          "id": "C",
+          "text": "The team should have used `temperature: 0` when capturing, which would have made the replay deterministic and immune to upstream change."
+        },
+        {
+          "id": "D",
+          "text": "The reproduction has served its purpose and should now be deleted. Once a defect has been identified, keeping a fixture that no longer reproduces only confuses the next person investigating a similar symptom."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "This is the natural consequence of capturing half of what determines a result. Replaying the captured request — the same model, the same parameters, the same `messages` array — is the documented way to isolate whether the origin is the integration layer or the model's output, and it works because the request is fully specified. What it does not freeze is everything the request *pointed at*: tool results, retrieved chunks, and the behaviour of the services behind them. So the reproduction's fidelity was always going to expire, and the expiry is a property of the fixture, not evidence that the original diagnosis was wrong. The response is to capture the dependencies too — the tool outputs and retrieved content the agent actually saw, plus the full model identifier — and to version the fixture so that a dependency change forces an explicit re-record rather than a silently passing test. Note the related trap on the other side of the capture: a hand-built harness is not a reproduction at all, because environment and settings precedence are decided per key pair rather than by level, so the local run can be on a different model from the one that failed.",
+      "whyWrong": {
+        "B": "It assumes the request fully determines the result. The `messages` array contains what the tools and retrieval returned at capture time; replaying it exercises that frozen content, so an upstream change alters the *production* result while leaving the fixture happily green.",
+        "C": "It reaches for a sampling dial as a substitute for fixture fidelity. Determinism of the model's own output does not freeze the tool results and retrieved content that were interpolated into the messages array when the fixture was recorded.",
+        "D": "It proposes deleting the diagnostic asset at the moment it becomes most valuable. Kept as a permanent eval entry it is the guard that prevents the defect class returning, and a fixture that needs re-recording says so explicitly."
+      },
+      "difficulty": 2,
+      "mindset": "A replay is only as good as what it froze — capture tool outputs and retrieved content alongside the request, and version the fixture.",
+      "tags": [
+        "reproducibility",
+        "origin-isolation",
+        "evals",
+        "trace-analysis"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents"
+      ]
+    },
+    {
+      "id": "v-d4-y4b-008",
+      "taskStatementId": "4.1",
+      "scenario": "Harrowgate Health's `disburse_payment` tool posts a payment and then the HTTP client sees a dropped connection. Harrowgate's generic retry helper retries on connection errors and 5xx, including 529. Last week a single 529 caused a duplicate disbursement that finance caught manually.",
+      "stem": "What is the correct assessment, and what has to be true before retries are safe here?",
+      "options": [
+        {
+          "id": "A",
+          "text": "529 is genuinely transient and retryable, which is exactly why retrying it is safe for reads and unsafe here. The docs are explicit that transient failures should be retried with exponential backoff, and the same advice cannot be applied to a side-effecting call whose outcome is unknown at the moment of failure. So before this tool sits behind a generic retry helper, the write has to be made idempotent with a stable key derived from the payment's business id, so a repeat is recognised and skipped rather than duplicated — and the error the model sees should say the outcome is unknown and that the pipeline will reconcile by querying state. Ordering matters: idempotency first, retries second."
+        },
+        {
+          "id": "B",
+          "text": "The helper is behaving correctly and the duplicate was unlucky. Excluding 529 from the retry list would have prevented it, and connection errors should still be retried because they are the most transient class."
+        },
+        {
+          "id": "C",
+          "text": "The right fix is to narrow the retry helper to the model API call and stop retrying the tool invocation at all, since a tool that may have succeeded must never be re-entered by any retry mechanism."
+        },
+        {
+          "id": "D",
+          "text": "Add a random delay between the failed attempt and the retry so two concurrent disbursements do not collide. Jitter is what prevents the duplicate, not idempotency."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The interesting property of this failure is that the retry advice and the duplicate are both consequences of the same documented fact. 529 `overloaded_error` is a temporary capacity condition, so retrying it is right — and that is precisely why a blanket retry over a side-effecting tool is unsafe: the condition is transient at the API while the effect of the tool is not. At the moment of the failure nobody knows whether the payment posted, so a retry is a coin flip with money on it. The precondition is therefore idempotency. Make `disburse_payment` carry a stable key derived from the payment's business id so a repeat is recognised and skipped, and make the error text state that the outcome is unknown and that the pipeline will reconcile by querying state, so the model does not blindly re-issue a side effect. Note that the connection-error case has exactly the same problem and the same fix: a dropped connection after the write has landed is indistinguishable from one before. Once the write is idempotent, both belong behind the retry helper; until then, neither does.",
+      "whyWrong": {
+        "B": "It narrows the exclusion list without addressing the underlying problem. A dropped connection produces the same duplicate as a 529, so excluding one status leaves the other — and both would be safe if the write were idempotent.",
+        "C": "It forbids re-entry rather than making re-entry safe. Any recovery path, including a model-initiated retry, can re-enter the tool, so the fix has to be a property of the tool rather than a rule about one retry mechanism.",
+        "D": "It identifies jitter as the cause when the duplicate was sequential, not concurrent. Timing does not prevent a retry of a single request whose outcome is unknown; only recognising the prior write does."
+      },
+      "difficulty": 2,
+      "mindset": "Transient is not the same as safe to retry: a side-effecting call needs a stable idempotency key before it goes behind any retry helper.",
+      "tags": [
+        "idempotency",
+        "retry-strategy",
+        "side-effects",
+        "error-recovery"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://code.claude.com/docs/en/agent-sdk/agent-loop"
+      ]
+    },
+    {
+      "id": "v-d4-y4b-009",
+      "taskStatementId": "4.1",
+      "scenario": "Harrowgate Health's summariser retries failures by rebuilding the original request each time. For `max_tokens` truncations it raises the limit and resends. For refusals it rewrites the system prompt to be more permissive and resends. The team is proud that 'no failure is ever recorded as a success'.",
+      "stem": "Which TWO statements about retry construction are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Modifying the request is legitimate when the failure gives you something specific to change. Truncation names its own fix — resend the original request cleanly with a higher `max_tokens` and a fresh message history, or use the documented continuation approach, rather than appending to the same conversation and accumulating two candidate summaries. That is a modified retry whose modification is dictated by the failure."
+        },
+        {
+          "id": "B",
+          "text": "Modification becomes a liability when it is unattributed. Rewriting the system prompt to make refusals less likely is defensible only if the refusal is being treated as a prompt defect and the change is measured; silently rewriting the prompt inside a retry means the pipeline can no longer tell which version of the prompt produced a given output, so a quality regression becomes unattributable and the recorded input no longer matches what ran. The safe pattern is to make the retry's modification explicit and versioned, and to keep refusals as their own recorded category rather than dissolving them into successful responses."
+        },
+        {
+          "id": "C",
+          "text": "Modification is never legitimate. Any change to the request inside a retry invalidates the comparison against the original failure, so a retry must always be a byte-identical resend of the original request."
+        },
+        {
+          "id": "D",
+          "text": "Both movements are improvements and neither needs attribution. A higher limit and a more permissive prompt each make the retry more likely to succeed, so the prompt version is an implementation detail the trace does not need to record."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Retries come in two kinds and the distinction is about attribution. A retry that changes the request is only defensible when the failure told you what to change, and truncation is the clean case: `max_tokens` means the output budget ran out, so the fix is a higher limit resent cleanly with a fresh message history — or the documented continuation approach — precisely so you do not end up with two candidate summaries in one conversation. That modification is dictated by the failure and is safe. The other kind is a modification chosen to make the symptom go away. Rewriting the system prompt inside a retry so refusals stop happening is the risky version, because the pipeline can then no longer say which prompt produced which output: quality becomes unmeasurable across the retry boundary, and the request you stored is not the request that ran. That is a loss of observability, not a small inconvenience. The workable pattern is to treat the rewrite as a first-class, versioned change that is measured on its own, and to keep refusals as a recorded category — which also preserves the option of routing to a fallback model instead of bending the prompt.",
+      "whyWrong": {
+        "C": "It forbids the modification the truncation guidance actually requires. Resending with a higher `max_tokens` changes the request, and a byte-identical resend of a truncated request truncates again identically.",
+        "D": "It treats the prompt version as an implementation detail. If a retry can rewrite the prompt, the recorded request is not the request that ran, which is the observability loss that makes a later regression unattributable."
+      },
+      "difficulty": 2,
+      "mindset": "Retry with a modified request only when the failure dictates the change; hide nothing inside the retry or you lose the ability to attribute output to prompt.",
+      "tags": [
+        "retry-strategy",
+        "stop-reasons",
+        "reproducibility",
+        "prompt"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons",
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs"
+      ]
+    },
+    {
+      "id": "v-d4-y4b-010",
+      "taskStatementId": "4.1",
+      "scenario": "Harrowgate Health's referral pipeline records one row per referral with the HTTP status. Downstream, clinicians act on the routing. The pipeline reports a 97% success rate while 4% of referrals were routed to the wrong department and none of them raised an error.",
+      "stem": "What is the blind spot, and what closes it?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The pipeline records transport outcomes and is silent about correctness, so 'success' means 'did not fail' rather than 'was right'. That distinction matters because the guarantees on offer are about shape: structured outputs and strict tool use constrain the structure of a response and the validity of enum membership, not whether the value is the correct department. So a wrong-but-well-formed routing is indistinguishable from a right one in the current schema. What closes the gap is an acceptance layer: record the routing decision as a discrete field with an assertion the business trusts — for example that the department must be one the policy table permits for that referral type, and that the free-text justification actually names the referral's presenting condition — and route a failure of that assertion to the same dead-letter path as a transport failure."
+        },
+        {
+          "id": "B",
+          "text": "The blind spot is the missing latency field. Recording per-call duration would reveal which routings were slow and therefore suspect."
+        },
+        {
+          "id": "C",
+          "text": "The blind spot is the model identifier. Without recording which model produced each routing, the team cannot tell whether the wrong routes correlate with a model release."
+        },
+        {
+          "id": "D",
+          "text": "There is no blind spot. A 97% success rate with a 4% routing error rate is consistent — 3% failed and 4% succeeded incorrectly — so the pipeline is reporting correctly and the defect is in the routing logic."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The pipeline is measuring one thing and being asked about another. A status column records whether the call failed; a routing error is a call that succeeded and was wrong. Nothing about HTTP status distinguishes them, which is why a healthy-looking 97% coexists with 4% misrouting that clinicians act on. The reason is structural rather than an oversight in the logging: the guarantees available are about the form of a response. Structured outputs compile the schema into a grammar so the fields you consume are the fields emitted, and strict tool use guarantees the tool input follows your `input_schema` with a valid tool name — but enum membership is about the shape of the allowed set, not about which member is correct. A plausible department that happens to be a legal enum value passes everything. The fix is an acceptance layer with a business-trusted assertion rather than a generic plausibility check, plus a routing for assertion failures that reuses the dead-letter path, so a wrong-but-well-formed answer is treated as the failure it is.",
+      "whyWrong": {
+        "B": "It substitutes latency for correctness. Duration tells you about the request, not about whether the department chosen was right; the misrouted referrals were fast and well-formed.",
+        "C": "It identifies a genuinely useful trace field but not the blind spot in question. Recording the model is necessary for attribution but cannot detect a wrong answer that the schema permitted.",
+        "D": "It performs arithmetic that does not resolve anything. The consistency observation is true and irrelevant: the pipeline is reporting accurately about failures while being blind to correctness, and that is the gap to close."
+      },
+      "difficulty": 2,
+      "visualId": "structured-output",
+      "mindset": "A status column records 'did not fail', not 'was right' — add a business-trusted acceptance assertion and dead-letter its failures too.",
+      "tags": [
+        "output-validation",
+        "observability",
+        "structured-output",
+        "error-handling"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/strict-tool-use"
+      ]
+    },
+    {
+      "id": "v-d4-y4b-011",
+      "taskStatementId": "4.1",
+      "scenario": "Harrowgate Health's debug logging change — capturing the full request and response for every call, at every level — doubled its API bill and made the trace store the largest table in the estate. Storage retention for the full trace is now under pressure.",
+      "stem": "Which change keeps the diagnostic value without the cost, and what determines the design?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Log at the granularity the question needs, which is not the same as logging everything. A reproduction needs the request as assembled — the complete `messages` array with every `tool_use` id and matching `tool_result`, the model, `max_tokens` and the effort settings — plus the response's `stop_reason`, content and `usage`; that is a large object, but it is what a specific question requires. For continuous operation, the per-request essentials are the `request_id`, the status or stop reason, and the usage breakdown, which is small and answers 'what happened and what did it cost'. The design rule is to make verbose capture an incident-scoped mode with a retention window, rather than a default, and to keep a small always-on record — because a trace you cannot afford to store is a trace you will not have when the incident occurs."
+        },
+        {
+          "id": "B",
+          "text": "Compress the captured bodies with gzip before storing them. The bill is unaffected by logging, and storage is solved by compressing at rest."
+        },
+        {
+          "id": "C",
+          "text": "Drop response bodies and keep only requests. The request is the reproducible artefact, so the response can always be regenerated by replaying it."
+        },
+        {
+          "id": "D",
+          "text": "Sample one in a hundred calls at full fidelity and keep metadata-only records for the rest. This bounds the cost with no loss, because failures are uniformly distributed across calls."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "This is a question about which question you are trying to answer, because the two need different fidelity and the mistake is paying for the expensive one continuously. An investigation needs the request as assembled plus the response's `stop_reason`, content and `usage` — that is what makes a failure reproducible verbatim months later and attributable to a layer. Continuous operation needs almost none of that: the `request_id`, the status or stop reason, and the usage breakdown answer 'what happened and what did it charge' for a hundred per cent of calls at a fraction of the size. So the design is two tiers, with verbose capture scoped to an incident and a retention window rather than left on by default, and a small always-on record underneath. That last part is what protects you from the failure mode the team is currently heading toward: a trace you cannot afford to store is a trace that will have been rotated away by the time anyone goes looking. Note that the bill effect is separate from the storage effect — logging does not change token consumption, so the doubled bill is about the replay and volume the logging enables, not about the logging itself.",
+      "whyWrong": {
+        "B": "It addresses storage while leaving the operational change untouched, and misattributes the bill. Compressing at rest helps neither the doubled bill nor the review load of reading a compressed blob, and logging does not itself consume input tokens.",
+        "C": "It discards the side that usually carries the evidence. The response's `stop_reason`, content and usage are what show truncation, refusal and cost; and the response cannot in general be regenerated, because generation is not deterministic.",
+        "D": "It assumes failures are uniformly distributed, which is the opposite of the situation that matters. Sampling at a fixed rate is a reasonable cost lever, but it will miss exactly the rare failures you most needed captured — so it needs to be paired with always-on capture for the signals that are cheap."
+      },
+      "difficulty": 2,
+      "mindset": "Two tiers: cheap always-on essentials, expensive incident-scoped fidelity with a retention window — and never sample away the rare case.",
+      "tags": [
+        "observability",
+        "tracing",
+        "cost",
+        "trace-analysis"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://code.claude.com/docs/en/agent-sdk/observability"
+      ]
+    },
+    {
+      "id": "v-d4-y4b-012",
+      "taskStatementId": "4.1",
+      "scenario": "Harrowgate Health's adjudication agent has a 20-second HTTP client timeout, a 30-turn ceiling, and a session budget. Overnight, an agent loop makes 200 HTTP calls in nine minutes and is stopped by the client timeout mid-loop; a second agent spins on one failing tool for 29 turns and then stops on the turn ceiling with nothing recorded about why.",
+      "stem": "Which TWO statements about timeout and budget design are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "The three limits govern different units, so a single HTTP timeout cannot stand in for them. A client timeout bounds one call, not a run; the run's real terminator is a response with no tool calls; and `max_turns` counts tool-use turns only — which is why the spinning agent exhausted turns rather than time, and why nothing was recorded about the cause. Each budget exhaustion needs to be a distinct recorded outcome, with the turn index and elapsed time at each API call, so the runbook can tell a budget stop from a network fault. And the SDKs validate that non-streaming Messages API requests are not expected to exceed a 10-minute timeout, which is a per-request expectation and not a run-level design."
+        },
+        {
+          "id": "B",
+          "text": "Per-call timeouts belong under the tools, not on the HTTP client. A slow third-party lookup should be bounded by its own timeout so that failing fast produces a `tool_result` the model can act on, rather than aborting the whole loop — which is what turns one slow dependency into a lost run."
+        },
+        {
+          "id": "C",
+          "text": "One HTTP timeout is sufficient if it is set generously, because the loop's calls are sequential and the slowest call therefore bounds the whole run. A single number that covers the worst case is simpler to reason about than three."
+        },
+        {
+          "id": "D",
+          "text": "Raise `max_turns` so the ceiling outlasts the slowest legitimate run, and drop the client timeout entirely. Then neither limit can fire before the work finishes."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Both failures come from the same mistake, which is using a per-call timeout as though it were a run policy. A client timeout bounds one HTTP call; the run's actual terminator is a response with no tool calls, and `max_turns` is a separate ceiling that counts tool-use turns only. That is why the two agents failed differently: one was killed mid-loop by a per-call limit that said nothing about how long the run should last, and the other exhausted a turn ceiling while spinning on a failing tool — a shape of failure that a turn count alone cannot distinguish from productive work. So budget explicitly at the turn and run level, record the turn index and elapsed time at each API call, and make each exhaustion a distinct recorded outcome so a budget stop is distinguishable from a network fault. The per-tool timeout is the complementary half: bounding a slow third-party lookup in the tool itself converts a stall into a fast, actionable `tool_result` with `is_error: true`, so one slow dependency degrades a step rather than destroying the run. Neither limit subsumes the other, and the SDKs' 10-minute non-streaming expectation is a statement about a single request, not a run policy.",
+      "whyWrong": {
+        "C": "It proposes one number to govern three different units. A generous per-call timeout cannot distinguish a run that should be cut short from one call that is merely slow, so it removes the signal rather than providing it.",
+        "D": "It raises the wrong ceiling and deletes the wrong control. A turn ceiling counts tool-use turns, not elapsed time, so it does not bound a run against the clock, and removing the client timeout leaves a stalled call unbounded."
+      },
+      "difficulty": 2,
+      "visualId": "deployment-topology",
+      "mindset": "Per-call, per-turn and per-run are different units — bound tools at the tool, budget runs at the turn level, and record which budget stopped it.",
+      "tags": [
+        "timeout",
+        "max-turns",
+        "agent-loop",
+        "observability"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/agent-loop",
+        "https://platform.claude.com/docs/en/api/errors"
+      ]
+    },
+    {
+      "id": "v-d4-y4b-013",
+      "taskStatementId": "4.1",
+      "scenario": "Harrowgate Health's on-call rota has never had to reason about which failure to work first. Overnight, a provider incident produces 529s, a config change produces 500s, one member's traffic produces 429s, and a size regression produces 413s — all within twenty minutes.",
+      "stem": "Which ordering of attention is correct, and what is the reasoning behind it?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Work by whether retrying can help and by blast radius, which gives 500 then 529 then 413 then 429 — and deliberately not the reverse. 500 `api_error` is an unexpected internal error: retry with backoff, and if it persists escalate with the request id, so it is both a signal worth acting on and one where your own retries add information. 529 `overloaded_error` is temporary capacity pressure that time resolves, so the right response is bounded backoff with jitter and continued operation at the current rate rather than intervention. 413 `request_too_large` is a hard size ceiling — the fix is to reduce the payload, and retrying the identical request can never succeed, so it is a code change with a known owner. 429 `rate_limit_error` is your own organisation's limit, a tier spend cap or a workspace spend limit; honour `retry-after` when present, and recognise a no-`retry-after` spend-cap 429 as an alert rather than a retry."
+        },
+        {
+          "id": "B",
+          "text": "Work by status code severity: 5xx first, then 4xx, so 529 and 500 lead, followed by 429 and 413. Numeric ordering matches how urgent each condition is."
+        },
+        {
+          "id": "C",
+          "text": "Work by frequency: whichever failure is producing the most requests gets attention first, because it is affecting the most members."
+        },
+        {
+          "id": "D",
+          "text": "Nothing can be prioritised without more information. The correct first step is to gather the full error bodies for all four before touching any of them, since the status code alone is insufficient to act on."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Severity ordering does not work here because two of these conditions are self-inflicted and two are not, and that distinction is what determines whether waiting helps. 500 `api_error` is an unexpected internal error where the documented response is retry with backoff and, if it persists, contact support with the request id — so it earns attention both because your retries generate evidence and because persistence is the escalation signal. 529 `overloaded_error` is temporary capacity pressure across users; time genuinely changes the outcome, so the correct response is bounded backoff with jitter and no intervention, and escalating it would be noise. 413 `request_too_large` is a hard ceiling with a known owner and a known fix — reduce the payload, because the identical retry cannot succeed — so it is scheduled, not paged. And 429 is your own organisation's limit: honour `retry-after`, and treat a spend-cap 429 without `retry-after` as an alert, because it keeps failing until access resumes rather than clearing with time. Ordering by volume is the trap, since the most frequent condition is frequently the one you can least help.",
+      "whyWrong": {
+        "B": "It ranks by numeric severity and therefore elevates the condition you should leave alone. 529 needs time rather than intervention, so putting it beside 500 misdirects the first ten minutes of an incident.",
+        "C": "It ranks by frequency, which is precisely inverted for two of these. A spend-cap 429 can be the most frequent and is unfixable by the on-call engineer, while a single 413 may be blocking a whole workflow.",
+        "D": "It stalls on information that is already sufficient. Each of these has a documented response keyed off the status alone; gathering bodies before acting adds minutes to an incident whose correct first moves are known."
+      },
+      "difficulty": 2,
+      "visualId": "error-recovery",
+      "mindset": "Triage by whether waiting helps: 500 escalates with a request id, 529 waits, 413 needs a payload fix, 429 is your own limit.",
+      "tags": [
+        "error-identification",
+        "http-status",
+        "runbook",
+        "escalation"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://platform.claude.com/docs/en/api/rate-limits"
+      ]
+    },
+    {
+      "id": "v-d4-y4b-014",
+      "taskStatementId": "4.1",
+      "scenario": "A Harrowgate Health member reports 'Claude is broken' with no detail. The support engineer needs to triage without access to Harrowgate's logs, and asks what a useful customer report should contain.",
+      "stem": "Which report is the most actionable, and why?",
+      "options": [
+        {
+          "id": "A",
+          "text": "A report carrying the exact time of the call, the `request_id`, the error object's `type` and `message`, and whether the failure was HTTP-level or surfaced inside a streamed response. Each element does a specific job: the time bounds the search, the `request_id` is the identifier Anthropic support needs and it appears both in the `request-id` header and as `request_id` in error bodies, the `type` gives the documented class, and the streaming distinction matters because after a 200 an error can still arrive as an event in the stream, which means status-code-based handling never sees it. A report of 'it was slow' or 'it said something odd' gives none of these and cannot be acted on."
+        },
+        {
+          "id": "B",
+          "text": "A report containing the full prompt and the full response text. That is the most direct evidence, and support can reproduce the issue from it directly."
+        },
+        {
+          "id": "C",
+          "text": "A report listing the model name, the SDK and language version, and the account tier. Environment mismatches explain most support cases, so this is the highest-value combination."
+        },
+        {
+          "id": "D",
+          "text": "A screenshot of the error, plus the member's description of what they were trying to do. A visual record preserves the wording exactly, which text descriptions lose."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Actionability comes from fields that map onto something a responder can look up, and four of them do. The exact time bounds the search across logs. The `request_id` is the identifier the docs tell you to include when contacting support about a specific request, and it appears in both the `request-id` header and the `request_id` field of error bodies — one value, two places, which is why it is worth asking a customer for specifically. The error object's `type` gives the documented class, with the caveat that those values may expand, so it is a discriminator rather than a closed enum. And the HTTP-versus-streamed distinction is the one most likely to be missed: because the API can return a 200 and then deliver an error inside the stream, a failure that looks like a success to status-based handling will never appear in a status report at all. Everything else in a customer report — model version, SDK version, screenshots — is real evidence, but none of it substitutes for the identifier that makes a provider-side investigation possible.",
+      "whyWrong": {
+        "B": "It proposes the artefacts that are least likely to be available and least useful to support. A member reporting a failure typically has neither, and a transcript of one call does not identify that call to the provider.",
+        "C": "It gathers environment facts that matter for reproducibility but cannot identify a specific request. It is worth asking for as a secondary question, not as the primary triage content.",
+        "D": "It favours presentation over content. A screenshot of a message is harder to parse than the message itself, and neither carries the `request_id` or the time that a responder needs to start."
+      },
+      "difficulty": 2,
+      "mindset": "Ask for the time, the `request_id`, the error `type`, and whether it was HTTP or in-stream — those four map onto a lookup; everything else is secondary.",
+      "tags": [
+        "request-id",
+        "observability",
+        "runbook",
+        "error-taxonomy"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://platform.claude.com/docs/en/build-with-claude/streaming"
+      ]
+    },
+    {
+      "id": "v-d4-y4b-015",
+      "taskStatementId": "4.1",
+      "scenario": "Harrowgate Health's team wants to replay 40,000 captured requests to measure whether a new prompt version is better. They have no budget approval, and a colleague points out that the same workspace also serves live member traffic.",
+      "stem": "What is the responsible way to run this experiment, and what is the specific risk being managed?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Bound it and be explicit about why. 40,000 replays against a workspace serving live traffic is a sharp increase in usage, and a sharp increase in usage can surface as 429 rather than 529 because of acceleration limits — so the experiment can degrade the service it is measuring, and the resulting error mix will be contaminated by the experiment itself. So: run a small representative sample first, serialise the replays rather than running them at concurrency, honour `retry-after` when it appears, and ramp rather than burst, keeping the usage pattern consistent. If a larger run is needed, give it its own workspace or run it in a window where live traffic is low. And note the budget interaction: `--max-budget-usd`-style caps and `max_budget_usd` are client-side estimates, so they bound spend approximately rather than exactly."
+        },
+        {
+          "id": "B",
+          "text": "Run the full 40,000 as fast as possible. A faster run finishes sooner, which reduces the total time the experiment perturbs the workspace."
+        },
+        {
+          "id": "C",
+          "text": "The risk is only financial, so the constraint is cost. Run the replays against a separate API key with its own spend cap, which isolates the billing without needing to change the experiment's design."
+        },
+        {
+          "id": "D",
+          "text": "Replays of captured requests are cache reads rather than new work, so they barely count against rate limits and the experiment can proceed without special handling."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The risk being managed is not primarily cost or latency — it is that the instrument changes the reading. A sharp increase in usage can surface as 429 rather than 529 because of acceleration limits, so a 40,000-request replay burst against a workspace also serving live members can push the account into a rate-limit condition the pipeline did not have, and the resulting error mix then tells you about the experiment rather than the prompt version. That is why the documented guidance to ramp traffic gradually and keep usage patterns consistent is the relevant instruction here rather than anything about replaying specifically. The shape that follows: a small representative sample first, serialised, honouring `retry-after`, ramped rather than burst; a separate workspace or a quiet window if the full set is genuinely necessary. Two supporting details round it out. Cost caps on these paths are client-side estimates and can differ from the bill, so they bound spend approximately. And the belief that replayed requests are free because much of the prefix may be cached is wrong for planning purposes — a cache read is cheaper than base input, not free, and a replay that varies content will miss anyway.",
+      "whyWrong": {
+        "B": "It maximises exactly the thing that causes the problem. Burst rate is the variable that triggers acceleration limits, so finishing sooner does not reduce the perturbation — it increases its intensity.",
+        "C": "It treats a financial isolation as if it solved the operational risk. A separate key separates the bill, but the rate limit that a burst trips is enforced at the organisation and workspace level, which the key does not change.",
+        "D": "It assumes replays are effectively free on the rate-limit axis. Cache reads are cheaper than base input rather than free, and a replay whose varying content defeats the cache prefix pays full input price — so the experiment is not the near-no-op it is claimed to be."
+      },
+      "difficulty": 2,
+      "mindset": "A replay burst can trip acceleration limits and contaminate the measurement — sample, serialise, ramp, honour `retry-after`, and isolate the workspace.",
+      "tags": [
+        "rate-limits",
+        "evals",
+        "cost",
+        "debugging-discipline"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/rate-limits",
+        "https://code.claude.com/docs/en/agent-sdk/cost-tracking"
+      ]
+    },
+    {
+      "id": "v-d4-y4b-016",
+      "taskStatementId": "4.1",
+      "scenario": "Harrowgate Health's referral eval suite has been green for four months. A reviewer notices the LLM-judge component returns a positive verdict on every single case, including three the reviewer wrote to be obviously wrong. The team concludes the prompt change under review is safe.",
+      "stem": "What is the actual state of the suite, and what should happen?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The suite is not a guard, and the green result carries no information about the change. A grader that passes everything is indistinguishable from a grader that is correct, which means the eval has been measuring nothing for four months and every prior 'safe' conclusion drawn from it is unsupported. The immediate step is to establish that the grader discriminates: keep the three known-bad cases as a deliberate check, and until the grader fails something it should not, treat the judge component as absent rather than as evidence. The structural fix follows the docs — define success explicitly first, use deterministic graders wherever a ground truth exists, reserve model graders for qualities that have none, and calibrate any model grader against human labels while measuring its run-to-run variance."
+        },
+        {
+          "id": "B",
+          "text": "The suite is functioning as designed. A lenient judge reflects a rubric written for a task where near-correct answers are acceptable, and a green suite over four months is strong evidence the prompt change is safe."
+        },
+        {
+          "id": "C",
+          "text": "The judge is fine and the three cases are mislabelled. Recent prompt work made borderline referrals genuinely more accurate, so the obvious-wrong cases are no longer wrong."
+        },
+        {
+          "id": "D",
+          "text": "The suite should be replaced with byte-level golden-output comparison, which is deterministic and therefore immune to grader leniency. Precision at that level is achievable for this task."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "A grader that never fails is not a lenient grader, it is an absent measurement — and that reframes everything the suite has reported. Four months of green means four months of decisions made without evidence about the quality dimension the judge was supposed to cover, so the conclusion about the prompt change is unsupported rather than supported. The first task is proving the grader discriminates at all, which is what the three known-bad cases are for: a suite needs cases it is expected to fail, and a judge that cannot fail them cannot be trusted on the ones you care about. Until then the honest move is to treat that component as absent rather than as weak positive evidence, which also means re-examining which earlier conclusions rested on it. The durable structure is the one the docs recommend: define the success criteria explicitly first, prefer deterministic graders wherever a ground truth exists, reserve model graders for qualities that genuinely have none, and when you do use one, calibrate it against human labels and measure its run-to-run variance so a small movement can be distinguished from noise.",
+      "whyWrong": {
+        "B": "It treats a non-discriminating grader as evidence. The duration of the green run says nothing about the prompt change precisely because the component that would have detected a regression never reported one.",
+        "C": "It accepts a grader's verdict over the reviewer's own ground truth. The reviewer wrote those cases to be wrong; a prompt change making them right would be a finding to investigate, not a convenient redefinition of the labels.",
+        "D": "It jumps to the opposite extreme. Byte-level comparison is unachievable for a task whose output is generated text, and it would fail on harmless variation while still not measuring whether an answer is right."
+      },
+      "difficulty": 3,
+      "visualId": "eval-loop",
+      "mindset": "A grader that passes everything is an absent measurement — prove it discriminates, or treat it as absent and re-check what rested on it.",
+      "tags": [
+        "evals",
+        "grading",
+        "llm-judge",
+        "define-success"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/define-success",
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests"
+      ]
+    },
+    {
+      "id": "v-d4-y4b-017",
+      "taskStatementId": "4.1",
+      "scenario": "Harrowgate Health has finished a postmortem on a misrouted referral defect. The action items are: 'update the runbook', 'add a dashboard panel', and 'improve the routing prompt'. The team asks which of these will actually stop a recurrence.",
+      "stem": "Which assessment is most accurate?",
+      "options": [
+        {
+          "id": "A",
+          "text": "None of the three, as written. A runbook entry makes the next occurrence diagnosable; a dashboard panel makes it visible; a prompt tweak makes it less likely. None of them prevents a regression from shipping, which is why the missing artefact is a permanent eval case built from the captured failing input and its expected behaviour, running automatically from now on and re-run after any later prompt, code or model change. That case is what converts an incident into a guard. The other two belong in the plan too — the runbook entry with detection, classification, response and verification, and the dashboard for the signal it cannot see — but they are complements to the eval, not substitutes for it. And the prompt change should be measured like any other change rather than merged as a remedy."
+        },
+        {
+          "id": "B",
+          "text": "The prompt change is the one that prevents recurrence. A runbook documents what happened and a dashboard reports it, but only a change to the system's behaviour removes the cause."
+        },
+        {
+          "id": "C",
+          "text": "The runbook entry is the one that prevents recurrence, because the next engineer will read it before making the same mistake. Documentation is the durable control; code and prompts get refactored away."
+        },
+        {
+          "id": "D",
+          "text": "All three are equally preventive. Prevention, diagnosis and detection are interchangeable concerns, and a complete postmortem covers all of them equally."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The three items belong to three different categories and only one of them is preventive, which the plan has blurred. A runbook entry makes the next occurrence *diagnosable* — detection signal, classification, response, verification — and it is genuinely valuable precisely because it is written after the investigation rather than during it. A dashboard panel makes it *visible*, which converts a silent wrong answer into an alert, and that is what stops the failure from being discovered by a clinician. A prompt tweak makes it *less likely*, which is a hypothesis, not a control. The missing artefact is the permanent eval case: turn the captured failing input and its expected behaviour into a case that runs automatically and is re-run after any later prompt, code or model change, so a recurrence is caught before it reaches members. That is the step that converts an incident into a regression guard, and it is the one item whose absence leaves the other two as documentation of a problem rather than defences against it.",
+      "whyWrong": {
+        "B": "It identifies a mitigation as a control. A prompt tweak that has not been measured is a hypothesis about a cause, and it addresses one instance of a defect class rather than the class itself.",
+        "C": "It overvalues documentation. A runbook entry is read during an incident, by someone who already suspects there is a problem; it does not run in CI and cannot stop a regression from merging.",
+        "D": "It equates prevention, diagnosis and detection. They are distinct and require distinct artefacts — a guard, an entry and an alert respectively — and the postmortem is incomplete without the one that is absent here."
+      },
+      "difficulty": 2,
+      "visualId": "eval-loop",
+      "mindset": "Only an automated eval case prevents recurrence; a runbook entry makes it diagnosable, a dashboard makes it visible, and a prompt tweak is a hypothesis.",
+      "tags": [
+        "regression-prevention",
+        "evals",
+        "runbook",
+        "debugging-discipline"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests",
+        "https://platform.claude.com/docs/en/test-and-evaluate/define-success"
+      ]
+    },
+    {
+      "id": "v-d4-y4b-018",
+      "taskStatementId": "4.1",
+      "scenario": "Harrowgate Health's client starts sending `retry-after` with 429 responses. The team's retry helper honours exponential backoff but treats `retry-after` as advisory and uses whichever delay is smaller, reasoning that a shorter wait recovers faster.",
+      "stem": "What is wrong with this, and what is the correct rule?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The header is an instruction, not a hint, and taking the minimum inverts it. The SDKs honour the `retry-after` header when it is present, and the rate-limit guidance is to honour it while the pattern settles — because it reflects the server's own view of when capacity returns, which a local backoff schedule cannot know. Two errors follow from ignoring it. You will retry into a limit that is still closed, converting a clean rate-limit response into failed requests that are harder to diagnose. And you will amplify load on a system that is explicitly asking you to back off, which is the mechanism behind acceleration limits appearing as 429s. The rule is: when `retry-after` is present, wait at least that long, and never let a locally computed backoff shorten it."
+        },
+        {
+          "id": "B",
+          "text": "Nothing is wrong. A shorter wait recovers faster, and the header is only a hint the platform provides for clients that cannot compute backoff themselves."
+        },
+        {
+          "id": "C",
+          "text": "The rule should be the opposite: always retry sooner than the header suggests, so that a slot frees up before the next client arrives to claim it."
+        },
+        {
+          "id": "D",
+          "text": "The header only applies to `retry-after` values on 429 responses from the tier spend cap, where it is absent anyway. For ordinary rate limits it should be ignored in favour of a computed schedule."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Taking the minimum of the two delays is the specific bug, and it is worth being precise about why the header is not optional. The SDKs honour the `retry-after` header when it is present, and the rate-limit guidance says to honour it while the pattern settles. The header encodes the server's view of when capacity returns; a locally computed exponential schedule is a guess about the same thing and is not better informed, so preferring the smaller of the two means preferring the guess. The consequences run in both directions. Retrying earlier than asked means sending requests into a limit that is still closed, so a clean rate-limit response becomes a scattering of failures that are harder to classify. And it means the client is adding load to a system that has explicitly asked it to wait, which is the same mechanism that makes a sharp increase in usage surface as acceleration-limit 429s. The correct rule is a floor, not a ceiling: when the header is present, wait at least that long, and let a computed backoff extend it if anything. Note the one case where the header is *absent* and waiting does not help — a tier spend-cap 429 carries no `retry-after` and keeps failing until access resumes.",
+      "whyWrong": {
+        "B": "It reduces the header to a hint for clients that cannot compute backoff, which is not what it is. It is the platform communicating when capacity returns, and the SDKs treat it as authoritative.",
+        "C": "It inverts the instruction into a race. Retrying sooner than asked does not claim a slot first — it adds load to a system that is already capacity-constrained, which is how a rate limit becomes a cascade.",
+        "D": "It attaches the header to the one case where it does not appear. A tier spend-cap 429 carries no `retry-after` at all, which is precisely why that case is recognised as an alert rather than a retry."
+      },
+      "difficulty": 2,
+      "mindset": "`retry-after` is a floor, not a hint — never let a computed backoff shorten it, and recognise its absence as the spend-cap signal.",
+      "tags": [
+        "rate-limits",
+        "retry-strategy",
+        "backoff",
+        "error-identification"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/rate-limits",
+        "https://platform.claude.com/docs/en/api/errors"
+      ]
+    },
+    {
+      "id": "v-d4-y4b-019",
+      "taskStatementId": "4.1",
+      "scenario": "Two Harrowgate Health engineers run the referral eval suite on the same commit and get 91% and 87%. The suite's cases are stored request transcripts, but the grading step calls the live benefits-verification service. The team concludes the suite is unreliable and proposes deleting the flaky component.",
+      "stem": "What does the discrepancy actually indicate, and what is the right response?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The suite has a hidden live dependency, so part of it is an integration test rather than a deterministic guard — which is a legitimate thing to have, mislabelled as a regression check. The grader's answer changes when the service's answer changes, and that is a property of the system under test, not noise in the measurement. The response is to split the suite rather than delete anything: keep the deterministic graders over frozen fixtures as the gate that blocks a regression, and keep the live-service check as a separately reported integration signal with its own expectation about acceptable variation. What must not happen is deleting the component — that would remove the only coverage of the verification path — or treating the 4-point spread as grader noise to be averaged away, since averaging a live dependency's variability hides it rather than describing it."
+        },
+        {
+          "id": "B",
+          "text": "The suite is flaky in the ordinary sense and should be made deterministic by running each case five times and taking the majority. Majority voting over repeated runs removes the variance."
+        },
+        {
+          "id": "C",
+          "text": "The difference is unimportant. Both runs are within a reasonable band for an LLM-judged suite, and the team's decision threshold should simply be set at ten points so this never blocks a change."
+        },
+        {
+          "id": "D",
+          "text": "The live-service component should be removed and replaced with recorded responses from a single capture. Then the suite is deterministic and the recorded responses stay representative of production."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "A spread between two runs of identical code is a statement about the suite's dependencies, and the diagnosis here is available rather than mysterious. The cases are frozen transcripts, so the request side is reproducible; the grading step calls a live service, so the *answer* changes when that service changes. That makes the component an integration check, which is a real and useful thing to have — it is the mislabelling as a deterministic regression guard that is the problem. The right move is to split rather than prune: deterministic graders over frozen fixtures as the gate that blocks a regression from shipping, and the live check reported separately with its own expectation about how much movement is acceptable. Two tempting alternatives both destroy information. Majority voting over five runs does not remove a live dependency's variability; it samples it five times and reports the mode, which is a different claim from the one the metric appears to make. And replacing the live call with one recorded capture is worse, because the recorded responses stop representing production at exactly the moment they are trusted most — the moment the service changes.",
+      "whyWrong": {
+        "B": "It treats a dependency's variability as sampling noise. Repeating a live call five times gives five samples of a changing service; the majority is a defensible summary but it is not the deterministic property the suite was being relied on for.",
+        "C": "It resolves the observation by widening the threshold instead of explaining the spread. A ten-point band is what made a four-point movement invisible in the first place, and it removes the suite's ability to detect a real regression.",
+        "D": "It proposes a single capture in place of a live dependency, trading one problem for a worse one. The captured responses become stale silently, so the check keeps passing while measuring something that no longer exists in production."
+      },
+      "difficulty": 3,
+      "visualId": "eval-loop",
+      "mindset": "Run-to-run spread means a live dependency: split the suite into a deterministic gate and a reported integration signal — never average it away or replace it with one stale capture.",
+      "tags": [
+        "evals",
+        "grading",
+        "variance",
+        "debugging-discipline"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests",
+        "https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents"
+      ]
+    },
+    {
+      "id": "v-d4-y4b-020",
+      "taskStatementId": "4.1",
+      "scenario": "Harrowgate Health's summariser silently switches models after a burst of 529s and the outputs quietly change quality. The team wants to remove the automatic fallback so quality is consistent, and an engineer suggests investigating which customization triggers it with `--safe-mode`.",
+      "stem": "Which TWO statements about fallback and diagnosis are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Automatic fallback exists for availability, and disabling it trades one failure mode for another. The behaviour is a fallback to specified models when the primary is overloaded or not available — for example a retired model — which is exactly the condition a transient 529 is. Removing it means members get a hard error during capacity pressure instead of a degraded answer, so the question is not whether to have it but whether the degradation is *observable*: record which model produced each response so the quality shift is measured rather than discovered."
+        },
+        {
+          "id": "B",
+          "text": "The diagnosis path is real and worth taking. `--safe-mode` starts with all customizations disabled to troubleshoot a broken configuration, and the docs specifically name checking whether a customization is what triggers automatic model fallback. That isolates the repository's and the user's customizations — a skill, a hook, a CLAUDE.md rule or an agent that sets a model — while managed settings policy still applies, so an administrator's controls are not what you are eliminating."
+        },
+        {
+          "id": "C",
+          "text": "Disable automatic fallback and set an explicit per-model `model` in settings instead. Pinning the model makes the response attributable without relying on a chain the runtime chooses."
+        },
+        {
+          "id": "D",
+          "text": "Keep automatic fallback and route all traffic to a single model so quality cannot vary. Consistency is more valuable than availability during a capacity event."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "This is two decisions that get bundled and should be separated. First, whether to keep automatic fallback. It exists because the primary may be overloaded or unavailable — including a retired model — and a transient 529 is precisely that condition, so removing it converts a degraded answer into a hard error for members during exactly the moments the system is already stressed. The real defect in the scenario is not the fallback's existence but that it is invisible: outputs change quality and nobody can tell which model produced a given response. So the fix is to record the model on every response and measure the quality difference across the chain, which is also what makes the degradation acceptable if it is bounded and a genuine regression if it is not. Second, whether something local is causing the fallback at all. That is a legitimate question with a documented instrument: `--safe-mode` disables the customization layer — CLAUDE.md, skills, plugins, hooks, MCP servers, custom commands and agents, output styles, workflows, themes, keybindings, status line, LSP servers, auto memory — while leaving authentication, model selection, built-in tools and permissions working, and the docs name automatic model fallback as something it is useful for checking. Managed policy stays on, so you are eliminating the repository's and user's customizations, not the administrator's.",
+      "whyWrong": {
+        "C": "It trades a runtime availability control for a static setting that cannot adapt to a retired or overloaded primary. Pinning the model fixes which model answers but does nothing about what happens when that model is unavailable.",
+        "D": "It removes the control that exists for exactly this event and keeps the cost. A single pinned model has nowhere to go when it is overloaded, so a transient 529 becomes a hard error instead of a degraded answer."
+      },
+      "difficulty": 3,
+      "mindset": "Fallback is an availability control, not a bug — keep it and make the degradation observable; use `--safe-mode` to rule out a local customization triggering it.",
+      "tags": [
+        "model-config",
+        "fallback",
+        "troubleshooting",
+        "observability"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/model-config",
+        "https://code.claude.com/docs/en/cli-reference"
+      ]
+    },
+    {
+      "id": "v-d4-y4b-021",
+      "taskStatementId": "4.1",
+      "scenario": "Harrowgate Health wants to validate a routing change before full rollout. The team proposes replaying two weeks of production traffic against the candidate in the same workspace, at the same concurrency as production, for a week.",
+      "stem": "What is wrong with this design, and what would a sound version look like?",
+      "options": [
+        {
+          "id": "A",
+          "text": "It confuses a comparison with a load test. Running at production concurrency against the same workspace for a week means the experiment's own request volume is the dominant load, and because a sharp increase in usage can surface as 429 rather than 529 through acceleration limits, the shadow run will degrade the very service it is measuring and the resulting error mix will be an artefact of the experiment. A sound version changes three things. Bounded volume — a fixed sample chosen to cover the routing cases you care about rather than everything, since the question is about decisions and not about volume. Separation — either a distinct workspace or a window where live traffic is low, so the two populations are distinguishable. And comparison on identical inputs: the same captured requests through both configurations, so the difference you measure is the configuration and not the traffic mix, with per-case outcomes retained so you can look at which cases flipped rather than only at an aggregate rate."
+        },
+        {
+          "id": "B",
+          "text": "Nothing is wrong. Matching production concurrency is exactly what makes the comparison realistic, and a week is long enough to see rare cases."
+        },
+        {
+          "id": "C",
+          "text": "The design is sound in shape but should use a larger sample. Two weeks of traffic is not enough to detect a routing change that affects two per cent of referrals with statistical confidence."
+        },
+        {
+          "id": "D",
+          "text": "The right change is to run the comparison in a canary, sending ten per cent of live traffic to the candidate and comparing outcomes on the remainder. Replay is unnecessary because real traffic is already available."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The design has a measurement-validity problem before it has a capacity problem. A week of shadow traffic at production concurrency is not a comparison of two routing configurations — it is a load test wearing one, and it runs against the same workspace serving live members. Since a sharp increase in usage can surface as 429 rather than 529 through acceleration limits, the shadow run both degrades the service it is measuring and contaminates its own results: the error mix an engineer sees at the end is substantially an artefact of the experiment. Three changes fix it. Bounded volume — a fixed sample chosen to cover the routing cases in question, because the question is about decisions and a sample of the relevant cases beats a fortnight of everything. Separation — a distinct workspace or a quiet window, so you can tell the two populations apart. And paired comparison on identical inputs through both configurations, retaining per-case outcomes, so the signal you read is the configuration and you can inspect which cases flipped instead of only an aggregate rate. Canary routing is a reasonable subsequent step, and the two are complementary, but it is a different experiment from the replay and does not make the replay unnecessary.",
+      "whyWrong": {
+        "B": "It defends the two properties that break the experiment. Production concurrency is what makes the run a load generator rather than a comparison, and a week amplifies the contamination rather than revealing it.",
+        "C": "It fixes the wrong variable by demanding more data from a design that cannot produce interpretable data. A larger sample under the same load conditions improves precision on a biased measurement.",
+        "D": "It proposes a genuinely better experiment while treating the existing one as unnecessary. Canary routing compares live populations, which answers the question about production behaviour; a replay answers it about captured cases, and the replay is cheap once it is bounded and separated."
+      },
+      "difficulty": 3,
+      "visualId": "deployment-topology",
+      "mindset": "A shadow run at production concurrency is a load test, not a comparison — bound the sample, separate the workspace, and pair both configs on identical inputs.",
+      "tags": [
+        "evals",
+        "rate-limits",
+        "deployment",
+        "debugging-discipline"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/rate-limits",
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests"
+      ]
+    },
+    {
+      "id": "v-d4-y4b-022",
+      "taskStatementId": "4.1",
+      "scenario": "Harrowgate Health's `fetch_visit_notes` tool returns whatever the EHR gives it. For one clinic the EHR has started truncating long note bundles at 40,000 characters with no error and no marker. The model summarises the truncated bundle and produces confident conclusions that contradict the full record, and the pipeline records no failure.",
+      "stem": "Which TWO statements about isolating this defect are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "The evidence that localises it is the comparison between the model's output and the exact content it was given. If the summary faithfully reflects the text in the `tool_result` you sent — including the abrupt ending and the missing later entries — then the model reported what it received and the origin is upstream in the tool's dependency, where a prompt change, a schema tightening or a model swap cannot help. That is the same discipline as any other origin isolation: log the content at the boundary, not the name and outcome of the call."
+        },
+        {
+          "id": "B",
+          "text": "A silent truncation is a distinct failure class from a returned error, and it needs its own handling. Nothing in the protocol marks the bundle as incomplete, so the harness has to establish completeness itself — compare the returned length or item count against what the upstream reports, request the remainder in pages, and surface an explicit 'incomplete source' signal to the model rather than letting an absence be indistinguishable from a genuinely short record. This is the same principle as keeping an access failure distinguishable from an empty result: both are ways an infrastructure limit turns into a confident false statement."
+        },
+        {
+          "id": "C",
+          "text": "The model is at fault and should be given a system instruction to note when its input appears incomplete. Prompting the model about the limitation is the cheapest place to address it."
+        },
+        {
+          "id": "D",
+          "text": "The defect is unlocatable without reproducing it against several models, because a model that summarised correctly would prove the truncation was not the cause. Until then no change should be made."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Two things have to be true for this to be fixable, and both are about making absence visible. First, isolation. The comparison that localises the defect is the model's output against the exact content sent in the request: agreement isolates it upstream in the tool's dependency, and disagreement would have isolated it in the model. That requires logging the content at the boundary rather than the call's name and status, which is the instrumentation gap that makes most origin questions unanswerable in practice. Second, detection. A silent truncation carries no error and no marker, so nothing in the protocol distinguishes it from a complete short record — and a summariser over an incomplete record produces a confident, wrong answer that the pipeline records as a success. So the harness has to establish completeness: check the returned length or item count against what the upstream reports, page the remainder, and surface an explicit incomplete-source signal to the model. The parallel with retrieval is exact — a wrapper that returns an empty result on timeout teaches the model that nothing exists, and a wrapper that returns a truncated bundle teaches it that the record ends there.",
+      "whyWrong": {
+        "C": "It asks the model to compensate for content it cannot know is missing. Nothing in the bundle signals incompleteness, so an instruction to watch for truncation cannot fire, and prompt changes cannot recover text that was never sent.",
+        "D": "It claims the fault cannot be localised from the evidence in hand, when the comparison settles it directly. Agreement between the summary and the exact content sent is sufficient isolation; waiting for a multi-model experiment only delays a fix that is already locatable."
+      },
+      "difficulty": 3,
+      "mindset": "A silent truncation is worse than an error: log content at the boundary to isolate it, then make the harness prove completeness so absence is never indistinguishable from a short record.",
+      "tags": [
+        "origin-isolation",
+        "tool-errors",
+        "observability",
+        "tool-design"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/agent-loop",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls"
+      ]
+    },
+    {
+      "id": "v-d4-y4b-023",
+      "taskStatementId": "4.1",
+      "scenario": "Harrowgate Health's routing suite reports 96% pass. A developer inspects it and finds the grader asserts that the response is valid JSON — which the code path guarantees — and that no case exercises a referral the policy table does not cover.",
+      "stem": "What is wrong with the suite, and what is the correct repair?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The suite is measuring a property the system cannot fail, which is the worst kind of green: it consumes the run, blocks nothing, and would survive a change that broke every routing decision. The repair is to start from the property that matters — the routing decision is correct for this referral type under the current policy table — and express it as an assertion on the decision, not on the envelope. That means cases spanning the policy table's boundaries, and cases where the policy genuinely does not cover the referral, where the correct behaviour is a stated inability to route rather than a confident guess. Grading follows from the property: an exact-match assertion against a ground-truth decision where you have one, and support checks for the uncovered cases."
+        },
+        {
+          "id": "B",
+          "text": "The suite is adequate because JSON validity is the contract the tool advertises. Consumers depend on the shape, so the shape is what should be guaranteed and tested."
+        },
+        {
+          "id": "C",
+          "text": "The suite needs more cases rather than different assertions. Ninety-six per cent on a small set is an acceptable figure, and adding volume will tighten the estimate."
+        },
+        {
+          "id": "D",
+          "text": "The uncovered-referral cases should be excluded, since behaviour outside the policy table is unspecified and testing it produces failures that no implementation can satisfy."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The problem is not coverage volume, it is that the assertion targets a property the implementation guarantees for free. A JSON-validity check will pass on every run regardless of whether the routing decision was right, so the suite is expensive and inert — and the specific danger is that its green is indistinguishable from the green of a correct suite in every dashboard. The repair starts by naming the property that actually matters: for each referral, is the routing decision correct for that referral type under the current policy table. Then the assertions follow from that property rather than from the envelope. An exact-match check against a ground-truth decision is available wherever you have one, which is a deterministic grader and the strongest kind. And the uncovered cases are not unspecified — they are the ones where the correct behaviour is to say the referral is not covered, and asserting that is what prevents the system from confidently routing a case the policy does not address. That is the same design point as making absence representable in a schema: if 'not covered' is not an expected answer, the system cannot give it correctly.",
+      "whyWrong": {
+        "B": "It elevates the envelope to the contract and mistakes the cause. The shape being guaranteed is a consequence of how the response is produced; the routing decision is the thing consumers and members depend on, and it is unmeasured here.",
+        "C": "It proposes more of the same measurement. Adding cases to an assertion that cannot fail produces a tighter estimate of a quantity nobody cares about.",
+        "D": "It removes precisely the cases that catch the dangerous behaviour. Confidently routing a referral no policy covers is a high-severity error, and it is only detectable if the suite expects the inability to route."
+      },
+      "difficulty": 3,
+      "visualId": "eval-loop",
+      "mindset": "An assertion on a property the system cannot fail is inert green — assert the decision, include the cases the policy does not cover, and grade deterministically.",
+      "tags": [
+        "evals",
+        "grading",
+        "define-success",
+        "hallucination"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/define-success",
+        "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-hallucinations"
+      ]
+    },
+    {
+      "id": "v-d4-y4b-024",
+      "taskStatementId": "4.1",
+      "scenario": "Harrowgate Health runs a four-agent support system: a coordinator, a policy researcher, a benefits calculator and a writer. After an incident the team finds the trace contains four `request_id` values and no way to tell which agent or which tool call each belongs to.",
+      "stem": "What does a multi-agent run need in its trace, and what does the API give you to build it?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Each API call has its own `request_id` — in the `request-id` header and the `request_id` field of error bodies — so a four-agent run necessarily has four, and attribution has to be reconstructed by the harness rather than read off the API. That means recording, per call, the agent identity and the enclosing tool call id, alongside the `request_id`, and keeping the parent-child relationship as the calls nest. In the Agent SDK the natural join key is the tool-use id of the Agent or Skill call that started each subagent, and with forwarded subagent text in the output stream each subagent's messages carry a `parent_tool_use_id`, which makes the tree reconstructable. The run-level signal is separate and also needed: an exhausted `max_turns` or budget arrives as a distinct `ResultMessage` subtype such as `error_max_turns`, which is what tells you the run ended on a budget rather than on a decision."
+        },
+        {
+          "id": "B",
+          "text": "A single run shares one `request_id` across all its calls, so the trace needs only that value plus the model. The four values the team found are the four agents' own identifiers."
+        },
+        {
+          "id": "C",
+          "text": "The API returns a parent-child structure with agent names, so the correct fix is to log the response body as returned and parse it. No harness-side bookkeeping is required."
+        },
+        {
+          "id": "D",
+          "text": "Agent identity should come from the `system` prompt, since each subagent runs its own system prompt from its definition file. Logging the first line of it identifies the agent."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The API's unit is the call, not the run, so attribution is a harness responsibility and has to be designed. Every response carries its own unique `request-id` header and the same value as `request_id` in error bodies, which means a four-agent run has four identifiers and nothing in the response itself says which agent issued which. So the trace needs per-call agent identity and the enclosing tool-use id recorded next to the `request_id`, with the parent-child relationship preserved as calls nest — and there is a natural join key available, since a subagent is started by an Agent or Skill tool call whose id identifies it. In the Agent SDK, forwarding subagent text in the output stream makes each subagent's messages carry a `parent_tool_use_id`, which is what allows a nested delegation tree to be reconstructed from the stream rather than guessed at. Two supporting signals belong in the same trace: a subagent's context does not inherit the parent's conversation, so the delegation prompt is the only record of what it was told, and an exhausted turn or budget budget arrives as a distinct `ResultMessage` subtype — `error_max_turns` and the budget equivalent — which is what distinguishes a budget stop from a completed task.",
+      "whyWrong": {
+        "B": "It assumes request identity is per run. It is per response, so a multi-agent run necessarily produces several, and misreading them as agent identifiers inverts the relationship entirely.",
+        "C": "It expects the response body to carry structure it does not contain. Nothing in a message identifies the issuing agent; the association exists only in the harness that issued the call.",
+        "D": "It proposes deriving identity from prompt text. Subagents do run their own system prompts, but that is an implementation detail of how they are defined and is not a stable join key for attribution — and it breaks the moment two agents share a definition."
+      },
+      "difficulty": 3,
+      "mindset": "One `request_id` per call, so attribute in the harness: log agent identity and the enclosing tool-use id, and use `parent_tool_use_id` to rebuild the tree.",
+      "tags": [
+        "observability",
+        "request-id",
+        "sub-agents",
+        "tracing"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://code.claude.com/docs/en/agent-sdk/observability"
+      ]
+    },
+    {
+      "id": "v-d4-y4b-025",
+      "taskStatementId": "4.1",
+      "scenario": "Harrowgate Health has fixed the routing defect and the failing referral now routes correctly when replayed. The team wants to declare the incident closed and asks what else is required before closing.",
+      "stem": "Which set of steps is required before this incident can be closed?",
+      "options": [
+        {
+          "id": "A",
+          "text": "The replay is necessary and not sufficient. It establishes that the specific failure is fixed, on one input, in one environment. Before closing, the captured failing input becomes a permanent eval case with its expected behaviour so the class cannot return silently, the full suite is re-run — and again after any later prompt, code or model change, since those are the three things that can reintroduce it — and the eval's own noise floor is known well enough that the run's movement is interpretable. Then the operational pair: a runbook entry with detection, classification, response and verification, so the next occurrence is diagnosable rather than novel, and a bounded production check so the fix is confirmed under real traffic rather than only in replay. Only a bounded check, not an open-ended observation period, because an unquantified 'watch it for a week' is not a verification criterion."
+        },
+        {
+          "id": "B",
+          "text": "The replay plus the full suite re-run is sufficient. Both the specific failure and the aggregate behaviour are now confirmed, so further verification adds latency to the close."
+        },
+        {
+          "id": "C",
+          "text": "Close it now and open a follow-up ticket for the eval case. The defect is fixed and the eval work is not blocking, so splitting the work keeps the incident moving."
+        },
+        {
+          "id": "D",
+          "text": "Close it only after an LLM judge confirms the routing is correct on the replayed input, since the deterministic replay cannot judge quality."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The replay proves one thing: this input, in this environment, now routes correctly. Every other question about whether the fix holds is still open, and the plan's structure needs to close them in order. The first is regression coverage — turn the captured failing input and its expected behaviour into a permanent eval case, because that is what stops the same defect returning silently, and note that the suite must be re-run again after any later prompt, code or model change, since those are precisely the three things that can reintroduce a routing defect. The second is interpretability: you need to know the eval's noise floor well enough for the run's movement to mean something, or the confirmation is unfalsifiable. The third is operability — a runbook entry carrying detection, classification, response and verification, so the next occurrence is diagnosable rather than novel — and the fourth is confirmation under real traffic via a bounded check. Bounded is the operative word: an unquantified 'watch it for a while' is not a verification criterion, because there is no threshold at which you would conclude something went wrong.",
+      "whyWrong": {
+        "B": "It stops at the aggregate before the individual. A suite pass says nothing about whether the specific defect class is covered, so the one thing most likely to recur is the one thing left unguarded.",
+        "C": "It defers the guard. An eval case written as a follow-up is an eval case that does not exist while the next change ships, which is the window in which a regression would land.",
+        "D": "It adds a grader where a ground truth exists. Whether a referral routes to the right department is exactly checkable by assertion, so routing it through a model judge adds variance to a deterministic answer."
+      },
+      "difficulty": 3,
+      "visualId": "eval-loop",
+      "mindset": "A passing replay proves one input in one environment — close only after the eval case exists, the suite is re-run, the noise floor is known, and a bounded check confirms it.",
+      "tags": [
+        "regression-prevention",
+        "evals",
+        "runbook",
+        "debugging-discipline"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests",
+        "https://code.claude.com/docs/en/agent-sdk/observability"
+      ]
+    },
+    {
+      "id": "v-d4-y4b-026",
+      "taskStatementId": "4.1",
+      "scenario": "Harrowgate Health's agent reads a member's eligibility record with `check_eligibility`, reasons for about forty seconds, and then calls `disburse` using what it read. In that window an administrator suspends the member. The agent disburses against stale data and the pipeline records a success.",
+      "stem": "Which TWO statements about this class of defect are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "The defect is a time-of-check to time-of-use problem, and retries do not address it. Neither the tool result nor the model is wrong about what it was told; what changed is the world between the read and the write. So the enforcement point has to be at the write: `disburse` re-checks the precondition it depends on and refuses if it no longer holds, returning a typed outcome that names the condition that changed rather than a generic conflict. This is the same reason a side-effecting write needs an idempotency key — both are about making the write safe against a world that moved, rather than about making the read more careful."
+        },
+        {
+          "id": "B",
+          "text": "The fix is to shorten the reasoning window by capping the agent's turn count, so the elapsed time between read and write falls below the window in which the state can change. A tighter bound reduces the probability and is the cheapest available mitigation."
+        },
+        {
+          "id": "C",
+          "text": "The fix is to make `check_eligibility` return a short-lived authorisation token rather than a boolean, and have `disburse` present it. The write is then bound to the state that was read, which removes the window entirely."
+        },
+        {
+          "id": "D",
+          "text": "The pipeline should re-verify every disbursement asynchronously after the fact and reverse any that were against stale state. Post-hoc reconciliation is sufficient because the financial exposure per event is bounded."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "This is a distinct failure class from anything a retry policy addresses, and recognising it is the whole difficulty. The tool result was accurate when produced, the model reasoned correctly from it, and the pipeline recorded what actually happened — the defect is that the world changed inside the window between read and write. No amount of retry logic, turn limiting or better prompting closes a gap whose cause is external state mutation; the only effective move is to enforce the precondition at the point of the side effect. So `disburse` should re-check the condition it depends on and refuse if it no longer holds, returning a typed outcome naming the changed condition — which is the same reasoning that makes a side-effecting write need an idempotency key, since both are about making the write safe against a moving world. Token-based authorisation is the stronger version of that fix, because it binds the write to the specific state that was read rather than re-reading and hoping nothing changed again in the second window. Post-hoc reversal is the weakest, and its cost is borne by the member.",
+      "whyWrong": {
+        "C": "It proposes a tightening rather than an enforcement. A cap on turns shrinks the exposure window and still disburses against a state that was superseded — the failure becomes rarer, not impossible, and the remaining cases are silent.",
+        "D": "It accepts a financial ceiling as a substitute for correctness. Asynchronous reversal means the member is paid and then clawed back, which is a different and worse outcome than not paying, and it does not stop the stale write."
+      },
+      "difficulty": 3,
+      "mindset": "Time-of-check to time-of-use: enforce the precondition at the write — re-check it or bind it to the state that was read, because nothing upstream can close that window.",
+      "tags": [
+        "tool-errors",
+        "idempotency",
+        "side-effects",
+        "partial-failure"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/agent-loop",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls"
+      ]
+    },
+    {
+      "id": "v-d4-y4b-027",
+      "taskStatementId": "4.1",
+      "scenario": "Harrowgate Health's referral defect occurs in about 0.5% of referrals. The eval set has 400 cases and the current suite reports a single aggregate accuracy figure. The team wants to ship a prompt change that they believe fixes the defect and asks whether the suite will show it.",
+      "stem": "Which assessment of the suite's suitability is correct?",
+      "options": [
+        {
+          "id": "A",
+          "text": "An aggregate over 400 cases is the wrong instrument for a 0.5% defect, in two distinct ways. It is underpowered: a change that fixes every instance of a rare defect moves the aggregate by a fraction of a point, which is indistinguishable from the run-to-run noise the team has already measured. And it is unattributable: even if the number moved, an average cannot tell you whether the movement came from the defect you targeted or from something unrelated. The right design is per-case paired comparison — run both configurations on the same cases and examine which cases flipped, with the target defect's cases called out specifically — plus a case set containing enough instances of the defect class to be meaningful, since two or three cases cannot support a claim about a 0.5% failure. Grading stays deterministic where a ground-truth decision exists."
+        },
+        {
+          "id": "B",
+          "text": "The suite is suitable. A half per cent of four hundred cases is two cases, and an aggregate accuracy figure over the whole set is the standard way to evaluate a change, so the team should ship if the number does not fall."
+        },
+        {
+          "id": "C",
+          "text": "The suite is suitable provided the threshold is loosened to accommodate the noise. A one-point band around the current figure would let a real improvement register without blocking unrelated changes."
+        },
+        {
+          "id": "D",
+          "text": "The suite is unsuitable only because it lacks variety. Expanding to two thousand cases would give the resolution needed to detect a half-per-cent change, after which the existing aggregate figure becomes meaningful."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Two properties fail independently, and fixing only one still leaves you unable to conclude anything. Power first: a defect at 0.5% means a perfect fix moves the aggregate by well under a point on a 400-case set, which sits inside the run-to-run variance the team has already measured — so a null result is uninformative rather than negative, and a positive result would be luck. Attribution second: even a movement you could detect in an average would not tell you whether it came from the cases you were targeting or from incidental variation elsewhere, because an aggregate is not decomposable. The design that answers the question is a paired comparison — both configurations on the same cases — with attention to which specific cases flipped and the target defect's cases identified explicitly, and with enough instances of the defect class in the set that a claim about it means something; two cases cannot support a statement about a half-per-cent failure. Grading stays deterministic where a ground-truth routing decision exists, since that is where the strongest signal is available.",
+      "whyWrong": {
+        "B": "It accepts the aggregate as informative while noting it contains two relevant cases. A figure that rests on two observations cannot support a decision about the change, and 'does not fall' is not a threshold.",
+        "C": "It responds to underpowering by widening the acceptance band, which is the wrong direction. Loosening the band means the suite can no longer detect the regressions it exists to catch, so it trades the ability to see good changes for the ability to see bad ones.",
+        "D": "It assumes the only deficiency is sample size. Even a large set leaves the aggregate unattributable — a real movement would still not be decomposable into the cases you targeted, so paired per-case comparison is required regardless of scale."
+      },
+      "difficulty": 3,
+      "visualId": "eval-loop",
+      "mindset": "A rare defect needs paired per-case comparison and enough instances of its class — an aggregate is both underpowered and unattributable, however large the set.",
+      "tags": [
+        "evals",
+        "measurement",
+        "grading",
+        "define-success"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests",
+        "https://platform.claude.com/docs/en/test-and-evaluate/define-success"
+      ]
+    },
+    {
+      "id": "v-d4-y4b-028",
+      "taskStatementId": "4.1",
+      "scenario": "Harrowgate Health is writing the escalation section of its runbook. The pipeline can queue, dead-letter or fail fast for every failure class. Leadership asks when a human should be paged rather than the pipeline handling it unattended.",
+      "stem": "Which escalation criterion is correct?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Page on the conditions where automated recovery cannot make progress and a human decision is genuinely required, and queue everything else. Concretely: a persistent 500 `api_error`, because the documented response is to contact support with the request ID and persistence is the signal; an authentication or billing failure, because only fixing the credential or the payment details clears it and no amount of retrying will; a spend-cap 429 with no `retry-after`, because it keeps failing until access resumes and someone must decide whether to raise the limit or stop usage. Everything else queues: transient 529s wait out their backoff, 413s are a scheduled payload fix with a known owner, and truncated responses are resent. Two design rules keep this honest — the queued work must be per-record and idempotent so nothing is lost or duplicated while it waits, and each queued entry has to carry its failure class so a class that never drains is visible as a class rather than as permanent backlog."
+        },
+        {
+          "id": "B",
+          "text": "Page whenever any request fails. A human who sees every failure can prioritise better than the pipeline can."
+        },
+        {
+          "id": "C",
+          "text": "Never page. Every documented failure class has a documented automated response, so paging a human only adds latency and trains the rota to ignore alerts."
+        },
+        {
+          "id": "D",
+          "text": "Page based on volume thresholds alone, since volume is the only signal that is unambiguous. Classify errors as you queue them and let a human decide from the counts."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The criterion is whether automated recovery can make progress, and it divides the documented classes cleanly. Persistent 500 `api_error` pages, because the documented response after backoff is to contact support with the request ID — persistence is the escalation signal and the request ID is what makes the escalation actionable. Authentication and billing failures page for the same structural reason: only fixing the credential or the payment details clears them, so retrying cannot help and the pipeline's only honest options are queue or fail. A spend-cap 429 without `retry-after` pages too, because it keeps failing until access resumes and someone must decide whether to raise the limit or reduce usage. The rest queues rather than pages, because time and code changes resolve them: 529 is temporary capacity pressure, 413 is a hard payload ceiling with a known owner and a known fix, and truncated responses are resent with a higher `max_tokens`. Volume-only paging fails because it cannot distinguish a spend cap from a brief 529 burst, and never paging fails because it discards the classes where a human decision is the only possible progress.",
+      "whyWrong": {
+        "B": "It pages on everything, which produces alert fatigue and destroys the signal. Most failures are transient and resolve themselves, so a page per failure trains the rota to ignore the pages that matter.",
+        "C": "It claims every class has an automated response, which is false for the classes that require a human decision. A revoked key, a failed payment and a spend cap are not resolved by any retry, and a system that cannot express 'a human must decide' will either retry forever or drop work silently.",
+        "D": "It reduces escalation to volume, which cannot separate the classes. A brief 529 burst can outnumber a spend cap by orders of magnitude while being the one that requires no human at all."
+      },
+      "difficulty": 2,
+      "mindset": "Page only where no automated response can make progress; queue everything else per-record and idempotently, carrying the failure class so a stuck class is visible.",
+      "tags": [
+        "escalation",
+        "runbook",
+        "error-taxonomy",
+        "partial-failure"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/api/errors",
+        "https://platform.claude.com/docs/en/api/rate-limits"
+      ]
+    }
+  ]
+}

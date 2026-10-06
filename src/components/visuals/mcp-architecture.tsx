@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, type KeyboardEvent, type ReactNode } from "react";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
+import { useHydratedReducedMotion } from "@/lib/use-reduced-motion";
 import clsx from "clsx";
 import { ChevronLeft, ChevronRight, Cloud, Laptop, RotateCcw } from "lucide-react";
 
@@ -120,7 +121,7 @@ function framing(t: Transport, hop: Hop, step: number) {
 }
 
 export default function McpArchitecture() {
-  const reduce = useReducedMotion();
+  const reduce = useHydratedReducedMotion();
   const [server, setServer] = useState<ServerId>("github");
   const [hover, setHover] = useState<ServerId | null>(null);
   const [prim, setPrim] = useState<Prim>("tools");
@@ -425,7 +426,7 @@ function Label({ x, y, end, size, children }: { x: number; y: number; end?: bool
 }
 
 function Segmented({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: { v: string; text: string; icon?: ReactNode }[] }) {
-  const reduce = useReducedMotion();
+  const reduce = useHydratedReducedMotion();
   return (
     <div role="group" aria-label={label} className="inline-flex w-fit flex-wrap gap-0.5 rounded-xl border border-line-strong bg-surface p-0.5">
       {options.map((o) => {

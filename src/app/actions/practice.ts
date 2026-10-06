@@ -119,7 +119,7 @@ export async function answerQuestion(input: {
     minutes: ms / 60_000,
     meta: { correct: correct ? 1 : 0, mode: input.mode },
   });
-  return { correct, correctIds: q.correct, explanation: q.explanation, whyWrong: q.whyWrong, mindset: q.mindset, reward };
+  return { correct, correctIds: q.correct, explanation: q.explanation, whyWrong: q.whyWrong, mindset: q.mindset, visualId: q.visualId, reward };
 }
 
 export async function toggleFlag(questionId: string, flagged: boolean): Promise<void> {

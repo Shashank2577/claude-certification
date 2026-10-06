@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
+import { useHydratedReducedMotion } from "@/lib/use-reduced-motion";
 import clsx from "clsx";
 import { AlertTriangle, Check, ChevronLeft, ChevronRight, X } from "lucide-react";
 
@@ -448,7 +449,7 @@ const TABS = [
 type Tab = (typeof TABS)[number]["id"];
 
 export default function EscalationHitl() {
-  const reduce = !!useReducedMotion();
+  const reduce = !!useHydratedReducedMotion();
   const [tab, setTab] = useState<Tab>("route");
   const onTabKey = (e: KeyboardEvent<HTMLDivElement>) => {
     if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;

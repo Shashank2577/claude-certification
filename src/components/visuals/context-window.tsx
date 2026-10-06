@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
+import { useHydratedReducedMotion } from "@/lib/use-reduced-motion";
 import { Bot, Eraser, FileText, FolderSearch, MessageSquare, Minimize2, RotateCcw, ShieldCheck, TriangleAlert, Wrench } from "lucide-react";
 import clsx from "clsx";
 
@@ -73,7 +74,7 @@ const holdsExact = (i: Item, f: number) => (i.kind === "turn" && i.fact === f) |
 const pct = (k: number) => `${(k / WINDOW) * 100}%`;
 
 export default function ContextWindow() {
-  const reduce = useReducedMotion();
+  const reduce = useHydratedReducedMotion();
   const [s, setS] = useState<State>(INITIAL);
   const [pin, setPin] = useState(false);
   const [trim, setTrim] = useState(false);
@@ -475,7 +476,7 @@ function Act({ icon, label, onClick, strong }: { icon: ReactNode; label: string;
 }
 
 function Toggle({ on, onClick, label }: { on: boolean; onClick: () => void; label: string }) {
-  const reduce = useReducedMotion();
+  const reduce = useHydratedReducedMotion();
   return (
     <button type="button" role="switch" aria-checked={on} aria-label={label} onClick={onClick} className={clsx("inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition-colors", on ? "border-good bg-good-soft text-ink" : "border-line-strong bg-surface text-ink-2 hover:border-ink")}>
       <span className={clsx("relative h-4 w-7 rounded-full transition-colors", on ? "bg-good" : "bg-line-strong")}>

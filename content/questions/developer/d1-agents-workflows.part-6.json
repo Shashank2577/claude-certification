@@ -1,0 +1,808 @@
+{
+  "certId": "developer",
+  "domainId": "d1-agents-workflows",
+  "questions": [
+    {
+      "id": "v-d1-z6-001",
+      "taskStatementId": "1.1",
+      "scenario": "Corvale Systems' claims-preprocessing step currently runs as one long instruction in a single agent: read the loss notice, read the policy, read three prior claims for the same claimant, decide which policy version applies, check two fraud indicators, and write a triage note. Two engineers disagree about the right design. One argues for six narrow tools. The other argues that the decision logic is a decision tree with four known branches, and that the branching should live in code.",
+      "stem": "Which assessment is most accurate?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Six narrow tools are right. Narrow tools make the model's choice explicit at every step, and tool-use is the documented mechanism for deterministic behaviour."
+        },
+        {
+          "id": "B",
+          "text": "Six narrow tools are wrong. This is a decision tree over known conditions, so the branching belongs in code and the model should be used for the parts that genuinely require reading comprehension: extracting facts from the loss notice and writing the note."
+        },
+        {
+          "id": "C",
+          "text": "Both engineers are describing the same architecture. Tool selection and branching are the same decision, and choosing tools fixes the order."
+        },
+        {
+          "id": "D",
+          "text": "Neither fits. The whole step should be one tool that the model calls once, with all six checks hidden behind it, so the model sees a single interface."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "The two engineers are describing different layers. Tool use is how the model **reaches** data; it does not make the branching deterministic — the model still decides which tool to call and in what order, and can call them out of sequence or skip one. Where the conditions are enumerated and the outcomes are known, that logic belongs in ordinary code, which is testable. The valuable use of the model is where it is genuinely hard: reading an unstructured notice and writing a note a human can act on.",
+      "whyWrong": {
+        "A": "This is the most common confusion in agent design. Narrow tools make the *choice* available to the model; they do not make it correct. Six tools on a decision tree with four known branches adds six decisions where the domain already knows the answers.",
+        "C": "They are not interchangeable. Tools define what information is reachable, while branching defines the control flow. Adding tools does not pin the sequence, and pinning the sequence does not widen access.",
+        "D": "Collapsing everything behind one tool makes the step unauditable and unfixable. When the fraud check is wrong you cannot see which branch produced it, and the tool description has to carry the entire decision tree in prose."
+      },
+      "difficulty": 3,
+      "visualId": "workflow-patterns",
+      "mindset": "Tools widen what the model can reach; only code makes the branching deterministic. Do not confuse the two.",
+      "tags": [
+        "workflow-vs-agent",
+        "tool-selection",
+        "decomposition"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents",
+        "https://www.anthropic.com/engineering/writing-tools-for-agents"
+      ]
+    },
+    {
+      "id": "v-d1-z6-002",
+      "taskStatementId": "1.1",
+      "scenario": "Northwind Fleet runs a supervisor that decides whether a maintenance work order needs an engineer on site or can be closed remotely. The supervisor delegates to three workers: `diagnose`, `estimate_cost` and `plan_visit`. In production, roughly one work order in five is routed to `diagnose` even when the fault is already recorded in the work order text with an error code, and `diagnose` then reads eight files to rediscover it.",
+      "stem": "What is the strongest architectural fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add an error-code lookup tool so `diagnose` can confirm the fault in one call instead of reading the tree."
+        },
+        {
+          "id": "B",
+          "text": "Make routing explicit before delegation: check for a recorded error code in code, and only offer `diagnose` as a candidate when no code is present. Naming the condition in the supervisor's prompt alone is not enough, because routing decisions made by a model on ambiguous inputs will be inconsistent."
+        },
+        {
+          "id": "C",
+          "text": "Give all three workers the union of the tools, so whichever one is picked has what it needs."
+        },
+        {
+          "id": "D",
+          "text": "Lower the supervisor's delegation threshold, so more work orders reach a worker that might resolve them faster."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "The waste is a **routing** problem, not a capability problem. The condition for needing a diagnosis is known and checkable — is there an error code in the record? — so evaluating it in code before the supervisor chooses removes the whole class of misroutes. The prompt reinforces this by naming the condition rather than leaving it implicit, but the enforcement is in the code path. Adding a faster tool only makes the unnecessary worker cheaper; broadening tools and lowering the threshold both make the same over-delegation worse.",
+      "whyWrong": {
+        "A": "A lookup tool makes the redundant work cheaper without removing it, and the supervisor will still route to `diagnose` — it just completes in one call instead of eight. The reason for delegating never changed.",
+        "C": "Giving every worker every tool multiplies the tool definitions in each subagent's context and widens what each one can do incorrectly. It addresses convenience, not misrouting, and it is a least-privilege regression.",
+        "D": "Lowering the threshold means more work orders reach workers that do not need to be reached. The complaint is that unnecessary delegation is happening; this option deliberately increases it."
+      },
+      "difficulty": 2,
+      "visualId": "orchestrator-subagents",
+      "mindset": "When a supervisor keeps delegating work that did not need doing, check whether the routing condition is testable — and enforce it in code.",
+      "tags": [
+        "supervisor",
+        "delegation",
+        "routing"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/building-effective-agents",
+        "https://www.anthropic.com/engineering/multi-agent-research-system"
+      ]
+    },
+    {
+      "id": "v-d1-z6-003",
+      "taskStatementId": "1.2",
+      "scenario": "Halstead Rail's contract-review agent uses the Claude Agent SDK. Compliance requires that no document leaving the agent has been modified within 90 seconds of the review, so that a reviewer is looking at the same bytes the agent saw. The team wants this true whether or not a human notices to ask.",
+      "stem": "Which change is correct?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Add an instruction to the system prompt: 'Before returning any document, confirm its content hash matches the hash recorded when you read it.'"
+        },
+        {
+          "id": "B",
+          "text": "Implement the check in the harness. Have the tool that returns a document also record its content hash, and have the tool that writes an output document verify the hash it was given against the hash recorded at read time, refusing the write on a mismatch."
+        },
+        {
+          "id": "C",
+          "text": "Use a PostToolUse hook that inspects every file write in the session and logs the path and timestamp."
+        },
+        {
+          "id": "D",
+          "text": "Run the review on a read-only copy of the document store, mounted so the agent physically cannot write to the original."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "A rule that must hold **unconditionally** belongs in code, not in a prompt. The harness is the only place where a hash exists on both sides of the operation and a mismatch can actually stop the write. A prompt instruction is a request the model may satisfy, satisfy wrongly, or silently skip; a hook observes after the fact, so a blocked requirement has already failed. The read-only mount is a genuine and valuable control, but it addresses integrity rather than the freshness rule.",
+      "whyWrong": {
+        "A": "This is exactly the class of control that hooks and tool-level enforcement exist for. The agent is being asked to verify its own behaviour in a situation where a missed check is invisible to anyone reading the output.",
+        "C": "A PostToolUse hook fires after the write. It can record that a write happened, but it cannot prevent the non-compliant write from happening, so the requirement is documented rather than enforced.",
+        "D": "A read-only copy genuinely removes the agent's ability to damage the original, which is worth having. It does nothing for the 90-second freshness rule, because a stale document is stale whether or not the store is writable."
+      },
+      "difficulty": 2,
+      "visualId": "hooks-lifecycle",
+      "mindset": "Prompts request behaviour; code and hooks enforce it. Anything that must hold without being noticed belongs in the harness.",
+      "tags": [
+        "hooks",
+        "enforcement",
+        "deterministic"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/hooks",
+        "https://code.claude.com/docs/en/hooks"
+      ]
+    },
+    {
+      "id": "v-d1-z6-004",
+      "taskStatementId": "1.2",
+      "scenario": "Perrine's logistics agent must decide, for each shipment, whether a customs declaration is required. The classifier is right 97.4% of the time and has been for a year. Legal has just changed the rule for goods under €150 that ship intra-EU, which is 40% of volume. Rather than rebuild anything, the team wants to keep the same agent and the same prompt, and change only the classification rule.",
+      "stem": "What is the right approach?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Change the thresholds in the system prompt and release. The task has not changed shape, so the prompt edit is the whole change."
+        },
+        {
+          "id": "B",
+          "text": "Keep the prompt frozen and add a second tool that applies the post-legal-change rule to any shipment under €150, so the old logic stays untouched."
+        },
+        {
+          "id": "C",
+          "text": "Put the new thresholds in the system prompt as an explicit rule table, name what changed and why, and re-run the existing evaluation set against the prompt before releasing it — including the cases the new rule changes."
+        },
+        {
+          "id": "D",
+          "text": "Fine-tune on the new labelling so the behaviour is internalised rather than stated in the prompt."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "Changing a rule inside an existing prompt is still a **behavioural change to a system that was measured**, so it needs the same treatment as any other change: state the new rules explicitly in the prompt so the model has them, and re-run the evaluation set so you know what moved. The eval is what distinguishes this from a guess — 40% of volume changing means a regression would show up immediately as a number rather than as a customs hold. Keeping the prompt frozen and layering a tool introduces two sources of truth that will disagree.",
+      "whyWrong": {
+        "A": "No measurement means nobody can say whether the change helped or simply traded one error class for another. A stable task with a changed rule still needs its eval re-run, precisely because 40% of volume is affected.",
+        "B": "This creates two places that can answer the same question. The agent will consult both, and when the tool's version and the prompt's version disagree there is no principled way to resolve it. Fix the rule in the layer that already holds it.",
+        "D": "Fine-tuning is the wrong instrument at several levels: it is a much larger change than the problem needs, it makes the change hard to inspect and roll back, and a stated rule remains auditable in a way that learned behaviour does not."
+      },
+      "difficulty": 2,
+      "visualId": "eval-loop",
+      "mindset": "A rule change inside a working prompt is still a system change — state it and re-run the eval before release.",
+      "tags": [
+        "prompt-change",
+        "evaluation",
+        "iteration"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/test-and-evaluate/develop-tests",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices"
+      ]
+    },
+    {
+      "id": "v-d1-z6-005",
+      "taskStatementId": "1.2",
+      "scenario": "Brackwell Diagnostics runs its Agent SDK reviewer against a container with 2 GB of memory. Sessions that read large imaging reports sometimes die with an out-of-memory error after forty minutes. The team has read that Claude Code does not run the same way as a hosted agent, and wants to understand whether the memory growth is theirs or the SDK's.",
+      "stem": "Which TWO statements about this deployment model are accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "The Claude Agent SDK runs a `claude` CLI subprocess per session and communicates with it over stdio, the same architecture that powers Claude Code, so the team's container is running the agent rather than merely holding state."
+        },
+        {
+          "id": "B",
+          "text": "Memory grows inside that subprocess across a long session, so `maxTurns`, compaction and trimming large tool results are part of sizing the host."
+        },
+        {
+          "id": "C",
+          "text": "Sessions share a single agent process, so one runaway session degrades every other tenant on the same host."
+        },
+        {
+          "id": "D",
+          "text": "All session state is held by Anthropic-hosted infrastructure, so container memory use does not grow with session length."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Both halves follow from the deployment model. The SDK spawns a **`claude` CLI subprocess per session over stdio**, the same architecture behind Claude Code, so a long session accumulates context in that subprocess and the host has to be sized for it. That makes turn bounds, compaction and trimming large tool results part of capacity planning rather than optional polish. The isolation is also per session, which is why one runaway tenant does not affect the others.",
+      "whyWrong": {
+        "C": "Sessions do not share a process. There is a subprocess per session, so a runaway session is contained — the same mechanism that makes host sizing necessary is the one that keeps tenants apart.",
+        "D": "Nothing about session state is offloaded in a way that makes local memory constant. Long sessions grow in the local process, which is precisely the symptom being investigated."
+      },
+      "difficulty": 1,
+      "visualId": "deployment-topology",
+      "mindset": "Self-hosted means the subprocess runs on your host: session bounds are part of your capacity model, and isolation is per session.",
+      "tags": [
+        "deployment",
+        "hosting",
+        "agent-sdk"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/hosting",
+        "https://code.claude.com/docs/en/agent-sdk/overview"
+      ]
+    },
+    {
+      "id": "v-d1-z6-006",
+      "taskStatementId": "1.2",
+      "scenario": "Two engineers at Oakhurst argue about where the agent's tool permissions should live. One proposes `allowed_tools` in the SDK options, which pre-approves tools and skips the permission flow. The other proposes `can_use_tool`, a callback the SDK invokes whenever the agent wants a tool the user has not already approved, so the application can decide. Compliance has said that a human must approve any write to a customer record, and that the approval decision must be logged with the agent's stated reason.",
+      "stem": "Which statement is most accurate?",
+      "options": [
+        {
+          "id": "A",
+          "text": "`allowed_tools` is the right mechanism, because pre-approving tools is what removes prompts from the agent's path, and the log can be reconstructed from the session transcript afterwards."
+        },
+        {
+          "id": "B",
+          "text": "Both are equivalent. `allowed_tools` and `can_use_tool` are two spellings of the same decision, and choosing either satisfies the logging requirement."
+        },
+        {
+          "id": "C",
+          "text": "Neither works in a non-interactive deployment. If nobody is watching the run, permission decisions have to be resolved by the harness silently or the session will block."
+        },
+        {
+          "id": "D",
+          "text": "`can_use_tool` is the right mechanism, because it is invoked at the point of use where the specific arguments and the agent's reason are visible. `allowed_tools` is for the tools that never need a decision, and logging belongs in the callback."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "These are two different jobs. `allowed_tools` names the tools that run **without** a decision, so it cannot produce a per-call approval record — and using it for customer-record writes would remove the human from a step compliance requires them in. `can_use_tool` runs when a tool the agent has not been pre-approved is about to be called, which is exactly where the arguments and the reason exist, so it is where the decision and the log entry belong.",
+      "whyWrong": {
+        "A": "Pre-approving the write is what removes the human decision, which is the requirement. And a transcript is not an approval log: it records that a tool ran, not who approved it, on what basis, or with what reason.",
+        "B": "They are not two spellings of one thing. One says 'this tool needs no decision', the other says 'ask the application when this tool is called'. Choosing between them is choosing where the decision lives.",
+        "C": "A non-interactive deployment is the case where a programmatic decision is most useful, not the case where the mechanism stops working. The callback can route to a queue, a risk score or a fixed rule, and can log the outcome either way."
+      },
+      "difficulty": 3,
+      "mindset": "`allowed_tools` removes the decision; `can_use_tool` runs it. Approval and audit belong where the arguments are visible.",
+      "tags": [
+        "permissions",
+        "approval",
+        "agent-sdk"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/permissions",
+        "https://code.claude.com/docs/en/permissions"
+      ]
+    },
+    {
+      "id": "v-d1-z6-007",
+      "taskStatementId": "1.2",
+      "scenario": "Verity Compliance needs its agent to run nightly with nobody watching. It must generate a filing draft and store it, but it must not file anything. A previous version relied on the system prompt saying 'never file'. It filed twice in four months.",
+      "stem": "Which TWO controls are MOST effective? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Do not give the agent a filing tool at all. Configure `allowed_tools` with read access and draft storage only, so filing is not something the agent could attempt, and strengthen the prompt as a secondary measure."
+        },
+        {
+          "id": "B",
+          "text": "Keep the filing tool and strengthen the prompt with an explicit consequence: 'Filing without human review is a reportable control breach.'"
+        },
+        {
+          "id": "C",
+          "text": "Keep the filing tool, add a PreToolUse hook that inspects the arguments and denies any call whose tool name is the filing endpoint."
+        },
+        {
+          "id": "D",
+          "text": "Keep everything, and add a scheduled review of the filings directory the following morning so any improper filing is reversed."
+        }
+      ],
+      "correct": [
+        "A",
+        "C"
+      ],
+      "explanation": "The strongest control is **removing the capability**: if no filing tool exists in the agent's tool set, the failure mode is impossible rather than unlikely. A PreToolUse hook that denies the call achieves the same thing at enforcement time, and is the right answer when the tool must remain in the set for other reasons. Prompts and after-the-fact review both depend on detection — one on the model's judgement, the other on someone noticing in time.",
+      "whyWrong": {
+        "B": "A stronger warning in the prompt is the same mechanism that already failed twice. It raises the probability of compliance without changing what is possible, and nobody is present to see the breach anyway.",
+        "D": "Detecting an improper filing a morning later is not prevention, and some filings are not reversible. The finding would be 'it happened and we cleaned up', which is a different and much weaker claim than 'it cannot happen'."
+      },
+      "difficulty": 2,
+      "mindset": "If a capability must never be used unattended, remove the capability or deny the call deterministically — do not rely on instruction.",
+      "tags": [
+        "permissions",
+        "hooks",
+        "least-privilege"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/permissions",
+        "https://code.claude.com/docs/en/hooks"
+      ]
+    },
+    {
+      "id": "v-d1-z6-008",
+      "taskStatementId": "1.2",
+      "scenario": "Castellan Legal's assistant must read the matter file before answering, every time. Today it does, and about 4% of the time it answers correctly but does not mention a clause in the file that matters — usually a renewal date buried on page 40. The team has tried adding 'read the whole file first' to the prompt twice, with no change in the rate.",
+      "stem": "Which TWO changes would address the root cause? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Have the tool that reads the matter file return the extracted key dates and obligations alongside the text — renewal dates, notice periods, counterparty — and have the prompt require the answer to state the relevant one."
+        },
+        {
+          "id": "B",
+          "text": "Rephrase the prompt as 'You must read every page of the matter file before answering, and you must not answer until you have.'"
+        },
+        {
+          "id": "C",
+          "text": "Keep the prompt as it is, and add a verification pass: the agent answers, then re-reads the file and checks whether every obligation in it appears in the answer, adding any that are missing."
+        },
+        {
+          "id": "D",
+          "text": "Compact the conversation more aggressively before each answer, so the file is represented by a tighter summary."
+        }
+      ],
+      "correct": [
+        "A",
+        "C"
+      ],
+      "explanation": "Two approaches work here, and both accept that the model cannot verify its own reading. **Pull the obligation out in the tool** so it arrives regardless of how deeply the text was read, or **check the answer against the source afterwards** so a missing clause is caught rather than shipped. 'Read every page' asks for something the model has no way to confirm, and compaction makes omission more likely, since a summary keeps the headline and loses the date on page 40.",
+      "whyWrong": {
+        "B": "This is the second attempt at the same instruction with firmer wording. Nothing about the mechanism changed, so the 4% will not move.",
+        "D": "Compaction addresses a window that fills, not an extraction that is not attempted. Summarising a long file keeps the headline and drops the renewal date on page 40 — the exact detail going missing here."
+      },
+      "difficulty": 3,
+      "mindset": "Either make the tool return the obligation, or check the answer against the source — never ask the model to verify its own reading.",
+      "tags": [
+        "tool-output",
+        "extraction",
+        "diagnosis"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents",
+        "https://www.anthropic.com/engineering/writing-tools-for-agents"
+      ]
+    },
+    {
+      "id": "v-d1-z6-009",
+      "taskStatementId": "1.2",
+      "scenario": "Ashgrove Insurance's hosted agent runs for months of continuous work. The team has three attempts at resuming a session after a restart, and each one restarts the work from the beginning rather than continuing it. They are using the Agent SDK's default configuration.",
+      "stem": "What is the most likely explanation?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Sessions are always in-memory in the SDK, so long-running work requires keeping the original process alive rather than resuming from a new one."
+        },
+        {
+          "id": "B",
+          "text": "The team has not configured a persistent session store. Session resumption requires an explicit store so a restarted process can find and reload prior messages rather than starting from an empty conversation."
+        },
+        {
+          "id": "C",
+          "text": "The sessions are being compacted, so resumption restores a summary rather than the full history and the agent cannot tell where it was."
+        },
+        {
+          "id": "D",
+          "text": "The model is reaching its context limit, so the SDK discards the oldest messages on restart and the agent re-derives its position from the remainder."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Resumption needs somewhere for the conversation to have been **persisted**, and that is a configured `SessionStore` rather than a default behaviour. Without it there is no history to reload, which matches the symptom exactly: the work restarts. The competing explanations each involve a mechanism that does not produce a from-the-beginning restart — compaction and context limits shorten a session that loaded correctly, and neither discards a session's existence.",
+      "whyWrong": {
+        "A": "Sessions are not hard-wired to a single process. The SDK's session store interface exists precisely so a restarted process can continue a session, which is what an ephemeral deployment depends on.",
+        "C": "Compaction would show up as an agent that resumes but has forgotten detail, not as one that begins again. The symptom here is a total reset, which is what a missing store produces.",
+        "D": "Context limits shape what survives inside a loaded session. They do not cause the conversation to be dropped entirely and the task to be re-derived from nothing."
+      },
+      "difficulty": 1,
+      "mindset": "Resuming after a restart is a storage question first: without a session store there is nothing to resume from.",
+      "tags": [
+        "sessions",
+        "persistence",
+        "hosting"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/session-storage",
+        "https://code.claude.com/docs/en/agent-sdk/sessions"
+      ]
+    },
+    {
+      "id": "v-d1-z6-010",
+      "taskStatementId": "1.3",
+      "scenario": "Rookwood Energy's maintenance agent runs long shifts and its window fills with the full text of every sensor log it has read. The team has tried three things. Pruning old turns manually did not help. Compacting the transcript did help until the agent started forgetting which interlocks it had already checked — a safety problem. Moving exploration into subagents helped, but the lead then lacked the details it needed for its summary.",
+      "stem": "Which structure is correct?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Compaction is the problem. Configure it off entirely, so nothing is ever lost, and accept that sessions must end before the window fills."
+        },
+        {
+          "id": "B",
+          "text": "Subagents are the problem. Their conclusions lose the supporting detail, so the lead must read the logs itself and subagents should be removed from the design."
+        },
+        {
+          "id": "C",
+          "text": "Separate what needs to persist from what does not. The interlock results belong in an external record the agent re-reads on demand, so they survive compaction; the raw log text belongs in a subagent whose window is discarded when it returns. The lead receives the subagent's conclusion plus the record it points at, not the evidence."
+        },
+        {
+          "id": "D",
+          "text": "Prompt the agent to keep a running list of the interlocks it has checked, in a markdown file in the working directory, and to update that file after each check."
+        }
+      ],
+      "correct": [
+        "C"
+      ],
+      "explanation": "The two attempts each solved half the problem, and the design principle is that **state and evidence have different lifetimes**. Interlock results are short, must never be lost, and are needed again later — that is a record outside the window. Raw sensor text is long, needed once, and worthless afterwards — that is exactly what a subagent's isolated context is for, since it disappears when the subagent returns. The subagent's job is then to return a conclusion and a pointer, not the evidence.",
+      "whyWrong": {
+        "A": "Turning compaction off does not remove the constraint, it just relocates the failure from forgetting interlocks to running out of window mid-check. The two symptoms share a cause: state competing with evidence for the same space.",
+        "B": "The missing detail is a contract problem, not a reason to remove isolation. The fix is to specify what the subagent returns — a conclusion plus where the evidence lives — rather than to abandon the mechanism that keeps the logs out of the lead's window.",
+        "D": "A file the agent maintains by prompt is a weaker version of the same idea: it depends on the agent remembering to write it, and it competes with tool outputs for attention. The external record should be written by the tool that performs the check, so the write cannot be skipped."
+      },
+      "difficulty": 3,
+      "visualId": "context-window",
+      "mindset": "State that must survive goes outside the window; evidence needed once belongs in a subagent that is discarded.",
+      "tags": [
+        "context-management",
+        "compaction",
+        "subagents"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents",
+        "https://platform.claude.com/docs/en/build-with-claude/compaction"
+      ]
+    },
+    {
+      "id": "v-d1-z6-011",
+      "taskStatementId": "1.3",
+      "scenario": "Marbury Legal's document-review agent uses a subagent for each contract section. The subagent returns a paragraph. The lead then writes the summary, and lawyers report that the summary contradicts the paragraph on liability caps about one time in eight. The lead is on a faster model than the subagents.",
+      "stem": "What is the MOST likely cause and the BEST fix?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Give the subagents more time and a higher effort setting, so their findings are more reliable and the lead has less to get wrong."
+        },
+        {
+          "id": "B",
+          "text": "Put the subagents on the faster model too, so the lead is no longer summarising something produced by a stronger model."
+        },
+        {
+          "id": "C",
+          "text": "Add a second reviewer subagent that checks each section against the contract text, so errors are caught before the summary is written."
+        },
+        {
+          "id": "D",
+          "text": "The summarisation step is lossy and the model gap makes it worse. Remove the intermediate prose: have each subagent return a fixed structure — the finding, the clause reference, and the figure as written in the clause — and have the lead assemble rather than paraphrase."
+        }
+      ],
+      "correct": [
+        "D"
+      ],
+      "explanation": "The defect is a **lossy transformation in the middle of the chain**: a paragraph goes in, a summary comes out, and a figure is altered in transit. Two things follow. Free-form prose is the wrong interface between layers, because it invites paraphrase; a structured return with the finding, the reference and the figure as written removes the opportunity. And the lead should assemble rather than rewrite, because assembly cannot invent a number that was not in the input. A model gap makes it worse but is not the cause.",
+      "whyWrong": {
+        "A": "Better subagent findings do not fix a lossy summarisation step. The paragraphs are being read correctly often enough; they are being rewritten incorrectly on the way out, which is a different failure.",
+        "B": "Making the subagents weaker makes the content less reliable without touching the step that alters it. Removing the capability difference also gives up accuracy that the team was paying for.",
+        "C": "A reviewer catches errors some of the time at roughly double the cost, and it does not remove the lossy step — the summary is still a paraphrase. Fixing the interface removes the whole class rather than sampling it."
+      },
+      "difficulty": 3,
+      "mindset": "Between two model layers, structured fields beat prose — and the layer that summarises should assemble, not rewrite.",
+      "tags": [
+        "subagents",
+        "context-management",
+        "patterns"
+      ],
+      "sourceRefs": [
+        "https://www.anthropic.com/engineering/multi-agent-research-system",
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs"
+      ]
+    },
+    {
+      "id": "v-d1-z6-012",
+      "taskStatementId": "1.3",
+      "scenario": "Thorne Retail's team picked a graph-based agent framework because their workflow has a loop with human approval in the middle: generate candidates, pause for a buyer, apply what the buyer chose, check the result. Three months in, Claude's structured output support and strict tool use are not available through the framework's request builder, and the team has hand-rolled workarounds for both.",
+      "stem": "Which TWO statements are most accurate? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "The framework earns its place on the durable human-in-the-loop pause and resumable state, which is exactly what graph-based orchestration provides. It does not earn it on parity with Claude request features, and each hand-rolled workaround is a seam where the framework and the API can drift apart."
+        },
+        {
+          "id": "B",
+          "text": "Before paying the indirection, check whether the pause actually needs a durable graph. A single approval point can be handled by checkpoint-and-wait, and if that is all the workflow needs, the framework's main advantage shrinks considerably."
+        },
+        {
+          "id": "C",
+          "text": "The workarounds are the problem. Waiting for the next framework release removes them, since gaps in a request builder close within a few months."
+        },
+        {
+          "id": "D",
+          "text": "Neither choice addresses the real issue. The loop should be rewritten so no human decision sits inside it, which removes the framework advantage and the workarounds at once."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Frameworks trade Claude-specific capability for orchestration capability, and the honest version of that trade is **what you chose it for**. A durable pause with human approval mid-loop is real and hard, and graph-based orchestration serves it well. Strict tool use and structured output are Claude-side features the request builder does not expose, so each workaround is a hand-maintained seam. And the question worth asking first is whether the pause is genuinely durable state or a single checkpoint — if the latter, the framework is being bought for something a checkpoint provides.",
+      "whyWrong": {
+        "C": "Depending on an external release cadence for a capability gap is a strategy, and a weak one when the gap is in the API surface the application depends on. The decision can be made now with the information available.",
+        "D": "Removing the human decision changes the product to suit the tooling. Nothing in the scenario says the approval step is optional — it is a buyer approving candidates."
+      },
+      "difficulty": 2,
+      "mindset": "Judge a framework on the orchestration it gives you, price its gaps deliberately, and check you need that orchestration at all.",
+      "tags": [
+        "frameworks",
+        "tradeoffs",
+        "patterns"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/overview",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/strict-tool-use"
+      ]
+    },
+    {
+      "id": "v-d1-z6-013",
+      "taskStatementId": "1.3",
+      "scenario": "Calder Bank's compliance agent must answer questions against its policy library. Every session begins by loading all 180 policy documents into the window. The team has measured that 96% of questions touch exactly one document, and the library changes twice a year.",
+      "stem": "Which design is MOST appropriate?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Keep loading everything. A single request that can see all 180 documents cannot miss a relevant clause, and retrieval is a source of retrieval errors."
+        },
+        {
+          "id": "B",
+          "text": "Add a search tool over the policy library and a short index in the system prompt. The model retrieves the one or two relevant documents per question, which keeps the window for the conversation and lets the index change without rewriting a prompt."
+        },
+        {
+          "id": "C",
+          "text": "Trim the library to the 40 documents that account for 99% of questions and drop the rest, since a policy the model cannot see is a policy it cannot apply."
+        },
+        {
+          "id": "D",
+          "text": "Compress the library into a single summarised document once, and load that summary for every question."
+        }
+      ],
+      "correct": [
+        "B"
+      ],
+      "explanation": "Retrieval is what makes a corpus that **changes independently of the prompt** usable: the index can be rebuilt when a policy changes, and the window holds the conversation instead of the library. The measured concentration supports this — if 96% of questions need one document, the other 179 are context that costs tokens and dilutes attention on every turn. A summary is worse than useless for exact obligations, since a clause's wording is precisely what compliance questions turn on.",
+      "whyWrong": {
+        "A": "This confuses recall with effectiveness. With 180 documents in the window, most of the content is not relevant to the question in front of it, and attention is spread across all of it. Retrieval does introduce its own failure mode, and that is why an index and good chunking matter — it is not an argument against retrieving.",
+        "C": "Dropping the tail trades a context problem for a correctness problem. Policy questions are precisely the questions where the minority document is the one that applies, and a model that cannot see a clause cannot apply it.",
+        "D": "A summary loses the exact wording, which is what obligation questions turn on — notice periods, thresholds and exceptions. It also cannot be corrected when a policy changes without regenerating it."
+      },
+      "difficulty": 2,
+      "visualId": "rag-pipeline",
+      "mindset": "When a corpus changes on its own schedule, retrieve into the window — a prompt that embeds the corpus goes stale with it.",
+      "tags": [
+        "rag",
+        "context-management",
+        "patterns"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/build-with-claude/rag",
+        "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents"
+      ]
+    },
+    {
+      "id": "v-d1-z6-014",
+      "taskStatementId": "1.3",
+      "scenario": "A team is choosing between building on the Claude Agent SDK directly and adopting an agent framework. They list what they need: built-in file tools, permission handling, hooks, subagents, MCP servers, automatic compaction, and a session that can be stored and resumed. All six already exist in the SDK.",
+      "stem": "What is the best advice?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Start on the SDK. Every capability on the list ships with it, so the framework would have to be justified by something else — a graph abstraction, durable human-in-the-loop pause, or an ecosystem you specifically need. If the answer is 'we want the same thing with more indirection', that is not a reason."
+        },
+        {
+          "id": "B",
+          "text": "Start on the SDK, because frameworks lock you into a model vendor's abstractions and Claude-specific features will always be second-class there."
+        },
+        {
+          "id": "C",
+          "text": "Adopt the framework. Even when it adds no capability, a framework standardises the loop, so engineers move between projects more easily."
+        },
+        {
+          "id": "D",
+          "text": "Start on the SDK, and expect to migrate to a framework later if the application grows. Migrating a working agent is straightforward."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The honest comparison is capability against capability, and the capability list is already **covered by the SDK** — the same set of primitives that powers Claude Code. A framework earns its indirection with something specific: a graph model for control flow, durable checkpointing across a human pause, a typed output system the team wants, an ecosystem. Standardisation is a real benefit but a weak one next to six capabilities that already work, and 'we will migrate later' quietly assumes migration is cheap.",
+      "whyWrong": {
+        "B": "The vendor-lockout argument is real in general and not what decides this case. The question is whether the framework adds anything here, and the framework's advantage over the SDK on this list is nil — each Claude feature works natively in the SDK and is not better in the framework.",
+        "C": "Consistency across projects is worth something, but it is being proposed on the strength of features that already exist natively. If the framework added nothing, the correct conclusion is that it adds a layer, not that it adds value.",
+        "D": "Migrating an agent means rewriting the loop, the tool layer and the state handling against a different abstraction. Calling it straightforward is the assumption most likely to be wrong when the decision is made at the start."
+      },
+      "difficulty": 1,
+      "visualId": "capability-ladder",
+      "mindset": "Adopt a framework for what it gives you beyond the primitives you already have — not because it is the default way to build.",
+      "tags": [
+        "frameworks",
+        "agent-sdk",
+        "tradeoffs"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/overview",
+        "https://code.claude.com/docs/en/agent-sdk/agent-loop"
+      ]
+    },
+    {
+      "id": "v-d1-z6-015",
+      "taskStatementId": "1.3",
+      "scenario": "Ilex Foods' product-research agent needs to remember, across sessions, that a supplier once failed a delivery SLA. That is a fact about the world that changes rarely, must be durable, and is worth reading before a recommendation. The agent's memory today is a list of notes the agent writes to itself at the end of a session.",
+      "stem": "Which memory design is most appropriate?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Write it to an external store through a tool — a record keyed by supplier, with a date and the evidence — and add a lookup tool that the prompt calls before any recommendation. The write happens as a side effect of a tool call, so it cannot be forgotten at the end of a long session."
+        },
+        {
+          "id": "B",
+          "text": "Keep the current design. The agent decides what is worth remembering at the end of a session, which is exactly the judgement the team wants involved."
+        },
+        {
+          "id": "C",
+          "text": "Add the fact to the system prompt, so it is always in context."
+        },
+        {
+          "id": "D",
+          "text": "Include the full supplier history in every session's opening context, retrieved by the harness before the agent's first turn."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "Three properties decide this: the fact must **survive the session**, it must be **written at the moment it is learned**, and it must be **read before it is needed**. A note the agent writes for itself at the end of a session satisfies none of them reliably — the session may end abruptly, and nothing guarantees the write happens. A tool-driven store makes the write a consequence of an action the agent already took, and a lookup tool makes the read a step the prompt can require.",
+      "whyWrong": {
+        "B": "Involving the model's judgement is the appeal here, but the mechanism is unreliable: compaction can remove the note before it is written, and a session that ends in an error or a token limit never reaches the write step at all.",
+        "C": "The system prompt is standing context, which is the wrong home for a fact about one supplier. It would be present in every unrelated question and would grow without bound as suppliers accumulate.",
+        "D": "Preloading full histories makes the window grow with the corpus and ignores that the fact is needed occasionally, not always. Retrieval at the point of need is what keeps the token cost proportional to the question."
+      },
+      "difficulty": 2,
+      "mindset": "Durable memory should be written by a tool as a side effect of the work, and read by a tool when it is needed.",
+      "tags": [
+        "memory",
+        "patterns",
+        "tools"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/subagents",
+        "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents"
+      ]
+    },
+    {
+      "id": "v-d1-z6-016",
+      "taskStatementId": "1.3",
+      "scenario": "A team is building a single-agent tool-use loop against the Messages API. Their loop runs tools as soon as it sees a `tool_use` block and appends results. In testing, when the model emits three `tool_use` blocks in one response, two of the results come back matched by `tool_use_id` and the third arrives with an empty body, because the loop's concurrency limit dropped it.",
+      "stem": "Which TWO changes are correct? Choose TWO.",
+      "options": [
+        {
+          "id": "A",
+          "text": "Return a `tool_result` for every `tool_use` block, including one for any call not run, with `is_error: true` and a brief explanation. Silence breaks the pairing the API requires."
+        },
+        {
+          "id": "B",
+          "text": "Stop the harness dropping calls at all: make the concurrency limit at least equal to the largest number of `tool_use` blocks the loop expects, so results are never silently discarded."
+        },
+        {
+          "id": "C",
+          "text": "Drop the empty result and continue, since the API does not require a one-to-one match between calls and results."
+        },
+        {
+          "id": "D",
+          "text": "Serialise every tool call, so that no call is ever dropped and the empty case cannot arise."
+        }
+      ],
+      "correct": [
+        "A",
+        "B"
+      ],
+      "explanation": "Two distinct defects, two fixes. The API does not prescribe an execution order — you may run calls concurrently, sequentially or in any combination — but it **does** fix the response shape: one `tool_result` per `tool_use`, matched by `tool_use_id`, all in the next user message, with every `tool_result` before any text. So a call you chose not to run still owes a result. Separately, the harness should not discard results at all: a concurrency ceiling that silently drops work turns a latency decision into a correctness bug.",
+      "whyWrong": {
+        "C": "The one-to-one correspondence is required, and this is the case that shows why. The model asked three questions and got two answers with no explanation for the third, which reads as a failure of the tool rather than a decision.",
+        "D": "Serialising is a legitimate choice for contending side effects and it happens to avoid this symptom, but it does not remove the contract. A call that raises, times out or is skipped still owes the model a result."
+      },
+      "difficulty": 3,
+      "mindset": "Execution order is yours; the result contract is not — and a concurrency ceiling must never discard work silently.",
+      "tags": [
+        "agent-loop",
+        "tool-results",
+        "patterns"
+      ],
+      "sourceRefs": [
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/parallel-tool-use",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls"
+      ]
+    },
+    {
+      "id": "v-d1-z6-017",
+      "taskStatementId": "1.2",
+      "scenario": "Wexford Water's agent must handle both a 40-page conservation order and a one-paragraph email, using the same tools and the same session. The team noticed that the long-document runs are where quality drops: the agent handles the short one perfectly and then, ten turns later, is citing the wrong clause.",
+      "stem": "What is the MOST effective change?",
+      "options": [
+        {
+          "id": "A",
+          "text": "Split the work into separate sessions with separate context. Session hygiene is the mechanism: the conservation order gets a session where it is the only thing in the window, and short queries do not inherit its contents or dilute its attention."
+        },
+        {
+          "id": "B",
+          "text": "Increase `maxTurns` on the long sessions, so the agent has room to re-check itself."
+        },
+        {
+          "id": "C",
+          "text": "Move the 40-page order into an Artifact at the start of the session, so the text is available on demand rather than resident in the window."
+        },
+        {
+          "id": "D",
+          "text": "Put the order's key obligations into the system prompt as a short summary, and drop the full text."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The pattern is **one unit of work per session**, which is what session hygiene means in practice. Unrelated work accumulating in one window is what dilutes attention and makes the ten-turns-later citation wrong: the agent is reasoning across a mixture. Splitting the sessions costs a little re-priming on the long run and buys back the whole window for the document that needs it. Extra turns extend the runway of a context that is already too mixed to be precise.",
+      "whyWrong": {
+        "B": "`maxTurns` bounds how long the agent may run. It does not make a mixed context more precise, and a longer run in a diluted window is a longer opportunity to cite the wrong clause.",
+        "C": "An Artifact is a Claude-side artefact for producing and iterating on content. Relocating the order's text out of the working context does not solve the problem this evidence points to — which is two different kinds of work sharing one session.",
+        "D": "A summary of a legal obligation loses the clause wording that citation depends on, and the full text is exactly what a compliance answer has to be traceable to."
+      },
+      "difficulty": 2,
+      "visualId": "context-window",
+      "mindset": "Two kinds of work in one session is a context problem no amount of extra turns will fix.",
+      "tags": [
+        "session-hygiene",
+        "context-management",
+        "hosting"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/agent-sdk/sessions",
+        "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents"
+      ]
+    },
+    {
+      "id": "v-d1-z6-018",
+      "taskStatementId": "1.3",
+      "scenario": "Sableton Utilities' team has four candidate approaches for keeping a long investigation's findings available across sessions. (a) Put the findings in the system prompt. (b) Keep a running list in the conversation and let compaction summarise it. (c) Write the findings to a file in the project's memory directory and read them when needed. (d) Give the lead agent a `save_finding` tool that appends to a findings store with a source reference, and a `list_findings` tool to read it back.",
+      "stem": "Which mapping of approach to suitability is correct?",
+      "options": [
+        {
+          "id": "A",
+          "text": "(c) is the lightweight choice and works while a session lasts. (d) is the correct design for findings that must persist and stay traceable, because the write is tied to the moment of discovery and the reference is stored with it. (a) belongs only for standing instructions, and (b) loses exactly the detail an investigation depends on."
+        },
+        {
+          "id": "B",
+          "text": "(a) is best because the system prompt is always present. (b) is acceptable because compaction is designed to preserve what matters. (c) and (d) both add machinery that a file already provides."
+        },
+        {
+          "id": "C",
+          "text": "(d) is best for everything, including standing instructions, because a tool write is more reliable than a prompt."
+        },
+        {
+          "id": "D",
+          "text": "(c) and (d) are equivalent. A memory file and a findings store differ only in format, and the team should pick the simpler one."
+        }
+      ],
+      "correct": [
+        "A"
+      ],
+      "explanation": "The four approaches differ in **what guarantees them**. A file in the memory directory is the right lightweight option while a session lasts. A `save_finding` tool is the right design when the finding must persist and remain traceable, because the write is a side effect of the tool call that discovered it — it cannot be skipped when a session ends badly — and the source reference is stored alongside rather than being remembered. Compaction is a lossy mechanism, and an investigation is precisely the case where the detail lost is the point.",
+      "whyWrong": {
+        "B": "Compaction summarises; it does not preserve. An investigation's findings are citations, and a summary of a citation is not one. Meanwhile the system prompt is standing context and grows with every finding added to it.",
+        "C": "A tool write is more reliable for a durable record, not for standing instructions. Standing instructions belong where they are read on every turn — the system prompt or the project instructions — because a fact the agent must apply without asking is not a thing it should have to fetch.",
+        "D": "They differ in guarantee, not format. A memory file is read when someone remembers to read it; a findings store written by a tool records the finding at the moment it happened, with its reference, whether or not the session ended well."
+      },
+      "difficulty": 2,
+      "visualId": "capability-ladder",
+      "mindset": "Choose memory mechanisms by what guarantees them: files while the session lasts, tool writes when it must persist and stay traceable.",
+      "tags": [
+        "memory",
+        "patterns",
+        "context-management"
+      ],
+      "sourceRefs": [
+        "https://code.claude.com/docs/en/memory",
+        "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents"
+      ]
+    }
+  ]
+}

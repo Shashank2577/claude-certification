@@ -9,6 +9,8 @@ export interface AnswerFeedback {
   explanation: string;
   whyWrong: Record<string, string>;
   mindset: string;
+  /** Visual registry id, revealed with the explanation. */
+  visualId?: string;
   reward: Reward | null;
 }
 

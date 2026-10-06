@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, type KeyboardEvent } from "react";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
+import { useHydratedReducedMotion } from "@/lib/use-reduced-motion";
 import { clsx } from "clsx";
 import { Bookmark, ChevronLeft, ChevronRight, PencilLine, RotateCcw } from "lucide-react";
 
@@ -73,7 +74,7 @@ function gapPos(min: number) {
 }
 
 export default function PromptCaching() {
-  const reduce = useReducedMotion();
+  const reduce = useHydratedReducedMotion();
   const [phase, setPhase] = useState(0);
   const [bps, setBps] = useState<number[]>([3]);
   const [changed, setChanged] = useState<number[]>([]);

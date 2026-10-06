@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState, type KeyboardEvent, type ReactNode } from "react";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
+import { useHydratedReducedMotion } from "@/lib/use-reduced-motion";
 import clsx from "clsx";
 import { Ban, ChevronLeft, ChevronRight, MessageSquareReply, Pause, Play, RefreshCw, RotateCcw, ShieldCheck, Wrench } from "lucide-react";
 
@@ -167,7 +168,7 @@ const GUARDS: { id: Guard; label: string; code: string }[] = [
 ];
 
 export default function HooksLifecycle() {
-  const reduce = useReducedMotion();
+  const reduce = useHydratedReducedMotion();
   const [mode, setMode] = useState<"explore" | "simulate">("explore");
   const [sel, setSel] = useState<EvId>("PreToolUse");
   const [guard, setGuard] = useState<Guard>("exit2");
