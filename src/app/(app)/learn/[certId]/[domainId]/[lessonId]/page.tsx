@@ -12,6 +12,7 @@ import { getViewer } from "@/lib/viewer";
 import { Markdown } from "@/components/ui/markdown";
 import { Pill } from "@/components/ui/card";
 import { Visual } from "@/components/visuals/visual";
+import { LessonNarrator } from "@/components/lesson-narrator";
 import { CheckYourself } from "@/components/quiz/check-yourself";
 import { CompleteButton, type NextLesson } from "./complete-button";
 
@@ -109,6 +110,8 @@ export default async function LessonPage({ params }: Props) {
           <p className="mt-2 font-serif text-[1.1rem] leading-relaxed text-ink">{lesson.eli5}</p>
         </details>
       ) : null}
+
+      <LessonNarrator eli5={lesson.eli5} body={lesson.body} />
 
       {lesson.visualId ? (
         // min-w-0 + overflow-x-auto: a wide figure scrolls inside itself instead of widening the page.

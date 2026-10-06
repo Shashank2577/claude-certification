@@ -226,8 +226,12 @@ export default function ModelSelection() {
                   </g>
                 );
               })}
-              <text x="10" y="236" fill="var(--muted)" style={{ font: "400 11px var(--font-sans)" }}>
-                Illustrative quality scores, not published benchmarks. Read the gap, not the absolute number.
+              {/* Two lines: the sentence is wider than the 340-unit viewBox, and an SVG clips to its viewBox. */}
+              <text x="10" y="228" fill="var(--muted)" style={{ font: "400 11px var(--font-sans)" }}>
+                <tspan x="10">Illustrative quality scores, not published</tspan>
+                <tspan x="10" dy={14}>
+                  benchmarks. Read the gap, not the absolute number.
+                </tspan>
               </text>
             </svg>
           </div>
@@ -270,6 +274,18 @@ export default function ModelSelection() {
                   ))}
                 </div>
                 <p className="mt-1 text-xs text-ink-2">{eff.note}</p>
+              </div>
+            </div>
+
+            {/* The tier rows in the SVG above are a pointer shortcut; this is the same choice as real buttons. */}
+            <div className="mt-3">
+              <p className="text-xs font-medium text-muted">Model tier</p>
+              <div className="mt-1 grid grid-cols-3 gap-1.5" role="group" aria-label="Choose a model tier">
+                {(Object.keys(TIERS) as Tier[]).map((t) => (
+                  <Pill key={t} on={tier === t} onClick={() => setTier(t)} label={`Tier: ${TIERS[t].name}`}>
+                    {TIERS[t].name}
+                  </Pill>
+                ))}
               </div>
             </div>
           </div>

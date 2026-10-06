@@ -213,7 +213,14 @@ export default function DeploymentTopology() {
               </defs>
 
               <rect {...providerBox(topo)} rx="16" fill="none" stroke="var(--line-strong)" strokeWidth="1.5" strokeDasharray="6 5" />
-              <text x={providerBox(topo).x + 2} y={providerBox(topo).y - 4} fill="var(--muted)" style={{ font: "500 11px var(--font-sans)" }}>
+              {/* Anchored to the right edge of its own boundary box: left-aligned it runs past the 580-unit viewBox. */}
+              <text
+                x={providerBox(topo).x + providerBox(topo).w}
+                y={providerBox(topo).y - 4}
+                textAnchor="end"
+                fill="var(--muted)"
+                style={{ font: "500 11px var(--font-sans)" }}
+              >
                 provider-operated · outside your boundary
               </text>
 
