@@ -209,6 +209,98 @@ for (const entry of fs.readdirSync(visualSrc)) {
   }
 }
 
+// ── shared UI source rules ───────────────────────────────────────────────────
+// The explainer rules above only ever looked inside src/components/visuals. Everything that
+// broke the lesson page itself lived outside that directory, so the same classes of bug are
+// checked across the whole component tree, plus the one import boundary that turns a working
+// page into a 500.
+const CLIENT_ONLY_LIBS: Record<string, string> = {
+  "@/lib/speech": "@/lib/speech-core",
+};
+
+const SHARED_SOURCE_RULES: { re: RegExp; msg: string }[] = [
+  // A bare glyph is not an icon: it renders in whatever font the OS picks, sits at the mercy of
+  // baseline alignment, and cannot carry a stroke weight to match the rest of the UI.
+  { re: />\s*[▶◀►■◼◻▸◾]\s*</, msg: "uses a text play/stop glyph in JSX; use a lucide icon (Volume2, Play, Square) so it matches the rest of the UI" },
+  { re: /["'`]▶|▶["'`]/, msg: "uses a text play/stop glyph; use a lucide icon instead" },
+  // A control hidden until hover cannot be found on a touchscreen, which has no hover.
+  { re: /<button[^>]*className=\{?["'`][^"'`]*\bopacity-0\b/, msg: "renders a button at opacity-0; there is no hover on touch, so it is invisible there. Reveal on focus-visible instead, or keep it visible." },
+  // Same idea, spelled as a class on a wrapper that only shows on group-hover.
+  { re: /\bgroup-hover\/[a-z0-9]+:opacity-100\b/, msg: "reveals a control only on group-hover; it stays invisible on touch. Prefer always-visible or a focus-visible fallback." },
+];
+
+function walk(dir: string, out: string[] = []): string[] {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name === "node_modules" || entry.name.startsWith(".")) continue;
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) walk(full, out);
+    else if (/\.tsx?$/.test(entry.name)) out.push(full);
+  }
+  return out;
+}
+
+const compRoot = path.join(process.cwd(), "src/components");
+for (const file of walk(compRoot)) {
+  const rel = path.relative(process.cwd(), file);
+  const src = fs.readFileSync(file, "utf8");
+  const isClient = src.trimStart().startsWith('"use client"');
+  for (const rule of SHARED_SOURCE_RULES) {
+    if (rule.re.test(src)) fail(rel, rule.msg);
+  }
+  // A server component cannot call an export of a "use client" module -- React throws while
+  // rendering and the page 500s. Importing a *client component* from one is fine; calling a
+  // plain helper is not, which is why the helpers live in a sibling non-client module.
+  if (!isClient) {
+    for (const [lib, safe] of Object.entries(CLIENT_ONLY_LIBS)) {
+      if (new RegExp(`from ["']${lib.replace("/", "\\/")}["']`).test(src)) {
+        fail(rel, `is a server component but imports "${lib}", which is "use client". Import "${safe}" instead -- a server component cannot call a client export.`);
+      }
+    }
+  }
+}
+
+// A small control is only acceptable if its 44px tap area comes from the shared `hit-44`
+// overlay. Without it the painted box is the whole target, which is how the section listen
+// buttons first shipped at 24px.
+//
+// This needs a real scan rather than a regex: an opening tag can contain `>` inside an
+// onClick arrow, and a naive `<button[\s\S]{0,400}?className` happily runs past the end of the
+// tag and blames the next element's className instead.
+function openingTags(src: string, name: string): string[] {
+  const tags: string[] = [];
+  const re = new RegExp(`<${name}\\b`, "g");
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(src))) {
+    let i = m.index + m[0].length;
+    let depth = 0;
+    let quote: string | null = null;
+    while (i < src.length) {
+      const c = src[i];
+      if (quote) {
+        if (c === "\\") i++;
+        else if (c === quote) quote = null;
+      } else if (c === '"' || c === "'" || c === "`") quote = c;
+      else if (c === "{") depth++;
+      else if (c === "}") depth--;
+      else if (c === ">" && depth === 0) break;
+      i++;
+    }
+    tags.push(src.slice(m.index, i + 1));
+  }
+  return tags;
+}
+
+for (const file of walk(compRoot)) {
+  const rel = path.relative(process.cwd(), file);
+  const src = fs.readFileSync(file, "utf8");
+  for (const tag of openingTags(src, "button")) {
+    // Tailwind's default scale: size-11 / h-11 is 2.75rem = 44px, so 6 through 10 are all short.
+    if (!/\b(?:size|h)-(?:6|7|8|9|10)\b/.test(tag)) continue;
+    if (/\bhit-44\b/.test(tag)) continue;
+    fail(rel, "has a button painted under 44px without the `hit-44` overlay; add hit-44 or make the control 44px");
+  }
+}
+
 // ── study plans ─────────────────────────────────────────────────────────────
 // The linter never opened this file, so an unresolvable refId silently produced a
 // plan with dead links.

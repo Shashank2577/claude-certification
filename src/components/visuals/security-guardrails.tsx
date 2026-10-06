@@ -394,7 +394,7 @@ export default function SecurityGuardrails() {
             type="button"
             onClick={run}
             aria-label="Run the attack through every layer"
-            className="flex h-9 items-center gap-1.5 rounded-xl bg-ink px-3 text-sm font-semibold text-bg transition-transform active:scale-95"
+            className="hit-44 flex h-9 items-center gap-1.5 rounded-xl bg-ink px-3 text-sm font-semibold text-bg transition-transform active:scale-95"
           >
             <Play size={14} /> Run attack
           </button>
@@ -434,7 +434,7 @@ function CtrlButton({ label, onClick, disabled, children }: { label: string; onC
       disabled={disabled}
       aria-label={label}
       title={label}
-      className="grid size-9 place-items-center rounded-xl border border-line-strong bg-surface text-ink transition-colors hover:border-ink active:scale-95 disabled:opacity-40"
+      className="hit-44 grid size-9 place-items-center rounded-xl border border-line-strong bg-surface text-ink transition-colors hover:border-ink active:scale-95 disabled:opacity-40"
     >
       {children}
     </button>

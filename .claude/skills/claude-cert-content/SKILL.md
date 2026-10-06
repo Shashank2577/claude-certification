@@ -147,6 +147,30 @@ that shipped. Re-read it before writing the SVG.
 - Register under the same id in `registry.ts`. Never rename an id; lesson content depends on it.
   `load: null` is legal and renders `placeholder.tsx`, so you can register before building.
 
+## 5b. Shared-UI rules
+
+The explainer rules above cover `src/components/visuals/`. These apply to **any** component under
+`src/components/`, and each one is a bug that shipped:
+
+- **A server component cannot call an export of a `"use client"` module.** React throws while
+  rendering and the page 500s — with no useful error, because the stack points at the JSX. Page
+  components and `components/ui/*` are server components. Importing a *client component* from a
+  `"use client"` module is fine; calling a plain helper is not, which is why the speech helpers
+  live in `@/lib/speech-core` (no directive) and only the React-facing module is `"use client"`.
+- **Never read a browser API at module scope in shared state.** `supported: typeof window !==
+  "undefined"` is `false` on the server and `true` on the client, so the first render mismatches.
+  Start from a value both sides agree on and fill in the truth from the subscriber, which only
+  runs in the browser.
+- **When a store derives state, emit the data too.** Emitting `ready: voices.length > 0` without
+  emitting `voices` renders an empty `<select>` and reads as "no voices on this device".
+- **A button painted under 44px needs the `hit-44` class** (defined in `src/app/globals.css`).
+  It adds an invisible 44×44 overlay, so the control can stay visually small. Do not hand-roll an
+  `after:` overlay for this — use the shared class.
+- **Never hide a control behind hover.** `opacity-0` + `group-hover:opacity-100` is invisible on a
+  touchscreen, which has no hover. Show it, or reveal on `focus-visible`.
+- **Icons come from lucide, never a text glyph.** A bare `▶` or `■` picks its own font, sits on
+  the baseline, and cannot match stroke weight. Import `Volume2` / `Play` / `Square`.
+
 ## 6. Verify before you commit
 
 ```
@@ -164,6 +188,18 @@ your batch landed and the difficulty mix held. For a single visual, the scaffold
 
 For an explainer, also check visually: 375px and 1280px, light and dark, reduced motion on, and
 confirm every SVG caption is actually visible inside the frame.
+
+With `pnpm dev` running on 3111, `node scripts/verify-hydration.mjs` (`--rm` for reduced motion,
+`ONLY=<visual-id>` for one) sweeps every visual and fails on a page that did not render, a
+hydration error, motion that ignores reduced motion, something stuck invisible, or a `hit-44`
+control whose overlay is not actually delivering 44px. Run it after touching any component under
+`src/components/`.
+
+### Keep the gate green
+
+A check that fails on already-committed code is a check people learn to ignore. `hit-44` was added
+to 24 existing buttons in one pass for exactly this reason. If you introduce a rule, clear the
+existing violations in the same change — or you have replaced a silent bug with a noisy one.
 
 ## 7. Sub-agent split
 

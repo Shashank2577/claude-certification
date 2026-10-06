@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback } from "react";
+import clsx from "clsx";
 import { Square, Volume2 } from "lucide-react";
 import { useSpeech } from "@/lib/speech";
 import { stripMarkdown } from "@/lib/speech-core";
@@ -41,14 +42,15 @@ export function SectionListen({ id, heading }: { id: string; heading: string }) 
       aria-label={active ? `Stop reading ${heading}` : `Read the section ${heading} aloud`}
       title={active ? "Stop" : `Listen to ${heading}`}
       data-listen-heading={heading}
-      className={
+      className={clsx(
+        // Small, quiet icon rather than a chunky chip. `hit-44` extends the tap area with an
+        // invisible overlay so it never disturbs the heading, and it is always visible rather
+        // than hover-revealed, because a touch screen has no hover to reveal it.
+        "hit-44 -my-1 inline-grid size-7 shrink-0 place-items-center rounded-md",
         active
-          ? "relative -my-1 inline-grid size-7 shrink-0 place-items-center rounded-md bg-accent-soft text-accent-text after:absolute after:-inset-2 after:content-['']"
-          : // Small, quiet icon rather than a chunky chip. The 44px tap area is an invisible
-            // overlay instead of visible padding, so it never disturbs the heading, and it is
-            // always visible because a touch screen has no hover to reveal it.
-            "relative -my-1 inline-grid size-7 shrink-0 place-items-center rounded-md text-muted transition-colors hover:bg-surface-2 hover:text-ink focus-visible:bg-surface-2 focus-visible:text-ink after:absolute after:-inset-2 after:content-['']"
-      }
+          ? "bg-accent-soft text-accent-text"
+          : "text-muted transition-colors hover:bg-surface-2 hover:text-ink focus-visible:bg-surface-2 focus-visible:text-ink",
+      )}
     >
       {active ? <Square size={12} aria-hidden /> : <Volume2 size={14} aria-hidden />}
     </button>

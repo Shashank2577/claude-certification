@@ -364,7 +364,7 @@ function Badge({ tone, children }: { tone: "info" | "good"; children: ReactNode 
 
 function Ctrl({ label, onClick, disabled, children }: { label: string; onClick: () => void; disabled?: boolean; children: ReactNode }) {
   return (
-    <button type="button" onClick={onClick} disabled={disabled} aria-label={label} title={label} className="grid size-9 shrink-0 place-items-center rounded-xl border border-line-strong bg-surface text-ink transition-colors hover:border-ink active:scale-95 disabled:opacity-40">
+    <button type="button" onClick={onClick} disabled={disabled} aria-label={label} title={label} className="hit-44 grid size-9 shrink-0 place-items-center rounded-xl border border-line-strong bg-surface text-ink transition-colors hover:border-ink active:scale-95 disabled:opacity-40">
       {children}
     </button>
   );
