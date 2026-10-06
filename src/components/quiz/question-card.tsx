@@ -8,6 +8,7 @@ import type { PublicQuestion } from "@/lib/content-types";
 import type { AnswerFeedback } from "@/lib/quiz-types";
 import { Markdown } from "@/components/ui/markdown";
 import { Visual } from "@/components/visuals/visual";
+import { ListenButton } from "@/components/listen-button";
 
 export interface QuestionCardProps {
   question: PublicQuestion;
@@ -118,8 +119,11 @@ export function QuestionCard({
         </div>
       ) : null}
 
-      <div className={clsx("mt-4 font-display font-medium tracking-[-0.01em]", compact ? "text-lg" : "text-xl sm:text-[1.35rem]")} id={`${groupId}-stem`}>
-        <Markdown className="leading-snug">{question.stem}</Markdown>
+      <div className="mt-4 flex items-start gap-2">
+        <div className={clsx("min-w-0 flex-1 font-display font-medium tracking-[-0.01em]", compact ? "text-lg" : "text-xl sm:text-[1.35rem]")} id={`${groupId}-stem`}>
+          <Markdown className="leading-snug">{question.stem}</Markdown>
+        </div>
+        <ListenButton text={question.stem} label="the question" id={`${question.id}:stem`} markdown />
       </div>
       {multi ? (
         <p className="mt-2 text-sm font-semibold text-accent-text">
@@ -212,17 +216,21 @@ export function QuestionCard({
               {feedback.correct ? <Check size={20} strokeWidth={3} /> : <X size={20} strokeWidth={3} />}
               {feedback.correct ? "Correct" : `Not quite. The answer is ${listAnswers(feedback.correctIds)}.`}
             </p>
-            <div className="mt-3 text-[0.97rem] text-ink-2">
-              <Markdown>{feedback.explanation}</Markdown>
+            <div className="mt-3 flex items-start gap-2">
+              <div className="min-w-0 flex-1 text-[0.97rem] text-ink-2">
+                <Markdown>{feedback.explanation}</Markdown>
+              </div>
+              <ListenButton text={feedback.explanation} label="the explanation" id={`${question.id}:why`} markdown />
             </div>
             {feedback.mindset ? (
-              <p className="mt-4 flex items-start gap-2.5 rounded-xl bg-accent-soft/60 px-3.5 py-2.5 text-sm">
-                <Compass size={16} className="mt-0.5 shrink-0 text-accent-text" />
-                <span>
+              <div className="mt-4 flex items-start gap-2 rounded-xl bg-accent-soft/60 px-3.5 py-2.5 text-sm">
+                <Compass size={16} className="mt-0.5 shrink-0 text-accent-text" aria-hidden />
+                <span className="min-w-0 flex-1">
                   <span className="font-semibold">Mindset: </span>
                   {feedback.mindset}
                 </span>
-              </p>
+                <ListenButton text={feedback.mindset} label="the mindset" id={`${question.id}:mindset`} size="xs" />
+              </div>
             ) : null}
             {/* The figure explains why the answer is right, so it only appears once feedback is shown. */}
             {feedback.visualId ? (

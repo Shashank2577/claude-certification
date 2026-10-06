@@ -13,6 +13,7 @@ import { Markdown } from "@/components/ui/markdown";
 import { Pill } from "@/components/ui/card";
 import { Visual } from "@/components/visuals/visual";
 import { LessonNarrator } from "@/components/lesson-narrator";
+import { ListenButton } from "@/components/listen-button";
 import { CheckYourself } from "@/components/quiz/check-yourself";
 import { CompleteButton, type NextLesson } from "./complete-button";
 
@@ -107,11 +108,19 @@ export default async function LessonPage({ params }: Props) {
             In plain English
             <ChevronRight size={16} className="ml-auto text-muted transition-transform group-open:rotate-90" aria-hidden />
           </summary>
-          <p className="mt-2 font-serif text-[1.1rem] leading-relaxed text-ink">{lesson.eli5}</p>
+          <div className="mt-2 flex items-start gap-2">
+            <p className="min-w-0 flex-1 font-serif text-[1.1rem] leading-relaxed text-ink">{lesson.eli5}</p>
+            <ListenButton
+              text={lesson.eli5}
+              label="the plain-English summary"
+              id={`${lesson.id}:eli5`}
+              className="mt-1"
+            />
+          </div>
         </details>
       ) : null}
 
-      <LessonNarrator eli5={lesson.eli5} body={lesson.body} />
+      <LessonNarrator eli5={lesson.eli5} body={lesson.body} lessonId={lesson.id} />
 
       {lesson.visualId ? (
         // min-w-0 + overflow-x-auto: a wide figure scrolls inside itself instead of widening the page.
@@ -121,7 +130,7 @@ export default async function LessonPage({ params }: Props) {
       ) : null}
 
       <div className="mt-8 min-w-0">
-        <Markdown variant="lesson" collapseCode={settings.background === "non-technical"}>
+        <Markdown variant="lesson" collapseCode={settings.background === "non-technical"} sectionListenId={lesson.id}>
           {lesson.body}
         </Markdown>
       </div>
@@ -133,9 +142,10 @@ export default async function LessonPage({ params }: Props) {
           </h2>
           <ul className="mt-4 space-y-2.5">
             {lesson.keyTakeaways.map((t, i) => (
-              <li key={i} className="flex gap-3">
+              <li key={i} className="flex items-start gap-3">
                 <Check size={18} className="mt-0.5 shrink-0 text-good" aria-hidden />
-                <span className="min-w-0 [overflow-wrap:anywhere]">{t}</span>
+                <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">{t}</span>
+                <ListenButton text={t} label={`key takeaway ${i + 1}`} id={`${lesson.id}:takeaway-${i}`} size="xs" />
               </li>
             ))}
           </ul>
@@ -151,9 +161,10 @@ export default async function LessonPage({ params }: Props) {
               </h2>
               <ul className="mt-3 space-y-2 text-[0.95rem]">
                 {lesson.examTips.map((t, i) => (
-                  <li key={i} className="flex gap-2">
+                  <li key={i} className="flex items-start gap-2">
                     <span className="mt-2 size-1.5 shrink-0 rounded-full bg-info" aria-hidden />
-                    <span className="min-w-0 [overflow-wrap:anywhere]">{t}</span>
+                    <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">{t}</span>
+                    <ListenButton text={t} label={`exam tip ${i + 1}`} id={`${lesson.id}:tip-${i}`} size="xs" />
                   </li>
                 ))}
               </ul>
@@ -166,9 +177,10 @@ export default async function LessonPage({ params }: Props) {
               </h2>
               <ul className="mt-3 space-y-2 text-[0.95rem]">
                 {lesson.commonTraps.map((t, i) => (
-                  <li key={i} className="flex gap-2">
+                  <li key={i} className="flex items-start gap-2">
                     <span className="mt-2 size-1.5 shrink-0 rounded-full bg-bad" aria-hidden />
-                    <span className="min-w-0 [overflow-wrap:anywhere]">{t}</span>
+                    <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">{t}</span>
+                    <ListenButton text={t} label={`common trap ${i + 1}`} id={`${lesson.id}:trap-${i}`} size="xs" />
                   </li>
                 ))}
               </ul>
