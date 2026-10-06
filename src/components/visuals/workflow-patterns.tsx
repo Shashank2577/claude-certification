@@ -234,7 +234,25 @@ export default function WorkflowPatterns() {
       {/* Always stacked: beside the detail card the diagram would shrink its labels below ~11px. */}
       <div id="wp-panel" role="tabpanel" className="grid min-w-0 gap-4">
         <div className="min-w-0 space-y-3">
-          <div ref={panRef} className="max-w-full min-w-0 overflow-x-auto rounded-xl bg-surface-2/50 p-2" tabIndex={0} role="group" aria-label={`${meta.name} diagram. Use left and right arrow keys to step.`} onKeyDown={onStepKey}>
+          <div className="min-w-0 rounded-xl bg-surface-2/50 p-3 @xl:hidden" role="img" aria-label={`${meta.name}, step ${step + 1} of ${d.steps.length}: ${cur.caption}`}>
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted">Current step {cur.badge ? `· ${cur.badge}` : ""}</p>
+            <ol className="mt-3 grid min-w-0 gap-2">
+              {cur.on.length ? cur.on.map((id) => {
+                const e = d.edges.find((x) => x.id === id);
+                if (!e || !shown.has(e.from) || !shown.has(e.to)) return null;
+                return <li key={id} className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-stretch gap-2">
+                  {[e.from, e.to].map((nodeId, i) => <div key={`${nodeId}-${i}`} className="min-w-0 rounded-xl border-2 border-accent-strong bg-surface px-2 py-3 text-center">
+                    <p className="font-display text-sm font-semibold wrap-anywhere text-ink">{byId[nodeId].label}</p>
+                    <p className="text-xs wrap-anywhere text-ink-2">{byId[nodeId].sub}</p>
+                  </div>).flatMap((node, i) => i === 0 ? [node, <span key="arrow" className="self-center text-xl text-accent-text" aria-hidden>→</span>] : [node])}
+                </li>;
+              }) : visible.filter((x) => lit.has(x.id)).map((x) => <li key={x.id} className="min-w-0 rounded-xl border-2 border-accent-strong bg-surface px-3 py-2">
+                <p className="font-display text-sm font-semibold wrap-anywhere text-ink">{x.label}</p>
+                <p className="text-xs wrap-anywhere text-ink-2">{x.sub}</p>
+              </li>)}
+            </ol>
+          </div>
+          <div ref={panRef} className="hidden max-w-full min-w-0 overflow-x-auto rounded-xl bg-surface-2/50 p-2 @xl:block" tabIndex={0} role="group" aria-label={`${meta.name} diagram. Use left and right arrow keys to step.`} onKeyDown={onStepKey}>
             <svg ref={svgRef} viewBox="0 0 640 260" className="h-auto w-full min-w-[560px]" role="img" aria-label={`${meta.name}, step ${step + 1} of ${d.steps.length}: ${cur.caption}`}>
               <defs>
                 {[["wp-a", "var(--line-strong)"], ["wp-a-on", "var(--accent-strong)"]].map(([id, c]) => (
@@ -286,7 +304,6 @@ export default function WorkflowPatterns() {
             <span className="flex items-center gap-1.5"><span className="inline-block size-3 rounded bg-ink" /> LLM call (the model)</span>
             <span className="flex items-center gap-1.5"><span className="inline-block size-3 rounded border border-dashed border-line-strong bg-surface-2" /> Plain code (no model)</span>
             <span className="flex items-center gap-1.5"><span className="inline-block h-0 w-4 border-t border-dashed border-line-strong" /> Path not taken</span>
-            <span className="@xl:hidden">Scroll the diagram sideways; it follows each step.</span>
           </div>
 
           {options ? (

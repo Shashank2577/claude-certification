@@ -116,8 +116,18 @@ export default function AgenticLoop() {
       {/* Side by side only when the figure is 48rem+; narrower, the diagram text would drop below ~11px. */}
       <div className="grid grid-cols-1 gap-4 @3xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
         <div className="min-w-0 space-y-1">
-          {/* Below ~540px the diagram keeps its width and scrolls sideways instead of shrinking its labels. */}
-          <div ref={panRef} className="max-w-full min-w-0 overflow-x-auto rounded-xl bg-surface-2/50 p-2" tabIndex={0} role="group" aria-label="Agentic loop diagram. Use left and right arrow keys to step.">
+          <div className="min-w-0 rounded-xl bg-surface-2/50 p-3 @xl:hidden" role="img" aria-label={`Step ${step + 1}: ${current.caption}`}>
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted">Current exchange · loop {iteration}</p>
+            <div className="mt-3 grid min-w-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-stretch gap-2">
+              {[edge.from, edge.to].map((id, i) => (
+                <div key={`${id}-${i}`} className="min-w-0 rounded-xl border-2 border-accent-strong bg-surface px-2 py-3 text-center">
+                  <p className="font-display text-sm font-semibold wrap-anywhere text-ink">{NODES[id].label}</p>
+                  <p className="text-xs wrap-anywhere text-ink-2">{NODES[id].sub}</p>
+                </div>
+              )).flatMap((node, i) => i === 0 ? [node, <span key="arrow" className="self-center text-xl text-accent-text" aria-hidden>→</span>] : [node])}
+            </div>
+          </div>
+          <div ref={panRef} className="hidden max-w-full min-w-0 overflow-x-auto rounded-xl bg-surface-2/50 p-2 @xl:block" tabIndex={0} role="group" aria-label="Agentic loop diagram. Use left and right arrow keys to step.">
             <svg viewBox="0 0 620 270" className="h-auto w-full min-w-[540px]" role="img" aria-label={`Step ${step + 1}: ${current.caption}`}>
               <defs>
                 <marker id="al-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
@@ -192,7 +202,6 @@ export default function AgenticLoop() {
               />
             </svg>
           </div>
-          <p className="px-1 text-xs text-muted @xl:hidden">Scroll the diagram sideways; it follows each step.</p>
         </div>
 
         <div className="flex min-h-56 min-w-0 flex-col rounded-xl border border-line bg-bg/60 p-3">

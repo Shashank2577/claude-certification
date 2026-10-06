@@ -9,6 +9,7 @@ import type { AnswerFeedback } from "@/lib/quiz-types";
 import { Markdown } from "@/components/ui/markdown";
 import { Visual } from "@/components/visuals/visual";
 import { ListenButton } from "@/components/listen-button";
+import { ContentReport } from "@/components/content-report";
 
 export interface QuestionCardProps {
   question: PublicQuestion;
@@ -238,6 +239,7 @@ export function QuestionCard({
                 <Visual id={feedback.visualId} compact />
               </div>
             ) : null}
+            <div className="mt-4"><ContentReport kind="question" contentId={question.id} certId={question.certId} /></div>
           </motion.div>
         ) : null}
       </AnimatePresence>
