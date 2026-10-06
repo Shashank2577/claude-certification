@@ -43,10 +43,11 @@ export function SectionListen({ id, heading }: { id: string; heading: string }) 
       data-listen-heading={heading}
       className={
         active
-          ? "mt-1 inline-grid size-11 -my-2 shrink-0 place-items-center rounded-md border border-accent-strong bg-accent-soft text-accent-text"
-          : // 44px hit area around a small glyph, always visible: a control you cannot see is a
-            // control you cannot find, and there is no hover on a touch screen to reveal it.
-            "mt-1 inline-grid size-11 -my-2 shrink-0 place-items-center rounded-md border border-line bg-surface text-muted transition-colors hover:border-line-strong hover:text-ink"
+          ? "relative -my-1 inline-grid size-7 shrink-0 place-items-center rounded-md bg-accent-soft text-accent-text after:absolute after:-inset-2 after:content-['']"
+          : // Small, quiet icon rather than a chunky chip. The 44px tap area is an invisible
+            // overlay instead of visible padding, so it never disturbs the heading, and it is
+            // always visible because a touch screen has no hover to reveal it.
+            "relative -my-1 inline-grid size-7 shrink-0 place-items-center rounded-md text-muted transition-colors hover:bg-surface-2 hover:text-ink focus-visible:bg-surface-2 focus-visible:text-ink after:absolute after:-inset-2 after:content-['']"
       }
     >
       {active ? <Square size={12} aria-hidden /> : <Volume2 size={14} aria-hidden />}
