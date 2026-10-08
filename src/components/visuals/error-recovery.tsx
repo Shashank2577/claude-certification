@@ -484,7 +484,7 @@ function Packet({ x1, y1, x2, y2, color, reduce, delay = 0 }: { x1: number; y1: 
 function CtrlButton({ label, onClick, disabled, children }: { label: string; onClick: () => void; disabled?: boolean; children: ReactNode }) {
   return (
     <button type="button" onClick={onClick} disabled={disabled} aria-label={label} title={label}
-      className="grid size-9 place-items-center rounded-xl border border-line-strong bg-surface text-ink transition-colors hover:border-ink active:scale-95 disabled:opacity-40">
+      className="hit-44 grid size-9 place-items-center rounded-xl border border-line-strong bg-surface text-ink transition-colors hover:border-ink active:scale-95 disabled:opacity-40">
       {children}
     </button>
   );

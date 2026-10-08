@@ -439,7 +439,7 @@ function IconToggle(props: { label: string; on: boolean; tone: "accent" | "bad";
       aria-pressed={on}
       title={label}
       className={clsx(
-        "grid size-8 shrink-0 place-items-center rounded-lg border transition-colors active:scale-95 disabled:cursor-not-allowed",
+        "hit-44 grid size-8 shrink-0 place-items-center rounded-lg border transition-colors active:scale-95 disabled:cursor-not-allowed",
         on
           ? tone === "accent"
             ? "border-accent-strong bg-accent-soft text-accent-text"
@@ -499,7 +499,7 @@ function CtrlButton({ label, onClick, disabled, children }: { label: string; onC
       disabled={disabled}
       aria-label={label}
       title={label}
-      className="grid size-9 place-items-center rounded-xl border border-line-strong bg-surface text-ink transition-colors hover:border-ink active:scale-95 disabled:opacity-40"
+      className="hit-44 grid size-9 place-items-center rounded-xl border border-line-strong bg-surface text-ink transition-colors hover:border-ink active:scale-95 disabled:opacity-40"
     >
       {children}
     </button>

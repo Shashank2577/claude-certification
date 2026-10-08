@@ -49,13 +49,28 @@ that shipped in this repo.
 | Study-plan `refId` resolves | `validate:content` (fails) |
 | Visuals use `useHydratedReducedMotion`, not motion's hook | `validate:content` (fails) |
 | No `Math.cos`/`Math.sin`, no hex in a visual | `validate:content` (fails) |
+| Server component never imports a `"use client"` export | `validate:content` (fails) |
+| No text play/stop glyphs in JSX — lucide icons only | `validate:content` (fails) |
+| No control hidden behind `opacity-0` / `group-hover` | `validate:content` (fails) |
+| Button painted under 44px carries `hit-44` | `validate:content` (fails) |
+| Lesson page actually rendered (not a 500) | `verify-hydration.mjs` (fails) |
+| `hit-44` overlay really delivers 44px | `verify-hydration.mjs` (fails) |
+| No hydration error, no motion ignoring reduced motion | `verify-hydration.mjs` (fails) |
 | Question id convention, batch size, missing `mindset` | `validate:content` (warns) |
 | SVG text fits the viewBox | not automatable — see the template checklist |
 | Clickable SVG has a keyboard twin | not automatable — see the template checklist |
 
-The two marked *not automatable* are the two bugs that actually shipped most recently. They are
-in the template header and in `.claude/skills/claude-cert-content/SKILL.md` so they are checked by
-reading, not by the linter.
+The shared-UI rules (the middle block) apply to everything under `src/components/`, not just
+explainer files, because every one of them broke the lesson page rather than a figure. The
+rendered-page check exists because the sweep used to look only for `<figure>`: a 500 removes the
+figure, so every other check read zero and the sweep reported a clean page that was not rendering.
+
+## Keep the gate green
+
+A check that fails on already-committed code is a check people learn to ignore. When the 44px rule
+was added it immediately flagged 24 pre-existing buttons, and they were fixed in the same change.
+Clear violations in the same commit that introduces the rule, or you have traded a silent bug for
+a noisy one.
 
 ## After you write anything
 
@@ -63,5 +78,13 @@ reading, not by the linter.
 pnpm validate:content   # the gate. Must be clean before you commit.
 ```
 
-Then `pnpm typecheck && pnpm lint && pnpm test`, and for anything touching a visual, look at it
-at 375px and 1280px, in both themes, with reduced motion on.
+Then `pnpm typecheck && pnpm lint && pnpm test && pnpm build`, and for anything touching a visual,
+look at it at 375px and 1280px, in both themes, with reduced motion on.
+
+With the dev server on 3111:
+
+```bash
+node scripts/verify-hydration.mjs             # all 26 visuals, plain motion
+node scripts/verify-hydration.mjs --rm        # forced prefers-reduced-motion
+ONLY=eval-loop node scripts/verify-hydration.mjs   # just one, while iterating
+```

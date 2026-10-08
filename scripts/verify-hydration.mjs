@@ -4,9 +4,12 @@
 //   pnpm dev --port 3111                 # in one terminal
 //   node scripts/verify-hydration.mjs    # plain motion
 //   node scripts/verify-hydration.mjs --rm   # forced prefers-reduced-motion
+//   ONLY=eval-loop node scripts/verify-hydration.mjs   # just one visual, for iterating
 //
-// Fails on: a React hydration error, an animation still running under reduced motion, or an
-// element left stuck at opacity 0.
+// Fails on: a page that did not render (a 500 blanks the lesson, and a missing <figure> would
+// otherwise make every check below read zero and silently pass), a React hydration error, an
+// animation still running under reduced motion, an element left stuck at opacity 0, or a
+// `hit-44` control whose tap area does not actually reach 44px.
 
 import { spawn } from "node:child_process";
 import http from "node:http";
@@ -103,11 +106,26 @@ for (const cert of fs.readdirSync("content/modules")) {
   }
 }
 
+const ONLY = process.env.ONLY;
+const selected = Object.entries(paths).filter(([visual]) => !ONLY || visual.includes(ONLY));
 const problems = [];
-for (const [visual, url] of Object.entries(paths)) {
+for (const [visual, url] of selected) {
   hyd = [];
   await send("Page.navigate", { url: BASE + url });
   await sleep(2600);
+  // A page that failed to render has no <figure>, so every check below would quietly read
+  // zero and the sweep would call it clean. A 500 that blanks the lesson -- which is what a
+  // server component calling a "use client" export did -- has to fail here.
+  const renderedRaw = await js(`(()=>{
+    const h1=document.querySelector('main h1');
+    const fig=document.querySelector('figure');
+    return JSON.stringify({h1:!!h1,figure:!!fig,body:(document.body.innerText||'').trim().length});
+  })()`);
+  const rendered = renderedRaw ? JSON.parse(renderedRaw) : { h1: false, body: 0 };
+  if (!rendered.h1 || rendered.body < 200) {
+    problems.push(`${visual}: page did not render (${JSON.stringify(rendered)})`);
+    continue;
+  }
   const buttons = await js(`(()=>{const f=document.querySelector('figure'); if(!f)return 0;
     return [...f.querySelectorAll('button')].filter(x=>!x.disabled).slice(0,8).length;})()`);
   for (let i = 0; i < Math.min(buttons, 8); i++) {
@@ -125,9 +143,27 @@ for (const [visual, url] of Object.entries(paths)) {
   if (hyd.length || running > 0 || invisible > 0) {
     problems.push(`${visual}: hydration=${hyd.length} animations=${running} stuckOpacity0=${invisible}${hyd.length ? " :: " + hyd[0] : ""}`);
   }
+  // `hit-44` is an invisible ::after overlay, so getBoundingClientRect on the control says
+  // nothing about its real hit area. Assert the mechanism itself rather than hit-testing:
+  // probing with elementFromPoint is unreliable here, because adjacent small controls have
+  // overlapping 44px overlays and a neighbour legitimately answers the probe, and because
+  // elementFromPoint only answers inside the viewport.
+  const overlay = await js(`(()=>{
+    const bad=[];
+    for (const el of [...document.querySelectorAll('.hit-44')].slice(0,20)) {
+      const r=el.getBoundingClientRect();
+      if(r.width===0||r.height===0) continue;
+      if(Math.min(r.width,r.height)>=44) continue;
+      const a=getComputedStyle(el,'::after');
+      const w=parseFloat(a.width)||0, h=parseFloat(a.height)||0;
+      const broken = a.content==='none' || a.content==='normal' || w<44 || h<44 || a.pointerEvents==='none';
+      if(broken) bad.push((el.getAttribute('aria-label')||el.tagName).trim().slice(0,28)+' '+Math.round(r.width)+'x'+Math.round(r.height)+' after='+a.content+' '+w+'x'+h);
+    }
+    return JSON.stringify(bad.slice(0,5));})()`);
+  if (overlay && overlay !== "[]") problems.push(`${visual}: hit-44 overlay not delivering 44px :: ${overlay}`);
 }
 
-console.log(`${REDUCED ? "REDUCED" : "PLAIN  "} motion: swept ${Object.keys(paths).length} visuals, clicked controls in each`);
+console.log(`${REDUCED ? "REDUCED" : "PLAIN  "} motion: swept ${selected.length} visual(s), clicked controls in each`);
 if (problems.length) {
   console.log("  PROBLEMS:");
   problems.forEach((p) => console.log("   " + p));

@@ -643,7 +643,7 @@ function Ctrl({ label, onClick, disabled, children }: { label: string; onClick: 
       disabled={disabled}
       aria-label={label}
       title={label}
-      className="grid size-9 place-items-center rounded-xl border border-line-strong bg-surface text-ink transition-colors hover:border-ink active:scale-95 disabled:opacity-40"
+      className="hit-44 grid size-9 place-items-center rounded-xl border border-line-strong bg-surface text-ink transition-colors hover:border-ink active:scale-95 disabled:opacity-40"
     >
       {children}
     </button>

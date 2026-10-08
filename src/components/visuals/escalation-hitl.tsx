@@ -480,7 +480,7 @@ export default function EscalationHitl() {
 function Ctrl({ label, onClick, children }: { label: string; onClick: () => void; children: ReactNode }) {
   return (
     <button type="button" onClick={onClick} aria-label={label} title={label}
-      className="grid size-9 place-items-center rounded-xl border border-line-strong bg-surface text-ink transition-colors hover:border-ink active:scale-95">
+      className="hit-44 grid size-9 place-items-center rounded-xl border border-line-strong bg-surface text-ink transition-colors hover:border-ink active:scale-95">
       {children}
     </button>
   );
